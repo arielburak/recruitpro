@@ -5,9 +5,12 @@ import { getToken } from "next-auth/jwt";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public routes
+  // Public routes (landing page, auth, marketing)
   const publicPaths = ["/login", "/register", "/forgot-password", "/api/auth", "/api/webhooks"];
-  if (publicPaths.some((p) => pathname.startsWith(p))) {
+  const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
+  const isLandingPage = pathname === "/";
+
+  if (isPublicPath || isLandingPage) {
     return NextResponse.next();
   }
 

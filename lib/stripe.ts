@@ -1,11 +1,22 @@
 import Stripe from "stripe";
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2025-03-31.basil",
-});
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY is not set. Add it to .env to enable billing.");
+  }
+  return new Stripe(key, { apiVersion: "2026-03-25.dahlia" });
+}
+
+// Lazy-loaded to avoid crash when STRIPE_SECRET_KEY is not set
+let _stripe: Stripe | null = null;
+export function getStripeClient() {
+  if (!_stripe) _stripe = getStripe();
+  return _stripe;
+}
 
 export async function createStripeCustomer(email: string, name: string) {
-  return stripe.customers.create({ email, name });
+  return getStripeClient().customers.create({ email, name });
 }
 
 export async function createCheckoutSession(
@@ -14,7 +25,7 @@ export async function createCheckoutSession(
   seats: number,
   orgId: string
 ) {
-  return stripe.checkout.sessions.create({
+  return getStripeClient().checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: priceId, quantity: seats }],
@@ -25,7 +36,7 @@ export async function createCheckoutSession(
 }
 
 export async function createBillingPortalSession(customerId: string) {
-  return stripe.billingPortal.sessions.create({
+  return getStripeClient().billingPortal.sessions.create({
     customer: customerId,
     return_url: `${process.env.NEXTAUTH_URL}/admin/billing`,
   });
@@ -36,7 +47,7 @@ export async function updateSubscriptionSeats(
   itemId: string,
   quantity: number
 ) {
-  return stripe.subscriptions.update(subscriptionId, {
+  return getStripeClient().subscriptions.update(subscriptionId, {
     items: [{ id: itemId, quantity }],
   });
 }
