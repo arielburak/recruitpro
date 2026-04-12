@@ -18,6 +18,10 @@ import {
   Building,
   Briefcase,
   Trash2,
+  Upload,
+  FileText,
+  Download,
+  X,
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
 
@@ -28,6 +32,8 @@ export default function CandidateDetailPage() {
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     fetchCandidate();
@@ -62,6 +68,38 @@ export default function CandidateDetailPage() {
     if (!confirm("Delete this candidate? This cannot be undone.")) return;
     await fetch(`/api/candidates/${params.id}`, { method: "DELETE" });
     router.push("/candidates");
+  }
+
+  async function uploadDocument(file: File) {
+    setUploading(true);
+    setUploadError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("candidateId", params.id as string);
+      const res = await fetch("/api/documents", { method: "POST", body: fd });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Upload failed");
+      }
+      await fetchCandidate();
+    } catch (err: any) {
+      setUploadError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDocument(id: string) {
+    if (!confirm("Delete this document?")) return;
+    await fetch(`/api/documents/${id}`, { method: "DELETE" });
+    fetchCandidate();
+  }
+
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   if (loading) {
@@ -119,6 +157,9 @@ export default function CandidateDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="submissions">
             Jobs ({candidate.submissions?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            Documents ({candidate.documents?.length || 0})
           </TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -277,6 +318,84 @@ export default function CandidateDetailPage() {
                   </CardContent>
                 </Card>
               </Link>
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="documents" className="space-y-4">
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
+                <Upload className="h-6 w-6 text-gray-400 mb-2" />
+                <span className="text-sm font-medium text-gray-700">
+                  {uploading ? "Uploading..." : "Click to upload a file"}
+                </span>
+                <span className="text-xs text-gray-400 mt-1">
+                  PDF, DOC, DOCX, TXT, PNG, JPG (max 10MB)
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploading}
+                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadDocument(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {uploadError && (
+                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">
+                  {uploadError}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {candidate.documents?.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-gray-500 text-sm">
+                No documents uploaded yet.
+              </CardContent>
+            </Card>
+          ) : (
+            candidate.documents?.map((doc: any) => (
+              <Card key={doc.id}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <FileText className="h-5 w-5 text-indigo-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {doc.name}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {formatBytes(doc.size)} · {formatDate(doc.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+                      title="Download"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                    <button
+                      onClick={() => deleteDocument(doc.id)}
+                      className="p-2 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"
+                      title="Delete"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
             ))
           )}
         </TabsContent>
