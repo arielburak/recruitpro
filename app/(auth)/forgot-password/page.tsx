@@ -75,6 +75,9 @@ export default function ForgotPasswordPage() {
   return (
     <Card className="max-w-md">
       <CardHeader className="text-center">
+        <Link href="/" className="text-2xl font-bold text-gray-900 hover:text-indigo-600 transition-colors block mb-2">
+          RecruitPro
+        </Link>
         <CardTitle className="text-xl font-bold">Reset your password</CardTitle>
         <CardDescription>
           Enter your email and we&apos;ll send you a reset link.

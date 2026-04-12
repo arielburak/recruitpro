@@ -66,7 +66,9 @@ function LoginContent() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-bold">RecruitPro</CardTitle>
+        <Link href="/" className="text-2xl font-bold text-gray-900 hover:text-indigo-600 transition-colors">
+          RecruitPro
+        </Link>
         <CardDescription>Sign in to your account</CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
