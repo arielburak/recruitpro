@@ -6,7 +6,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes (landing page, auth, marketing)
-  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/api/auth", "/api/webhooks"];
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/api/auth", "/api/webhooks", "/api/health"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
   const isLandingPage = pathname === "/";
 
