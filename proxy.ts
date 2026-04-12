@@ -14,8 +14,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Client portal with token - allow
+  // Client portal with token - allow (pages + API)
   if (pathname.startsWith("/client-portal/") && !pathname.startsWith("/client-portal/dashboard")) {
+    return NextResponse.next();
+  }
+  if (pathname.startsWith("/api/client-portal/")) {
     return NextResponse.next();
   }
 

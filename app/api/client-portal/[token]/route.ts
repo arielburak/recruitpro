@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { validateClientPortalToken } from "@/lib/tokens";
-import { redactCandidateForClient } from "@/lib/permissions";
 
 export async function GET(
   _request: Request,
@@ -39,18 +38,47 @@ export async function GET(
           include: {
             candidate: {
               select: {
-                id: true, firstName: true, lastName: true,
-                currentTitle: true, currentCompany: true,
-                location: true, skills: true, summary: true,
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+                linkedIn: true,
+                currentTitle: true,
+                currentCompany: true,
+                location: true,
+                skills: true,
+                summary: true,
                 desiredSalary: true,
+                documents: {
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    size: true,
+                    createdAt: true,
+                  },
+                },
               },
             },
             stage: { select: { name: true, color: true } },
-            ratings: { select: { score: true, feedback: true, clientUser: { select: { name: true } } } },
+            ratings: {
+              select: {
+                score: true,
+                feedback: true,
+                clientUser: { select: { name: true } },
+              },
+            },
             comments: {
               where: { type: "CLIENT_VISIBLE" },
-              select: { content: true, createdAt: true, user: { select: { name: true } }, clientUser: { select: { name: true } } },
-              orderBy: { createdAt: "desc" },
+              select: {
+                id: true,
+                content: true,
+                createdAt: true,
+                user: { select: { name: true } },
+                clientUser: { select: { name: true } },
+              },
+              orderBy: { createdAt: "asc" },
             },
           },
         },
