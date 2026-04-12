@@ -1,5 +1,4 @@
 import { Sidebar } from "@/components/layout/sidebar";
-import { Topbar } from "@/components/layout/topbar";
 
 export default function DashboardLayout({
   children,
@@ -7,11 +6,13 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-full">
+    <div className="min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Topbar />
-        <main className="flex-1 overflow-auto bg-gray-50 p-6">{children}</main>
+      {/* Main content area offset for the fixed desktop sidebar */}
+      <div className="lg:pl-64">
+        <main className="min-h-screen">
+          <div className="px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+        </main>
       </div>
     </div>
   );

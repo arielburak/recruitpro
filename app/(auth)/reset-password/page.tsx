@@ -6,15 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Briefcase, CheckCircle2, ShieldCheck, Lock } from "lucide-react";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -61,92 +53,142 @@ function ResetPasswordContent() {
     }
   }
 
-  if (!token) {
-    return (
-      <Card className="max-w-md">
-        <CardContent className="p-8 text-center">
-          <p className="text-sm text-gray-500 mb-4">
-            This reset link is missing a token. Please request a new one.
-          </p>
-          <Link
-            href="/forgot-password"
-            className="text-indigo-600 text-sm font-medium hover:underline"
-          >
-            Request new link
-          </Link>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (done) {
-    return (
-      <Card className="max-w-md">
-        <CardContent className="p-8 text-center">
-          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            Password updated
-          </h2>
-          <p className="text-sm text-gray-500">Redirecting to sign in...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card className="max-w-md">
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl font-bold">Choose a new password</CardTitle>
-        <CardDescription>
-          Enter and confirm your new password below.
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={onSubmit}>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">
-              {error}
+    <div className="min-h-screen flex">
+      {/* Left Panel — branded */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex-col justify-between p-12">
+        <div>
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Briefcase className="w-5 h-5 text-white" />
             </div>
+            <span className="text-2xl font-bold">RecruitPro</span>
+          </div>
+
+          <h1 className="text-4xl font-bold leading-tight mb-4">
+            Almost there!
+          </h1>
+          <p className="text-indigo-100 text-lg mb-10">
+            Choose a strong password and you&apos;ll be back to recruiting in no time.
+          </p>
+
+          <div className="space-y-5">
+            {[
+              { icon: ShieldCheck, label: "Use at least 8 characters" },
+              { icon: Lock, label: "Mix letters, numbers & symbols" },
+              { icon: CheckCircle2, label: "Avoid reusing old passwords" },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                  <Icon className="w-4 h-4 text-indigo-200" />
+                </div>
+                <span className="text-indigo-50">{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-white/20 pt-8">
+          <p className="text-indigo-200 text-sm">
+            Need help? Contact us at{" "}
+            <span className="text-white font-medium">support@recruitpro.com</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Right Panel — form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to sign in
+          </Link>
+
+          {!token ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500 mb-4">
+                This reset link is missing a token. Please request a new one.
+              </p>
+              <Link
+                href="/forgot-password"
+                className="text-indigo-600 text-sm font-medium hover:underline"
+              >
+                Request new link
+              </Link>
+            </div>
+          ) : done ? (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="w-8 h-8 text-green-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Password updated
+              </h2>
+              <p className="text-gray-500">Redirecting to sign in...</p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900">Choose a new password</h2>
+                <p className="text-gray-500 mt-1">
+                  Enter and confirm your new password below.
+                </p>
+              </div>
+
+              <form onSubmit={onSubmit} className="space-y-5">
+                {error && (
+                  <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">
+                    {error}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">New password</Label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    className="focus-visible:ring-indigo-500"
+                    minLength={8}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm password</Label>
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    className="focus-visible:ring-indigo-500"
+                    minLength={8}
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 rounded-lg"
+                  disabled={loading}
+                >
+                  {loading ? "Updating..." : "Update password"}
+                </Button>
+              </form>
+            </>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="password">New password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              minLength={8}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm password</Label>
-            <Input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              minLength={8}
-              required
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Updating..." : "Update password"}
-          </Button>
-        </CardFooter>
-      </form>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export default function ResetPasswordPage() {
   return (
     <Suspense
-      fallback={
-        <div className="h-96 bg-gray-100 rounded-lg animate-pulse" />
-      }
+      fallback={<div className="min-h-screen bg-gray-50 animate-pulse" />}
     >
       <ResetPasswordContent />
     </Suspense>
