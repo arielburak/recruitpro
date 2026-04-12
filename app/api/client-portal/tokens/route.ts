@@ -18,9 +18,12 @@ export async function POST(request: Request) {
     }
 
     const token = await generateClientPortalToken(clientId, jobId, expiresInDays);
-    const portalUrl = `${process.env.NEXTAUTH_URL}/client-portal/${token.token}`;
+    const baseUrl =
+      process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    const portalUrl = `${baseUrl}/client-portal/${token.token}`;
 
-    return NextResponse.json({ token: token.token, url: portalUrl }, { status: 201 });
+    return NextResponse.json({ token: token.token, portalUrl }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
