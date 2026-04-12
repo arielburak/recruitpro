@@ -9,6 +9,8 @@ import {
   Users,
   Briefcase,
   Building2,
+  Handshake,
+  Trophy,
   Settings,
   UserPlus,
   Menu,
@@ -22,6 +24,8 @@ const mainNavItems = [
   { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Jobs", href: "/jobs", icon: Briefcase },
   { label: "Clients", href: "/clients", icon: Building2 },
+  { label: "Deals", href: "/deals", icon: Handshake },
+  { label: "Placements", href: "/placements", icon: Trophy },
 ];
 
 const adminNavItems = [

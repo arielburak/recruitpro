@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Plus, Share2, Users, GripVertical } from "lucide-react";
+import { ArrowLeft, Plus, Share2, Users, GripVertical, Link2, Check } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -18,6 +18,9 @@ export default function JobDetailPage() {
   const params = useParams();
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [portalUrl, setPortalUrl] = useState("");
+  const [portalCopied, setPortalCopied] = useState(false);
+  const [generatingLink, setGeneratingLink] = useState(false);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -62,6 +65,29 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
+  async function generatePortalLink() {
+    if (!job) return;
+    setGeneratingLink(true);
+    try {
+      const res = await fetch("/api/client-portal/tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: job.clientId, jobId: job.id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPortalUrl(data.portalUrl);
+        await navigator.clipboard.writeText(data.portalUrl);
+        setPortalCopied(true);
+        setTimeout(() => setPortalCopied(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to generate portal link:", err);
+    } finally {
+      setGeneratingLink(false);
+    }
+  }
+
   async function toggleShare(submissionId: string, shared: boolean) {
     await fetch(`/api/submissions/${submissionId}`, {
       method: "PATCH",
@@ -94,6 +120,18 @@ export default function JobDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={generatePortalLink}
+            disabled={generatingLink}
+            className={portalCopied ? "text-green-600 border-green-300" : ""}
+          >
+            {portalCopied ? (
+              <><Check className="mr-2 h-4 w-4" /> Link Copied!</>
+            ) : (
+              <><Link2 className="mr-2 h-4 w-4" /> {generatingLink ? "Generating..." : "Share with Client"}</>
+            )}
+          </Button>
           <Button onClick={() => setShowAddCandidate(true)}>
             <Plus className="mr-2 h-4 w-4" /> Add Candidate
           </Button>

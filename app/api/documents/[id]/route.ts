@@ -1,8 +1,37 @@
 import { NextResponse } from "next/server";
-import { del } from "@vercel/blob";
+import { del, getDownloadUrl } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getOrgContext();
+    const { id } = await params;
+
+    const document = await prisma.document.findFirst({
+      where: {
+        id,
+        candidate: { organizationId: ctx.organizationId },
+      },
+    });
+
+    if (!document) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const downloadUrl = getDownloadUrl(document.url);
+    return NextResponse.redirect(downloadUrl);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Download failed" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function DELETE(
   _request: Request,

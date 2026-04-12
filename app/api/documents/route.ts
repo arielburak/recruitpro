@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     const blobPath = `org-${ctx.organizationId}/candidate-${candidateId}/${Date.now()}-${safeName}`;
 
     const blob = await put(blobPath, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
     });
 
