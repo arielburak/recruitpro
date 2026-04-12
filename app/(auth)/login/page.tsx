@@ -30,23 +30,48 @@ function LoginContent() {
 
     try {
       const formData = new FormData(e.currentTarget);
-      const result = await signIn("credentials", {
-        email: formData.get("email") as string,
-        password: formData.get("password") as string,
-        redirect: false,
+      const email = formData.get("email") as string;
+      const password = formData.get("password") as string;
+
+      // First get CSRF token
+      const csrfRes = await fetch("/api/auth/csrf");
+      const { csrfToken } = await csrfRes.json();
+
+      // Direct POST to callback with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      const res = await fetch("/api/auth/callback/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          csrfToken,
+          email,
+          password,
+          json: "true",
+        }),
+        signal: controller.signal,
+        redirect: "follow",
       });
 
-      if (result?.error) {
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        router.push("/dashboard");
+        router.refresh();
+      } else {
+        const text = await res.text().catch(() => "");
+        console.error("Auth response:", res.status, text);
         setError("Invalid email or password");
         setLoading(false);
-        return;
       }
-
-      router.push("/dashboard");
-      router.refresh();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Sign in error:", err);
-      setError("Something went wrong. Please try again.");
+      if (err.name === "AbortError") {
+        setError("Sign in timed out. Please try again.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
       setLoading(false);
     }
   }
