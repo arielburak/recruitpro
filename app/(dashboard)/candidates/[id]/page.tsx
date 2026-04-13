@@ -35,6 +35,7 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCandidate();
@@ -48,32 +49,25 @@ export default function CandidateDetailPage() {
     setLoading(false);
   }
 
-  function getAllComments() {
-    const candidateComments = (candidate.comments || []).map((c: any) => ({
-      ...c,
-      source: "candidate",
-    }));
-
-    const submissionComments = (candidate.submissions || []).flatMap((sub: any) =>
-      (sub.comments || []).map((c: any) => ({
-        ...c,
-        source: "submission",
-        jobTitle: sub.job?.title,
-        jobId: sub.job?.id,
-      }))
+  function getSubmissionComments(submissionId: string) {
+    const sub = (candidate.submissions || []).find((s: any) => s.id === submissionId);
+    if (!sub) return [];
+    return [...(sub.comments || [])].sort(
+      (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
+  }
 
-    // Merge and deduplicate by id
-    const all = [...candidateComments, ...submissionComments];
-    const seen = new Set<string>();
-    const unique = all.filter((c) => {
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
-      return true;
-    });
+  function getActiveSubmission() {
+    if (!candidate.submissions?.length) return null;
+    const id = selectedSubmissionId || candidate.submissions[0]?.id;
+    return candidate.submissions.find((s: any) => s.id === id) || candidate.submissions[0];
+  }
 
-    // Sort by createdAt ascending (oldest first, like a chat)
-    return unique.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  function getTotalCommentCount() {
+    return (candidate.submissions || []).reduce(
+      (sum: number, sub: any) => sum + (sub.comments?.length || 0),
+      0
+    );
   }
 
   async function deleteCandidate() {
@@ -182,7 +176,7 @@ export default function CandidateDetailPage() {
             Documents ({candidate.documents?.length || 0})
           </TabsTrigger>
           <TabsTrigger value="notes">
-            Notes & Feedback ({getAllComments().length})
+            Notes & Feedback ({getTotalCommentCount()})
           </TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -423,12 +417,80 @@ export default function CandidateDetailPage() {
         </TabsContent>
 
         <TabsContent value="notes">
-          <ChatNotes
-            comments={getAllComments()}
-            candidateId={params.id as string}
-            submissionId={candidate.submissions?.[0]?.id}
-            onCommentAdded={fetchCandidate}
-          />
+          {candidate.submissions?.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-gray-500">
+                Assign this candidate to a job to start adding notes.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {/* Job selector */}
+              {candidate.submissions.length > 1 && (
+                <div className="flex gap-2 flex-wrap">
+                  {candidate.submissions.map((sub: any) => {
+                    const isActive = (selectedSubmissionId || candidate.submissions[0]?.id) === sub.id;
+                    const commentCount = sub.comments?.length || 0;
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => setSelectedSubmissionId(sub.id)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                          isActive
+                            ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="text-left">
+                          <div className="font-medium">{sub.job.title}</div>
+                          <div className="text-xs text-gray-400">{sub.job.client?.name || "No client"}</div>
+                        </div>
+                        {commentCount > 0 && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            isActive ? "bg-indigo-200 text-indigo-800" : "bg-gray-100 text-gray-500"
+                          }`}>
+                            {commentCount}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Context header */}
+              {(() => {
+                const activeSub = getActiveSubmission();
+                if (!activeSub) return null;
+                return (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 px-1">
+                    <Briefcase className="h-3.5 w-3.5" />
+                    <span className="font-medium text-gray-700">{activeSub.job.title}</span>
+                    <span className="text-gray-300">|</span>
+                    <Building className="h-3.5 w-3.5" />
+                    <span>{activeSub.job.client?.name || "No client"}</span>
+                    <Badge
+                      className="ml-auto text-[10px]"
+                      style={{
+                        backgroundColor: activeSub.stage.color + "20",
+                        color: activeSub.stage.color,
+                      }}
+                    >
+                      {activeSub.stage.name}
+                    </Badge>
+                  </div>
+                );
+              })()}
+
+              {/* Chat */}
+              <ChatNotes
+                key={selectedSubmissionId || candidate.submissions[0]?.id}
+                comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
+                submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
+                onCommentAdded={fetchCandidate}
+              />
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-2">

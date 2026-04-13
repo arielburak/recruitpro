@@ -19,7 +19,7 @@ export async function GET(
         documents: true,
         submissions: {
           include: {
-            job: { select: { title: true, id: true, clientId: true } },
+            job: { select: { title: true, id: true, clientId: true, client: { select: { name: true } } } },
             stage: { select: { name: true, color: true } },
             ratings: {
               select: { score: true, feedback: true, clientUser: { select: { name: true } } },

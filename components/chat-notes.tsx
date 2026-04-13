@@ -20,7 +20,7 @@ interface MentionUser {
 interface ChatNotesProps {
   comments: any[];
   candidateId?: string;
-  submissionId?: string;
+  submissionId: string;
   onCommentAdded: () => void;
 }
 
@@ -213,8 +213,7 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
-          candidateId: candidateId || null,
-          submissionId: submissionId || null,
+          submissionId,
           type: activeTab,
           mentions: mentions.map((m) => m.id),
         }),
