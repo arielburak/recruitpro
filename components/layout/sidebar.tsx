@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   LogOut,
+  Upload,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -26,6 +27,7 @@ const mainNavItems = [
   { label: "Clients", href: "/clients", icon: Building2 },
   { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
+  { label: "Import", href: "/import", icon: Upload },
 ];
 
 const adminNavItems = [

@@ -19,12 +19,25 @@ export async function GET(
         documents: true,
         submissions: {
           include: {
-            job: { select: { title: true, id: true } },
+            job: { select: { title: true, id: true, clientId: true } },
             stage: { select: { name: true, color: true } },
+            ratings: {
+              select: { score: true, feedback: true, clientUser: { select: { name: true } } },
+            },
+            comments: {
+              where: { type: "CLIENT_VISIBLE" },
+              select: {
+                id: true,
+                content: true,
+                createdAt: true,
+                user: { select: { name: true } },
+                clientUser: { select: { name: true } },
+              },
+              orderBy: { createdAt: "desc" },
+            },
           },
         },
         comments: {
-          where: { type: "INTERNAL" },
           include: { user: { select: { name: true } } },
           orderBy: { createdAt: "desc" },
         },

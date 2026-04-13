@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { MentionInput } from "@/components/mention-input";
 import {
   ArrowLeft,
   Edit,
@@ -22,18 +22,24 @@ import {
   FileText,
   Download,
   X,
+  Star,
+  Lock,
+  Globe,
+  AtSign,
+  Plus,
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 
 export default function CandidateDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [candidate, setCandidate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [comment, setComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
 
   useEffect(() => {
     fetchCandidate();
@@ -47,21 +53,35 @@ export default function CandidateDetailPage() {
     setLoading(false);
   }
 
-  async function addComment() {
-    if (!comment.trim()) return;
+  async function addComment(data: { content: string; type: "INTERNAL" | "CLIENT_VISIBLE"; mentions: string[] }) {
     setSubmittingComment(true);
     await fetch("/api/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        content: comment,
+        content: data.content,
         candidateId: params.id,
-        type: "INTERNAL",
+        type: data.type,
+        mentions: data.mentions,
       }),
     });
-    setComment("");
     setSubmittingComment(false);
     fetchCandidate();
+  }
+
+  function renderMentions(text: string) {
+    // Highlight @mentions in the text
+    const parts = text.split(/(@\w+(?:\s\w+)?)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("@")) {
+        return (
+          <span key={i} className="text-indigo-600 font-medium bg-indigo-50 px-0.5 rounded">
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
   }
 
   async function deleteCandidate() {
@@ -144,6 +164,14 @@ export default function CandidateDetailPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowAssignDialog(true)}
+            className="text-indigo-600 hover:text-indigo-700"
+          >
+            <Plus className="h-4 w-4 mr-1" /> Assign to Jobs
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={deleteCandidate}
             className="text-red-600 hover:text-red-700"
           >
@@ -160,6 +188,9 @@ export default function CandidateDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="documents">
             Documents ({candidate.documents?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="feedback">
+            Client Feedback ({candidate.submissions?.reduce((sum: number, s: any) => sum + (s.comments?.length || 0) + (s.ratings?.length || 0), 0) || 0})
           </TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
@@ -400,35 +431,149 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="feedback" className="space-y-4">
+          {candidate.submissions?.every((s: any) => (!s.comments || s.comments.length === 0) && (!s.ratings || s.ratings.length === 0)) ? (
+            <Card>
+              <CardContent className="p-8 text-center text-gray-500 text-sm">
+                No client feedback yet. Share candidates with clients to collect feedback.
+              </CardContent>
+            </Card>
+          ) : (
+            candidate.submissions?.map((sub: any) => {
+              const hasComments = sub.comments?.length > 0;
+              const hasRatings = sub.ratings?.length > 0;
+              if (!hasComments && !hasRatings) return null;
+
+              return (
+                <Card key={sub.id}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-sm">
+                        Feedback for{" "}
+                        <Link href={`/jobs/${sub.job.id}`} className="text-indigo-600 hover:underline">
+                          {sub.job.title}
+                        </Link>
+                      </h3>
+                      <Badge
+                        style={{ backgroundColor: sub.stage.color + "20", color: sub.stage.color }}
+                      >
+                        {sub.stage.name}
+                      </Badge>
+                    </div>
+
+                    {hasRatings && (
+                      <div className="space-y-2">
+                        {sub.ratings.map((r: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <div className="flex gap-0.5">
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <Star
+                                  key={n}
+                                  className={`h-3.5 w-3.5 ${n <= r.score ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-gray-500">
+                              {r.clientUser?.name || "Client"}
+                            </span>
+                            {r.feedback && (
+                              <span className="text-gray-600">- {r.feedback}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {hasComments && (
+                      <div className="space-y-2 border-t pt-3">
+                        {sub.comments.map((cm: any) => {
+                          let displayContent = cm.content;
+                          let rating = null;
+                          let clientName = cm.clientUser?.name || cm.user?.name || "Anonymous";
+                          try {
+                            const parsed = JSON.parse(cm.content);
+                            if (parsed && typeof parsed === "object") {
+                              displayContent = parsed.text || "";
+                              rating = parsed.rating;
+                              if (parsed.clientName) clientName = parsed.clientName;
+                            }
+                          } catch {}
+
+                          return (
+                            <div key={cm.id} className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-medium text-emerald-700">{clientName}</span>
+                                <span className="text-xs text-gray-400">{formatDate(cm.createdAt)}</span>
+                                {rating && (
+                                  <div className="flex gap-0.5 ml-1">
+                                    {[1, 2, 3, 4, 5].map((n) => (
+                                      <Star
+                                        key={n}
+                                        className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              {displayContent && (
+                                <p className="text-sm text-gray-700">{displayContent}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </TabsContent>
+
         <TabsContent value="notes" className="space-y-4">
           <Card>
-            <CardContent className="p-4 space-y-3">
-              <Textarea
-                placeholder="Add an internal note..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
+            <CardContent className="p-4">
+              <MentionInput
+                onSubmit={addComment}
+                allowClients={true}
+                submitting={submittingComment}
+                placeholder="Add a note... Use @ to mention team members or clients"
               />
-              <Button
-                size="sm"
-                onClick={addComment}
-                disabled={submittingComment || !comment.trim()}
-              >
-                {submittingComment ? "Adding..." : "Add Note"}
-              </Button>
             </CardContent>
           </Card>
 
           {candidate.comments?.map((c: any) => (
-            <Card key={c.id}>
+            <Card key={c.id} className={c.type === "CLIENT_VISIBLE" ? "border-l-4 border-l-emerald-500" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="font-medium text-sm">{c.user?.name}</span>
+                  {c.type === "CLIENT_VISIBLE" ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                      <Globe className="h-3 w-3" />
+                      Client visible
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                      <Lock className="h-3 w-3" />
+                      Internal
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400">
                     {formatDate(c.createdAt)}
                   </span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap">{c.content}</p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {renderMentions(c.content)}
+                </p>
+                {c.mentions?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {c.mentions.map((mid: string, i: number) => (
+                      <span key={i} className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                        @mentioned
+                      </span>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -448,6 +593,14 @@ export default function CandidateDetailPage() {
           ))}
         </TabsContent>
       </Tabs>
+
+      <AssignToJobsDialog
+        candidateId={params.id as string}
+        candidateName={`${candidate.firstName} ${candidate.lastName}`}
+        open={showAssignDialog}
+        onClose={() => setShowAssignDialog(false)}
+        onAssigned={fetchCandidate}
+      />
     </div>
   );
 }

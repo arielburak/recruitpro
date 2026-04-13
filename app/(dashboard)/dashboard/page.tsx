@@ -10,6 +10,8 @@ import {
   Building2,
   UserPlus,
   Sparkles,
+  MessageSquare,
+  Star,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
@@ -20,7 +22,7 @@ export default async function DashboardPage() {
 
   if (!orgId) return null;
 
-  const [activeJobs, totalCandidates, placements, totalClients, recentActivities] =
+  const [activeJobs, totalCandidates, placements, totalClients, recentActivities, recentFeedback] =
     await Promise.all([
       prisma.job.count({
         where: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } },
@@ -38,6 +40,24 @@ export default async function DashboardPage() {
         orderBy: { createdAt: "desc" },
         take: 15,
         include: { user: { select: { name: true } } },
+      }),
+      prisma.comment.findMany({
+        where: {
+          type: "CLIENT_VISIBLE",
+          submission: { job: { organizationId: orgId } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        include: {
+          clientUser: { select: { name: true } },
+          user: { select: { name: true } },
+          submission: {
+            select: {
+              candidate: { select: { id: true, firstName: true, lastName: true } },
+              job: { select: { title: true, id: true } },
+            },
+          },
+        },
       }),
     ]);
 
@@ -171,6 +191,73 @@ export default async function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {recentFeedback.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-emerald-600" />
+              Recent Client Feedback
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {recentFeedback.map((fb: any) => {
+                let displayContent = fb.content;
+                let rating = null;
+                let clientName = fb.clientUser?.name || fb.user?.name || "Client";
+                try {
+                  const parsed = JSON.parse(fb.content);
+                  if (parsed && typeof parsed === "object") {
+                    displayContent = parsed.text || "";
+                    rating = parsed.rating;
+                    if (parsed.clientName) clientName = parsed.clientName;
+                  }
+                } catch {}
+
+                return (
+                  <div key={fb.id} className="flex items-start gap-3 text-sm border-b border-gray-50 pb-3 last:border-0 last:pb-0">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-emerald-700">{clientName}</span>
+                        {rating && (
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <Star
+                                key={n}
+                                className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <span className="text-gray-400 text-xs">{formatDate(fb.createdAt)}</span>
+                      </div>
+                      {displayContent && (
+                        <p className="text-gray-600 mt-0.5 line-clamp-2">{displayContent}</p>
+                      )}
+                      {fb.submission && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          on{" "}
+                          <Link href={`/candidates/${fb.submission.candidate.id}`} className="text-indigo-600 hover:underline">
+                            {fb.submission.candidate.firstName} {fb.submission.candidate.lastName}
+                          </Link>
+                          {" "}for{" "}
+                          <Link href={`/jobs/${fb.submission.job.id}`} className="text-indigo-600 hover:underline">
+                            {fb.submission.job.title}
+                          </Link>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

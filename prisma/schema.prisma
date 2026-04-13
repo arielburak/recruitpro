@@ -294,6 +294,7 @@ model Comment {
   id           String      @id @default(cuid())
   content      String
   type         CommentType @default(INTERNAL)
+  mentions     String[]    @default([])
   candidateId  String?
   submissionId String?
   userId       String?

@@ -14,6 +14,10 @@ export async function POST(request: Request) {
         candidateId: body.candidateId || null,
         submissionId: body.submissionId || null,
         userId: ctx.userId,
+        mentions: body.mentions || [],
+      },
+      include: {
+        user: { select: { name: true } },
       },
     });
 
