@@ -33,6 +33,13 @@ export async function GET(
     });
 
     if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Recruiters can only view jobs they're assigned to
+    if (ctx.role === "RECRUITER") {
+      const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
+      if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     return NextResponse.json(job);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });

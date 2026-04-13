@@ -121,23 +121,12 @@ export default function ClientDashboardPage() {
             Manage your hiring pipeline
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/client-portal/jobs/new">
-            <Button className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 shadow-sm">
-              <Plus className="h-4 w-4" />
-              Post a Job
-            </Button>
-          </Link>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => signOut({ callbackUrl: "/client-portal/login" })}
-            className="h-9 w-9"
-            title="Sign out"
-          >
-            <LogOut className="h-4 w-4" />
+        <Link href="/client-portal/jobs/new">
+          <Button className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 shadow-sm">
+            <Plus className="h-4 w-4" />
+            Post a Job
           </Button>
-        </div>
+        </Link>
       </div>
 
       {/* Pending Engagements Alert */}

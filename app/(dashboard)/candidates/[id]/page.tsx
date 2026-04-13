@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MentionInput } from "@/components/mention-input";
+import { ChatNotes } from "@/components/chat-notes";
 import {
   ArrowLeft,
   Edit,
@@ -22,10 +22,6 @@ import {
   FileText,
   Download,
   X,
-  Star,
-  Lock,
-  Globe,
-  AtSign,
   Plus,
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -36,7 +32,6 @@ export default function CandidateDetailPage() {
   const router = useRouter();
   const [candidate, setCandidate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [submittingComment, setSubmittingComment] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
@@ -51,30 +46,6 @@ export default function CandidateDetailPage() {
       setCandidate(await res.json());
     }
     setLoading(false);
-  }
-
-  async function addComment(data: { content: string; type: "INTERNAL" | "CLIENT_VISIBLE"; mentions: string[] }) {
-    setSubmittingComment(true);
-
-    // For client-visible notes, also attach to the first submission so it shows in portal
-    let submissionId = null;
-    if (data.type === "CLIENT_VISIBLE" && candidate.submissions?.length > 0) {
-      submissionId = candidate.submissions[0].id;
-    }
-
-    await fetch("/api/comments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: data.content,
-        candidateId: params.id,
-        submissionId,
-        type: data.type,
-        mentions: data.mentions,
-      }),
-    });
-    setSubmittingComment(false);
-    fetchCandidate();
   }
 
   function getAllComments() {
@@ -103,21 +74,6 @@ export default function CandidateDetailPage() {
 
     // Sort by createdAt ascending (oldest first, like a chat)
     return unique.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }
-
-  function renderMentions(text: string) {
-    // Highlight @mentions in the text
-    const parts = text.split(/(@\w+(?:\s\w+)?)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith("@")) {
-        return (
-          <span key={i} className="text-indigo-600 font-medium bg-indigo-50 px-0.5 rounded">
-            {part}
-          </span>
-        );
-      }
-      return part;
-    });
   }
 
   async function deleteCandidate() {
@@ -466,102 +422,13 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="notes" className="space-y-4">
-          <Card>
-            <CardContent className="p-4">
-              <MentionInput
-                onSubmit={addComment}
-                allowClients={true}
-                submitting={submittingComment}
-                placeholder="Add a note... Use @ to mention team members or clients"
-              />
-            </CardContent>
-          </Card>
-
-          {getAllComments().length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center text-gray-500 text-sm">
-                No notes or feedback yet. Add a note above or share candidates with clients to collect feedback.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {getAllComments().map((c: any) => {
-                const isClient = !!c.clientUser?.name && !c.user?.name;
-                const authorName = c.user?.name || c.clientUser?.name || "Unknown";
-                const isClientVisible = c.type === "CLIENT_VISIBLE";
-
-                // Parse JSON content (client feedback)
-                let displayContent = c.content;
-                let rating = null;
-                let parsedClientName = null;
-                try {
-                  const parsed = JSON.parse(c.content);
-                  if (parsed && typeof parsed === "object") {
-                    displayContent = parsed.text || "";
-                    rating = parsed.rating;
-                    parsedClientName = parsed.clientName;
-                  }
-                } catch {}
-
-                const displayAuthor = parsedClientName || authorName;
-
-                return (
-                  <Card key={c.id} className={isClientVisible ? "border-l-4 border-l-emerald-500" : ""}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
-                          isClient ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
-                        }`}>
-                          {displayAuthor.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-sm">{displayAuthor}</span>
-                        {isClient && (
-                          <Badge variant="secondary" className="text-[10px] py-0 bg-emerald-50 text-emerald-600 border-emerald-200">
-                            Client
-                          </Badge>
-                        )}
-                        {isClientVisible ? (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                            <Globe className="h-3 w-3" />
-                            Client visible
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                            <Lock className="h-3 w-3" />
-                            Internal
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-400">
-                          {formatDate(c.createdAt)}
-                        </span>
-                        {c.jobTitle && (
-                          <span className="text-xs text-gray-400">
-                            on <Link href={`/jobs/${c.jobId}`} className="text-indigo-600 hover:underline">{c.jobTitle}</Link>
-                          </span>
-                        )}
-                      </div>
-                      {rating && (
-                        <div className="flex gap-0.5 mb-1">
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <Star
-                              key={n}
-                              className={`h-3.5 w-3.5 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {displayContent && (
-                        <p className="text-sm whitespace-pre-wrap">
-                          {renderMentions(displayContent)}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+        <TabsContent value="notes">
+          <ChatNotes
+            comments={getAllComments()}
+            candidateId={params.id as string}
+            submissionId={candidate.submissions?.[0]?.id}
+            onCommentAdded={fetchCandidate}
+          />
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-2">

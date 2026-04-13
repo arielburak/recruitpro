@@ -1,17 +1,48 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const ctx = await getOrgContext();
-    const clients = await prisma.client.findMany({
-      where: { organizationId: ctx.organizationId },
-      include: { _count: { select: { jobs: true } } },
-      orderBy: { name: "asc" },
-    });
-    return NextResponse.json(clients);
+    const search = request.nextUrl.searchParams.get("search");
+    const pageParam = request.nextUrl.searchParams.get("page");
+    const page = parseInt(pageParam || "1");
+    const pageSize = 20;
+    const paginated = !!pageParam || !!search;
+
+    const where: any = { organizationId: ctx.organizationId };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { industry: { contains: search, mode: "insensitive" } },
+        { contactName: { contains: search, mode: "insensitive" } },
+        { contactEmail: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (!paginated) {
+      const clients = await prisma.client.findMany({
+        where,
+        include: { _count: { select: { jobs: true } } },
+        orderBy: { name: "asc" },
+      });
+      return NextResponse.json(clients);
+    }
+
+    const [clients, total] = await Promise.all([
+      prisma.client.findMany({
+        where,
+        include: { _count: { select: { jobs: true } } },
+        orderBy: { name: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.client.count({ where }),
+    ]);
+
+    return NextResponse.json({ clients, total });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

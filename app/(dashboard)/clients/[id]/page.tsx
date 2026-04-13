@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 
 export default function ClientDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const clientId = params.id as string;
   const [client, setClient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -128,6 +129,16 @@ export default function ClientDetailPage() {
     setSavingContact(false);
   }
 
+  async function deleteClient() {
+    if (!confirm(`Delete "${client.name}"? This will also delete all associated jobs, pipeline data, and contacts. This cannot be undone.`)) return;
+    try {
+      await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      router.push("/clients");
+    } catch {
+      // stay on page
+    }
+  }
+
   if (loading) return <div className="h-64 bg-gray-100 rounded-lg animate-pulse" />;
   if (!client) return <p className="text-gray-500">Client not found.</p>;
 
@@ -143,9 +154,30 @@ export default function ClientDetailPage() {
             {client.industry && <p className="text-gray-500">{client.industry}</p>}
           </div>
         </div>
-        <Link href={`/jobs/new?clientId=${client.id}`}>
-          <Button>Create Job for {client.name}</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href={`/jobs/new?clientId=${client.id}`}>
+            <Button>Create Job for {client.name}</Button>
+          </Link>
+          <Button
+            variant="outline"
+            className="text-red-600 border-red-300 hover:bg-red-50"
+            onClick={async () => {
+              if (!confirm("Are you sure you want to delete this client? This action cannot be undone.")) return;
+              try {
+                const res = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+                if (res.ok) {
+                  router.push("/clients");
+                } else {
+                  alert("Failed to delete client.");
+                }
+              } catch {
+                alert("Failed to delete client.");
+              }
+            }}
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> Delete Client
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

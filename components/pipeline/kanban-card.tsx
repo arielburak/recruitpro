@@ -3,16 +3,17 @@
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
-import { Share2, MessageSquare, Star, GripVertical } from "lucide-react";
+import { Share2, MessageSquare, Star, GripVertical, X } from "lucide-react";
 import Link from "next/link";
 
 interface KanbanCardProps {
   submission: any;
   onToggleShare: (submissionId: string, shared: boolean) => Promise<void>;
+  onRemove?: (submissionId: string) => Promise<void>;
   isDragging?: boolean;
 }
 
-export function KanbanCard({ submission, onToggleShare, isDragging }: KanbanCardProps) {
+export function KanbanCard({ submission, onToggleShare, onRemove, isDragging }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: submission.id,
   });
@@ -27,7 +28,7 @@ export function KanbanCard({ submission, onToggleShare, isDragging }: KanbanCard
     <div ref={setNodeRef} style={style} {...attributes}>
       <Card
         className={cn(
-          "bg-white shadow-sm hover:shadow-md transition-shadow",
+          "bg-white shadow-sm hover:shadow-md transition-shadow group",
           isDragging && "shadow-lg ring-2 ring-indigo-400 opacity-90"
         )}
       >
@@ -51,6 +52,18 @@ export function KanbanCard({ submission, onToggleShare, isDragging }: KanbanCard
                 <p className="text-xs text-gray-400">{candidate.location}</p>
               )}
             </div>
+            {onRemove && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(submission.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded"
+                title="Remove from pipeline"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center justify-between mt-2 pt-2 border-t">

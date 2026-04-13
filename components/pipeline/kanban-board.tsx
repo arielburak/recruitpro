@@ -19,9 +19,10 @@ interface KanbanBoardProps {
   submissions: any[];
   onMove: (submissionId: string, stageId: string) => Promise<void>;
   onToggleShare: (submissionId: string, shared: boolean) => Promise<void>;
+  onRemove?: (submissionId: string) => Promise<void>;
 }
 
-export function KanbanBoard({ stages, submissions, onMove, onToggleShare }: KanbanBoardProps) {
+export function KanbanBoard({ stages, submissions, onMove, onToggleShare, onRemove }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -71,6 +72,7 @@ export function KanbanBoard({ stages, submissions, onMove, onToggleShare }: Kanb
               stage={stage}
               submissions={stageSubmissions}
               onToggleShare={onToggleShare}
+              onRemove={onRemove}
             />
           );
         })}

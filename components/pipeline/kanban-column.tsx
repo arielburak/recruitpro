@@ -8,9 +8,10 @@ interface KanbanColumnProps {
   stage: any;
   submissions: any[];
   onToggleShare: (submissionId: string, shared: boolean) => Promise<void>;
+  onRemove?: (submissionId: string) => Promise<void>;
 }
 
-export function KanbanColumn({ stage, submissions, onToggleShare }: KanbanColumnProps) {
+export function KanbanColumn({ stage, submissions, onToggleShare, onRemove }: KanbanColumnProps) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id });
 
   return (
@@ -40,6 +41,7 @@ export function KanbanColumn({ stage, submissions, onToggleShare }: KanbanColumn
             key={sub.id}
             submission={sub}
             onToggleShare={onToggleShare}
+            onRemove={onRemove}
           />
         ))}
         {submissions.length === 0 && (

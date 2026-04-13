@@ -25,20 +25,24 @@ export async function GET(
               select: { score: true, feedback: true, clientUser: { select: { name: true } } },
             },
             comments: {
-              where: { type: "CLIENT_VISIBLE" },
               select: {
                 id: true,
                 content: true,
+                type: true,
                 createdAt: true,
-                user: { select: { name: true } },
-                clientUser: { select: { name: true } },
+                userId: true,
+                user: { select: { id: true, name: true } },
+                clientUser: { select: { id: true, name: true } },
               },
               orderBy: { createdAt: "desc" },
             },
           },
         },
         comments: {
-          include: { user: { select: { name: true } } },
+          include: {
+            user: { select: { id: true, name: true } },
+            clientUser: { select: { id: true, name: true } },
+          },
           orderBy: { createdAt: "desc" },
         },
         activities: {

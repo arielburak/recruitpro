@@ -9,21 +9,55 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await getOrgContext();
     const status = request.nextUrl.searchParams.get("status");
+    const search = request.nextUrl.searchParams.get("search");
+    const pageParam = request.nextUrl.searchParams.get("page");
+    const page = parseInt(pageParam || "1");
+    const pageSize = 20;
+    const paginated = !!pageParam || !!search;
 
     const where: any = { organizationId: ctx.organizationId };
+
+    // Recruiters only see jobs they're assigned to
+    if (ctx.role === "RECRUITER") {
+      where.assignments = { some: { userId: ctx.userId } };
+    }
+
     if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { location: { contains: search, mode: "insensitive" } },
+        { client: { name: { contains: search, mode: "insensitive" } } },
+      ];
+    }
 
-    const jobs = await prisma.job.findMany({
-      where,
-      include: {
-        client: { select: { name: true } },
-        _count: { select: { submissions: true } },
-        assignments: { include: { user: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const jobInclude = {
+      client: { select: { name: true } },
+      _count: { select: { submissions: true } },
+      assignments: { include: { user: { select: { name: true } } } },
+    };
 
-    return NextResponse.json(jobs);
+    if (!paginated) {
+      const jobs = await prisma.job.findMany({
+        where,
+        include: jobInclude,
+        orderBy: { createdAt: "desc" },
+      });
+      return NextResponse.json(jobs);
+    }
+
+    const [jobs, total] = await Promise.all([
+      prisma.job.findMany({
+        where,
+        include: jobInclude,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.job.count({ where }),
+    ]);
+
+    return NextResponse.json({ jobs, total });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

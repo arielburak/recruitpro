@@ -9,7 +9,7 @@ export async function getOrgContext() {
   return {
     userId: session.user.id,
     organizationId: session.user.organizationId,
-    role: session.user.role as "ADMIN" | "RECRUITER",
+    role: session.user.role as "ADMIN" | "PARTNER" | "RECRUITER",
     userName: session.user.name || "",
   };
 }
