@@ -37,10 +37,19 @@ import {
   Target,
   Layers,
   CheckCircle2,
+  MoveRight,
+  Heart,
+  Workflow,
+  Timer,
+  Award,
+  CircleDollarSign,
+  Handshake,
+  Bot,
+  ArrowDown,
 } from "lucide-react";
 
 // ─── ANIMATED COUNTER ───
-function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: string }) {
+function AnimatedNumber({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const counted = useRef(false);
@@ -50,11 +59,11 @@ function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: stri
       ([entry]) => {
         if (entry.isIntersecting && !counted.current) {
           counted.current = true;
-          const duration = 1500;
+          const duration = 1800;
           const start = performance.now();
           function tick(now: number) {
             const progress = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
+            const eased = 1 - Math.pow(1 - progress, 4);
             setCount(Math.floor(eased * target));
             if (progress < 1) requestAnimationFrame(tick);
           }
@@ -67,10 +76,10 @@ function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: stri
     return () => observer.disconnect();
   }, [target]);
 
-  return <span ref={ref}>{count}{suffix}</span>;
+  return <span ref={ref}>{prefix}{count}{suffix}</span>;
 }
 
-// ─── NAV ───
+// ─── NAVBAR ───
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -82,11 +91,7 @@ function Navbar() {
   }, []);
 
   return (
-    <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? "bg-white/90 backdrop-blur-xl shadow-sm border-b border-gray-100" : "bg-transparent"
-      }`}
-    >
+    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/90 backdrop-blur-xl shadow-sm border-b border-gray-100" : "bg-transparent"}`}>
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
@@ -97,11 +102,7 @@ function Navbar() {
 
         <div className="hidden md:flex items-center gap-8">
           {["Features", "How It Works", "Pricing", "Testimonials"].map((item) => (
-            <a
-              key={item}
-              href={`#${item.toLowerCase().replace(/\s+/g, "-")}`}
-              className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors"
-            >
+            <a key={item} href={`#${item.toLowerCase().replace(/\s+/g, "-")}`} className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
               {item}
             </a>
           ))}
@@ -141,70 +142,78 @@ function Navbar() {
   );
 }
 
-// ─── HERO ───
+// ─── HERO WITH LARGE INTERACTIVE PIPELINE MOCKUP ───
 function Hero() {
-  const [activeStage, setActiveStage] = useState(2);
+  const [activeStage, setActiveStage] = useState(1);
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
   const stages = [
-    { name: "Sourced", color: "#94a3b8", count: 12 },
-    { name: "Submitted", color: "#6366f1", count: 8 },
-    { name: "Interview", color: "#f59e0b", count: 5 },
-    { name: "Offer", color: "#10b981", count: 3 },
-    { name: "Placed", color: "#22c55e", count: 1 },
+    { name: "Sourced", color: "#94a3b8", dotColor: "bg-slate-400", count: 12 },
+    { name: "Contacted", color: "#60a5fa", dotColor: "bg-blue-400", count: 8 },
+    { name: "Submitted", color: "#818cf8", dotColor: "bg-indigo-400", count: 5 },
+    { name: "Interview", color: "#f59e0b", dotColor: "bg-amber-400", count: 3 },
+    { name: "Offer", color: "#10b981", dotColor: "bg-emerald-400", count: 2 },
+    { name: "Placed", color: "#22c55e", dotColor: "bg-green-500", count: 1 },
   ];
 
-  const candidates = [
-    { initials: "JC", name: "James Chen", role: "VP Engineering", rating: 4.8, tags: ["Leadership", "SaaS"] },
-    { initials: "SK", name: "Sarah Kim", role: "Product Director", rating: 4.5, tags: ["Strategy", "B2B"] },
-    { initials: "MR", name: "Mike Ross", role: "CTO", rating: 5.0, tags: ["Architecture", "AI/ML"] },
-    { initials: "AL", name: "Amy Liu", role: "Head of Data", rating: 4.2, tags: ["Analytics", "Python"] },
+  const allCandidates = [
+    { initials: "JD", name: "John Doe", role: "Sr. Engineer", bg: "from-blue-500 to-blue-600" },
+    { initials: "SK", name: "Sarah Kim", role: "PM Lead", bg: "from-violet-500 to-purple-600" },
+    { initials: "MR", name: "Mike Ross", role: "VP Sales", bg: "from-indigo-500 to-blue-600" },
+    { initials: "AL", name: "Amy Lee", role: "Data Scientist", bg: "from-pink-500 to-rose-600" },
+    { initials: "TP", name: "Tom Park", role: "CTO", bg: "from-emerald-500 to-teal-600" },
+    { initials: "CB", name: "Cara B.", role: "Designer", bg: "from-amber-500 to-orange-600" },
+  ];
+
+  // Map candidates to stages
+  const stageCards = [
+    [0, 1],     // Sourced
+    [1, 2],     // Contacted
+    [2, 3],     // Submitted
+    [3, 4],     // Interview
+    [4, 5],     // Offer
+    [5],        // Placed
   ];
 
   return (
-    <section className="relative pt-24 pb-8 sm:pt-32 sm:pb-16 px-6 overflow-hidden">
-      {/* Background effects */}
+    <section className="relative pt-24 pb-4 sm:pt-32 sm:pb-8 px-6 overflow-hidden">
+      {/* Background */}
       <div className="absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,white,#f8faff_40%,#eef2ff_70%,white)]" />
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-indigo-200/20 rounded-full blur-3xl" />
-        <div className="absolute top-40 right-1/4 w-72 h-72 bg-violet-200/20 rounded-full blur-3xl" />
-        {/* Grid pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,white,#f8faff_30%,#eef2ff_60%,white)]" />
+        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-indigo-200/15 rounded-full blur-3xl" />
+        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] bg-violet-200/15 rounded-full blur-3xl" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
       </div>
 
       <div className="max-w-7xl mx-auto">
+        {/* Copy */}
         <div className="text-center max-w-4xl mx-auto">
-          {/* Badge */}
           <div className="inline-flex items-center gap-2 bg-white text-indigo-700 text-sm font-medium px-4 py-2 rounded-full mb-8 border border-indigo-100 shadow-sm">
             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            Now with AI resume parsing and client marketplace
+            The ATS built for boutique recruiting firms
           </div>
 
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[4.5rem] font-extrabold text-gray-900 tracking-tight leading-[1.1] mb-6">
-            Stop losing placements{" "}
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[4.5rem] font-extrabold text-gray-900 tracking-tight leading-[1.08] mb-6">
+            Your candidates deserve{" "}
             <br className="hidden sm:block" />
-            to{" "}
-            <span className="relative">
+            a better{" "}
+            <span className="relative inline-block">
               <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 bg-clip-text text-transparent">
-                disorganization
+                pipeline
               </span>
               <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" fill="none">
-                <path d="M2 8C50 2 100 2 150 6C200 10 250 4 298 8" stroke="url(#grad)" strokeWidth="3" strokeLinecap="round" />
-                <defs>
-                  <linearGradient id="grad" x1="0" y1="0" x2="300" y2="0">
-                    <stop offset="0%" stopColor="#4f46e5" />
-                    <stop offset="100%" stopColor="#7c3aed" />
-                  </linearGradient>
-                </defs>
+                <path d="M2 8C50 2 100 2 150 6C200 10 250 4 298 8" stroke="url(#heroGrad)" strokeWidth="3" strokeLinecap="round" />
+                <defs><linearGradient id="heroGrad" x1="0" y1="0" x2="300" y2="0"><stop offset="0%" stopColor="#4f46e5" /><stop offset="100%" stopColor="#7c3aed" /></linearGradient></defs>
               </svg>
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-            The all-in-one ATS that recruiting firms actually love. Manage candidates, impress clients with a
-            branded portal, and track every placement from sourcing to fee collection.
+            Stop losing placements to spreadsheets and scattered emails. RecruitPro gives your firm a visual pipeline,
+            a client portal, and everything you need to place faster — for just $10/user/month.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-3">
             <Link
               href="/register"
               className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 text-white text-lg font-semibold px-8 py-4 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 hover:shadow-xl hover:-translate-y-0.5"
@@ -217,128 +226,96 @@ function Hero() {
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-gray-600 text-lg font-semibold px-8 py-4 rounded-xl border-2 border-gray-200 hover:border-emerald-300 hover:text-emerald-700 bg-white transition-all hover:-translate-y-0.5"
             >
               <Building2 className="w-5 h-5" />
-              I'm a Hiring Company
+              I&apos;m Hiring (Free)
             </Link>
           </div>
-          <p className="text-sm text-gray-400">No credit card required. Set up in under 2 minutes.</p>
+          <p className="text-sm text-gray-400 mb-12">No credit card required &middot; Set up in under 2 minutes</p>
         </div>
 
-        {/* Product mockup */}
-        <div className="max-w-6xl mx-auto mt-16 sm:mt-20 perspective-[2000px]">
-          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xl shadow-gray-300/40 overflow-hidden transform-gpu">
+        {/* ── GIANT INTERACTIVE PIPELINE MOCKUP ── */}
+        <div className="max-w-6xl mx-auto">
+          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xl shadow-gray-300/30 overflow-hidden">
             {/* Browser chrome */}
-            <div className="bg-gray-50 border-b border-gray-200 px-4 py-2.5 flex items-center gap-3">
+            <div className="bg-gray-50 border-b border-gray-200 px-5 py-3 flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 bg-red-400 rounded-full" />
                 <div className="w-3 h-3 bg-yellow-400 rounded-full" />
                 <div className="w-3 h-3 bg-green-400 rounded-full" />
               </div>
               <div className="flex-1 flex justify-center">
-                <div className="bg-white rounded-lg px-4 py-1.5 text-xs text-gray-400 border border-gray-200 max-w-sm w-full flex items-center gap-2">
+                <div className="bg-white rounded-lg px-5 py-1.5 text-sm text-gray-400 border border-gray-200 max-w-md w-full flex items-center gap-2">
                   <Lock className="w-3 h-3 text-green-500" />
-                  app.recruitpro.com/jobs/senior-engineer
+                  app.recruitpro.com/pipeline
                 </div>
               </div>
             </div>
 
-            {/* Mock app with sidebar + pipeline */}
-            <div className="flex min-h-[420px]">
-              {/* Mini sidebar */}
-              <div className="hidden lg:flex w-14 bg-gray-900 flex-col items-center py-4 gap-3">
-                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                  <Briefcase className="w-4 h-4 text-white" />
+            {/* App content */}
+            <div className="p-6 sm:p-8 bg-[#fafbfc]">
+              {/* Toolbar */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900">Acme Corp &mdash; Senior Engineer Search</h3>
+                  <p className="text-sm text-gray-400 mt-0.5">31 candidates in pipeline</p>
                 </div>
-                <div className="w-px h-4 bg-gray-700" />
-                {[BarChart3, Users, Briefcase, Building2, Inbox, Upload].map((Icon, i) => (
-                  <div key={i} className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${i === 2 ? "bg-gray-700" : "hover:bg-gray-800"}`}>
-                    <Icon className={`w-4 h-4 ${i === 2 ? "text-white" : "text-gray-500"}`} />
+                <div className="hidden sm:flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500 bg-white border border-gray-200 rounded-lg px-4 py-2 shadow-sm hover:border-gray-300 transition cursor-pointer">
+                    <Search className="w-3.5 h-3.5" />
+                    Filter
                   </div>
-                ))}
+                  <div className="flex items-center gap-1.5 text-sm text-white bg-gray-900 rounded-lg px-4 py-2 font-medium shadow-sm cursor-pointer hover:bg-gray-800 transition">
+                    <UserPlus className="w-3.5 h-3.5" />
+                    + Add Candidate
+                  </div>
+                </div>
               </div>
 
-              {/* Pipeline content */}
-              <div className="flex-1 p-4 sm:p-6 bg-gray-50/50">
-                {/* Toolbar */}
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-gray-900">Acme Corp — Senior Engineer</h3>
-                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">ACTIVE</span>
+              {/* Pipeline columns */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 sm:gap-4">
+                {stages.map((stage, si) => (
+                  <div key={stage.name} className="min-w-0">
+                    {/* Column header */}
+                    <div className="flex items-center justify-between px-1 mb-3">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-2.5 h-2.5 rounded-full ${stage.dotColor}`} />
+                        <span className="text-xs sm:text-sm font-bold text-gray-700">{stage.name}</span>
+                      </div>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md font-semibold">{stage.count}</span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">29 candidates · $180K-$220K · San Francisco</p>
-                  </div>
-                  <div className="hidden sm:flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
-                      <Search className="w-3 h-3" />
-                      Search
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-white bg-indigo-600 rounded-lg px-3 py-1.5 font-medium shadow-sm">
-                      <UserPlus className="w-3 h-3" />
-                      Add Candidate
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 font-medium">
-                      <Send className="w-3 h-3" />
-                      Share with Client
-                    </div>
-                  </div>
-                </div>
 
-                {/* Pipeline columns */}
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                  {stages.map((stage, si) => (
-                    <div key={stage.name} className="min-w-0">
-                      <div className="flex items-center justify-between px-1 mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                          <span className="text-[11px] font-bold text-gray-700 truncate">{stage.name}</span>
-                        </div>
-                        <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-md font-semibold">{stage.count}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {candidates.slice(0, si === activeStage ? 3 : Math.min(stage.count, 2)).map((c, ci) => {
-                          const cand = candidates[(si + ci) % candidates.length];
-                          return (
-                            <div
-                              key={ci}
-                              onClick={() => setActiveStage(si)}
-                              className={`bg-white border rounded-xl p-2.5 shadow-sm cursor-pointer transition-all duration-200 ${
-                                si === activeStage && ci === 0
-                                  ? "border-indigo-300 ring-2 ring-indigo-100 shadow-md"
-                                  : "border-gray-200 hover:border-gray-300 hover:shadow-md"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <GripVertical className="w-3 h-3 text-gray-300 shrink-0 hidden sm:block" />
-                                <div className="w-7 h-7 bg-gradient-to-br from-indigo-500 to-violet-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
-                                  {cand.initials}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[11px] font-semibold text-gray-800 truncate">{cand.name}</p>
-                                  <p className="text-[10px] text-gray-400 truncate">{cand.role}</p>
-                                </div>
+                    {/* Cards */}
+                    <div className="space-y-2.5">
+                      {stageCards[si].map((ci) => {
+                        const c = allCandidates[ci];
+                        const isActive = activeStage === si && hoveredCard === `${si}-${ci}`;
+                        return (
+                          <div
+                            key={`${si}-${ci}`}
+                            onClick={() => setActiveStage(si)}
+                            onMouseEnter={() => setHoveredCard(`${si}-${ci}`)}
+                            onMouseLeave={() => setHoveredCard(null)}
+                            className={`bg-white border rounded-xl p-3 cursor-pointer transition-all duration-200 ${
+                              isActive
+                                ? "border-indigo-300 ring-2 ring-indigo-100 shadow-lg scale-[1.02]"
+                                : "border-gray-200 hover:border-gray-300 hover:shadow-md shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <GripVertical className="w-3 h-3 text-gray-300 shrink-0 hidden sm:block" />
+                              <div className={`w-8 h-8 bg-gradient-to-br ${c.bg} text-white rounded-full flex items-center justify-center text-[11px] font-bold shrink-0`}>
+                                {c.initials}
                               </div>
-                              {si === activeStage && ci === 0 && (
-                                <div className="mt-2 pt-2 border-t border-gray-100">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    {[1, 2, 3, 4, 5].map((n) => (
-                                      <Star key={n} className={`w-2.5 h-2.5 ${n <= Math.floor(cand.rating) ? "text-amber-400 fill-amber-400" : "text-gray-200"}`} />
-                                    ))}
-                                    <span className="text-[9px] text-gray-400 ml-0.5">{cand.rating}</span>
-                                  </div>
-                                  <div className="flex gap-1">
-                                    {cand.tags.map((tag) => (
-                                      <span key={tag} className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{tag}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate">{c.name}</p>
+                                <p className="text-[10px] sm:text-xs text-gray-400 truncate">{c.role}</p>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -348,12 +325,15 @@ function Hero() {
   );
 }
 
-// ─── SOCIAL PROOF ───
+// ─── SOCIAL PROOF STRIP ───
 function SocialProof() {
   return (
-    <section className="py-16 border-y border-gray-100">
+    <section className="py-16 sm:py-20 border-y border-gray-100 bg-white">
       <div className="max-w-6xl mx-auto px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+        <p className="text-center text-sm font-medium text-gray-400 uppercase tracking-widest mb-10">
+          Trusted by recruiting firms worldwide
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12 text-center">
           {[
             { value: 500, suffix: "+", label: "Recruiting Firms" },
             { value: 2, suffix: "M+", label: "Candidates Managed" },
@@ -361,12 +341,260 @@ function SocialProof() {
             { value: 40, suffix: "%", label: "Faster Time-to-Fill" },
           ].map((s) => (
             <div key={s.label}>
-              <p className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+              <p className="text-3xl sm:text-5xl font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
                 <AnimatedNumber target={s.value} suffix={s.suffix} />
               </p>
-              <p className="text-sm text-gray-500 mt-1.5 font-medium">{s.label}</p>
+              <p className="text-sm text-gray-500 mt-2 font-medium">{s.label}</p>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── PAIN → SOLUTION ───
+function PainSolution() {
+  return (
+    <section className="py-24 px-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-16">
+          <p className="text-sm font-semibold text-red-500 uppercase tracking-widest mb-3">Sound Familiar?</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            The recruiting firm struggle is real
+          </h2>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6 mb-16">
+          {[
+            { pain: "Candidates fall through the cracks", desc: "No one remembers who was submitted where. Follow-ups get missed. Placements slip away.", icon: "😩" },
+            { pain: "Clients have zero visibility", desc: "They email asking for updates. You scramble to compile a list. They feel out of the loop.", icon: "📧" },
+            { pain: "Your data lives in 5 different places", desc: "Spreadsheets, email, LinkedIn, your brain, sticky notes. Nothing is connected.", icon: "🗂️" },
+          ].map((item) => (
+            <div key={item.pain} className="bg-red-50/50 border border-red-100 rounded-2xl p-6 relative">
+              <span className="text-3xl mb-3 block">{item.icon}</span>
+              <h3 className="font-bold text-gray-900 mb-2">{item.pain}</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-center mb-16">
+          <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-8 py-3 rounded-full shadow-lg">
+            <ArrowDown className="w-5 h-5 animate-bounce" />
+            <span className="font-bold text-lg">There&apos;s a better way</span>
+            <ArrowDown className="w-5 h-5 animate-bounce" />
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            { solution: "Every candidate, tracked visually", desc: "Drag-and-drop pipeline per job. See exactly where every candidate stands. Never lose track again.", icon: Layers, color: "bg-indigo-50 border-indigo-100 text-indigo-600" },
+            { solution: "Clients collaborate in real time", desc: "Share a branded portal. Clients rate candidates, leave feedback, request interviews — without a single email.", icon: Globe, color: "bg-emerald-50 border-emerald-100 text-emerald-600" },
+            { solution: "One system for everything", desc: "Candidates, clients, jobs, fees, documents, notes — all in one place. Import from any ATS in minutes.", icon: Target, color: "bg-violet-50 border-violet-100 text-violet-600" },
+          ].map((item) => (
+            <div key={item.solution} className={`border rounded-2xl p-6 ${item.color.split(" ").slice(0, 2).join(" ")}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${item.color}`}>
+                <item.icon className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">{item.solution}</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── FEATURES SHOWCASE (Interactive with big mockups) ───
+function Features() {
+  const [activeTab, setActiveTab] = useState(0);
+
+  const features = [
+    {
+      tab: "Pipeline",
+      icon: Layers,
+      title: "Drag-and-drop Kanban pipeline",
+      desc: "Every search gets its own visual board. Drag candidates between stages, add notes, share with clients — all in one view. Customize stages per job.",
+      bullets: ["Custom stages per job", "Drag-and-drop reordering", "Bulk actions & filters", "One-click client sharing"],
+      mockup: (
+        <div className="space-y-3">
+          {["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"].map((s, i) => (
+            <div key={s} className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${i === 2 ? "bg-indigo-50 border-indigo-200 shadow-sm" : "bg-white border-gray-200"}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${["bg-slate-400","bg-blue-400","bg-indigo-400","bg-amber-400","bg-emerald-400","bg-green-500"][i]}`} />
+                <span className="text-sm font-semibold text-gray-700">{s}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 font-medium">{[12,8,5,3,2,1][i]} candidates</span>
+                <ChevronRight className="w-4 h-4 text-gray-300" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      tab: "Client Portal",
+      icon: Globe,
+      title: "Interactive client collaboration portal",
+      desc: "Generate a secure link. Your client reviews candidate profiles, rates them 1-5, leaves detailed feedback, and requests interviews — all without you being in the middle.",
+      bullets: ["Branded, white-label experience", "Star ratings & written feedback", "Salary info auto-redacted", "Real-time notifications"],
+      mockup: (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+            <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-sm font-bold">JC</div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-gray-900">James Chen</p>
+              <p className="text-xs text-gray-500">VP Engineering &middot; 12 years exp.</p>
+            </div>
+            <div className="flex gap-0.5">
+              {[1,2,3,4,5].map(n => <Star key={n} className={`w-4 h-4 ${n <= 4 ? "text-amber-400 fill-amber-400" : "text-gray-200"}`} />)}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center"><MessageSquare className="w-3 h-3 text-blue-600" /></div>
+              <span className="text-xs font-bold text-gray-700">Acme Corp</span>
+              <span className="text-[10px] text-gray-400">2 min ago</span>
+            </div>
+            <p className="text-sm text-gray-600">Great background — let&apos;s move to a technical interview this week.</p>
+          </div>
+          <div className="flex gap-2">
+            <button className="flex-1 text-sm font-medium bg-emerald-600 text-white py-2.5 rounded-lg flex items-center justify-center gap-1.5"><Check className="w-3.5 h-3.5" /> Shortlist</button>
+            <button className="flex-1 text-sm font-medium bg-white text-gray-600 py-2.5 rounded-lg border border-gray-200 flex items-center justify-center gap-1.5"><MessageSquare className="w-3.5 h-3.5" /> Comment</button>
+          </div>
+        </div>
+      ),
+    },
+    {
+      tab: "AI Parsing",
+      icon: Sparkles,
+      title: "AI-powered resume parsing",
+      desc: "Upload a resume (PDF, DOCX, TXT) and watch the form auto-fill. Name, email, phone, skills, experience — extracted in seconds. Also import directly from LinkedIn.",
+      bullets: ["PDF, DOCX, TXT support", "Skills & experience extraction", "LinkedIn profile import", "Bulk import from any ATS"],
+      mockup: (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <FileText className="w-5 h-5 text-amber-600" />
+            <span className="text-sm font-medium text-amber-800">resume_james_chen.pdf</span>
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full ml-auto font-semibold">Parsed</span>
+          </div>
+          {[
+            ["Name", "James Chen"],
+            ["Title", "VP Engineering"],
+            ["Email", "james@email.com"],
+            ["Location", "San Francisco, CA"],
+            ["Skills", "React, Node.js, AWS, Python"],
+          ].map(([k, v]) => (
+            <div key={k} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl">
+              <span className="text-xs text-gray-400 w-14 shrink-0">{k}</span>
+              <span className="text-sm font-medium text-gray-800 flex-1">{v}</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      tab: "Marketplace",
+      icon: Handshake,
+      title: "Clients post jobs — you get hired",
+      desc: "Hiring companies sign up for free, post their open roles, and invite your firm to work on them. Accept with one click and a pipeline is auto-created.",
+      bullets: ["Clients sign up free", "Job posting & firm discovery", "One-click engagement accept", "Auto-creates pipeline & client record"],
+      mockup: (
+        <div className="space-y-3">
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+              <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">New Engagement Request</span>
+            </div>
+            <p className="text-base font-bold text-gray-900 mb-1">Senior Data Engineer</p>
+            <p className="text-sm text-gray-500">TechCorp Inc. &middot; Remote &middot; $160K-$200K</p>
+            <p className="text-xs text-gray-400 mt-2">We need someone with strong Spark/Kafka experience to build our data platform...</p>
+          </div>
+          <div className="flex gap-2">
+            <button className="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold bg-emerald-600 text-white py-3 rounded-xl shadow-sm">
+              <Check className="w-4 h-4" /> Accept &amp; Create Pipeline
+            </button>
+            <button className="flex items-center justify-center gap-1.5 text-sm font-medium bg-white text-gray-500 py-3 px-5 rounded-xl border border-gray-200">
+              <X className="w-4 h-4" /> Pass
+            </button>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  const f = features[activeTab];
+
+  return (
+    <section id="features" className="py-24 px-6 bg-gray-50/50">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Features</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            Everything you need to place more candidates
+          </h2>
+          <p className="text-lg text-gray-500 max-w-2xl mx-auto">
+            Stop juggling spreadsheets and email. Every tool your firm needs in one platform.
+          </p>
+        </div>
+
+        {/* Tab buttons */}
+        <div className="flex flex-wrap justify-center gap-2 mb-12">
+          {features.map((feat, i) => (
+            <button
+              key={feat.tab}
+              onClick={() => setActiveTab(i)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                i === activeTab
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200"
+                  : "bg-white text-gray-600 border border-gray-200 hover:border-indigo-200 hover:text-indigo-600"
+              }`}
+            >
+              <feat.icon className="w-4 h-4" />
+              {feat.tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Feature content */}
+        <div className="grid lg:grid-cols-2 gap-10 items-center">
+          {/* Text */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                <f.icon className="w-6 h-6 text-indigo-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900">{f.title}</h3>
+            </div>
+            <p className="text-gray-600 leading-relaxed mb-6 text-[15px]">{f.desc}</p>
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              {f.bullets.map((b) => (
+                <div key={b} className="flex items-center gap-2">
+                  <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center shrink-0">
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  </div>
+                  <span className="text-sm text-gray-700">{b}</span>
+                </div>
+              ))}
+            </div>
+            <Link href="/register" className="inline-flex items-center gap-2 text-indigo-600 font-semibold hover:text-indigo-700 transition group">
+              Try it free <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
+
+          {/* Mockup */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+            <div className="bg-gray-50 border-b border-gray-200 px-4 py-2.5 flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 bg-red-400 rounded-full" />
+              <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full" />
+              <div className="w-2.5 h-2.5 bg-green-400 rounded-full" />
+            </div>
+            <div className="p-6">{f.mockup}</div>
+          </div>
         </div>
       </div>
     </section>
@@ -379,35 +607,38 @@ function TwoSides() {
     <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
-          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">One Platform, Two Sides</p>
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Two Sides, One Platform</p>
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Built for everyone in the hiring process</h2>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto">Recruiters manage the pipeline. Clients collaborate in real time. Everyone stays aligned.</p>
+          <p className="text-lg text-gray-500 max-w-2xl mx-auto">Recruiters run the pipeline. Clients collaborate in real time. Everyone wins.</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Recruiter side */}
+          {/* Recruiter */}
           <div className="relative group">
             <div className="absolute -inset-0.5 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
-            <div className="relative bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-xl transition-all duration-500">
+            <div className="relative bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-xl transition-all duration-500 h-full">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
-                  <Briefcase className="w-6 h-6 text-indigo-600" />
+                <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                  <Briefcase className="w-7 h-7 text-white" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">For Recruiting Firms</h3>
-                  <p className="text-sm text-indigo-600 font-medium">$10/user/month</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-extrabold text-indigo-600">$10</span>
+                    <span className="text-sm text-gray-400">/user/month</span>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3 mb-8">
                 {[
                   { icon: Layers, text: "Drag-and-drop Kanban pipeline" },
                   { icon: Users, text: "Full candidate database with search" },
                   { icon: Building2, text: "Client & deal management CRM" },
                   { icon: Send, text: "Shareable candidate shortlists" },
                   { icon: DollarSign, text: "Placement & fee tracking" },
-                  { icon: Upload, text: "Resume parsing & bulk import" },
+                  { icon: Sparkles, text: "AI resume parsing & bulk import" },
                   { icon: Inbox, text: "Incoming job requests from clients" },
-                  { icon: BarChart3, text: "Dashboard analytics & KPIs" },
+                  { icon: BarChart3, text: "Dashboard with charts & insights" },
                 ].map(({ icon: Icon, text }) => (
                   <div key={text} className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
@@ -417,33 +648,33 @@ function TwoSides() {
                   </div>
                 ))}
               </div>
-              <Link href="/register" className="mt-8 w-full inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200">
+              <Link href="/register" className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 hover:shadow-xl">
                 Start Free Trial <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
           </div>
 
-          {/* Client side */}
+          {/* Client */}
           <div className="relative group">
             <div className="absolute -inset-0.5 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
-            <div className="relative bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-xl transition-all duration-500">
+            <div className="relative bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-xl transition-all duration-500 h-full">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                  <Building2 className="w-6 h-6 text-emerald-600" />
+                <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
+                  <Building2 className="w-7 h-7 text-white" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">For Hiring Companies</h3>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-emerald-600 font-bold">100% Free</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold">FOREVER</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-extrabold text-emerald-600">Free</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase">Forever</span>
                   </div>
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3 mb-8">
                 {[
-                  { icon: FileText, text: "Post job descriptions and requirements" },
+                  { icon: FileText, text: "Post job descriptions & requirements" },
                   { icon: Search, text: "Find and invite recruiting firms" },
-                  { icon: Eye, text: "Review candidate profiles and resumes" },
+                  { icon: Eye, text: "Review candidate profiles & resumes" },
                   { icon: Star, text: "Rate and give feedback on candidates" },
                   { icon: MessageSquare, text: "Real-time chat with your recruiters" },
                   { icon: Target, text: "Track progress across all your roles" },
@@ -458,179 +689,9 @@ function TwoSides() {
                   </div>
                 ))}
               </div>
-              <Link href="/client-portal/login" className="mt-8 w-full inline-flex items-center justify-center gap-2 bg-emerald-600 text-white font-semibold py-3 rounded-xl hover:bg-emerald-700 transition-all shadow-md shadow-emerald-200">
+              <Link href="/client-portal/login" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 text-white font-semibold py-3.5 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 hover:shadow-xl">
                 Create Free Account <ArrowRight className="w-4 h-4" />
               </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ─── FEATURES DEEP DIVE ───
-function Features() {
-  const [activeFeature, setActiveFeature] = useState(0);
-
-  const features = [
-    {
-      icon: Layers,
-      title: "Visual Kanban Pipeline",
-      desc: "Drag candidates through your customizable stages. Every search gets its own board with real-time updates.",
-      detail: "Built with drag-and-drop. Customize stages per job. Filter by recruiter, client, or status. See everything at a glance.",
-      color: "indigo",
-      mockup: (
-        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-          {["Sourced (12)", "Submitted (8)", "Interview (5)", "Offer (3)", "Placed (1)"].map((s, i) => (
-            <div key={s} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${i === 2 ? "bg-indigo-50 border-indigo-200" : "bg-white border-gray-200"}`}>
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${["bg-slate-400","bg-blue-500","bg-amber-400","bg-emerald-400","bg-green-500"][i]}`} />
-                <span className="text-sm font-medium text-gray-700">{s}</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-300" />
-            </div>
-          ))}
-        </div>
-      ),
-    },
-    {
-      icon: Globe,
-      title: "Interactive Client Portal",
-      desc: "Share a branded shortlist link. Clients review profiles, rate candidates, leave feedback — no login needed.",
-      detail: "Generate shareable links in one click. Clients see redacted profiles (no salary info). Real-time feedback appears in your dashboard.",
-      color: "violet",
-      mockup: (
-        <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-            <div className="w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center text-sm font-bold">JC</div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold">James Chen</p>
-              <p className="text-xs text-gray-500">VP Engineering</p>
-            </div>
-            <div className="flex gap-0.5">
-              {[1,2,3,4,5].map(n => <Star key={n} className={`w-3.5 h-3.5 ${n <= 4 ? "text-amber-400 fill-amber-400" : "text-gray-200"}`} />)}
-            </div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold text-emerald-700">Acme Corp</span>
-              <span className="text-[10px] text-gray-400">2 min ago</span>
-            </div>
-            <p className="text-xs text-gray-600">Strong technical background. Let's move to interview stage.</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      icon: Sparkles,
-      title: "AI Resume Parsing",
-      desc: "Upload a resume and watch the form fill itself. Name, email, skills, experience — extracted in seconds.",
-      detail: "Supports PDF, DOCX, and TXT. Extracts contact info, skills, work history, and education. Import from LinkedIn with one click.",
-      color: "amber",
-      mockup: (
-        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-          <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-            <FileText className="w-4 h-4 text-amber-600" />
-            <span className="text-xs font-medium text-amber-700">resume_james_chen.pdf</span>
-            <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded ml-auto">Parsed</span>
-          </div>
-          {[["Name", "James Chen"], ["Title", "VP Engineering"], ["Email", "james@email.com"], ["Skills", "React, Node.js, AWS"]].map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2 p-2 bg-white border border-gray-200 rounded-lg">
-              <span className="text-[10px] text-gray-400 w-12">{k}</span>
-              <span className="text-xs font-medium text-gray-700">{v}</span>
-              <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto" />
-            </div>
-          ))}
-        </div>
-      ),
-    },
-    {
-      icon: Inbox,
-      title: "Client Marketplace",
-      desc: "Hiring companies post jobs and invite your firm directly. Accept engagements and auto-create pipelines.",
-      detail: "Clients sign up free, post jobs, and search for recruiting firms. You get notified, accept with one click, and start sourcing immediately.",
-      color: "rose",
-      mockup: (
-        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-3 h-3 text-amber-500" />
-              <span className="text-[10px] font-semibold text-amber-700">NEW REQUEST</span>
-            </div>
-            <p className="text-sm font-semibold text-gray-900">Senior Data Engineer</p>
-            <p className="text-xs text-gray-500">TechCorp Inc. · Remote · $160K-$200K</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-emerald-600 text-white py-2 rounded-lg">
-              <Check className="w-3 h-3" /> Accept
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-1 text-xs font-medium bg-white text-gray-500 py-2 rounded-lg border border-gray-200">
-              <X className="w-3 h-3" /> Decline
-            </button>
-          </div>
-        </div>
-      ),
-    },
-  ];
-
-  const f = features[activeFeature];
-  const colors: Record<string, string> = {
-    indigo: "bg-indigo-100 text-indigo-600",
-    violet: "bg-violet-100 text-violet-600",
-    amber: "bg-amber-100 text-amber-600",
-    rose: "bg-rose-100 text-rose-600",
-  };
-
-  return (
-    <section id="features" className="py-24 px-6 bg-gray-50/60">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Features</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Everything you need to place more candidates</h2>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto">Stop juggling spreadsheets and email. Every tool your firm needs, in one platform.</p>
-        </div>
-
-        <div className="grid lg:grid-cols-2 gap-8 items-start">
-          {/* Feature selector */}
-          <div className="space-y-3">
-            {features.map((feat, i) => (
-              <button
-                key={feat.title}
-                onClick={() => setActiveFeature(i)}
-                className={`w-full text-left p-5 rounded-xl border transition-all duration-300 ${
-                  i === activeFeature
-                    ? "bg-white border-indigo-200 shadow-lg ring-1 ring-indigo-100"
-                    : "bg-white/50 border-gray-200 hover:bg-white hover:shadow-md"
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${colors[feat.color]}`}>
-                    <feat.icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-1">{feat.title}</h3>
-                    <p className="text-sm text-gray-500 leading-relaxed">{feat.desc}</p>
-                    {i === activeFeature && (
-                      <p className="text-xs text-gray-400 mt-2 leading-relaxed">{feat.detail}</p>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Feature preview */}
-          <div className="sticky top-24">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
-              <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 bg-red-400 rounded-full" />
-                <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full" />
-                <div className="w-2.5 h-2.5 bg-green-400 rounded-full" />
-              </div>
-              <div className="p-6">
-                {f.mockup}
-              </div>
             </div>
           </div>
         </div>
@@ -642,32 +703,32 @@ function Features() {
 // ─── HOW IT WORKS ───
 function HowItWorks() {
   const steps = [
-    { num: "01", title: "Sign up in 2 minutes", desc: "Create your firm, invite your team, set your pipeline stages.", icon: Zap, time: "Day 0" },
-    { num: "02", title: "Add your data", desc: "Import candidates from CSV, parse resumes, or add manually. Set up clients and open searches.", icon: Upload, time: "Day 1" },
-    { num: "03", title: "Work your pipeline", desc: "Drag candidates through stages. Share shortlists with clients. Collect feedback in real time.", icon: MousePointerClick, time: "Ongoing" },
-    { num: "04", title: "Close placements", desc: "Track fees, record placements, and grow your revenue. Analytics show you what's working.", icon: DollarSign, time: "Payday" },
+    { num: "01", title: "Sign up in 2 minutes", desc: "Create your firm, invite your team, set up your default pipeline stages.", icon: Zap, color: "from-indigo-500 to-violet-500" },
+    { num: "02", title: "Add your data", desc: "Import candidates from CSV, parse resumes with AI, or add manually. Set up clients and open searches.", icon: Upload, color: "from-blue-500 to-indigo-500" },
+    { num: "03", title: "Work your pipeline", desc: "Drag candidates through stages. Share shortlists with clients. Collect real-time feedback.", icon: MousePointerClick, color: "from-violet-500 to-purple-500" },
+    { num: "04", title: "Close placements", desc: "Track fees, record placements, and grow revenue. Analytics show you what&apos;s working.", icon: CircleDollarSign, color: "from-emerald-500 to-teal-500" },
   ];
 
   return (
-    <section id="how-it-works" className="py-24 px-6">
+    <section id="how-it-works" className="py-24 px-6 bg-gray-50/50">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">How It Works</p>
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Up and running in minutes, not weeks</h2>
-          <p className="text-lg text-gray-500">No implementation calls. No data migration headaches. Just sign up and go.</p>
+          <p className="text-lg text-gray-500">No implementation calls. No consultants. Just sign up and go.</p>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {steps.map((s, i) => (
             <div key={s.num} className="relative group">
               {i < steps.length - 1 && (
-                <div className="hidden lg:block absolute top-8 left-full w-6 h-0.5 bg-gradient-to-r from-indigo-200 to-transparent z-10" />
+                <div className="hidden lg:block absolute top-10 left-[calc(100%+2px)] w-[calc(100%-72px)] h-0.5 bg-gradient-to-r from-indigo-200 to-transparent z-10" />
               )}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-lg hover:border-gray-200 transition-all duration-300 h-full">
-                <div className="flex items-center justify-between mb-4">
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-xl hover:border-gray-200 transition-all duration-300 h-full hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-5">
                   <span className="text-3xl font-black bg-gradient-to-br from-indigo-600 to-violet-600 bg-clip-text text-transparent">{s.num}</span>
-                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center group-hover:bg-indigo-100 transition-colors">
-                    <s.icon className="w-5 h-5 text-indigo-600" />
+                  <div className={`w-11 h-11 bg-gradient-to-br ${s.color} rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform`}>
+                    <s.icon className="w-5 h-5 text-white" />
                   </div>
                 </div>
                 <h3 className="font-bold text-gray-900 mb-2">{s.title}</h3>
@@ -681,9 +742,9 @@ function HowItWorks() {
   );
 }
 
-// ─── COMPARISON ───
+// ─── COMPARISON TABLE ───
 function Comparison() {
-  const features = [
+  const feats = [
     "Visual Kanban pipeline",
     "Client collaboration portal",
     "AI resume parsing",
@@ -697,25 +758,25 @@ function Comparison() {
   ];
 
   return (
-    <section className="py-24 px-6 bg-gray-50/60">
+    <section className="py-24 px-6">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Comparison</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Why firms switch to RecruitPro</h2>
-          <p className="text-lg text-gray-500">All the features of enterprise ATS platforms at a fraction of the cost.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">10x the value at 1/10th the price</h2>
+          <p className="text-lg text-gray-500">All the features of enterprise ATS platforms. None of the bloat.</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
           <div className="grid grid-cols-4 border-b border-gray-200 bg-gray-50">
             <div className="p-4 col-span-1" />
-            <div className="p-4 text-center border-l border-gray-200">
+            <div className="p-4 text-center border-l border-gray-200 bg-indigo-50/50">
               <div className="flex items-center justify-center gap-2">
-                <div className="w-6 h-6 bg-indigo-600 rounded-md flex items-center justify-center">
-                  <Briefcase className="w-3 h-3 text-white" />
+                <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+                  <Briefcase className="w-3.5 h-3.5 text-white" />
                 </div>
                 <span className="text-sm font-bold text-gray-900">RecruitPro</span>
               </div>
-              <p className="text-xs text-indigo-600 font-semibold mt-1">$10/user/mo</p>
+              <p className="text-xs text-indigo-600 font-bold mt-1">$10/user/mo</p>
             </div>
             <div className="p-4 text-center border-l border-gray-200">
               <span className="text-sm font-medium text-gray-500">Bullhorn</span>
@@ -726,10 +787,10 @@ function Comparison() {
               <p className="text-xs text-gray-400 mt-1">$119+/user/mo</p>
             </div>
           </div>
-          {features.map((feature, i) => (
-            <div key={feature} className={`grid grid-cols-4 ${i < features.length - 1 ? "border-b border-gray-100" : ""}`}>
+          {feats.map((feature, i) => (
+            <div key={feature} className={`grid grid-cols-4 ${i < feats.length - 1 ? "border-b border-gray-100" : ""}`}>
               <div className="p-3.5 text-sm text-gray-700">{feature}</div>
-              <div className="p-3.5 flex justify-center border-l border-gray-100">
+              <div className="p-3.5 flex justify-center border-l border-gray-100 bg-indigo-50/20">
                 <div className="w-5 h-5 bg-emerald-100 rounded-full flex items-center justify-center">
                   <Check className="w-3 h-3 text-emerald-600" />
                 </div>
@@ -758,6 +819,19 @@ function Comparison() {
               </div>
             </div>
           ))}
+          {/* Savings row */}
+          <div className="grid grid-cols-4 border-t-2 border-indigo-200 bg-indigo-50/30">
+            <div className="p-4 text-sm font-bold text-gray-900">You save per user</div>
+            <div className="p-4 text-center border-l border-indigo-100">
+              <span className="text-sm font-extrabold text-indigo-600">—</span>
+            </div>
+            <div className="p-4 text-center border-l border-indigo-100">
+              <span className="text-sm font-extrabold text-emerald-600">$89/mo</span>
+            </div>
+            <div className="p-4 text-center border-l border-indigo-100">
+              <span className="text-sm font-extrabold text-emerald-600">$109/mo</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -767,29 +841,29 @@ function Comparison() {
 // ─── PRICING ───
 function Pricing() {
   return (
-    <section id="pricing" className="py-24 px-6">
+    <section id="pricing" className="py-24 px-6 bg-gray-50/50">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Pricing</p>
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Simple pricing. No surprises.</h2>
-          <p className="text-lg text-gray-500">One plan with everything included. Scale as your team grows.</p>
+          <p className="text-lg text-gray-500">One plan for recruiters. Free access for clients. Scale as you grow.</p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-          {/* Recruiter plan */}
+        <div className="grid md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+          {/* Recruiter */}
           <div className="relative">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-3xl blur-sm opacity-20" />
+            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-3xl blur-lg opacity-15" />
             <div className="relative bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-center py-2 text-sm font-medium">
-                7-day free trial
+              <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-center py-2.5 text-sm font-semibold">
+                7-day free trial &middot; No credit card
               </div>
               <div className="p-8">
                 <h3 className="text-lg font-bold text-gray-900 mb-1">Recruiting Firms</h3>
                 <div className="flex items-baseline gap-1 mb-1">
                   <span className="text-5xl font-extrabold text-gray-900">$10</span>
-                  <span className="text-gray-500">/ user / month</span>
+                  <span className="text-gray-400 font-medium">/ user / month</span>
                 </div>
-                <p className="text-sm text-gray-400 mb-6">Billed monthly. Cancel anytime.</p>
+                <p className="text-sm text-gray-400 mb-8">Billed monthly. Cancel anytime.</p>
                 <div className="space-y-3 mb-8">
                   {[
                     "Unlimited candidates & jobs",
@@ -810,26 +884,25 @@ function Pricing() {
                     </div>
                   ))}
                 </div>
-                <Link href="/register" className="block w-full text-center bg-indigo-600 text-white font-semibold py-3.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200">
+                <Link href="/register" className="block w-full text-center bg-indigo-600 text-white font-semibold py-3.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 hover:shadow-xl">
                   Start Free Trial
                 </Link>
-                <p className="text-xs text-gray-400 text-center mt-3">No credit card required</p>
               </div>
             </div>
           </div>
 
-          {/* Client plan */}
+          {/* Client */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden">
-            <div className="bg-emerald-600 text-white text-center py-2 text-sm font-medium">
-              Free forever
+            <div className="bg-emerald-600 text-white text-center py-2.5 text-sm font-semibold">
+              Free forever &middot; No catches
             </div>
             <div className="p-8">
               <h3 className="text-lg font-bold text-gray-900 mb-1">Hiring Companies</h3>
               <div className="flex items-baseline gap-1 mb-1">
                 <span className="text-5xl font-extrabold text-gray-900">$0</span>
-                <span className="text-gray-500">/ forever</span>
+                <span className="text-gray-400 font-medium">/ forever</span>
               </div>
-              <p className="text-sm text-gray-400 mb-6">No catches. No limits.</p>
+              <p className="text-sm text-gray-400 mb-8">Post jobs. Invite firms. Hire great people.</p>
               <div className="space-y-3 mb-8">
                 {[
                   "Post unlimited job descriptions",
@@ -856,6 +929,16 @@ function Pricing() {
             </div>
           </div>
         </div>
+
+        {/* ROI callout */}
+        <div className="mt-12 max-w-3xl mx-auto bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-8 text-white text-center shadow-xl">
+          <p className="text-sm font-medium text-indigo-200 uppercase tracking-widest mb-2">The Math</p>
+          <h3 className="text-2xl font-bold mb-3">One placement pays for 10 years of RecruitPro</h3>
+          <p className="text-indigo-100 max-w-lg mx-auto text-sm leading-relaxed">
+            Average recruiting fee: $25,000. RecruitPro for a 5-person team: $50/month.
+            If we help you close even one extra placement a year, the ROI is 500x.
+          </p>
+        </div>
       </div>
     </section>
   );
@@ -869,43 +952,49 @@ function Testimonials() {
       name: "Jessica Torres",
       role: "Managing Partner",
       company: "Apex IT Recruiting",
-      metric: "40% more placements",
+      metric: "+40% placements",
+      metricIcon: TrendingUp,
     },
     {
-      quote: "My team of 8 recruiters was up and running in a day. The pipeline view is exactly what we needed — simple, visual, and fast.",
+      quote: "My team of 8 was up and running in a day. The pipeline view is exactly what we needed — simple, visual, fast.",
       name: "David Chen",
       role: "Director of Operations",
       company: "TechBridge Staffing",
-      metric: "8 recruiters onboarded in 1 day",
+      metric: "1 day setup",
+      metricIcon: Timer,
     },
     {
-      quote: "Our clients love the portal. They review candidates and give feedback without me being in the middle. Absolute game changer.",
+      quote: "Our clients love the portal. They review candidates and give feedback without me being in the middle. Game changer.",
       name: "Sarah Mitchell",
       role: "Senior Recruiter",
       company: "MedSearch Partners",
-      metric: "3x faster client feedback",
+      metric: "3x faster feedback",
+      metricIcon: Zap,
     },
   ];
 
   return (
-    <section id="testimonials" className="py-24 px-6 bg-gray-50/60">
+    <section id="testimonials" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Testimonials</p>
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Recruiters love RecruitPro</h2>
-          <p className="text-lg text-gray-500">Hear from firms that made the switch.</p>
+          <p className="text-lg text-gray-500">Don&apos;t take our word for it.</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
           {testimonials.map((t) => (
-            <div key={t.name} className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col">
-              <div className="flex gap-1 mb-2">
+            <div key={t.name} className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group hover:-translate-y-1">
+              {/* Stars */}
+              <div className="flex gap-1 mb-3">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
                 ))}
               </div>
-              <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full w-fit mb-4">
-                <TrendingUp className="w-3 h-3" />
+
+              {/* Metric badge */}
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full w-fit mb-5 border border-emerald-100">
+                <t.metricIcon className="w-3.5 h-3.5" />
                 {t.metric}
               </div>
 
@@ -914,7 +1003,7 @@ function Testimonials() {
               </p>
 
               <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
-                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
                   {t.name.split(" ").map(w => w[0]).join("")}
                 </div>
                 <div>
@@ -937,14 +1026,14 @@ function FAQ() {
   const questions = [
     { q: "Is there really a free trial with no credit card?", a: "Yes! Sign up and use RecruitPro free for 7 days. No credit card required. If you love it, subscribe at $10/user/month. If not, no strings attached." },
     { q: "Can I import data from my current ATS?", a: "Absolutely. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
-    { q: "How does the client portal work?", a: "You generate a shareable link for each client/job. Clients can view candidate profiles (with salary info redacted), rate them, leave comments, and download resumes — all without creating an account. Or they can sign up for free to manage all their searches." },
-    { q: "Is my data secure?", a: "Yes. All data is encrypted in transit and at rest. We use Vercel's enterprise infrastructure, Neon PostgreSQL, and follow SOC 2 security practices. Each organization's data is fully isolated." },
+    { q: "How does the client portal work?", a: "You generate a shareable link for each client/job. Clients see candidate profiles (with salary info redacted), rate them, leave comments, and download resumes. Or they can sign up free to manage all their searches." },
+    { q: "Is my data secure?", a: "Yes. All data is encrypted in transit and at rest. We use enterprise infrastructure with Neon PostgreSQL and follow SOC 2 security practices. Each organization's data is fully isolated." },
     { q: "Can hiring companies really use it for free?", a: "Yes, forever. Hiring companies can sign up, post jobs, invite recruiting firms, review candidates, and give feedback — all at no cost. We only charge recruiting firms." },
-    { q: "What happens when I cancel?", a: "You can export all your data anytime. When you cancel, you'll retain read-only access through your billing period end. We never hold your data hostage." },
+    { q: "What happens when I cancel?", a: "You can export all your data anytime. When you cancel, you retain read-only access through your billing period end. We never hold your data hostage." },
   ];
 
   return (
-    <section className="py-24 px-6">
+    <section className="py-24 px-6 bg-gray-50/50">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">FAQ</p>
@@ -953,16 +1042,13 @@ function FAQ() {
 
         <div className="space-y-3">
           {questions.map((item, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden transition-shadow hover:shadow-sm">
-              <button
-                onClick={() => setOpen(open === i ? null : i)}
-                className="w-full text-left px-6 py-4 flex items-center justify-between gap-4"
-              >
+            <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-sm transition-shadow">
+              <button onClick={() => setOpen(open === i ? null : i)} className="w-full text-left px-6 py-4 flex items-center justify-between gap-4">
                 <span className="font-semibold text-gray-900 text-[15px]">{item.q}</span>
                 <ChevronDown className={`w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200 ${open === i ? "rotate-180" : ""}`} />
               </button>
               {open === i && (
-                <div className="px-6 pb-4">
+                <div className="px-6 pb-5">
                   <p className="text-sm text-gray-600 leading-relaxed">{item.a}</p>
                 </div>
               )}
@@ -982,7 +1068,6 @@ function FinalCTA() {
         <div className="relative rounded-3xl overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent)]" />
-          {/* Grid pattern overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:32px_32px]" />
 
           <div className="relative py-20 px-8 text-center">
@@ -993,25 +1078,25 @@ function FinalCTA() {
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
               Ready to close more<br />placements, faster?
             </h2>
-            <p className="text-lg text-indigo-100 mb-10 max-w-xl mx-auto">
-              Your competitors are already using modern tools. Don't let another great candidate slip through the cracks.
+            <p className="text-indigo-200 max-w-xl mx-auto mb-10 text-lg">
+              Start your free trial today. No credit card. No commitment. Just a better way to recruit.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
                 href="/register"
-                className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white text-indigo-700 text-lg font-semibold px-8 py-4 rounded-xl hover:bg-gray-50 transition-all shadow-lg hover:-translate-y-0.5"
+                className="group inline-flex items-center justify-center gap-2 bg-white text-indigo-700 font-bold text-lg px-8 py-4 rounded-xl hover:bg-indigo-50 transition-all shadow-xl hover:-translate-y-0.5"
               >
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
               </Link>
               <Link
                 href="/client-portal/login"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-white/90 text-lg font-semibold px-8 py-4 rounded-xl border-2 border-white/20 hover:bg-white/10 transition-all"
+                className="inline-flex items-center justify-center gap-2 text-white/90 border-2 border-white/20 font-semibold text-lg px-8 py-4 rounded-xl hover:bg-white/10 transition-all hover:-translate-y-0.5"
               >
-                I'm a Hiring Company
+                <Building2 className="w-5 h-5" />
+                I&apos;m Hiring (Free)
               </Link>
             </div>
-            <p className="text-sm text-indigo-200 mt-5">No credit card required · 2-minute setup · Cancel anytime</p>
           </div>
         </div>
       </div>
@@ -1022,42 +1107,19 @@ function FinalCTA() {
 // ─── FOOTER ───
 function Footer() {
   return (
-    <footer className="bg-gray-900 pt-16 pb-8 px-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-10 mb-12">
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <Briefcase className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-lg font-bold text-white">RecruitPro</span>
-            </div>
-            <p className="text-sm text-gray-400 leading-relaxed">The modern ATS for recruiting firms and hiring companies.</p>
+    <footer className="border-t border-gray-200 bg-gray-50 py-12 px-6">
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+            <Briefcase className="w-4 h-4 text-white" />
           </div>
-          {[
-            { title: "Product", links: [["Features", "#features"], ["Pricing", "#pricing"], ["How It Works", "#how-it-works"], ["Client Portal", "/client-portal/login"]] },
-            { title: "Company", links: [["About", "#"], ["Blog", "#"], ["Careers", "#"]] },
-            { title: "Legal", links: [["Privacy", "#"], ["Terms", "#"], ["Security", "#"]] },
-            { title: "Contact", links: [["support@recruitpro.com", "mailto:support@recruitpro.com"], ["sales@recruitpro.com", "mailto:sales@recruitpro.com"]] },
-          ].map((col) => (
-            <div key={col.title}>
-              <h4 className="font-semibold text-white mb-4 text-sm">{col.title}</h4>
-              <ul className="space-y-2.5 text-sm text-gray-400">
-                {col.links.map(([label, href]) => (
-                  <li key={label}><a href={href} className="hover:text-white transition-colors">{label}</a></li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <span className="font-bold text-gray-900">RecruitPro</span>
         </div>
-
-        <div className="border-t border-gray-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} RecruitPro. All rights reserved.</p>
-          <div className="flex items-center gap-6 text-sm text-gray-500">
-            <a href="#" className="hover:text-white transition-colors">Twitter</a>
-            <a href="#" className="hover:text-white transition-colors">LinkedIn</a>
-            <a href="#" className="hover:text-white transition-colors">GitHub</a>
-          </div>
+        <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} RecruitPro. All rights reserved.</p>
+        <div className="flex items-center gap-6">
+          <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
+          <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
+          <Link href="/client-portal/login" className="text-sm text-gray-500 hover:text-gray-700">Client Portal</Link>
         </div>
       </div>
     </footer>
@@ -1067,12 +1129,13 @@ function Footer() {
 // ─── PAGE ───
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <main className="min-h-screen bg-white">
       <Navbar />
       <Hero />
       <SocialProof />
-      <TwoSides />
+      <PainSolution />
       <Features />
+      <TwoSides />
       <HowItWorks />
       <Comparison />
       <Pricing />
@@ -1080,6 +1143,6 @@ export default function LandingPage() {
       <FAQ />
       <FinalCTA />
       <Footer />
-    </div>
+    </main>
   );
 }
