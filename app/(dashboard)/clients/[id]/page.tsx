@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, X } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 
 export default function ClientDetailPage() {
@@ -129,6 +129,18 @@ export default function ClientDetailPage() {
     setSavingContact(false);
   }
 
+  async function removeClientUser(userId: string, userName: string) {
+    if (!confirm(`Remove "${userName}" from the client portal? They will lose access.`)) return;
+    try {
+      await fetch(`/api/client-users/${userId}`, { method: "DELETE" });
+      // Refresh client data to update the portal users list
+      const res = await fetch(`/api/clients/${clientId}`);
+      if (res.ok) setClient(await res.json());
+    } catch {
+      alert("Failed to remove user");
+    }
+  }
+
   async function deleteClient() {
     if (!confirm(`Delete "${client.name}"? This will also delete all associated jobs, pipeline data, and contacts. This cannot be undone.`)) return;
     try {
@@ -215,11 +227,20 @@ export default function ClientDetailPage() {
             ) : (
               <div className="space-y-2">
                 {client.clientUsers?.map((u: any) => (
-                  <div key={u.id} className="flex items-center justify-between text-sm">
-                    <span>{u.name} ({u.email})</span>
-                    <Badge variant={u.isActive ? "default" : "secondary"}>
-                      {u.isActive ? "Active" : "Inactive"}
-                    </Badge>
+                  <div key={u.id} className="flex items-center justify-between text-sm group">
+                    <div className="flex items-center gap-2">
+                      <span>{u.name} ({u.email})</span>
+                      <Badge variant={u.isActive ? "default" : "secondary"}>
+                        {u.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={() => removeClientUser(u.id, u.name)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                      title="Remove access"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
