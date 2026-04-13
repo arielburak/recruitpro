@@ -7,7 +7,7 @@ const TOKEN_TTL_MINUTES = 60;
 
 export async function POST(request: Request) {
   try {
-    const { email } = await request.json();
+    const { email, isClient } = await request.json();
 
     if (!email || typeof email !== "string") {
       return NextResponse.json(
@@ -17,35 +17,68 @@ export async function POST(request: Request) {
     }
 
     // Always return success to prevent email enumeration
-    const user = await prisma.user.findUnique({ where: { email } });
+    const baseUrl =
+      process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
-    if (user) {
-      // Invalidate any prior unused tokens for this user
-      await prisma.passwordResetToken.deleteMany({
-        where: { userId: user.id, usedAt: null },
+    if (isClient) {
+      // Client user forgot password
+      const clientUser = await prisma.clientUser.findFirst({
+        where: { email, isActive: true },
       });
 
-      const token = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000);
-
-      await prisma.passwordResetToken.create({
-        data: { token, userId: user.id, expiresAt },
-      });
-
-      const baseUrl =
-        process.env.NEXTAUTH_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-      try {
-        await sendPasswordResetEmail({
-          to: user.email,
-          resetUrl,
-          recipientName: user.name,
+      if (clientUser) {
+        // Invalidate prior tokens
+        await prisma.passwordResetToken.deleteMany({
+          where: { clientUserId: clientUser.id, usedAt: null },
         });
-      } catch (sendError) {
-        console.error("[forgot-password] Failed to send email:", sendError);
-        // Don't surface to the caller — still return generic success
+
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000);
+
+        await prisma.passwordResetToken.create({
+          data: { token, clientUserId: clientUser.id, expiresAt },
+        });
+
+        const resetUrl = `${baseUrl}/client-portal/reset-password?token=${token}`;
+
+        try {
+          await sendPasswordResetEmail({
+            to: clientUser.email,
+            resetUrl,
+            recipientName: clientUser.name,
+          });
+        } catch (sendError) {
+          console.error("[forgot-password-client] Failed to send email:", sendError);
+        }
+      }
+    } else {
+      // Recruiter user forgot password (existing flow)
+      const user = await prisma.user.findUnique({ where: { email } });
+
+      if (user) {
+        await prisma.passwordResetToken.deleteMany({
+          where: { userId: user.id, usedAt: null },
+        });
+
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000);
+
+        await prisma.passwordResetToken.create({
+          data: { token, userId: user.id, expiresAt },
+        });
+
+        const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+        try {
+          await sendPasswordResetEmail({
+            to: user.email,
+            resetUrl,
+            recipientName: user.name,
+          });
+        } catch (sendError) {
+          console.error("[forgot-password] Failed to send email:", sendError);
+        }
       }
     }
 

@@ -20,33 +20,32 @@ export async function POST(request: Request) {
       where: { token },
     });
 
-    if (!record || record.usedAt || record.expiresAt < new Date() || !record.userId) {
+    if (!record || record.usedAt || record.expiresAt < new Date() || !record.clientUserId) {
       return NextResponse.json(
         { error: "This reset link is invalid or has expired" },
         { status: 400 }
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     await prisma.$transaction([
-      prisma.user.update({
-        where: { id: record.userId },
+      prisma.clientUser.update({
+        where: { id: record.clientUserId },
         data: { passwordHash },
       }),
       prisma.passwordResetToken.update({
         where: { id: record.id },
         data: { usedAt: new Date() },
       }),
-      // Invalidate any other outstanding tokens for this user
       prisma.passwordResetToken.deleteMany({
-        where: { userId: record.userId, usedAt: null, id: { not: record.id } },
+        where: { clientUserId: record.clientUserId, usedAt: null, id: { not: record.id } },
       }),
     ]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Reset password error:", error);
+    console.error("Client reset password error:", error);
     return NextResponse.json(
       { error: "Something went wrong" },
       { status: 500 }

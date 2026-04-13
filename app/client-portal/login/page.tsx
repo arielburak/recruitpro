@@ -14,7 +14,88 @@ import {
   FileText,
   MessageSquare,
   ArrowRight,
+  ArrowLeft,
+  Mail,
 } from "lucide-react";
+
+function ForgotPasswordSection({
+  forgotSent,
+  forgotLoading,
+  error,
+  onBack,
+  onSubmit,
+}: {
+  forgotSent: boolean;
+  forgotLoading: boolean;
+  error: string;
+  onBack: () => void;
+  onSubmit: (email: string) => void;
+}) {
+  if (forgotSent) {
+    return (
+      <div className="text-center py-4">
+        <div className="w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Mail className="w-7 h-7 text-emerald-600" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Check your email</h2>
+        <p className="text-gray-500 text-sm mb-6">
+          If an account with that email exists, we&apos;ve sent a password reset link.
+        </p>
+        <button
+          onClick={onBack}
+          className="text-emerald-600 text-sm font-medium hover:underline"
+        >
+          Back to sign in
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-6"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" />
+        Back to sign in
+      </button>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Reset your password</h2>
+        <p className="text-gray-500 mt-1 text-sm">
+          Enter your email and we&apos;ll send you a reset link.
+        </p>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          onSubmit(fd.get("forgot-email") as string);
+        }}
+        className="space-y-4"
+      >
+        {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
+        <div className="space-y-2">
+          <Label htmlFor="forgot-email">Email</Label>
+          <Input
+            id="forgot-email"
+            name="forgot-email"
+            type="email"
+            placeholder="you@company.com"
+            required
+          />
+        </div>
+        <Button
+          type="submit"
+          className="w-full bg-emerald-600 hover:bg-emerald-700"
+          disabled={forgotLoading}
+        >
+          {forgotLoading ? "Sending..." : "Send Reset Link"}
+        </Button>
+      </form>
+    </>
+  );
+}
 
 export default function ClientPortalLoginPage() {
   const router = useRouter();
@@ -22,6 +103,9 @@ export default function ClientPortalLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -161,6 +245,34 @@ export default function ClientPortalLoginPage() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
+          {forgotMode ? (
+            <ForgotPasswordSection
+              forgotSent={forgotSent}
+              forgotLoading={forgotLoading}
+              error={error}
+              onBack={() => { setForgotMode(false); setForgotSent(false); setError(""); }}
+              onSubmit={async (email: string) => {
+                setForgotLoading(true);
+                setError("");
+                try {
+                  const res = await fetch("/api/auth/forgot-password", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, isClient: true }),
+                  });
+                  if (res.ok) {
+                    setForgotSent(true);
+                  } else {
+                    setError("Something went wrong. Please try again.");
+                  }
+                } catch {
+                  setError("Something went wrong. Please try again.");
+                }
+                setForgotLoading(false);
+              }}
+            />
+          ) : (
+          <>
           {/* Toggle */}
           <div className="flex bg-white rounded-xl border border-gray-200 p-1 mb-8">
             <button
@@ -199,7 +311,16 @@ export default function ClientPortalLoginPage() {
                   <Input id="email" name="email" type="email" placeholder="you@company.com" required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => setForgotMode(true)}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <Input id="password" name="password" type="password" required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
@@ -246,6 +367,9 @@ export default function ClientPortalLoginPage() {
                 No credit card required
               </div>
             </>
+          )}
+
+          </>
           )}
 
           <div className="mt-8 text-center">

@@ -498,14 +498,16 @@ enum SubscriptionStatus {
 // ─── PASSWORD RESETS ───
 
 model PasswordResetToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  token        String   @unique
+  userId       String?
+  clientUserId String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime @default(now())
 
   @@index([userId])
+  @@index([clientUserId])
   @@index([token])
 }
 
