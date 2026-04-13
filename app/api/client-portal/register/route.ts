@@ -14,15 +14,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
+    const passwordHash = await bcrypt.hash(password, 12);
+
     // Check if email already exists
     const existingUser = await prisma.clientUser.findFirst({
       where: { email },
     });
-    if (existingUser) {
+
+    if (existingUser && existingUser.passwordHash) {
       return NextResponse.json({ error: "Email already registered" }, { status: 400 });
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    // If user exists without password (invited by recruiter), set their password
+    if (existingUser && !existingUser.passwordHash) {
+      await prisma.clientUser.update({
+        where: { id: existingUser.id },
+        data: { passwordHash, name },
+      });
+      return NextResponse.json(
+        { message: "Account activated", clientId: existingUser.clientId },
+        { status: 201 }
+      );
+    }
 
     // Create client company + user in a transaction
     const result = await prisma.$transaction(async (tx) => {
