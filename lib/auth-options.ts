@@ -66,10 +66,13 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const clientUser = await prisma.clientUser.findFirst({
+        // Find all matching client users and prefer the one with a password
+        const clientUsers = await prisma.clientUser.findMany({
           where: { email: credentials.email, isActive: true },
           include: { client: true },
         });
+
+        const clientUser = clientUsers.find((u) => u.passwordHash) || clientUsers[0];
 
         if (!clientUser || !clientUser.passwordHash) return null;
 
