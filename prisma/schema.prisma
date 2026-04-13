@@ -208,7 +208,6 @@ model Job {
   submissions    CandidateSubmission[]
   assignments    JobAssignment[]
   placements     Placement[]
-  documents      Document[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -328,17 +327,13 @@ model Document {
   url         String
   type        String
   size        Int
-  category    String?
-  candidateId String?
-  jobId       String?
+  candidateId String
   uploadedBy  String
   createdAt   DateTime @default(now())
 
-  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
-  @@index([jobId])
 }
 
 // ─── ACTIVITIES ───

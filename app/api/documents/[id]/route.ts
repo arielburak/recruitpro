@@ -15,10 +15,7 @@ export async function GET(
     const document = await prisma.document.findFirst({
       where: {
         id,
-        OR: [
-          { candidate: { organizationId: ctx.organizationId } },
-          { job: { organizationId: ctx.organizationId } },
-        ],
+        candidate: { organizationId: ctx.organizationId },
       },
     });
 
@@ -44,18 +41,14 @@ export async function DELETE(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Confirm the document belongs to this org (via candidate or job)
+    // Confirm the document belongs to a candidate in this org
     const document = await prisma.document.findFirst({
       where: {
         id,
-        OR: [
-          { candidate: { organizationId: ctx.organizationId } },
-          { job: { organizationId: ctx.organizationId } },
-        ],
+        candidate: { organizationId: ctx.organizationId },
       },
       include: {
         candidate: { select: { firstName: true, lastName: true, id: true } },
-        job: { select: { title: true, id: true } },
       },
     });
 
@@ -74,15 +67,11 @@ export async function DELETE(
 
     await prisma.document.delete({ where: { id } });
 
-    const description = document.candidate
-      ? `${ctx.userName} deleted ${document.name} from ${document.candidate.firstName} ${document.candidate.lastName}`
-      : `${ctx.userName} deleted ${document.name} from job ${document.job?.title}`;
-
     await logActivity({
       action: "document.deleted",
-      description,
+      description: `${ctx.userName} deleted ${document.name} from ${document.candidate.firstName} ${document.candidate.lastName}`,
       userId: ctx.userId,
-      candidateId: document.candidate?.id,
+      candidateId: document.candidate.id,
       organizationId: ctx.organizationId,
     });
 
