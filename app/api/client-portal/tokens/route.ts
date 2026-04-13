@@ -47,17 +47,25 @@ export async function POST(request: Request) {
       candidateCount = job?._count.submissions;
     }
 
-    // Find or create ClientUser for this email
+    // Find or create ClientUser for this email under THIS client only
     let clientUser = await prisma.clientUser.findFirst({
       where: { email: inviteEmail, clientId: client.id },
     });
 
     if (!clientUser) {
+      // Check if this email already exists under another client (to reuse password)
+      const existingElsewhere = await prisma.clientUser.findFirst({
+        where: { email: inviteEmail, passwordHash: { not: null } },
+        select: { passwordHash: true },
+      });
+
       clientUser = await prisma.clientUser.create({
         data: {
           email: inviteEmail,
           name: inviteName || inviteEmail.split("@")[0],
           clientId: client.id,
+          // Copy password from existing account so they can log in immediately
+          passwordHash: existingElsewhere?.passwordHash || undefined,
         },
       });
     }

@@ -6,8 +6,8 @@ export async function POST(request: Request) {
   try {
     const { companyName, name, email, password, industry, website } = await request.json();
 
-    if (!companyName || !name || !email || !password) {
-      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
+    if (!email || !password || !name) {
+      return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
     }
 
     if (password.length < 8) {
@@ -16,30 +16,37 @@ export async function POST(request: Request) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Check if email already exists
-    const existingUser = await prisma.clientUser.findFirst({
+    // Check if any ClientUser exists with this email
+    const existingUsers = await prisma.clientUser.findMany({
       where: { email },
     });
 
-    if (existingUser && existingUser.passwordHash) {
-      return NextResponse.json({ error: "Email already registered" }, { status: 400 });
-    }
+    if (existingUsers.length > 0) {
+      // Check if any already has a password set
+      const hasPasswordUser = existingUsers.find((u) => u.passwordHash);
+      if (hasPasswordUser) {
+        return NextResponse.json({ error: "Email already registered. Please sign in instead." }, { status: 400 });
+      }
 
-    // If user exists without password (invited by recruiter), set their password
-    if (existingUser && !existingUser.passwordHash) {
-      await prisma.clientUser.update({
-        where: { id: existingUser.id },
+      // User(s) exist without password (invited by recruiter) — set password on ALL of them
+      await prisma.clientUser.updateMany({
+        where: { email, passwordHash: null },
         data: { passwordHash, name },
       });
+
       return NextResponse.json(
-        { message: "Account activated", clientId: existingUser.clientId },
+        { message: "Account activated", clientId: existingUsers[0].clientId },
         { status: 201 }
       );
     }
 
+    // Brand new user — company name is required
+    if (!companyName) {
+      return NextResponse.json({ error: "Company name is required" }, { status: 400 });
+    }
+
     // Create client company + user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Check if a client company with this name already exists (without an org - self-service)
       let client = await tx.client.findFirst({
         where: { name: companyName, organizationId: null },
       });

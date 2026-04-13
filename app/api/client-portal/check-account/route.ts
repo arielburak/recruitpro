@@ -9,18 +9,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ exists: false });
     }
 
-    const clientUser = await prisma.clientUser.findFirst({
+    const clientUsers = await prisma.clientUser.findMany({
       where: { email, isActive: true },
       select: { id: true, passwordHash: true },
     });
 
-    if (!clientUser) {
+    if (clientUsers.length === 0) {
       return NextResponse.json({ exists: false });
     }
 
+    // User "has password" if ANY of their records has a password
+    const hasPassword = clientUsers.some((u) => !!u.passwordHash);
+
     return NextResponse.json({
       exists: true,
-      hasPassword: !!clientUser.passwordHash,
+      hasPassword,
     });
   } catch {
     return NextResponse.json({ exists: false });

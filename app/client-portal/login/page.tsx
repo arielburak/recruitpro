@@ -106,6 +106,8 @@ export default function ClientPortalLoginPage() {
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [isInvitedUser, setIsInvitedUser] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -146,6 +148,21 @@ export default function ClientPortalLoginPage() {
       setError("Something went wrong");
       setLoading(false);
     }
+  }
+
+  async function checkInvitedEmail(email: string) {
+    if (!email) return;
+    setCheckingEmail(true);
+    try {
+      const res = await fetch("/api/client-portal/check-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      setIsInvitedUser(data.exists && !data.hasPassword);
+    } catch {}
+    setCheckingEmail(false);
   }
 
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
@@ -331,35 +348,50 @@ export default function ClientPortalLoginPage() {
           ) : (
             <>
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
-                <p className="text-gray-500 mt-1">Free forever for hiring companies.</p>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {isInvitedUser ? "Activate your account" : "Create your account"}
+                </h2>
+                <p className="text-gray-500 mt-1">
+                  {isInvitedUser
+                    ? "A recruiter invited you. Set a password to get started."
+                    : "Free forever for hiring companies."}
+                </p>
               </div>
               <form onSubmit={handleRegister} className="space-y-4">
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
                 <div className="space-y-2">
-                  <Label htmlFor="companyName">Company Name</Label>
-                  <Input id="companyName" name="companyName" placeholder="Acme Inc." required />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Your Name</Label>
-                    <Input id="name" name="name" placeholder="Jane Smith" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="industry">Industry</Label>
-                    <Input id="industry" name="industry" placeholder="Technology" />
-                  </div>
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="reg-email">Work Email</Label>
-                  <Input id="reg-email" name="email" type="email" placeholder="jane@acme.com" required />
+                  <Input
+                    id="reg-email"
+                    name="email"
+                    type="email"
+                    placeholder="jane@acme.com"
+                    required
+                    onBlur={(e) => checkInvitedEmail(e.target.value)}
+                  />
+                </div>
+                {!isInvitedUser && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyName">Company Name</Label>
+                      <Input id="companyName" name="companyName" placeholder="Acme Inc." required={!isInvitedUser} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="industry">Industry</Label>
+                      <Input id="industry" name="industry" placeholder="Technology" />
+                    </div>
+                  </>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="name">Your Name</Label>
+                  <Input id="name" name="name" placeholder="Jane Smith" required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-password">Password</Label>
                   <Input id="reg-password" name="password" type="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-                  {loading ? "Creating account..." : "Create Free Account"}
+                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}
                 </Button>
               </form>
               <div className="mt-4 flex items-center gap-2 justify-center text-xs text-gray-400">
