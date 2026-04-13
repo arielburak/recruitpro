@@ -220,7 +220,7 @@ export default function ClientPortalPage() {
 
   // Load client name from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("recruitpro_client_name");
+    const saved = localStorage.getItem("recruitingats_client_name");
     if (saved) setClientName(saved);
   }, []);
 
@@ -291,7 +291,7 @@ export default function ClientPortalPage() {
 
     // Save client name
     if (clientName.trim()) {
-      localStorage.setItem("recruitpro_client_name", clientName.trim());
+      localStorage.setItem("recruitingats_client_name", clientName.trim());
     }
 
     await fetch("/api/client-portal/feedback", {
@@ -321,7 +321,7 @@ export default function ClientPortalPage() {
     if (!selectedSubmission) return;
 
     if (clientName.trim()) {
-      localStorage.setItem("recruitpro_client_name", clientName.trim());
+      localStorage.setItem("recruitingats_client_name", clientName.trim());
     }
 
     await fetch("/api/client-portal/feedback", {

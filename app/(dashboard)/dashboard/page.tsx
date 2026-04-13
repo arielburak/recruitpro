@@ -354,7 +354,7 @@ export default async function DashboardPage() {
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold mb-1">Welcome to RecruitPro!</h2>
+              <h2 className="text-lg font-bold mb-1">Welcome to Recruiting ATS!</h2>
               <p className="text-indigo-100 text-sm">
                 Your workspace is ready. Follow these steps to get started.
               </p>

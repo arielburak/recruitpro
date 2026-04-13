@@ -6,7 +6,7 @@ import { Providers } from "@/components/providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "RecruitPro - Applicant Tracking System",
+  title: "Recruiting ATS - Applicant Tracking System",
   description: "Modern ATS for recruiting firms",
 };
 

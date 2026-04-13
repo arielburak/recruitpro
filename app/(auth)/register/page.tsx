@@ -72,7 +72,7 @@ export default function RegisterPage() {
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
               <Briefcase className="w-5 h-5 text-white" />
             </div>
-            <span className="text-2xl font-bold">RecruitPro</span>
+            <span className="text-2xl font-bold">Recruiting ATS</span>
           </div>
 
           <h1 className="text-4xl font-bold leading-tight mb-4">

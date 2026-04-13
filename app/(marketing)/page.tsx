@@ -97,7 +97,7 @@ function Navbar() {
           <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="text-xl font-bold text-gray-900 tracking-tight">RecruitPro</span>
+          <span className="text-xl font-bold text-gray-900 tracking-tight">Recruiting ATS</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
@@ -209,7 +209,7 @@ function Hero() {
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Stop losing placements to spreadsheets and scattered emails. RecruitPro gives your firm a visual pipeline,
+            Stop losing placements to spreadsheets and scattered emails. Recruiting ATS gives your firm a visual pipeline,
             a client portal, and everything you need to place faster — for just $10/user/month.
           </p>
 
@@ -245,7 +245,7 @@ function Hero() {
               <div className="flex-1 flex justify-center">
                 <div className="bg-white rounded-lg px-5 py-1.5 text-sm text-gray-400 border border-gray-200 max-w-md w-full flex items-center gap-2">
                   <Lock className="w-3 h-3 text-green-500" />
-                  app.recruitpro.com/pipeline
+                  app.recruitingats.com/pipeline
                 </div>
               </div>
             </div>
@@ -774,7 +774,7 @@ function Comparison() {
                 <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
                   <Briefcase className="w-3.5 h-3.5 text-white" />
                 </div>
-                <span className="text-sm font-bold text-gray-900">RecruitPro</span>
+                <span className="text-sm font-bold text-gray-900">Recruiting ATS</span>
               </div>
               <p className="text-xs text-indigo-600 font-bold mt-1">$10/user/mo</p>
             </div>
@@ -933,9 +933,9 @@ function Pricing() {
         {/* ROI callout */}
         <div className="mt-12 max-w-3xl mx-auto bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-8 text-white text-center shadow-xl">
           <p className="text-sm font-medium text-indigo-200 uppercase tracking-widest mb-2">The Math</p>
-          <h3 className="text-2xl font-bold mb-3">One placement pays for 10 years of RecruitPro</h3>
+          <h3 className="text-2xl font-bold mb-3">One placement pays for 10 years of Recruiting ATS</h3>
           <p className="text-indigo-100 max-w-lg mx-auto text-sm leading-relaxed">
-            Average recruiting fee: $25,000. RecruitPro for a 5-person team: $50/month.
+            Average recruiting fee: $25,000. Recruiting ATS for a 5-person team: $50/month.
             If we help you close even one extra placement a year, the ROI is 500x.
           </p>
         </div>
@@ -978,7 +978,7 @@ function Testimonials() {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Testimonials</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Recruiters love RecruitPro</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Recruiters love Recruiting ATS</h2>
           <p className="text-lg text-gray-500">Don&apos;t take our word for it.</p>
         </div>
 
@@ -1024,7 +1024,7 @@ function FAQ() {
   const [open, setOpen] = useState<number | null>(null);
 
   const questions = [
-    { q: "Is there really a free trial with no credit card?", a: "Yes! Sign up and use RecruitPro free for 7 days. No credit card required. If you love it, subscribe at $10/user/month. If not, no strings attached." },
+    { q: "Is there really a free trial with no credit card?", a: "Yes! Sign up and use Recruiting ATS free for 7 days. No credit card required. If you love it, subscribe at $10/user/month. If not, no strings attached." },
     { q: "Can I import data from my current ATS?", a: "Absolutely. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
     { q: "How does the client portal work?", a: "You generate a shareable link for each client/job. Clients see candidate profiles (with salary info redacted), rate them, leave comments, and download resumes. Or they can sign up free to manage all their searches." },
     { q: "Is my data secure?", a: "Yes. All data is encrypted in transit and at rest. We use enterprise infrastructure with Neon PostgreSQL and follow SOC 2 security practices. Each organization's data is fully isolated." },
@@ -1073,7 +1073,7 @@ function FinalCTA() {
           <div className="relative py-20 px-8 text-center">
             <div className="inline-flex items-center gap-2 bg-white/10 text-white/90 text-sm font-medium px-4 py-2 rounded-full mb-6 backdrop-blur-sm border border-white/10">
               <Zap className="w-4 h-4" />
-              Join 500+ firms already using RecruitPro
+              Join 500+ firms already using Recruiting ATS
             </div>
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
               Ready to close more<br />placements, faster?
@@ -1113,9 +1113,9 @@ function Footer() {
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
             <Briefcase className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-gray-900">RecruitPro</span>
+          <span className="font-bold text-gray-900">Recruiting ATS</span>
         </div>
-        <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} RecruitPro. All rights reserved.</p>
+        <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} Recruiting ATS. All rights reserved.</p>
         <div className="flex items-center gap-6">
           <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
           <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>

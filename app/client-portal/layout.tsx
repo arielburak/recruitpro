@@ -69,7 +69,7 @@ export default function ClientPortalLayout({
               </>
             ) : (
               <span className="text-xs text-gray-400 hidden sm:block">
-                Powered by <span className="font-semibold text-gray-500">RecruitPro</span>
+                Powered by <span className="font-semibold text-gray-500">Recruiting ATS</span>
               </span>
             )}
           </div>
@@ -82,7 +82,7 @@ export default function ClientPortalLayout({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <p className="text-xs text-gray-400">
             Powered by{" "}
-            <span className="font-semibold text-emerald-600">RecruitPro</span>
+            <span className="font-semibold text-emerald-600">Recruiting ATS</span>
           </p>
           {isLoggedIn && !isPublicPage && (
             <Link href="/client-portal/dashboard" className="text-xs text-gray-400 hover:text-emerald-600 transition-colors">

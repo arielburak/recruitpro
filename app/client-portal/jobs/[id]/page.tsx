@@ -262,7 +262,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
                 {/* Search existing firms */}
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Search firms on RecruitPro</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Search firms on Recruiting ATS</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                     <Input

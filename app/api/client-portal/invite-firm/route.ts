@@ -65,17 +65,17 @@ export async function POST(request: Request) {
             (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
           await getResend().emails.send({
-            from: process.env.EMAIL_FROM || "noreply@alphabridgepartners.net",
+            from: `Recruiting ATS <${process.env.EMAIL_FROM || "noreply@recruitingats.com"}>`,
             to: email,
-            subject: `${job.client.name} wants to work with you on RecruitPro`,
+            subject: `${job.client.name} wants to work with you on Recruiting ATS`,
             html: `
               <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 20px;">
                 <h2>${job.client.name} has a new search</h2>
                 <p><strong>${job.title}</strong></p>
                 <p>${message || "They'd like you to work on this role."}</p>
-                <p>Join RecruitPro to manage this engagement:</p>
+                <p>Join Recruiting ATS to manage this engagement:</p>
                 <a href="${baseUrl}/register" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
-                  Join RecruitPro
+                  Join Recruiting ATS
                 </a>
               </div>
             `,

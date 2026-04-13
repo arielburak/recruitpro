@@ -65,7 +65,7 @@ function LoginContent() {
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
               <Briefcase className="w-5 h-5 text-white" />
             </div>
-            <span className="text-2xl font-bold">RecruitPro</span>
+            <span className="text-2xl font-bold">Recruiting ATS</span>
           </div>
 
           <h1 className="text-4xl font-bold leading-tight mb-4">
@@ -91,7 +91,7 @@ function LoginContent() {
 
         <div className="border-t border-white/20 pt-8">
           <blockquote className="text-indigo-100 italic text-sm leading-relaxed">
-            &ldquo;RecruitPro cut our time-to-fill by 40%. The pipeline visibility alone
+            &ldquo;Recruiting ATS cut our time-to-fill by 40%. The pipeline visibility alone
             is worth it.&rdquo;
           </blockquote>
           <div className="mt-3 flex items-center gap-3">

@@ -1,8 +1,8 @@
 import { Resend } from "resend";
 
 const resendApiKey = process.env.RESEND_API_KEY;
-const fromAddress = process.env.EMAIL_FROM || "onboarding@resend.dev";
-const appName = "RecruitPro";
+const fromAddress = process.env.EMAIL_FROM || "noreply@recruitingats.com";
+const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 

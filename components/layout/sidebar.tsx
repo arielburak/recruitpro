@@ -141,7 +141,7 @@ export function Sidebar() {
           <Briefcase size={16} className="text-white" />
         </div>
         <span className="text-lg font-semibold tracking-tight text-white">
-          RecruitPro
+          Recruiting ATS
         </span>
       </div>
 
@@ -206,7 +206,7 @@ export function Sidebar() {
             <Briefcase size={13} className="text-white" />
           </div>
           <span className="text-base font-semibold text-gray-900">
-            RecruitPro
+            Recruiting ATS
           </span>
         </div>
       </div>
