@@ -109,7 +109,7 @@ function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/client-portal/login" className="text-sm font-semibold bg-emerald-600 text-white px-5 py-2 rounded-lg hover:bg-emerald-700 transition-all shadow-md shadow-emerald-200 hover:shadow-lg">
+          <Link href="/client-portal/login" className="text-sm font-medium text-gray-500 hover:text-gray-700 px-3 py-2 transition-colors">
             Client Portal
           </Link>
           <Link href="/login" className="text-sm font-medium text-gray-700 hover:text-gray-900 px-4 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all">
