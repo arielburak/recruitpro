@@ -105,6 +105,37 @@ export async function POST(
       addRandomSuffix: false,
     });
 
+    // Parse text from JD files and save to job.description
+    if (category === "JOB_DESCRIPTION") {
+      let parsedText = "";
+      try {
+        const fileName = file.name.toLowerCase();
+        if (fileName.endsWith(".pdf")) {
+          const pdfParse = require("pdf-parse");
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const pdfData = await pdfParse(buffer);
+          parsedText = pdfData.text;
+        } else if (fileName.endsWith(".docx")) {
+          const mammoth = require("mammoth");
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const result = await mammoth.extractRawText({ buffer });
+          parsedText = result.value;
+        } else {
+          // .txt, .doc, or other text-based formats
+          parsedText = await file.text();
+        }
+      } catch (parseError) {
+        console.error("[job doc] text extraction failed:", parseError);
+      }
+
+      if (parsedText.trim()) {
+        await prisma.job.update({
+          where: { id },
+          data: { description: parsedText.trim() },
+        });
+      }
+    }
+
     const document = await prisma.document.create({
       data: {
         name: file.name,
