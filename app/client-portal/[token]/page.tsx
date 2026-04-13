@@ -751,7 +751,30 @@ export default function ClientPortalPage() {
                         </div>
                       )}
 
-                      {!c.summary && (!c.skills || c.skills.length === 0) && (
+                      {/* Recruiter notes visible to client */}
+                      {selectedSubmission.comments.filter((c) => !!c.user?.name).length > 0 && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-900 mb-2">Notes from your recruiter</h3>
+                          <div className="space-y-2">
+                            {selectedSubmission.comments
+                              .filter((c) => !!c.user?.name)
+                              .map((c) => {
+                                const parsed = parseCommentContent(c.content);
+                                return (
+                                  <div key={c.id} className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs font-semibold text-indigo-700">{c.user?.name}</span>
+                                      <span className="text-[10px] text-gray-400">{formatDate(c.createdAt)}</span>
+                                    </div>
+                                    <p className="text-sm text-gray-700">{parsed.text || c.content}</p>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+
+                      {!c.summary && (!c.skills || c.skills.length === 0) && selectedSubmission.comments.filter((c) => !!c.user?.name).length === 0 && (
                         <div className="text-center py-8">
                           <User className="h-10 w-10 text-gray-300 mx-auto mb-2" />
                           <p className="text-sm text-gray-400">

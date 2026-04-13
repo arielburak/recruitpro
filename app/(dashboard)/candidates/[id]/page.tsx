@@ -55,18 +55,54 @@ export default function CandidateDetailPage() {
 
   async function addComment(data: { content: string; type: "INTERNAL" | "CLIENT_VISIBLE"; mentions: string[] }) {
     setSubmittingComment(true);
+
+    // For client-visible notes, also attach to the first submission so it shows in portal
+    let submissionId = null;
+    if (data.type === "CLIENT_VISIBLE" && candidate.submissions?.length > 0) {
+      submissionId = candidate.submissions[0].id;
+    }
+
     await fetch("/api/comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         content: data.content,
         candidateId: params.id,
+        submissionId,
         type: data.type,
         mentions: data.mentions,
       }),
     });
     setSubmittingComment(false);
     fetchCandidate();
+  }
+
+  function getAllComments() {
+    const candidateComments = (candidate.comments || []).map((c: any) => ({
+      ...c,
+      source: "candidate",
+    }));
+
+    const submissionComments = (candidate.submissions || []).flatMap((sub: any) =>
+      (sub.comments || []).map((c: any) => ({
+        ...c,
+        source: "submission",
+        jobTitle: sub.job?.title,
+        jobId: sub.job?.id,
+      }))
+    );
+
+    // Merge and deduplicate by id
+    const all = [...candidateComments, ...submissionComments];
+    const seen = new Set<string>();
+    const unique = all.filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+
+    // Sort by createdAt ascending (oldest first, like a chat)
+    return unique.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }
 
   function renderMentions(text: string) {
@@ -189,10 +225,9 @@ export default function CandidateDetailPage() {
           <TabsTrigger value="documents">
             Documents ({candidate.documents?.length || 0})
           </TabsTrigger>
-          <TabsTrigger value="feedback">
-            Client Feedback ({candidate.submissions?.reduce((sum: number, s: any) => sum + (s.comments?.length || 0) + (s.ratings?.length || 0), 0) || 0})
+          <TabsTrigger value="notes">
+            Notes & Feedback ({getAllComments().length})
           </TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -431,105 +466,6 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="feedback" className="space-y-4">
-          {candidate.submissions?.every((s: any) => (!s.comments || s.comments.length === 0) && (!s.ratings || s.ratings.length === 0)) ? (
-            <Card>
-              <CardContent className="p-8 text-center text-gray-500 text-sm">
-                No client feedback yet. Share candidates with clients to collect feedback.
-              </CardContent>
-            </Card>
-          ) : (
-            candidate.submissions?.map((sub: any) => {
-              const hasComments = sub.comments?.length > 0;
-              const hasRatings = sub.ratings?.length > 0;
-              if (!hasComments && !hasRatings) return null;
-
-              return (
-                <Card key={sub.id}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-sm">
-                        Feedback for{" "}
-                        <Link href={`/jobs/${sub.job.id}`} className="text-indigo-600 hover:underline">
-                          {sub.job.title}
-                        </Link>
-                      </h3>
-                      <Badge
-                        style={{ backgroundColor: sub.stage.color + "20", color: sub.stage.color }}
-                      >
-                        {sub.stage.name}
-                      </Badge>
-                    </div>
-
-                    {hasRatings && (
-                      <div className="space-y-2">
-                        {sub.ratings.map((r: any, i: number) => (
-                          <div key={i} className="flex items-center gap-2 text-sm">
-                            <div className="flex gap-0.5">
-                              {[1, 2, 3, 4, 5].map((n) => (
-                                <Star
-                                  key={n}
-                                  className={`h-3.5 w-3.5 ${n <= r.score ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                                />
-                              ))}
-                            </div>
-                            <span className="text-gray-500">
-                              {r.clientUser?.name || "Client"}
-                            </span>
-                            {r.feedback && (
-                              <span className="text-gray-600">- {r.feedback}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {hasComments && (
-                      <div className="space-y-2 border-t pt-3">
-                        {sub.comments.map((cm: any) => {
-                          let displayContent = cm.content;
-                          let rating = null;
-                          let clientName = cm.clientUser?.name || cm.user?.name || "Anonymous";
-                          try {
-                            const parsed = JSON.parse(cm.content);
-                            if (parsed && typeof parsed === "object") {
-                              displayContent = parsed.text || "";
-                              rating = parsed.rating;
-                              if (parsed.clientName) clientName = parsed.clientName;
-                            }
-                          } catch {}
-
-                          return (
-                            <div key={cm.id} className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-medium text-emerald-700">{clientName}</span>
-                                <span className="text-xs text-gray-400">{formatDate(cm.createdAt)}</span>
-                                {rating && (
-                                  <div className="flex gap-0.5 ml-1">
-                                    {[1, 2, 3, 4, 5].map((n) => (
-                                      <Star
-                                        key={n}
-                                        className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                                      />
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              {displayContent && (
-                                <p className="text-sm text-gray-700">{displayContent}</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })
-          )}
-        </TabsContent>
-
         <TabsContent value="notes" className="space-y-4">
           <Card>
             <CardContent className="p-4">
@@ -542,41 +478,90 @@ export default function CandidateDetailPage() {
             </CardContent>
           </Card>
 
-          {candidate.comments?.map((c: any) => (
-            <Card key={c.id} className={c.type === "CLIENT_VISIBLE" ? "border-l-4 border-l-emerald-500" : ""}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-medium text-sm">{c.user?.name}</span>
-                  {c.type === "CLIENT_VISIBLE" ? (
-                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                      <Globe className="h-3 w-3" />
-                      Client visible
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                      <Lock className="h-3 w-3" />
-                      Internal
-                    </span>
-                  )}
-                  <span className="text-xs text-gray-400">
-                    {formatDate(c.createdAt)}
-                  </span>
-                </div>
-                <p className="text-sm whitespace-pre-wrap">
-                  {renderMentions(c.content)}
-                </p>
-                {c.mentions?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {c.mentions.map((mid: string, i: number) => (
-                      <span key={i} className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                        @mentioned
-                      </span>
-                    ))}
-                  </div>
-                )}
+          {getAllComments().length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-gray-500 text-sm">
+                No notes or feedback yet. Add a note above or share candidates with clients to collect feedback.
               </CardContent>
             </Card>
-          ))}
+          ) : (
+            <div className="space-y-3">
+              {getAllComments().map((c: any) => {
+                const isClient = !!c.clientUser?.name && !c.user?.name;
+                const authorName = c.user?.name || c.clientUser?.name || "Unknown";
+                const isClientVisible = c.type === "CLIENT_VISIBLE";
+
+                // Parse JSON content (client feedback)
+                let displayContent = c.content;
+                let rating = null;
+                let parsedClientName = null;
+                try {
+                  const parsed = JSON.parse(c.content);
+                  if (parsed && typeof parsed === "object") {
+                    displayContent = parsed.text || "";
+                    rating = parsed.rating;
+                    parsedClientName = parsed.clientName;
+                  }
+                } catch {}
+
+                const displayAuthor = parsedClientName || authorName;
+
+                return (
+                  <Card key={c.id} className={isClientVisible ? "border-l-4 border-l-emerald-500" : ""}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                          isClient ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"
+                        }`}>
+                          {displayAuthor.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="font-medium text-sm">{displayAuthor}</span>
+                        {isClient && (
+                          <Badge variant="secondary" className="text-[10px] py-0 bg-emerald-50 text-emerald-600 border-emerald-200">
+                            Client
+                          </Badge>
+                        )}
+                        {isClientVisible ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                            <Globe className="h-3 w-3" />
+                            Client visible
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                            <Lock className="h-3 w-3" />
+                            Internal
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          {formatDate(c.createdAt)}
+                        </span>
+                        {c.jobTitle && (
+                          <span className="text-xs text-gray-400">
+                            on <Link href={`/jobs/${c.jobId}`} className="text-indigo-600 hover:underline">{c.jobTitle}</Link>
+                          </span>
+                        )}
+                      </div>
+                      {rating && (
+                        <div className="flex gap-0.5 mb-1">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Star
+                              key={n}
+                              className={`h-3.5 w-3.5 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {displayContent && (
+                        <p className="text-sm whitespace-pre-wrap">
+                          {renderMentions(displayContent)}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-2">
