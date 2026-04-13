@@ -37,7 +37,22 @@ export default function ClientPortalLoginPage() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password");
+        // Check if user exists but has no password
+        try {
+          const checkRes = await fetch("/api/client-portal/check-account", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: fd.get("email") }),
+          });
+          const checkData = await checkRes.json();
+          if (checkData.exists && !checkData.hasPassword) {
+            setError("Your account doesn't have a password yet. Check your email for a setup link, or ask your recruiter to resend the portal invitation.");
+          } else {
+            setError("Invalid email or password");
+          }
+        } catch {
+          setError("Invalid email or password");
+        }
         setLoading(false);
         return;
       }

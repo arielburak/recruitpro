@@ -115,3 +115,70 @@ export async function sendTeamInviteEmail({
     html,
   });
 }
+
+export async function sendClientPortalShareEmail({
+  to,
+  portalUrl,
+  recruiterName,
+  firmName,
+  jobTitle,
+  clientName,
+  candidateCount,
+}: {
+  to: string;
+  portalUrl: string;
+  recruiterName: string;
+  firmName: string;
+  jobTitle?: string;
+  clientName: string;
+  candidateCount?: number;
+}) {
+  const jobLine = jobTitle
+    ? `<p style="font-size: 16px; font-weight: 600; color: #111827; margin: 16px 0 4px 0;">${jobTitle}</p>`
+    : "";
+  const candidateLine = candidateCount
+    ? `<p style="color: #6b7280;">${candidateCount} candidate${candidateCount !== 1 ? "s" : ""} have been shared for your review.</p>`
+    : `<p style="color: #6b7280;">Candidates have been shared for your review.</p>`;
+
+  const html = wrapTemplate(
+    `${firmName} shared candidates with you`,
+    `<p>Hi ${clientName},</p>
+     <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> has shared a candidate shortlist with you on ${appName}.</p>
+     ${jobLine}
+     ${candidateLine}
+     <p>Sign in to your client portal to review profiles, rate candidates, and leave feedback.</p>`,
+    portalUrl,
+    "Review Candidates"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${firmName} shared candidates with you${jobTitle ? ` for ${jobTitle}` : ""}`,
+    html,
+  });
+}
+
+export async function sendClientSetPasswordEmail({
+  to,
+  setPasswordUrl,
+  clientName,
+}: {
+  to: string;
+  setPasswordUrl: string;
+  clientName: string;
+}) {
+  const html = wrapTemplate(
+    "Set up your client portal account",
+    `<p>Hi${clientName ? ` ${clientName}` : ""},</p>
+     <p>A recruiting firm has shared candidates with you on ${appName}. To review them, you'll need to set a password for your account.</p>
+     <p>Click below to set your password and access your portal.</p>`,
+    setPasswordUrl,
+    "Set Password & Sign In"
+  );
+
+  return sendEmail({
+    to,
+    subject: `Set up your ${appName} client portal account`,
+    html,
+  });
+}
