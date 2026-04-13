@@ -18,10 +18,10 @@ export default function ClientPortalLayout({
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">
-                Candidate Shortlist
+                Client Portal
               </h1>
               <p className="text-xs text-gray-500 leading-tight">
-                Review and provide feedback
+                Manage your hiring pipeline
               </p>
             </div>
           </div>

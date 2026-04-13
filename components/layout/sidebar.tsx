@@ -17,6 +17,7 @@ import {
   X,
   LogOut,
   Upload,
+  Inbox,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -28,6 +29,7 @@ const mainNavItems = [
   { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
   { label: "Import", href: "/import", icon: Upload },
+  { label: "Engagements", href: "/engagements", icon: Inbox },
 ];
 
 const adminNavItems = [

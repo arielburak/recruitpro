@@ -28,6 +28,7 @@ model Organization {
   placements   Placement[]
   subscription Subscription?
   activities   Activity[]
+  engagements  FirmEngagement[]
 }
 
 model User {
@@ -71,17 +72,18 @@ model Client {
   notes          String?
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
-  organizationId String
+  organizationId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
   jobs         Job[]
   clientUsers  ClientUser[]
   contacts     Contact[]
   deals        Deal[]
   placements   Placement[]
   portalTokens ClientPortalToken[]
+  clientJobs   ClientJob[]
 
   @@index([organizationId])
 }
@@ -122,9 +124,10 @@ model ClientUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  client   Client            @relation(fields: [clientId], references: [id])
-  comments Comment[]
-  ratings  CandidateRating[]
+  client     Client            @relation(fields: [clientId], references: [id])
+  comments   Comment[]
+  ratings    CandidateRating[]
+  clientJobs ClientJob[]
 
   @@unique([email, clientId])
   @@index([clientId])
@@ -419,6 +422,51 @@ enum InvoiceStatus {
   DRAFT
   SENT
   PAID
+}
+
+// ─── CLIENT JOBS (posted by clients directly) ───
+
+model ClientJob {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  requirements String?
+  location     String?
+  salaryRange  String?
+  jobType      String   @default("Full-time")
+  isRemote     Boolean  @default(false)
+  status       String   @default("OPEN")
+  clientId     String
+  postedById   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  client      Client           @relation(fields: [clientId], references: [id])
+  postedBy    ClientUser       @relation(fields: [postedById], references: [id])
+  engagements FirmEngagement[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+// ─── FIRM ENGAGEMENTS (links client jobs to recruiting firms) ───
+
+model FirmEngagement {
+  id             String    @id @default(cuid())
+  clientJobId    String
+  organizationId String
+  status         String    @default("PENDING")
+  message        String?
+  jobId          String?
+  invitedAt      DateTime  @default(now())
+  respondedAt    DateTime?
+
+  clientJob    ClientJob    @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([clientJobId, organizationId])
+  @@index([organizationId])
+  @@index([organizationId, status])
 }
 
 // ─── BILLING ───

@@ -7,6 +7,7 @@ import {
   Users,
   CheckCircle,
   ArrowRight,
+  Inbox,
   Building2,
   UserPlus,
   Sparkles,
@@ -22,7 +23,7 @@ export default async function DashboardPage() {
 
   if (!orgId) return null;
 
-  const [activeJobs, totalCandidates, placements, totalClients, recentActivities, recentFeedback] =
+  const [activeJobs, totalCandidates, placements, totalClients, recentActivities, recentFeedback, pendingEngagements] =
     await Promise.all([
       prisma.job.count({
         where: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } },
@@ -58,6 +59,9 @@ export default async function DashboardPage() {
             },
           },
         },
+      }),
+      prisma.firmEngagement.count({
+        where: { organizationId: orgId, status: "PENDING" },
       }),
     ]);
 
@@ -122,6 +126,27 @@ export default async function DashboardPage() {
           Welcome back, {session?.user?.name}
         </p>
       </div>
+
+      {pendingEngagements > 0 && (
+        <Link href="/engagements">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between hover:bg-amber-100 transition">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <Inbox className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-amber-900">
+                  {pendingEngagements} new engagement request{pendingEngagements > 1 ? "s" : ""}
+                </p>
+                <p className="text-sm text-amber-700">
+                  Hiring companies want to work with you
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-amber-400" />
+          </div>
+        </Link>
+      )}
 
       {isNewUser && (
         <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 text-white">
