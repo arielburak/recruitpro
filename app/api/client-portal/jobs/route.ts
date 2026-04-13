@@ -19,7 +19,57 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(jobs);
+    // For each job, fetch the assigned team members from the recruiter-side Job
+    const enriched = await Promise.all(
+      jobs.map(async (job) => {
+        // Find recruiter-side jobs linked to this client job via engagements
+        const engagementJobIds = job.engagements
+          .map((e: any) => e.jobId)
+          .filter(Boolean) as string[];
+
+        // Also find recruiter-side jobs that match this client + title
+        const recruiterJobs = await prisma.job.findMany({
+          where: {
+            OR: [
+              ...(engagementJobIds.length > 0 ? [{ id: { in: engagementJobIds } }] : []),
+              { clientId: ctx.clientId, title: job.title },
+            ],
+          },
+          select: {
+            id: true,
+            assignments: {
+              include: {
+                user: {
+                  select: { id: true, name: true, email: true, role: true },
+                },
+              },
+            },
+          },
+        });
+
+        // Flatten and deduplicate team members
+        const teamMap = new Map<string, any>();
+        for (const rj of recruiterJobs) {
+          for (const a of rj.assignments) {
+            if (!teamMap.has(a.user.id)) {
+              teamMap.set(a.user.id, {
+                id: a.user.id,
+                name: a.user.name,
+                email: a.user.email,
+                role: a.user.role,
+              });
+            }
+          }
+        }
+
+        return {
+          ...job,
+          teamMembers: Array.from(teamMap.values()),
+        };
+      })
+    );
+
+    return NextResponse.json(enriched);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

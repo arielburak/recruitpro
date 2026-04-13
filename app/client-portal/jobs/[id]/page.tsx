@@ -17,6 +17,7 @@ import {
   XCircle,
   Users,
   Mail,
+  Phone,
   Plus,
   X,
 } from "lucide-react";
@@ -167,8 +168,49 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           )}
         </div>
 
-        {/* Right - Recruiting Firms */}
+        {/* Right sidebar */}
         <div className="space-y-4">
+          {/* Your Recruiting Team */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-600" />
+                Your Recruiting Team
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!job.teamMembers || job.teamMembers.length === 0 ? (
+                <p className="text-sm text-gray-400 py-3 text-center">
+                  No team members assigned yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {job.teamMembers.map((member: any) => (
+                    <div key={member.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg">
+                      <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900">{member.name}</p>
+                        <p className="text-[11px] text-gray-500 capitalize">{member.role?.toLowerCase().replace("_", " ")}</p>
+                        <div className="mt-1.5 space-y-0.5">
+                          <a
+                            href={`mailto:${member.email}`}
+                            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:underline"
+                          >
+                            <Mail className="h-3 w-3" />
+                            {member.email}
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recruiting Firms */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Recruiting Firms</CardTitle>
