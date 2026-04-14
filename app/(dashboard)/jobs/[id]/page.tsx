@@ -245,7 +245,7 @@ export default function JobDetailPage() {
             <p className="text-gray-500">
               {job.client.name}
               {job.location && ` - ${job.location}`}
-              {job.salary && ` - ${job.salary} ${job.currency || "USD"}`}
+              {job.salary && ` - ${job.salary}`}
             </p>
           </div>
         </div>
@@ -406,13 +406,13 @@ export default function JobDetailPage() {
                 {job.salary && (
                   <div>
                     <p className="text-sm text-gray-500">Salary</p>
-                    <p>{job.salary} <span className="text-xs text-gray-400">{job.currency || "USD"}</span></p>
+                    <p>{job.salary}</p>
                   </div>
                 )}
                 {job.feeAmount && (
                   <div>
                     <p className="text-sm text-gray-500">Fee</p>
-                    <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `${job.currency || "USD"} $${job.feeAmount}`}</p>
+                    <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `$${job.feeAmount}`}</p>
                   </div>
                 )}
                 <div>

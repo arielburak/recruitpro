@@ -39,7 +39,6 @@ function NewJobContent() {
         description: fd.get("description"),
         clientId: fd.get("clientId"),
         location: fd.get("location"),
-        currency: fd.get("currency") || "USD",
         salary: fd.get("salary"),
         feeType: fd.get("feeType") || "PERCENTAGE",
         feeAmount: fd.get("feeAmount") ? Number(fd.get("feeAmount")) : null,
@@ -111,7 +110,7 @@ function NewJobContent() {
                 </>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Location</Label>
                 <Input name="location" placeholder="New York, NY / Remote" />
@@ -119,13 +118,6 @@ function NewJobContent() {
               <div className="space-y-2">
                 <Label>Salary Range</Label>
                 <Input name="salary" placeholder="$150K - $180K" />
-              </div>
-              <div className="space-y-2">
-                <Label>Currency</Label>
-                <select name="currency" className="w-full border rounded-md px-3 py-2 text-sm">
-                  <option value="USD">USD 🇺🇸</option>
-                  <option value="ARS">ARS 🇦🇷</option>
-                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

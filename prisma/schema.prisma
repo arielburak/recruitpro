@@ -191,7 +191,6 @@ model Job {
   title          String
   description    String?
   status         JobStatus @default(OPEN)
-  currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
   salary         String?
