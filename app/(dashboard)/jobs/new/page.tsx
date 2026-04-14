@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Upload, FileText, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check } from "lucide-react";
 import Link from "next/link";
 
 function NewJobContent() {
@@ -22,6 +22,29 @@ function NewJobContent() {
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
   const descRef = useRef<HTMLTextAreaElement>(null);
+
+  // Client search combobox state
+  const [selectedClientId, setSelectedClientId] = useState(preselectedClientId);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const clientRef = useRef<HTMLDivElement>(null);
+
+  const filteredClients = clientSearch
+    ? clients.filter((c) => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+    : clients;
+
+  const selectedClient = clients.find((c) => c.id === selectedClientId);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (clientRef.current && !clientRef.current.contains(e.target as Node)) {
+        setClientDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -159,12 +182,53 @@ function NewJobContent() {
             </div>
             <div className="space-y-2">
               <Label>Client *</Label>
-              <select name="clientId" className="w-full border rounded-md px-3 py-2 text-sm" required defaultValue={preselectedClientId}>
-                <option value="">Select a client...</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <input type="hidden" name="clientId" value={selectedClientId} />
+              <div ref={clientRef} className="relative">
+                {selectedClient && !clientDropdownOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => { setClientDropdownOpen(true); setClientSearch(""); }}
+                    className="flex items-center justify-between w-full border rounded-md px-3 py-2 text-sm text-left bg-background hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="font-medium">{selectedClient.name}</span>
+                    <X className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setSelectedClientId(""); setClientSearch(""); }} />
+                  </button>
+                ) : (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Search clients..."
+                      value={clientSearch}
+                      onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
+                      onFocus={() => setClientDropdownOpen(true)}
+                      autoFocus={clientDropdownOpen}
+                    />
+                  </div>
+                )}
+                {clientDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {filteredClients.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        {clientSearch ? "No clients match your search" : "No clients found"}
+                      </div>
+                    ) : (
+                      filteredClients.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-indigo-50 transition-colors ${c.id === selectedClientId ? "bg-indigo-50 text-indigo-700" : ""}`}
+                          onClick={() => { setSelectedClientId(c.id); setClientDropdownOpen(false); setClientSearch(""); }}
+                        >
+                          <span>{c.name}</span>
+                          {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
               {clients.length === 0 && (
                 <p className="text-xs text-gray-400">
                   <Link href="/clients/new" className="text-indigo-600 hover:underline">Add a client first</Link>
