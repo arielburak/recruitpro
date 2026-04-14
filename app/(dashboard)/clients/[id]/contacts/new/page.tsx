@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 import Link from "next/link";
 
 export default function NewContactPage() {
@@ -102,7 +103,7 @@ export default function NewContactPage() {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input name="phone" />
+                <PhoneInput name="phone" />
               </div>
             </div>
             <div className="space-y-2">

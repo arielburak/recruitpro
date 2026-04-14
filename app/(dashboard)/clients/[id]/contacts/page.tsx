@@ -18,6 +18,7 @@ import { ArrowLeft, Plus, UserCircle, Mail, Phone, Pencil, Trash2 } from "lucide
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 export default function ClientContactsPage() {
   const params = useParams();
@@ -203,11 +204,11 @@ export default function ClientContactsPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <Input
-                          className="h-8"
+                        <PhoneInput
+                          compact
                           value={editForm.phone}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, phone: e.target.value })
+                          onChange={(val) =>
+                            setEditForm({ ...editForm, phone: val })
                           }
                         />
                       </TableCell>

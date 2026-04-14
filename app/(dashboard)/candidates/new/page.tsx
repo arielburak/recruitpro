@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ArrowLeft, X, Upload, FileText, Sparkles } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -308,11 +309,10 @@ function NewCandidatePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  name="phone"
+                <PhoneInput
                   value={formValues.phone}
-                  onChange={(e) => updateField("phone", e.target.value)}
+                  onChange={(val) => updateField("phone", val)}
+                  name="phone"
                 />
               </div>
             </div>

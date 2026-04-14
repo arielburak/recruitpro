@@ -19,6 +19,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, X } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 
 export default function ClientDetailPage() {
@@ -347,7 +348,7 @@ export default function ClientDetailPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Contact Phone</Label>
-                    <Input value={clientForm.contactPhone} onChange={(e) => setClientForm({ ...clientForm, contactPhone: e.target.value })} />
+                    <PhoneInput value={clientForm.contactPhone} onChange={(val) => setClientForm({ ...clientForm, contactPhone: val })} />
                   </div>
                 </div>
                 <div className="border-t pt-3 mt-3">
@@ -543,11 +544,10 @@ export default function ClientDetailPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            className="h-8"
-                            placeholder="Phone"
+                          <PhoneInput
+                            compact
                             value={newContact.phone}
-                            onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                            onChange={(val) => setNewContact({ ...newContact, phone: val })}
                           />
                         </TableCell>
                         <TableCell>
@@ -602,10 +602,10 @@ export default function ClientDetailPage() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Input
-                              className="h-8"
+                            <PhoneInput
+                              compact
                               value={editForm.phone}
-                              onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                              onChange={(val) => setEditForm({ ...editForm, phone: val })}
                             />
                           </TableCell>
                           <TableCell>

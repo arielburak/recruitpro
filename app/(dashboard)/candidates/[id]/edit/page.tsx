@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, X } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 import Link from "next/link";
 
 export default function EditCandidatePage() {
@@ -19,6 +20,7 @@ export default function EditCandidatePage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [candidate, setCandidate] = useState<any>(null);
+  const [phone, setPhone] = useState("");
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
 
   useEffect(() => {
@@ -27,6 +29,7 @@ export default function EditCandidatePage() {
       .then((data) => {
         setCandidate(data);
         setSkills(data.skills || []);
+        setPhone(data.phone || "");
         setSalaryCurrency(data.salaryCurrency || "USD");
         setFetching(false);
       });
@@ -50,7 +53,7 @@ export default function EditCandidatePage() {
       firstName: fd.get("firstName") as string,
       lastName: fd.get("lastName") as string,
       email: fd.get("email") as string,
-      phone: fd.get("phone") as string,
+      phone,
       linkedIn: fd.get("linkedIn") as string,
       location: fd.get("location") as string,
       currentTitle: fd.get("currentTitle") as string,
@@ -123,7 +126,7 @@ export default function EditCandidatePage() {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input name="phone" defaultValue={candidate.phone || ""} />
+                <PhoneInput value={phone} onChange={setPhone} />
               </div>
             </div>
             <div className="space-y-2">
