@@ -395,14 +395,17 @@ model Document {
   category    String?
   candidateId String?
   jobId       String?
+  dealId      String?
   uploadedBy  String
   createdAt   DateTime @default(now())
 
   candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  deal      Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
+  @@index([dealId])
 }
 
 // ─── ACTIVITIES ───
@@ -445,6 +448,7 @@ model Deal {
   client       Client       @relation(fields: [clientId], references: [id])
   contact      Contact?     @relation(fields: [contactId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])
+  documents    Document[]
 
   @@index([organizationId])
   @@index([organizationId, stage])

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Building2, User, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Building2, User, Pencil, Trash2, Upload, FileText, Download } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const STAGE_OPTIONS = [
@@ -43,6 +43,7 @@ export default function DealDetailPage() {
   const [editForm, setEditForm] = useState<any>({});
   const [clients, setClients] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -140,6 +141,40 @@ export default function DealDetailPage() {
     } catch {
       setError("Failed to delete deal");
     }
+  }
+
+  async function uploadDocument(file: File) {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "CONTRACT");
+      const res = await fetch(`/api/deals/${dealId}/documents`, { method: "POST", body: formData });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Upload failed");
+      } else {
+        const updated = await fetch(`/api/deals/${dealId}`).then((r) => r.json());
+        setDeal(updated);
+      }
+    } catch {
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDocument(docId: string) {
+    if (!confirm("Delete this document?")) return;
+    await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    const updated = await fetch(`/api/deals/${dealId}`).then((r) => r.json());
+    setDeal(updated);
+  }
+
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
   if (loading) return <div className="h-64 bg-gray-100 rounded-lg animate-pulse" />;
@@ -375,6 +410,46 @@ export default function DealDetailPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Contracts & Documents */}
+      {!editing && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-gray-500">Contracts & Documents</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {deal.documents?.map((doc: any) => (
+              <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-indigo-500" />
+                  <div>
+                    <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
+                    <p className="text-xs text-gray-400">{formatBytes(doc.size)} · {formatDate(doc.createdAt)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <a href={`/api/documents/${doc.id}`} download>
+                    <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                  </a>
+                  <Button variant="ghost" size="sm" onClick={() => deleteDocument(doc.id)} className="text-red-400 hover:text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${uploading ? "opacity-50 pointer-events-none" : "hover:border-indigo-300 hover:bg-indigo-50/50"}`}>
+              <Upload className="h-6 w-6 text-gray-400 mb-2" />
+              <span className="text-sm text-gray-500">{uploading ? "Uploading..." : "Upload Contract or Document"}</span>
+              <span className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, TXT, PNG, JPG (max 10MB)</span>
+              <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadDocument(file);
+                e.target.value = "";
+              }} />
+            </label>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

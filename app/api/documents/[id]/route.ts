@@ -18,6 +18,7 @@ export async function GET(
         OR: [
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
+          { deal: { organizationId: ctx.organizationId } },
         ],
       },
     });
@@ -65,6 +66,7 @@ export async function DELETE(
         OR: [
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
+          { deal: { organizationId: ctx.organizationId } },
         ],
       },
       include: {

@@ -16,6 +16,7 @@ export async function GET(
       include: {
         client: { select: { id: true, name: true } },
         contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+        documents: { orderBy: { createdAt: "desc" } },
       },
     });
 
