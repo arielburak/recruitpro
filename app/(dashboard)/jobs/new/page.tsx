@@ -111,7 +111,7 @@ function NewJobContent() {
 
       <form onSubmit={onSubmit}>
         <Card>
-          <CardHeader><CardTitle>Job Details</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Job Order Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>}
 
