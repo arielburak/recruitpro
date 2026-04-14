@@ -18,6 +18,7 @@ import {
   LogOut,
   Upload,
   Inbox,
+  Calendar,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -28,6 +29,7 @@ const mainNavItems = [
   { label: "Clients", href: "/clients", icon: Building2 },
   { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
+  { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Import", href: "/import", icon: Upload },
   { label: "Engagements", href: "/engagements", icon: Inbox },
 ];
