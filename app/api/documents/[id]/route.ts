@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { del, head } from "@vercel/blob";
+import { del, get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
@@ -26,10 +26,23 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // For private blobs, use head() to get the downloadUrl (signed URL)
-    const blobInfo = await head(document.url);
-    return NextResponse.redirect(blobInfo.downloadUrl);
+    // Stream private blob content through our server
+    const blobResult = await get(document.url, { access: "private" });
+
+    if (!blobResult || blobResult.statusCode === 304) {
+      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    }
+
+    return new NextResponse(blobResult.stream, {
+      status: 200,
+      headers: {
+        "Content-Type": blobResult.blob.contentType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(document.name)}"`,
+        "Content-Length": blobResult.blob.size.toString(),
+      },
+    });
   } catch (error: any) {
+    console.error("[document download] error:", error);
     return NextResponse.json(
       { error: error.message || "Download failed" },
       { status: 500 }

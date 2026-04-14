@@ -395,8 +395,7 @@ export default function CandidateDetailPage() {
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <a
                       href={`/api/documents/${doc.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      download
                       className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
                       title="Download"
                     >

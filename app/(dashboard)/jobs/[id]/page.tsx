@@ -628,7 +628,7 @@ export default function JobDetailPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <a href={`/api/documents/${jdDoc.id}`} target="_blank" rel="noopener noreferrer">
+                        <a href={`/api/documents/${jdDoc.id}`} download>
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
                         <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
@@ -671,7 +671,7 @@ export default function JobDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <a href={`/api/documents/${doc.id}`} target="_blank" rel="noopener noreferrer">
+                    <a href={`/api/documents/${doc.id}`} download>
                       <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                     </a>
                     <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
