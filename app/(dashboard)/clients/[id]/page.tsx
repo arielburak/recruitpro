@@ -16,6 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, X } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 
@@ -40,6 +42,55 @@ export default function ClientDetailPage() {
     isPrimary: false,
   });
   const [contactError, setContactError] = useState("");
+
+  // Client edit state
+  const [editingClient, setEditingClient] = useState(false);
+  const [savingClient, setSavingClient] = useState(false);
+  const [clientForm, setClientForm] = useState({
+    name: "",
+    industry: "",
+    website: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+    notes: "",
+  });
+
+  function startEditClient() {
+    setClientForm({
+      name: client.name || "",
+      industry: client.industry || "",
+      website: client.website || "",
+      contactName: client.contactName || "",
+      contactEmail: client.contactEmail || "",
+      contactPhone: client.contactPhone || "",
+      notes: client.notes || "",
+    });
+    setEditingClient(true);
+  }
+
+  async function saveClient() {
+    setSavingClient(true);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clientForm),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to save");
+      } else {
+        setEditingClient(false);
+        const updated = await fetch(`/api/clients/${clientId}`).then((r) => r.json());
+        setClient(updated);
+      }
+    } catch {
+      alert("Failed to save");
+    } finally {
+      setSavingClient(false);
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/clients/${clientId}`)
@@ -194,26 +245,93 @@ export default function ClientDetailPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle className="text-sm text-gray-500">Contact Info</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {client.contactName && <p className="text-sm font-medium">{client.contactName}</p>}
-            {client.contactEmail && (
-              <div className="flex items-center gap-2 text-sm">
-                <Mail className="h-4 w-4 text-gray-400" />
-                <a href={`mailto:${client.contactEmail}`} className="text-indigo-600 hover:underline">{client.contactEmail}</a>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-gray-500">Client Details</CardTitle>
+              {!editingClient && (
+                <Button variant="outline" size="sm" onClick={startEditClient}>
+                  <Pencil className="h-3 w-3 mr-1" /> Edit
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!editingClient ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Industry</p>
+                    <p className="text-sm font-medium text-gray-900">{client.industry || "—"}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Website</p>
+                    {client.website ? (
+                      <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">{client.website}</a>
+                    ) : <p className="text-sm text-gray-900">—</p>}
+                  </div>
+                </div>
+                {client.contactName && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Main Contact</p>
+                    <p className="text-sm font-medium">{client.contactName}</p>
+                    {client.contactEmail && (
+                      <div className="flex items-center gap-1.5 text-sm mt-1">
+                        <Mail className="h-3 w-3 text-gray-400" />
+                        <a href={`mailto:${client.contactEmail}`} className="text-indigo-600 hover:underline">{client.contactEmail}</a>
+                      </div>
+                    )}
+                    {client.contactPhone && (
+                      <div className="flex items-center gap-1.5 text-sm mt-1">
+                        <Phone className="h-3 w-3 text-gray-400" /> {client.contactPhone}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {client.notes && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Notes</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{client.notes}</p>
+                  </div>
+                )}
               </div>
-            )}
-            {client.contactPhone && (
-              <div className="flex items-center gap-2 text-sm">
-                <Phone className="h-4 w-4 text-gray-400" /> {client.contactPhone}
-              </div>
-            )}
-            {client.website && (
-              <div className="flex items-center gap-2 text-sm">
-                <Globe className="h-4 w-4 text-gray-400" />
-                <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
-                  {client.website}
-                </a>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex justify-end gap-2 mb-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditingClient(false)} disabled={savingClient}>Cancel</Button>
+                  <Button size="sm" onClick={saveClient} disabled={savingClient}>{savingClient ? "Saving..." : "Save"}</Button>
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Name *</Label>
+                  <Input value={clientForm.name} onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Industry</Label>
+                    <Input value={clientForm.industry} onChange={(e) => setClientForm({ ...clientForm, industry: e.target.value })} placeholder="Technology, Finance..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Website</Label>
+                    <Input value={clientForm.website} onChange={(e) => setClientForm({ ...clientForm, website: e.target.value })} placeholder="https://..." />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Main Contact Name</Label>
+                  <Input value={clientForm.contactName} onChange={(e) => setClientForm({ ...clientForm, contactName: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Contact Email</Label>
+                    <Input type="email" value={clientForm.contactEmail} onChange={(e) => setClientForm({ ...clientForm, contactEmail: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Contact Phone</Label>
+                    <Input value={clientForm.contactPhone} onChange={(e) => setClientForm({ ...clientForm, contactPhone: e.target.value })} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea rows={3} value={clientForm.notes} onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })} placeholder="Internal notes about this client..." />
+                </div>
               </div>
             )}
           </CardContent>

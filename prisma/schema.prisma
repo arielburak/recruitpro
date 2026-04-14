@@ -43,12 +43,14 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization          @relation(fields: [organizationId], references: [id])
-  candidates     Candidate[]
-  submissions    CandidateSubmission[] @relation("SubmittedBy")
-  comments       Comment[]
-  activities     Activity[]
-  jobAssignments JobAssignment[]
+  organization          Organization          @relation(fields: [organizationId], references: [id])
+  candidates            Candidate[]
+  submissions           CandidateSubmission[] @relation("SubmittedBy")
+  comments              Comment[]
+  activities            Activity[]
+  jobAssignments        JobAssignment[]
+  createdInterviews     Interview[]           @relation("InterviewCreator")
+  interviewAssignments  InterviewAssignment[]
 
   @@index([organizationId])
 }
@@ -178,6 +180,7 @@ model Candidate {
   documents    Document[]
   comments     Comment[]             @relation("CandidateComments")
   activities   Activity[]            @relation("CandidateActivities")
+  interviews   Interview[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -210,6 +213,7 @@ model Job {
   assignments    JobAssignment[]
   placements     Placement[]
   documents      Document[]
+  interviews     Interview[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -274,6 +278,7 @@ model CandidateSubmission {
   comments   Comment[]       @relation("SubmissionComments")
   ratings    CandidateRating[]
   placement  Placement?
+  interviews Interview[]
 
   @@unique([candidateId, jobId])
   @@index([jobId, stageId])
@@ -319,6 +324,63 @@ model Comment {
 enum CommentType {
   INTERNAL
   CLIENT_VISIBLE
+}
+
+// ─── INTERVIEWS ───
+
+model Interview {
+  id             String          @id @default(cuid())
+  title          String
+  startTime      DateTime
+  endTime        DateTime
+  type           InterviewType   @default(VIDEO)
+  status         InterviewStatus @default(SCHEDULED)
+  notes          String?
+  meetingLink    String?
+  location       String?
+  submissionId   String
+  jobId          String
+  candidateId    String
+  organizationId String
+  createdBy      String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  submission   CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  job          Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate    Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  creator      User                @relation("InterviewCreator", fields: [createdBy], references: [id])
+  interviewers InterviewAssignment[]
+
+  @@index([organizationId, startTime])
+  @@index([candidateId])
+  @@index([jobId])
+  @@index([submissionId])
+}
+
+model InterviewAssignment {
+  id          String @id @default(cuid())
+  interviewId String
+  userId      String
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, userId])
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  IN_PERSON
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 // ─── DOCUMENTS ───
