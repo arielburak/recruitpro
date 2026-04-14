@@ -159,25 +159,16 @@ function NewJobContent() {
             </div>
             <div className="space-y-2">
               <Label>Client *</Label>
-              {preselectedClientId && clients.find((c) => c.id === preselectedClientId) ? (
-                <>
-                  <p className="font-medium text-sm py-2">{clients.find((c) => c.id === preselectedClientId)?.name}</p>
-                  <input type="hidden" name="clientId" value={preselectedClientId} />
-                </>
-              ) : (
-                <>
-                  <select name="clientId" className="w-full border rounded-md px-3 py-2 text-sm" required defaultValue={preselectedClientId}>
-                    <option value="">Select a client...</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                  {clients.length === 0 && (
-                    <p className="text-xs text-gray-400">
-                      <Link href="/clients/new" className="text-indigo-600 hover:underline">Add a client first</Link>
-                    </p>
-                  )}
-                </>
+              <select name="clientId" className="w-full border rounded-md px-3 py-2 text-sm" required defaultValue={preselectedClientId}>
+                <option value="">Select a client...</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {clients.length === 0 && (
+                <p className="text-xs text-gray-400">
+                  <Link href="/clients/new" className="text-indigo-600 hover:underline">Add a client first</Link>
+                </p>
               )}
             </div>
             <div className="grid grid-cols-3 gap-4">
