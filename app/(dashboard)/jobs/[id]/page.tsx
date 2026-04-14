@@ -198,26 +198,9 @@ export default function JobDetailPage() {
     }
   }
 
-  async function deleteJobDocument(docId: string, isJD?: boolean) {
+  async function deleteJobDocument(docId: string) {
     if (!confirm("Delete this document?")) return;
     await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-    if (isJD) {
-      // Clear the parsed description when JD is deleted
-      await fetch(`/api/jobs/${params.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: job.title,
-          description: "",
-          status: job.status,
-          feeType: job.feeType,
-          feeAmount: job.feeAmount ? Number(job.feeAmount) : null,
-          salary: job.salary || "",
-          location: job.location || "",
-          clientId: job.clientId,
-        }),
-      });
-    }
     fetchJob();
   }
 
@@ -451,7 +434,7 @@ export default function JobDetailPage() {
                         <a href={`/api/documents/${jdDoc.id}`} target="_blank" rel="noopener noreferrer">
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
-                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
+                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id)} className="text-red-400 hover:text-red-600">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
