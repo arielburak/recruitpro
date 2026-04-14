@@ -51,6 +51,7 @@ function NewCandidatePage() {
     currentCompany: "",
     currentSalary: "",
     desiredSalary: "",
+    salaryCurrency: "USD",
     source: "",
     summary: "",
   });
@@ -174,6 +175,7 @@ function NewCandidatePage() {
       desiredSalary: formValues.desiredSalary
         ? Number(formValues.desiredSalary)
         : null,
+      salaryCurrency: formValues.salaryCurrency,
       source: formValues.source,
       summary: formValues.summary,
       skills,
@@ -357,9 +359,20 @@ function NewCandidatePage() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={formValues.salaryCurrency}
+                onChange={(e) => updateField("salaryCurrency", e.target.value)}
+              >
+                <option value="USD">USD – US Dollar</option>
+                <option value="ARS">ARS – Peso Argentino</option>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="currentSalary">Current Salary ($)</Label>
+                <Label htmlFor="currentSalary">Current Salary ({formValues.salaryCurrency === "ARS" ? "$" : "US$"})</Label>
                 <Input
                   id="currentSalary"
                   name="currentSalary"
@@ -369,7 +382,7 @@ function NewCandidatePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="desiredSalary">Desired Salary ($)</Label>
+                <Label htmlFor="desiredSalary">Desired Salary ({formValues.salaryCurrency === "ARS" ? "$" : "US$"})</Label>
                 <Input
                   id="desiredSalary"
                   name="desiredSalary"

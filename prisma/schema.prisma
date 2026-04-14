@@ -165,6 +165,7 @@ model Candidate {
   currentCompany String?
   currentSalary  Decimal?
   desiredSalary  Decimal?
+  salaryCurrency String   @default("USD")
   skills         String[] @default([])
   summary        String?
   source         String?

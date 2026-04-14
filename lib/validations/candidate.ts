@@ -11,6 +11,7 @@ export const candidateSchema = z.object({
   currentCompany: z.string().optional(),
   currentSalary: z.number().optional().nullable(),
   desiredSalary: z.number().optional().nullable(),
+  salaryCurrency: z.string().default("USD"),
   skills: z.array(z.string()).default([]),
   summary: z.string().optional(),
   source: z.string().optional(),

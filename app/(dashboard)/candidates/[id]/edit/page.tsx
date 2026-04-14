@@ -19,6 +19,7 @@ export default function EditCandidatePage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [candidate, setCandidate] = useState<any>(null);
+  const [salaryCurrency, setSalaryCurrency] = useState("USD");
 
   useEffect(() => {
     fetch(`/api/candidates/${params.id}`)
@@ -26,6 +27,7 @@ export default function EditCandidatePage() {
       .then((data) => {
         setCandidate(data);
         setSkills(data.skills || []);
+        setSalaryCurrency(data.salaryCurrency || "USD");
         setFetching(false);
       });
   }, [params.id]);
@@ -59,6 +61,7 @@ export default function EditCandidatePage() {
       desiredSalary: fd.get("desiredSalary")
         ? Number(fd.get("desiredSalary"))
         : null,
+      salaryCurrency,
       source: fd.get("source") as string,
       summary: fd.get("summary") as string,
       skills,
@@ -141,13 +144,24 @@ export default function EditCandidatePage() {
                 <Input name="currentCompany" defaultValue={candidate.currentCompany || ""} />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={salaryCurrency}
+                onChange={(e) => setSalaryCurrency(e.target.value)}
+              >
+                <option value="USD">USD – US Dollar</option>
+                <option value="ARS">ARS – Peso Argentino</option>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Current Salary ($)</Label>
+                <Label>Current Salary ({salaryCurrency === "ARS" ? "$" : "US$"})</Label>
                 <Input name="currentSalary" type="number" defaultValue={candidate.currentSalary || ""} />
               </div>
               <div className="space-y-2">
-                <Label>Desired Salary ($)</Label>
+                <Label>Desired Salary ({salaryCurrency === "ARS" ? "$" : "US$"})</Label>
                 <Input name="desiredSalary" type="number" defaultValue={candidate.desiredSalary || ""} />
               </div>
             </div>
