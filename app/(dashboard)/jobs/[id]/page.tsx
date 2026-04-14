@@ -313,8 +313,8 @@ export default function JobDetailPage() {
             </div>
             <p className="text-gray-500">
               {job.client.name}
-              {job.location && ` - ${job.location}`}
-              {job.salary && ` - ${job.salary} ${job.currency || "USD"}`}
+              {job.location && ` · ${job.location}`}
+              {job.salary && ` · ${job.salary} (${job.currency || "USD"})`}
             </p>
           </div>
         </div>
@@ -464,42 +464,52 @@ export default function JobDetailPage() {
                       <Pencil className="h-4 w-4 mr-1" /> Edit
                     </Button>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-500">Client</p>
-                      <p className="font-medium">{job.client.name}</p>
+
+                  {/* Key info cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Client</p>
+                      <p className="font-semibold text-gray-900">{job.client.name}</p>
                     </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Status</p>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Status</p>
                       <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
                     </div>
-                    {job.location && (
-                      <div>
-                        <p className="text-sm text-gray-500">Location</p>
-                        <p>{job.location}</p>
-                      </div>
-                    )}
-                    {job.salary && (
-                      <div>
-                        <p className="text-sm text-gray-500">Salary</p>
-                        <p>{job.salary} <span className="text-xs text-gray-400">{job.currency || "USD"}</span></p>
-                      </div>
-                    )}
-                    {job.feeAmount && (
-                      <div>
-                        <p className="text-sm text-gray-500">Fee</p>
-                        <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `${job.currency || "USD"} $${job.feeAmount}`}</p>
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm text-gray-500">Assigned</p>
-                      <p>{job.assignments?.map((a: any) => a.user.name).join(", ") || "None"}</p>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Location</p>
+                      <p className="font-semibold text-gray-900">{job.location || "—"}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Salary</p>
+                      <p className="font-semibold text-gray-900">
+                        {job.salary ? (
+                          <>{job.salary} <span className="text-sm font-normal text-gray-500">{job.currency || "USD"}</span></>
+                        ) : "—"}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Fee</p>
+                      <p className="font-semibold text-gray-900">
+                        {job.feeAmount ? (
+                          job.feeType === "PERCENTAGE"
+                            ? `${job.feeAmount}%`
+                            : `$${Number(job.feeAmount).toLocaleString()} ${job.currency || "USD"}`
+                        ) : "—"}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
+                      <p className="font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
                     </div>
                   </div>
+
+                  {/* Description */}
                   {job.description && (
-                    <div>
-                      <p className="text-sm text-gray-500">Description</p>
-                      <p className="whitespace-pre-wrap mt-1">{job.description}</p>
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Description</p>
+                      <div className="bg-gray-50 rounded-lg p-5 max-h-[500px] overflow-y-auto">
+                        <p className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">{job.description}</p>
+                      </div>
                     </div>
                   )}
                 </>
