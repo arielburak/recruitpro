@@ -73,6 +73,9 @@ model Client {
   contactEmail   String?
   contactPhone   String?
   notes          String?
+  defaultCurrency  String?  @default("USD")
+  defaultFeeType   String?  @default("PERCENTAGE")
+  defaultFeeAmount Decimal?
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
   organizationId String?

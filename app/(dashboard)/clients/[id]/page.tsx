@@ -54,6 +54,9 @@ export default function ClientDetailPage() {
     contactEmail: "",
     contactPhone: "",
     notes: "",
+    defaultCurrency: "USD",
+    defaultFeeType: "PERCENTAGE",
+    defaultFeeAmount: "" as string | number,
   });
 
   function startEditClient() {
@@ -65,6 +68,9 @@ export default function ClientDetailPage() {
       contactEmail: client.contactEmail || "",
       contactPhone: client.contactPhone || "",
       notes: client.notes || "",
+      defaultCurrency: client.defaultCurrency || "USD",
+      defaultFeeType: client.defaultFeeType || "PERCENTAGE",
+      defaultFeeAmount: client.defaultFeeAmount ? Number(client.defaultFeeAmount) : "",
     });
     setEditingClient(true);
   }
@@ -75,7 +81,10 @@ export default function ClientDetailPage() {
       const res = await fetch(`/api/clients/${clientId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(clientForm),
+        body: JSON.stringify({
+          ...clientForm,
+          defaultFeeAmount: clientForm.defaultFeeAmount ? Number(clientForm.defaultFeeAmount) : null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -287,6 +296,19 @@ export default function ClientDetailPage() {
                     )}
                   </div>
                 )}
+                {(client.defaultFeeAmount || client.defaultCurrency) && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Default Fee Terms</p>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="font-medium">
+                        {client.defaultFeeType === "FLAT" ? "Flat Fee" : "Percentage"}
+                        {client.defaultFeeAmount ? `: ${Number(client.defaultFeeAmount)}${client.defaultFeeType === "PERCENTAGE" ? "%" : ""}` : ""}
+                      </span>
+                      <span className="text-gray-400">·</span>
+                      <span>{client.defaultCurrency || "USD"}</span>
+                    </div>
+                  </div>
+                )}
                 {client.notes && (
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Notes</p>
@@ -326,6 +348,44 @@ export default function ClientDetailPage() {
                   <div className="space-y-2">
                     <Label>Contact Phone</Label>
                     <Input value={clientForm.contactPhone} onChange={(e) => setClientForm({ ...clientForm, contactPhone: e.target.value })} />
+                  </div>
+                </div>
+                <div className="border-t pt-3 mt-3">
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Default Fee Terms</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Currency</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        value={clientForm.defaultCurrency}
+                        onChange={(e) => setClientForm({ ...clientForm, defaultCurrency: e.target.value })}
+                      >
+                        <option value="USD">USD</option>
+                        <option value="ARS">ARS</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Fee Type</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        value={clientForm.defaultFeeType}
+                        onChange={(e) => setClientForm({ ...clientForm, defaultFeeType: e.target.value })}
+                      >
+                        <option value="PERCENTAGE">Percentage</option>
+                        <option value="FLAT">Flat Fee</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Fee Amount</Label>
+                      <Input
+                        className="h-9"
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 15"
+                        value={clientForm.defaultFeeAmount}
+                        onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">

@@ -32,6 +32,9 @@ export default function NewClientPage() {
         contactEmail: fd.get("contactEmail"),
         contactPhone: fd.get("contactPhone"),
         notes: fd.get("notes"),
+        defaultCurrency: fd.get("defaultCurrency") || "USD",
+        defaultFeeType: fd.get("defaultFeeType") || "PERCENTAGE",
+        defaultFeeAmount: fd.get("defaultFeeAmount") ? Number(fd.get("defaultFeeAmount")) : null,
       }),
     });
 
@@ -86,6 +89,30 @@ export default function NewClientPage() {
               <div className="space-y-2">
                 <Label>Contact Phone</Label>
                 <Input name="contactPhone" />
+              </div>
+            </div>
+            <div className="border-t pt-4 mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Default Fee Terms</h3>
+              <p className="text-xs text-gray-400 mb-3">These terms will auto-fill when creating a Job Order for this client.</p>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <select name="defaultCurrency" className="w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="USD">USD</option>
+                    <option value="ARS">ARS</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Fee Type</Label>
+                  <select name="defaultFeeType" className="w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="PERCENTAGE">Percentage</option>
+                    <option value="FLAT">Flat Fee</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Fee Amount</Label>
+                  <Input name="defaultFeeAmount" type="number" step="0.01" placeholder="e.g. 15" />
+                </div>
               </div>
             </div>
             <div className="space-y-2">

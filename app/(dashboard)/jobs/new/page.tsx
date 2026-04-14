@@ -23,6 +23,12 @@ function NewJobContent() {
   const [description, setDescription] = useState("");
   const descRef = useRef<HTMLTextAreaElement>(null);
 
+  // Fee terms state (auto-filled from client defaults)
+  const [currency, setCurrency] = useState("USD");
+  const [feeType, setFeeType] = useState("PERCENTAGE");
+  const [feeAmount, setFeeAmount] = useState("");
+  const [termsAutoFilled, setTermsAutoFilled] = useState(false);
+
   // Client search combobox state
   const [selectedClientId, setSelectedClientId] = useState(preselectedClientId);
   const [clientSearch, setClientSearch] = useState("");
@@ -46,10 +52,40 @@ function NewJobContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  function selectClient(clientId: string) {
+    setSelectedClientId(clientId);
+    setClientDropdownOpen(false);
+    setClientSearch("");
+    // Auto-fill fee terms from client defaults
+    const client = clients.find((c) => c.id === clientId);
+    if (client) {
+      if (client.defaultCurrency) setCurrency(client.defaultCurrency);
+      if (client.defaultFeeType) setFeeType(client.defaultFeeType);
+      if (client.defaultFeeAmount) {
+        setFeeAmount(String(Number(client.defaultFeeAmount)));
+        setTermsAutoFilled(true);
+      }
+    }
+  }
+
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
-      .then(setClients);
+      .then((data) => {
+        setClients(data);
+        // Auto-fill if preselected client
+        if (preselectedClientId) {
+          const client = data.find((c: any) => c.id === preselectedClientId);
+          if (client) {
+            if (client.defaultCurrency) setCurrency(client.defaultCurrency);
+            if (client.defaultFeeType) setFeeType(client.defaultFeeType);
+            if (client.defaultFeeAmount) {
+              setFeeAmount(String(Number(client.defaultFeeAmount)));
+              setTermsAutoFilled(true);
+            }
+          }
+        }
+      });
   }, []);
 
   async function handleFileUpload(file: File) {
@@ -90,12 +126,12 @@ function NewJobContent() {
       body: JSON.stringify({
         title: fd.get("title"),
         description: description || fd.get("description"),
-        clientId: fd.get("clientId"),
+        clientId: selectedClientId,
         location: fd.get("location"),
-        currency: fd.get("currency") || "USD",
+        currency,
         salary: fd.get("salary"),
-        feeType: fd.get("feeType") || "PERCENTAGE",
-        feeAmount: fd.get("feeAmount") ? Number(fd.get("feeAmount")) : null,
+        feeType,
+        feeAmount: feeAmount ? Number(feeAmount) : null,
       }),
     });
 
@@ -191,7 +227,7 @@ function NewJobContent() {
                     className="flex items-center justify-between w-full border rounded-md px-3 py-2 text-sm text-left bg-background hover:bg-gray-50 transition-colors"
                   >
                     <span className="font-medium">{selectedClient.name}</span>
-                    <X className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setSelectedClientId(""); setClientSearch(""); }} />
+                    <X className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setSelectedClientId(""); setClientSearch(""); setCurrency("USD"); setFeeType("PERCENTAGE"); setFeeAmount(""); setTermsAutoFilled(false); }} />
                   </button>
                 ) : (
                   <div className="relative">
@@ -219,7 +255,7 @@ function NewJobContent() {
                           key={c.id}
                           type="button"
                           className={`flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-indigo-50 transition-colors ${c.id === selectedClientId ? "bg-indigo-50 text-indigo-700" : ""}`}
-                          onClick={() => { setSelectedClientId(c.id); setClientDropdownOpen(false); setClientSearch(""); }}
+                          onClick={() => selectClient(c.id)}
                         >
                           <span>{c.name}</span>
                           {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
@@ -245,8 +281,8 @@ function NewJobContent() {
                 <Input name="salary" placeholder="$150K - $180K" />
               </div>
               <div className="space-y-2">
-                <Label>Currency</Label>
-                <select name="currency" className="w-full border rounded-md px-3 py-2 text-sm">
+                <Label>Currency {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <select className="w-full border rounded-md px-3 py-2 text-sm" value={currency} onChange={(e) => setCurrency(e.target.value)}>
                   <option value="USD">USD</option>
                   <option value="ARS">ARS</option>
                 </select>
@@ -254,15 +290,15 @@ function NewJobContent() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Fee Type</Label>
-                <select name="feeType" className="w-full border rounded-md px-3 py-2 text-sm">
+                <Label>Fee Type {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <select className="w-full border rounded-md px-3 py-2 text-sm" value={feeType} onChange={(e) => setFeeType(e.target.value)}>
                   <option value="PERCENTAGE">Percentage</option>
                   <option value="FLAT">Flat Fee</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Fee Amount</Label>
-                <Input name="feeAmount" type="number" step="0.01" placeholder="25" />
+                <Label>Fee Amount {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <Input type="number" step="0.01" placeholder="25" value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} />
               </div>
             </div>
             <div className="space-y-2">
