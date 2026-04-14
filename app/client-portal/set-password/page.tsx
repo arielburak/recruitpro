@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Briefcase, Lock } from "lucide-react";
 
@@ -109,9 +108,10 @@ function SetPasswordForm() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <PasswordInput
+              <Input
                 id="password"
                 name="password"
+                type="password"
                 placeholder="Min. 8 characters"
                 minLength={8}
                 required
@@ -120,9 +120,10 @@ function SetPasswordForm() {
 
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <PasswordInput
+              <Input
                 id="confirmPassword"
                 name="confirmPassword"
+                type="password"
                 placeholder="Re-enter password"
                 minLength={8}
                 required

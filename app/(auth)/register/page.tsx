@@ -6,7 +6,6 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Briefcase, CheckCircle2, Users, Globe, UserPlus, Sparkles } from "lucide-react";
 
@@ -216,9 +215,10 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <PasswordInput
+              <Input
                 id="password"
                 name="password"
+                type="password"
                 placeholder="Min. 8 characters"
                 className="focus-visible:ring-indigo-500"
                 minLength={8}
