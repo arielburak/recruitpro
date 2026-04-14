@@ -16,13 +16,20 @@ export async function POST(request: Request) {
     let text: string;
 
     if (fileName.endsWith(".pdf")) {
-      const pdfParse = require("pdf-parse");
+      // Use lib/pdf-parse directly to avoid test-file loading bug in serverless
+      const pdfParse = require("pdf-parse/lib/pdf-parse.js");
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const pdfData = await pdfParse(buffer);
       text = pdfData.text;
+    } else if (fileName.endsWith(".docx")) {
+      const mammoth = require("mammoth");
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const docResult = await mammoth.extractRawText({ buffer });
+      text = docResult.value;
     } else {
-      // .txt, .docx, or other text-based formats
+      // .txt or other text-based formats
       text = await file.text();
     }
 
