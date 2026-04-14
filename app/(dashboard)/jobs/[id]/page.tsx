@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -43,6 +44,64 @@ export default function JobDetailPage() {
   // Document upload state
   const [uploadingJD, setUploadingJD] = useState(false);
   const [uploadingAdditional, setUploadingAdditional] = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    status: "OPEN",
+    location: "",
+    salary: "",
+    currency: "USD",
+    feeType: "PERCENTAGE",
+    feeAmount: "" as string | number,
+    clientId: "",
+  });
+  const [clients, setClients] = useState<any[]>([]);
+
+  function startEditing() {
+    setEditForm({
+      title: job.title || "",
+      description: job.description || "",
+      status: job.status || "OPEN",
+      location: job.location || "",
+      salary: job.salary || "",
+      currency: job.currency || "USD",
+      feeType: job.feeType || "PERCENTAGE",
+      feeAmount: job.feeAmount ?? "",
+      clientId: job.clientId || "",
+    });
+    // Fetch clients for the dropdown
+    fetch("/api/clients").then((r) => r.json()).then(setClients);
+    setEditing(true);
+  }
+
+  async function saveEditing() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/jobs/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...editForm,
+          feeAmount: editForm.feeAmount !== "" ? Number(editForm.feeAmount) : null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to save");
+      } else {
+        setEditing(false);
+        fetchJob();
+      }
+    } catch {
+      alert("Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${params.id}`);
@@ -388,43 +447,164 @@ export default function JobDetailPage() {
         <TabsContent value="details" className="space-y-4">
           <Card>
             <CardContent className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Client</p>
-                  <p className="font-medium">{job.client.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Status</p>
-                  <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
-                </div>
-                {job.location && (
-                  <div>
-                    <p className="text-sm text-gray-500">Location</p>
-                    <p>{job.location}</p>
+              {!editing ? (
+                <>
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" onClick={startEditing}>
+                      <Pencil className="h-4 w-4 mr-1" /> Edit
+                    </Button>
                   </div>
-                )}
-                {job.salary && (
-                  <div>
-                    <p className="text-sm text-gray-500">Salary</p>
-                    <p>{job.salary} <span className="text-xs text-gray-400">{job.currency || "USD"}</span></p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-500">Client</p>
+                      <p className="font-medium">{job.client.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Status</p>
+                      <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
+                    </div>
+                    {job.location && (
+                      <div>
+                        <p className="text-sm text-gray-500">Location</p>
+                        <p>{job.location}</p>
+                      </div>
+                    )}
+                    {job.salary && (
+                      <div>
+                        <p className="text-sm text-gray-500">Salary</p>
+                        <p>{job.salary} <span className="text-xs text-gray-400">{job.currency || "USD"}</span></p>
+                      </div>
+                    )}
+                    {job.feeAmount && (
+                      <div>
+                        <p className="text-sm text-gray-500">Fee</p>
+                        <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `${job.currency || "USD"} $${job.feeAmount}`}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm text-gray-500">Assigned</p>
+                      <p>{job.assignments?.map((a: any) => a.user.name).join(", ") || "None"}</p>
+                    </div>
                   </div>
-                )}
-                {job.feeAmount && (
-                  <div>
-                    <p className="text-sm text-gray-500">Fee</p>
-                    <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `${job.currency || "USD"} $${job.feeAmount}`}</p>
+                  {job.description && (
+                    <div>
+                      <p className="text-sm text-gray-500">Description</p>
+                      <p className="whitespace-pre-wrap mt-1">{job.description}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <p className="font-semibold text-lg">Edit Job Details</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" onClick={saveEditing} disabled={saving}>
+                        {saving ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
                   </div>
-                )}
-                <div>
-                  <p className="text-sm text-gray-500">Assigned</p>
-                  <p>{job.assignments?.map((a: any) => a.user.name).join(", ") || "None"}</p>
-                </div>
-              </div>
-              {job.description && (
-                <div>
-                  <p className="text-sm text-gray-500">Description</p>
-                  <p className="whitespace-pre-wrap mt-1">{job.description}</p>
-                </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Job Title *</Label>
+                      <Input
+                        value={editForm.title}
+                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Client *</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.clientId}
+                          onChange={(e) => setEditForm({ ...editForm, clientId: e.target.value })}
+                        >
+                          <option value={job.clientId}>{job.client.name}</option>
+                          {clients.filter((c) => c.id !== job.clientId).map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Status</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.status}
+                          onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                        >
+                          {Object.entries(JOB_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Location</Label>
+                        <Input
+                          value={editForm.location}
+                          onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                          placeholder="New York, NY / Remote"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Salary Range</Label>
+                        <Input
+                          value={editForm.salary}
+                          onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
+                          placeholder="$150K - $180K"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.currency}
+                          onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
+                        >
+                          <option value="USD">USD</option>
+                          <option value="ARS">ARS</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Fee Type</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.feeType}
+                          onChange={(e) => setEditForm({ ...editForm, feeType: e.target.value })}
+                        >
+                          <option value="PERCENTAGE">Percentage</option>
+                          <option value="FLAT">Flat Fee</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Fee Amount</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={editForm.feeAmount}
+                          onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
+                          placeholder="25"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea
+                        rows={6}
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        placeholder="Job description, requirements..."
+                      />
+                    </div>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
