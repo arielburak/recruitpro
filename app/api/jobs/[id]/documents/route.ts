@@ -97,10 +97,13 @@ export async function POST(
       }
     }
 
+    // Read file buffer BEFORE uploading (stream can only be read once)
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const blobPath = `org-${ctx.organizationId}/job-${id}/${Date.now()}-${safeName}`;
 
-    const blob = await put(blobPath, file, {
+    const blob = await put(blobPath, fileBuffer, {
       access: "private",
       addRandomSuffix: false,
     });
@@ -112,17 +115,14 @@ export async function POST(
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith(".pdf")) {
           const pdfParse = require("pdf-parse");
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const pdfData = await pdfParse(buffer);
+          const pdfData = await pdfParse(fileBuffer);
           parsedText = pdfData.text;
         } else if (fileName.endsWith(".docx")) {
           const mammoth = require("mammoth");
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const result = await mammoth.extractRawText({ buffer });
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
           parsedText = result.value;
         } else {
-          // .txt, .doc, or other text-based formats
-          parsedText = await file.text();
+          parsedText = fileBuffer.toString("utf-8");
         }
       } catch (parseError) {
         console.error("[job doc] text extraction failed:", parseError);
