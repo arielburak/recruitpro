@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Briefcase,
@@ -338,7 +339,7 @@ export default function ClientPortalLoginPage() {
                       Forgot password?
                     </button>
                   </div>
-                  <Input id="password" name="password" type="password" required />
+                  <PasswordInput id="password" name="password" required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
                   {loading ? "Signing in..." : "Sign In"}
@@ -388,7 +389,7 @@ export default function ClientPortalLoginPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-password">Password</Label>
-                  <Input id="reg-password" name="password" type="password" placeholder="Min. 8 characters" minLength={8} required />
+                  <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
                   {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}

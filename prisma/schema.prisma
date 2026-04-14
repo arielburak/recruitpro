@@ -191,6 +191,7 @@ model Job {
   title          String
   description    String?
   status         JobStatus @default(OPEN)
+  currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
   salary         String?
@@ -208,6 +209,7 @@ model Job {
   submissions    CandidateSubmission[]
   assignments    JobAssignment[]
   placements     Placement[]
+  documents      Document[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -327,13 +329,17 @@ model Document {
   url         String
   type        String
   size        Int
-  candidateId String
+  category    String?
+  candidateId String?
+  jobId       String?
   uploadedBy  String
   createdAt   DateTime @default(now())
 
-  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
+  @@index([jobId])
 }
 
 // ─── ACTIVITIES ───

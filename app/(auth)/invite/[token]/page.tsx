@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Briefcase, CheckCircle2, XCircle } from "lucide-react";
 
@@ -145,10 +146,9 @@ export default function InvitePage({
 
             <div className="space-y-2">
               <Label htmlFor="password">Create Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 placeholder="Min. 8 characters"
                 minLength={8}
                 required
