@@ -343,6 +343,7 @@ model Interview {
   notes          String?
   meetingLink    String?
   location       String?
+  timezone       String          @default("America/Argentina/Buenos_Aires")
   submissionId   String
   jobId          String
   candidateId    String

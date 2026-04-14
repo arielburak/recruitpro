@@ -43,7 +43,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const { title, startTime, endTime, type, status, notes, meetingLink, location } = body;
+    const { title, startTime, endTime, type, status, notes, meetingLink, location, timezone } = body;
 
     const updated = await prisma.interview.updateMany({
       where: { id, organizationId: ctx.organizationId },
@@ -56,6 +56,7 @@ export async function PUT(
         ...(notes !== undefined && { notes }),
         ...(meetingLink !== undefined && { meetingLink }),
         ...(location !== undefined && { location }),
+        ...(timezone !== undefined && { timezone }),
       },
     });
 

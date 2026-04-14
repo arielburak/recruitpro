@@ -21,6 +21,7 @@ import {
   Search,
   Trash2,
   ExternalLink,
+  Globe,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -60,6 +61,40 @@ const PLATFORM_OPTIONS = [
   { value: "none", label: "No Video", color: "text-gray-400" },
 ];
 
+const TIMEZONE_OPTIONS = [
+  // Americas
+  { value: "America/Argentina/Buenos_Aires", label: "Buenos Aires", offset: "UTC-3", region: "Americas" },
+  { value: "America/Sao_Paulo", label: "São Paulo", offset: "UTC-3", region: "Americas" },
+  { value: "America/Santiago", label: "Santiago", offset: "UTC-3", region: "Americas" },
+  { value: "America/Bogota", label: "Bogotá", offset: "UTC-5", region: "Americas" },
+  { value: "America/Lima", label: "Lima", offset: "UTC-5", region: "Americas" },
+  { value: "America/Mexico_City", label: "Mexico City", offset: "UTC-6", region: "Americas" },
+  { value: "America/New_York", label: "New York (ET)", offset: "UTC-5/4", region: "Americas" },
+  { value: "America/Chicago", label: "Chicago (CT)", offset: "UTC-6/5", region: "Americas" },
+  { value: "America/Denver", label: "Denver (MT)", offset: "UTC-7/6", region: "Americas" },
+  { value: "America/Los_Angeles", label: "Los Angeles (PT)", offset: "UTC-8/7", region: "Americas" },
+  { value: "America/Toronto", label: "Toronto", offset: "UTC-5/4", region: "Americas" },
+  { value: "America/Vancouver", label: "Vancouver", offset: "UTC-8/7", region: "Americas" },
+  // Europe
+  { value: "Europe/London", label: "London (GMT/BST)", offset: "UTC+0/1", region: "Europe" },
+  { value: "Europe/Paris", label: "Paris (CET)", offset: "UTC+1/2", region: "Europe" },
+  { value: "Europe/Berlin", label: "Berlin (CET)", offset: "UTC+1/2", region: "Europe" },
+  { value: "Europe/Madrid", label: "Madrid (CET)", offset: "UTC+1/2", region: "Europe" },
+  { value: "Europe/Rome", label: "Rome (CET)", offset: "UTC+1/2", region: "Europe" },
+  { value: "Europe/Amsterdam", label: "Amsterdam (CET)", offset: "UTC+1/2", region: "Europe" },
+  { value: "Europe/Moscow", label: "Moscow (MSK)", offset: "UTC+3", region: "Europe" },
+  // Asia & Middle East
+  { value: "Asia/Dubai", label: "Dubai (GST)", offset: "UTC+4", region: "Asia" },
+  { value: "Asia/Kolkata", label: "Mumbai (IST)", offset: "UTC+5:30", region: "Asia" },
+  { value: "Asia/Singapore", label: "Singapore (SGT)", offset: "UTC+8", region: "Asia" },
+  { value: "Asia/Shanghai", label: "Shanghai (CST)", offset: "UTC+8", region: "Asia" },
+  { value: "Asia/Tokyo", label: "Tokyo (JST)", offset: "UTC+9", region: "Asia" },
+  { value: "Asia/Seoul", label: "Seoul (KST)", offset: "UTC+9", region: "Asia" },
+  // Oceania
+  { value: "Australia/Sydney", label: "Sydney (AEST)", offset: "UTC+10/11", region: "Oceania" },
+  { value: "Pacific/Auckland", label: "Auckland (NZST)", offset: "UTC+12/13", region: "Oceania" },
+];
+
 // ─── Types ───
 
 type Interview = {
@@ -72,6 +107,7 @@ type Interview = {
   notes?: string;
   meetingLink?: string;
   location?: string;
+  timezone?: string;
   candidate: { id: string; firstName: string; lastName: string };
   job: { id: string; title: string; client: { name: string } };
   creator: { name: string };
@@ -164,11 +200,23 @@ export default function CalendarPage() {
     .filter((iv) => new Date(iv.startTime).getTime() >= nowMs && new Date(iv.startTime).getTime() <= weekFromNow && iv.status === "SCHEDULED")
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  function formatTime(dateStr: string) {
-    return new Date(dateStr).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  function formatTime(dateStr: string, tz?: string) {
+    try {
+      return new Date(dateStr).toLocaleTimeString("en-US", {
+        hour: "numeric", minute: "2-digit", hour12: true,
+        ...(tz ? { timeZone: tz } : {}),
+      });
+    } catch {
+      return new Date(dateStr).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    }
   }
   function formatDateShort(dateStr: string) {
     return new Date(dateStr).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  }
+  function getTimezoneLabel(tz?: string) {
+    if (!tz) return "";
+    const found = TIMEZONE_OPTIONS.find((t) => t.value === tz);
+    return found ? found.label : tz.split("/").pop()?.replace(/_/g, " ") || "";
   }
 
   function openCreate(day: number, m: number, y: number) {
@@ -305,7 +353,12 @@ export default function CalendarPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2 text-gray-600">
                     <Clock className="h-3.5 w-3.5" />
-                    <span>{formatDateShort(selectedInterview.startTime)}, {formatTime(selectedInterview.startTime)} - {formatTime(selectedInterview.endTime)}</span>
+                    <div>
+                      <span>{formatDateShort(selectedInterview.startTime)}, {formatTime(selectedInterview.startTime, selectedInterview.timezone)} - {formatTime(selectedInterview.endTime, selectedInterview.timezone)}</span>
+                      {selectedInterview.timezone && (
+                        <p className="text-[11px] text-gray-400 mt-0.5">{getTimezoneLabel(selectedInterview.timezone)}</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -324,10 +377,17 @@ export default function CalendarPage() {
                   </div>
 
                   {selectedInterview.meetingLink && (
-                    <a href={selectedInterview.meetingLink} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md">
-                      <Video className="h-3.5 w-3.5" /> Join Meeting <ExternalLink className="h-3 w-3" />
-                    </a>
+                    <div className="space-y-1.5">
+                      <a href={selectedInterview.meetingLink} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md">
+                        {selectedInterview.meetingLink.includes("calendly.com") ? (
+                          <><Globe className="h-3.5 w-3.5" /> Open Calendly</>
+                        ) : (
+                          <><Video className="h-3.5 w-3.5" /> Join Meeting</>
+                        )}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
                   )}
 
                   {selectedInterview.location && (
@@ -406,7 +466,10 @@ export default function CalendarPage() {
                         <span className="text-xs font-medium truncate">{iv.candidate.firstName} {iv.candidate.lastName}</span>
                       </div>
                       <p className="text-[11px] text-gray-500 truncate">{iv.job.title} @ {iv.job.client.name}</p>
-                      <p className="text-[11px] text-gray-400">{formatDateShort(iv.startTime)} · {formatTime(iv.startTime)}</p>
+                      <p className="text-[11px] text-gray-400">
+                        {formatDateShort(iv.startTime)} · {formatTime(iv.startTime, iv.timezone)}
+                        {iv.timezone && <span className="ml-1 text-gray-300">({getTimezoneLabel(iv.timezone)})</span>}
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -451,6 +514,8 @@ function CreateInterviewModal({
   const [platform, setPlatform] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
   const [location, setLocation] = useState("");
+  const [timezone, setTimezone] = useState("America/Argentina/Buenos_Aires");
+  const [calendlyLink, setCalendlyLink] = useState("");
   const [notes, setNotes] = useState("");
 
   // Candidate search
@@ -579,8 +644,9 @@ function CreateInterviewModal({
           candidateId: selectedCandidate.id,
           jobId: selectedSubmission!.job.id,
           submissionId: selectedSubmissionId,
-          meetingLink: meetingLink || undefined,
+          meetingLink: meetingLink || calendlyLink || undefined,
           location: type === "IN_PERSON" ? location : undefined,
+          timezone,
           notes: notes || undefined,
           interviewerIds: selectedInterviewers.length > 0 ? selectedInterviewers : undefined,
         }),
@@ -694,6 +760,36 @@ function CreateInterviewModal({
             </div>
           </div>
 
+          {/* Timezone */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-gray-400" /> Timezone
+            </Label>
+            <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+              <optgroup label="Americas">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Americas").map((t) => (
+                  <option key={t.value} value={t.value}>{t.label} ({t.offset})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Europe">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Europe").map((t) => (
+                  <option key={t.value} value={t.value}>{t.label} ({t.offset})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Asia & Middle East">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Asia").map((t) => (
+                  <option key={t.value} value={t.value}>{t.label} ({t.offset})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Oceania">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Oceania").map((t) => (
+                  <option key={t.value} value={t.value}>{t.label} ({t.offset})</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+
           {/* Interview Type */}
           <div className="space-y-2">
             <Label>Type</Label>
@@ -734,6 +830,25 @@ function CreateInterviewModal({
               )}
             </div>
           )}
+
+          {/* Calendly Link */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <ExternalLink className="h-3.5 w-3.5 text-gray-400" /> Calendly Link
+            </Label>
+            <Input
+              placeholder="https://calendly.com/your-name/30min"
+              value={calendlyLink}
+              onChange={(e) => setCalendlyLink(e.target.value)}
+            />
+            <p className="text-xs text-gray-400">
+              Paste a Calendly scheduling link to share with the candidate.
+              {!calendlyLink && " "}
+              {!calendlyLink && (
+                <a href="https://calendly.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Create one at calendly.com</a>
+              )}
+            </p>
+          </div>
 
           {/* Location (for IN_PERSON) */}
           {type === "IN_PERSON" && (

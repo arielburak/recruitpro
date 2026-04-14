@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       notes,
       meetingLink,
       location,
+      timezone,
       interviewerIds,
     } = body;
 
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
         notes,
         meetingLink,
         location,
+        timezone: timezone || "America/Argentina/Buenos_Aires",
         submissionId,
         jobId,
         candidateId,
