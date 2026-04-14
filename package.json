@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then prisma db push --accept-data-loss && prisma generate && next build; else prisma generate && next build; fi",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint"
