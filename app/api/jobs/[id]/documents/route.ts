@@ -109,12 +109,14 @@ export async function POST(
     });
 
     // Parse text from JD files and save to job.description
+    let parsedText = "";
+    let parseError = "";
     if (category === "JOB_DESCRIPTION") {
-      let parsedText = "";
       try {
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith(".pdf")) {
-          const pdfParse = require("pdf-parse");
+          // Use lib/pdf-parse directly to avoid test-file loading bug in serverless
+          const pdfParse = require("pdf-parse/lib/pdf-parse.js");
           const pdfData = await pdfParse(fileBuffer);
           parsedText = pdfData.text;
         } else if (fileName.endsWith(".docx")) {
@@ -124,8 +126,9 @@ export async function POST(
         } else {
           parsedText = fileBuffer.toString("utf-8");
         }
-      } catch (parseError) {
-        console.error("[job doc] text extraction failed:", parseError);
+      } catch (err: any) {
+        parseError = err.message || "Unknown parse error";
+        console.error("[job doc] text extraction failed:", err);
       }
 
       if (parsedText.trim()) {
@@ -155,7 +158,12 @@ export async function POST(
       organizationId: ctx.organizationId,
     });
 
-    return NextResponse.json(document);
+    return NextResponse.json({
+      ...document,
+      parsed: parsedText.trim().length > 0,
+      parsedLength: parsedText.trim().length,
+      parseError: parseError || undefined,
+    });
   } catch (error: any) {
     console.error("Job document upload error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });

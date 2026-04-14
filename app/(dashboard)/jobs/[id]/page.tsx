@@ -248,6 +248,16 @@ export default function JobDetailPage() {
         const data = await res.json();
         alert(data.error || "Upload failed");
       } else {
+        const data = await res.json();
+        if (category === "JOB_DESCRIPTION") {
+          if (data.parsed) {
+            // Text was extracted successfully
+          } else if (data.parseError) {
+            alert(`Document uploaded but text extraction failed: ${data.parseError}`);
+          } else {
+            alert("Document uploaded but no text could be extracted from the file.");
+          }
+        }
         fetchJob();
       }
     } catch {
