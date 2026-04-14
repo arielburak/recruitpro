@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,26 +17,26 @@ import {
   User,
   Briefcase,
   Plus,
+  X,
+  Search,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 
+// ─── Constants ───
+
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
 ];
 
-const TYPE_ICONS: Record<string, any> = {
-  VIDEO: Video,
-  PHONE: Phone,
-  IN_PERSON: MapPin,
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  VIDEO: "Video Call",
-  PHONE: "Phone",
-  IN_PERSON: "In Person",
-};
+const TYPE_OPTIONS = [
+  { value: "VIDEO", label: "Video Call", icon: Video },
+  { value: "PHONE", label: "Phone", icon: Phone },
+  { value: "IN_PERSON", label: "In Person", icon: MapPin },
+];
 
 const STATUS_COLORS: Record<string, string> = {
   SCHEDULED: "bg-blue-100 text-blue-700",
@@ -48,6 +51,16 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
   NO_SHOW: "No Show",
 };
+
+const PLATFORM_OPTIONS = [
+  { value: "google_meet", label: "Google Meet", color: "text-green-600" },
+  { value: "teams", label: "Microsoft Teams", color: "text-blue-600" },
+  { value: "zoom", label: "Zoom", color: "text-blue-500" },
+  { value: "custom", label: "Custom Link", color: "text-gray-600" },
+  { value: "none", label: "No Video", color: "text-gray-400" },
+];
+
+// ─── Types ───
 
 type Interview = {
   id: string;
@@ -65,12 +78,34 @@ type Interview = {
   interviewers: { user: { id: string; name: string } }[];
 };
 
+type CandidateOption = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  submissions: {
+    id: string;
+    job: { id: string; title: string; client: { name: string } };
+  }[];
+};
+
+type TeamMember = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
+// ─── Component ───
+
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"month" | "week">("month");
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
+
+  // Create modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createDate, setCreateDate] = useState<Date | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -82,63 +117,33 @@ export default function CalendarPage() {
   async function fetchInterviews() {
     setLoading(true);
     try {
-      // Fetch a wide range to cover month view
       const start = new Date(year, month - 1, 1).toISOString();
       const end = new Date(year, month + 2, 0).toISOString();
       const res = await fetch(`/api/interviews?start=${start}&end=${end}`);
-      if (res.ok) {
-        const data = await res.json();
-        setInterviews(data);
-      }
-    } catch {
-      // silent
-    }
+      if (res.ok) setInterviews(await res.json());
+    } catch { /* silent */ }
     setLoading(false);
   }
 
-  function prevMonth() {
-    setCurrentDate(new Date(year, month - 1, 1));
-  }
+  function prevMonth() { setCurrentDate(new Date(year, month - 1, 1)); }
+  function nextMonth() { setCurrentDate(new Date(year, month + 1, 1)); }
+  function goToday() { setCurrentDate(new Date()); }
 
-  function nextMonth() {
-    setCurrentDate(new Date(year, month + 1, 1));
-  }
-
-  function goToday() {
-    setCurrentDate(new Date());
-  }
-
-  // Build calendar grid
+  // Calendar grid
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
 
   const calendarDays: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
-
-  // Previous month's trailing days
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
-    calendarDays.push({
-      day: daysInPrevMonth - i,
-      month: month - 1,
-      year: month === 0 ? year - 1 : year,
-      isCurrentMonth: false,
-    });
+    calendarDays.push({ day: daysInPrevMonth - i, month: month - 1, year: month === 0 ? year - 1 : year, isCurrentMonth: false });
   }
-
-  // Current month
   for (let d = 1; d <= daysInMonth; d++) {
     calendarDays.push({ day: d, month, year, isCurrentMonth: true });
   }
-
-  // Next month's leading days to fill 6 rows
   const remaining = 42 - calendarDays.length;
   for (let d = 1; d <= remaining; d++) {
-    calendarDays.push({
-      day: d,
-      month: month + 1,
-      year: month === 11 ? year + 1 : year,
-      isCurrentMonth: false,
-    });
+    calendarDays.push({ day: d, month: month + 1, year: month === 11 ? year + 1 : year, isCurrentMonth: false });
   }
 
   function getInterviewsForDay(day: number, m: number, y: number) {
@@ -152,40 +157,52 @@ export default function CalendarPage() {
   const isToday = (day: number, m: number, y: number) =>
     day === today.getDate() && m === today.getMonth() && y === today.getFullYear();
 
-  // Upcoming interviews (next 7 days)
+  // Upcoming
   const nowMs = Date.now();
   const weekFromNow = nowMs + 7 * 24 * 60 * 60 * 1000;
   const upcoming = interviews
-    .filter((iv) => {
-      const t = new Date(iv.startTime).getTime();
-      return t >= nowMs && t <= weekFromNow && iv.status === "SCHEDULED";
-    })
+    .filter((iv) => new Date(iv.startTime).getTime() >= nowMs && new Date(iv.startTime).getTime() <= weekFromNow && iv.status === "SCHEDULED")
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   function formatTime(dateStr: string) {
-    return new Date(dateStr).toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
+    return new Date(dateStr).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  }
+  function formatDateShort(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   }
 
-  function formatDateShort(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
+  function openCreate(day: number, m: number, y: number) {
+    setCreateDate(new Date(y, m, day, 9, 0));
+    setShowCreateModal(true);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this interview?")) return;
+    await fetch(`/api/interviews/${id}`, { method: "DELETE" });
+    setSelectedInterview(null);
+    fetchInterviews();
+  }
+
+  async function handleStatusChange(id: string, status: string) {
+    await fetch(`/api/interviews/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
     });
+    setSelectedInterview(null);
+    fetchInterviews();
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Calendar</h1>
           <p className="text-sm text-gray-500">Interview schedule</p>
         </div>
+        <Button onClick={() => { setCreateDate(new Date()); setShowCreateModal(true); }}>
+          <Plus className="h-4 w-4 mr-2" /> Schedule Interview
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -193,74 +210,67 @@ export default function CalendarPage() {
         <div className="lg:col-span-3">
           <Card>
             <CardContent className="p-4">
-              {/* Month navigation */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={prevMonth}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <h2 className="text-lg font-semibold min-w-[180px] text-center">
-                    {MONTHS[month]} {year}
-                  </h2>
-                  <Button variant="outline" size="sm" onClick={nextMonth}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={goToday} className="ml-2 text-xs">
-                    Today
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+                  <h2 className="text-lg font-semibold min-w-[180px] text-center">{MONTHS[month]} {year}</h2>
+                  <Button variant="outline" size="sm" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" onClick={goToday} className="ml-2 text-xs">Today</Button>
                 </div>
               </div>
 
-              {/* Day headers */}
               <div className="grid grid-cols-7 mb-1">
                 {DAYS.map((d) => (
-                  <div key={d} className="text-center text-xs font-medium text-gray-500 py-2">
-                    {d}
-                  </div>
+                  <div key={d} className="text-center text-xs font-medium text-gray-500 py-2">{d}</div>
                 ))}
               </div>
 
-              {/* Calendar grid */}
               <div className="grid grid-cols-7 border-t border-l">
                 {calendarDays.map((cd, idx) => {
                   const dayInterviews = getInterviewsForDay(cd.day, cd.month, cd.year);
-                  const todayClass = isToday(cd.day, cd.month, cd.year);
+                  const todayHighlight = isToday(cd.day, cd.month, cd.year);
 
                   return (
                     <div
                       key={idx}
-                      className={`min-h-[90px] border-r border-b p-1 ${
-                        cd.isCurrentMonth ? "bg-white" : "bg-gray-50"
+                      className={`group min-h-[100px] border-r border-b p-1 cursor-pointer transition-colors ${
+                        cd.isCurrentMonth ? "bg-white hover:bg-indigo-50/30" : "bg-gray-50/50"
                       }`}
+                      onDoubleClick={() => openCreate(cd.day, cd.month, cd.year)}
                     >
-                      <div className={`text-xs font-medium mb-0.5 ${
-                        todayClass
-                          ? "bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center"
-                          : cd.isCurrentMonth ? "text-gray-900" : "text-gray-400"
-                      }`}>
-                        {cd.day}
+                      <div className="flex items-center justify-between mb-0.5">
+                        <div className={`text-xs font-medium ${
+                          todayHighlight
+                            ? "bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center"
+                            : cd.isCurrentMonth ? "text-gray-900" : "text-gray-400"
+                        }`}>
+                          {cd.day}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openCreate(cd.day, cd.month, cd.year); }}
+                          className="opacity-0 group-hover:opacity-100 h-5 w-5 flex items-center justify-center rounded hover:bg-indigo-100 text-indigo-500 transition-opacity"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
                       </div>
                       <div className="space-y-0.5">
                         {dayInterviews.slice(0, 3).map((iv) => (
                           <button
                             key={iv.id}
                             type="button"
-                            onClick={() => setSelectedInterview(iv)}
+                            onClick={(e) => { e.stopPropagation(); setSelectedInterview(iv); }}
                             className={`w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
-                              iv.status === "CANCELLED"
-                                ? "bg-red-50 text-red-600 line-through"
-                                : iv.status === "COMPLETED"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-indigo-50 text-indigo-700"
-                            } hover:opacity-80 transition-opacity`}
+                              iv.status === "CANCELLED" ? "bg-red-50 text-red-600 line-through"
+                              : iv.status === "COMPLETED" ? "bg-green-50 text-green-700"
+                              : "bg-indigo-50 text-indigo-700"
+                            } hover:opacity-80`}
                           >
                             {formatTime(iv.startTime)} {iv.candidate.firstName} {iv.candidate.lastName.charAt(0)}.
                           </button>
                         ))}
                         {dayInterviews.length > 3 && (
-                          <p className="text-[10px] text-gray-400 px-1">
-                            +{dayInterviews.length - 3} more
-                          </p>
+                          <p className="text-[10px] text-gray-400 px-1">+{dayInterviews.length - 3} more</p>
                         )}
                       </div>
                     </div>
@@ -271,80 +281,58 @@ export default function CalendarPage() {
           </Card>
         </div>
 
-        {/* Sidebar: Upcoming + Detail */}
+        {/* Sidebar */}
         <div className="space-y-4">
-          {/* Selected interview detail */}
           {selectedInterview && (
             <Card className="border-indigo-200">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-sm">{selectedInterview.title}</h3>
-                  <button
-                    onClick={() => setSelectedInterview(null)}
-                    className="text-gray-400 hover:text-gray-600 text-xs"
-                  >
-                    Close
+                  <button onClick={() => setSelectedInterview(null)} className="text-gray-400 hover:text-gray-600">
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                <Badge className={STATUS_COLORS[selectedInterview.status]}>
-                  {STATUS_LABELS[selectedInterview.status]}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className={STATUS_COLORS[selectedInterview.status]}>
+                    {STATUS_LABELS[selectedInterview.status]}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {TYPE_OPTIONS.find((t) => t.value === selectedInterview.type)?.label || selectedInterview.type}
+                  </Badge>
+                </div>
 
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2 text-gray-600">
                     <Clock className="h-3.5 w-3.5" />
-                    <span>
-                      {formatDateShort(selectedInterview.startTime)},{" "}
-                      {formatTime(selectedInterview.startTime)} - {formatTime(selectedInterview.endTime)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-gray-600">
-                    {(() => {
-                      const Icon = TYPE_ICONS[selectedInterview.type] || Video;
-                      return <Icon className="h-3.5 w-3.5" />;
-                    })()}
-                    <span>{TYPE_LABELS[selectedInterview.type] || selectedInterview.type}</span>
+                    <span>{formatDateShort(selectedInterview.startTime)}, {formatTime(selectedInterview.startTime)} - {formatTime(selectedInterview.endTime)}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <User className="h-3.5 w-3.5 text-gray-400" />
-                    <Link
-                      href={`/candidates/${selectedInterview.candidate.id}`}
-                      className="text-indigo-600 hover:underline"
-                    >
+                    <Link href={`/candidates/${selectedInterview.candidate.id}`} className="text-indigo-600 hover:underline">
                       {selectedInterview.candidate.firstName} {selectedInterview.candidate.lastName}
                     </Link>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <Briefcase className="h-3.5 w-3.5 text-gray-400" />
-                    <Link
-                      href={`/jobs/${selectedInterview.job.id}`}
-                      className="text-indigo-600 hover:underline"
-                    >
+                    <Link href={`/jobs/${selectedInterview.job.id}`} className="text-indigo-600 hover:underline">
                       {selectedInterview.job.title}
                     </Link>
-                    <span className="text-gray-400">@ {selectedInterview.job.client.name}</span>
+                    <span className="text-gray-400 text-xs">@ {selectedInterview.job.client.name}</span>
                   </div>
 
                   {selectedInterview.meetingLink && (
-                    <a
-                      href={selectedInterview.meetingLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:underline"
-                    >
-                      <Video className="h-3.5 w-3.5" />
-                      Join Meeting
+                    <a href={selectedInterview.meetingLink} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md">
+                      <Video className="h-3.5 w-3.5" /> Join Meeting <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
 
                   {selectedInterview.location && (
                     <div className="flex items-center gap-2 text-gray-600">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span>{selectedInterview.location}</span>
+                      <MapPin className="h-3.5 w-3.5" /><span>{selectedInterview.location}</span>
                     </div>
                   )}
 
@@ -353,13 +341,16 @@ export default function CalendarPage() {
                       <p className="text-xs text-gray-400 uppercase mb-1">Interviewers</p>
                       <div className="flex flex-wrap gap-1">
                         {selectedInterview.interviewers.map((iv) => (
-                          <Badge key={iv.user.id} variant="secondary" className="text-xs">
-                            {iv.user.name}
-                          </Badge>
+                          <Badge key={iv.user.id} variant="secondary" className="text-xs">{iv.user.name}</Badge>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase mb-1">Scheduled by</p>
+                    <p className="text-sm">{selectedInterview.creator.name}</p>
+                  </div>
 
                   {selectedInterview.notes && (
                     <div>
@@ -368,48 +359,54 @@ export default function CalendarPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Actions */}
+                <div className="border-t pt-3 space-y-2">
+                  {selectedInterview.status === "SCHEDULED" && (
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="flex-1 text-green-600" onClick={() => handleStatusChange(selectedInterview.id, "COMPLETED")}>
+                        Mark Completed
+                      </Button>
+                      <Button size="sm" variant="outline" className="flex-1 text-yellow-600" onClick={() => handleStatusChange(selectedInterview.id, "NO_SHOW")}>
+                        No Show
+                      </Button>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    {selectedInterview.status === "SCHEDULED" && (
+                      <Button size="sm" variant="outline" className="flex-1 text-red-500" onClick={() => handleStatusChange(selectedInterview.id, "CANCELLED")}>
+                        Cancel
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" className="text-red-500" onClick={() => handleDelete(selectedInterview.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Upcoming interviews */}
           <Card>
             <CardContent className="p-4">
               <h3 className="font-semibold text-sm mb-3">Upcoming (7 days)</h3>
               {loading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-14 bg-gray-100 rounded animate-pulse" />
-                  ))}
-                </div>
+                <div className="space-y-2">{[1,2,3].map((i) => <div key={i} className="h-14 bg-gray-100 rounded animate-pulse" />)}</div>
               ) : upcoming.length === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">No upcoming interviews</p>
               ) : (
                 <div className="space-y-2">
                   {upcoming.map((iv) => (
-                    <button
-                      key={iv.id}
-                      type="button"
-                      onClick={() => setSelectedInterview(iv)}
+                    <button key={iv.id} type="button" onClick={() => setSelectedInterview(iv)}
                       className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                        selectedInterview?.id === iv.id
-                          ? "border-indigo-300 bg-indigo-50"
-                          : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
+                        selectedInterview?.id === iv.id ? "border-indigo-300 bg-indigo-50" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                      }`}>
                       <div className="flex items-center gap-2 mb-1">
-                        {(() => {
-                          const Icon = TYPE_ICONS[iv.type] || Video;
-                          return <Icon className="h-3 w-3 text-gray-400" />;
-                        })()}
-                        <span className="text-xs font-medium truncate">
-                          {iv.candidate.firstName} {iv.candidate.lastName}
-                        </span>
+                        {(() => { const Icon = TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon || Video; return <Icon className="h-3 w-3 text-gray-400" />; })()}
+                        <span className="text-xs font-medium truncate">{iv.candidate.firstName} {iv.candidate.lastName}</span>
                       </div>
-                      <p className="text-[11px] text-gray-500 truncate">{iv.job.title}</p>
-                      <p className="text-[11px] text-gray-400">
-                        {formatDateShort(iv.startTime)} · {formatTime(iv.startTime)}
-                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">{iv.job.title} @ {iv.job.client.name}</p>
+                      <p className="text-[11px] text-gray-400">{formatDateShort(iv.startTime)} · {formatTime(iv.startTime)}</p>
                     </button>
                   ))}
                 </div>
@@ -417,6 +414,392 @@ export default function CalendarPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Create Interview Modal */}
+      {showCreateModal && (
+        <CreateInterviewModal
+          defaultDate={createDate}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={() => { setShowCreateModal(false); fetchInterviews(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Create Interview Modal ───
+
+function CreateInterviewModal({
+  defaultDate,
+  onClose,
+  onCreated,
+}: {
+  defaultDate: Date | null;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Form state
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState(defaultDate ? defaultDate.toISOString().split("T")[0] : "");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
+  const [type, setType] = useState("VIDEO");
+  const [platform, setPlatform] = useState("google_meet");
+  const [meetingLink, setMeetingLink] = useState("");
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Candidate search
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateResults, setCandidateResults] = useState<CandidateOption[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateOption | null>(null);
+  const [candidateDropdownOpen, setCandidateDropdownOpen] = useState(false);
+  const [searchingCandidates, setSearchingCandidates] = useState(false);
+  const candidateRef = useRef<HTMLDivElement>(null);
+
+  // Submission (job) selection
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState("");
+
+  // Team members for interviewers
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([]);
+  const [recruiterOwnerId, setRecruiterOwnerId] = useState("");
+
+  // Fetch team members
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => r.json())
+      .then((data) => setTeamMembers(data.users || []))
+      .catch(() => {});
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (candidateRef.current && !candidateRef.current.contains(e.target as Node)) {
+        setCandidateDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Search candidates with debounce
+  useEffect(() => {
+    if (candidateSearch.length < 2) { setCandidateResults([]); return; }
+    const timeout = setTimeout(async () => {
+      setSearchingCandidates(true);
+      try {
+        const res = await fetch(`/api/candidates?search=${encodeURIComponent(candidateSearch)}&limit=10&mine=false`);
+        if (res.ok) {
+          const data = await res.json();
+          // We need submissions, fetch each candidate's detail
+          const candidates = data.candidates || [];
+          // For now just show candidates - we'll fetch submissions when selected
+          setCandidateResults(candidates.map((c: any) => ({
+            id: c.id,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            submissions: [],
+          })));
+          setCandidateDropdownOpen(true);
+        }
+      } catch { /* silent */ }
+      setSearchingCandidates(false);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [candidateSearch]);
+
+  async function selectCandidate(candidate: CandidateOption) {
+    // Fetch full candidate with submissions
+    try {
+      const res = await fetch(`/api/candidates/${candidate.id}`);
+      if (res.ok) {
+        const full = await res.json();
+        const withSubs: CandidateOption = {
+          id: full.id,
+          firstName: full.firstName,
+          lastName: full.lastName,
+          submissions: (full.submissions || []).map((s: any) => ({
+            id: s.id,
+            job: { id: s.job.id, title: s.job.title, client: { name: s.job.client?.name || "" } },
+          })),
+        };
+        setSelectedCandidate(withSubs);
+        setCandidateDropdownOpen(false);
+        setCandidateSearch("");
+        // Auto-set title
+        setTitle(`Interview - ${full.firstName} ${full.lastName}`);
+        // Auto-select first submission if only one
+        if (withSubs.submissions.length === 1) {
+          setSelectedSubmissionId(withSubs.submissions[0].id);
+        }
+        // Set recruiter owner from candidate
+        if (full.ownerId) {
+          setRecruiterOwnerId(full.ownerId);
+        }
+      }
+    } catch { /* silent */ }
+  }
+
+  const selectedSubmission = selectedCandidate?.submissions.find((s) => s.id === selectedSubmissionId);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedCandidate || !selectedSubmissionId || !date || !startTime || !endTime) {
+      setError("Please fill in all required fields");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    const startDateTime = new Date(`${date}T${startTime}:00`);
+    const endDateTime = new Date(`${date}T${endTime}:00`);
+
+    if (endDateTime <= startDateTime) {
+      setError("End time must be after start time");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/interviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title || `Interview - ${selectedCandidate.firstName} ${selectedCandidate.lastName}`,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString(),
+          type,
+          candidateId: selectedCandidate.id,
+          jobId: selectedSubmission!.job.id,
+          submissionId: selectedSubmissionId,
+          meetingLink: meetingLink || undefined,
+          location: type === "IN_PERSON" ? location : undefined,
+          notes: notes || undefined,
+          interviewerIds: selectedInterviewers.length > 0 ? selectedInterviewers : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json();
+        setError(body.error || "Failed to create interview");
+        setSaving(false);
+        return;
+      }
+
+      onCreated();
+    } catch {
+      setError("Failed to create interview");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+        <div className="flex items-center justify-between p-5 border-b">
+          <h2 className="text-lg font-semibold">Schedule Interview</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
+            <X className="h-5 w-5 text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>}
+
+          {/* Candidate Search */}
+          <div className="space-y-2">
+            <Label>Candidate *</Label>
+            {selectedCandidate ? (
+              <div className="flex items-center justify-between p-2.5 bg-indigo-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-indigo-500" />
+                  <span className="text-sm font-medium">{selectedCandidate.firstName} {selectedCandidate.lastName}</span>
+                </div>
+                <button type="button" onClick={() => { setSelectedCandidate(null); setSelectedSubmissionId(""); setTitle(""); }}
+                  className="text-gray-400 hover:text-red-500"><X className="h-4 w-4" /></button>
+              </div>
+            ) : (
+              <div ref={candidateRef} className="relative">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="Search candidates by name..."
+                    value={candidateSearch}
+                    onChange={(e) => setCandidateSearch(e.target.value)}
+                    onFocus={() => candidateResults.length > 0 && setCandidateDropdownOpen(true)}
+                  />
+                </div>
+                {candidateDropdownOpen && candidateResults.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {candidateResults.map((c) => (
+                      <button key={c.id} type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors"
+                        onClick={() => selectCandidate(c)}>
+                        {c.firstName} {c.lastName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchingCandidates && <p className="text-xs text-gray-400 mt-1">Searching...</p>}
+              </div>
+            )}
+          </div>
+
+          {/* Job / Submission Selection */}
+          {selectedCandidate && (
+            <div className="space-y-2">
+              <Label>Job / Pipeline *</Label>
+              {selectedCandidate.submissions.length === 0 ? (
+                <p className="text-sm text-amber-600 bg-amber-50 p-2 rounded">
+                  This candidate has no active job submissions. Submit them to a job first.
+                </p>
+              ) : (
+                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedSubmissionId} onChange={(e) => setSelectedSubmissionId(e.target.value)} required>
+                  <option value="">Select a job...</option>
+                  {selectedCandidate.submissions.map((s) => (
+                    <option key={s.id} value={s.id}>{s.job.title} @ {s.job.client.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Title */}
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Interview - Candidate Name" />
+          </div>
+
+          {/* Date & Time */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <Label>Date *</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Start *</Label>
+              <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>End *</Label>
+              <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
+            </div>
+          </div>
+
+          {/* Interview Type */}
+          <div className="space-y-2">
+            <Label>Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {TYPE_OPTIONS.map((opt) => (
+                <button key={opt.value} type="button"
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-sm transition-colors ${
+                    type === opt.value ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                  onClick={() => setType(opt.value)}>
+                  <opt.icon className="h-4 w-4" />{opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Meeting Platform (for VIDEO type) */}
+          {type === "VIDEO" && (
+            <div className="space-y-2">
+              <Label>Meeting Platform</Label>
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={platform} onChange={(e) => setPlatform(e.target.value)}>
+                {PLATFORM_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+              {platform === "google_meet" && (
+                <p className="text-xs text-gray-500">Paste your Google Meet link below, or create one from <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">meet.google.com</a></p>
+              )}
+              {platform === "teams" && (
+                <p className="text-xs text-gray-500">Paste your Teams meeting link below, or create one from <a href="https://teams.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">teams.microsoft.com</a></p>
+              )}
+              {platform === "zoom" && (
+                <p className="text-xs text-gray-500">Paste your Zoom meeting link below</p>
+              )}
+              {platform !== "none" && (
+                <Input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+              )}
+            </div>
+          )}
+
+          {/* Location (for IN_PERSON) */}
+          {type === "IN_PERSON" && (
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input placeholder="Office address or room" value={location} onChange={(e) => setLocation(e.target.value)} />
+            </div>
+          )}
+
+          {/* Recruiter Owner */}
+          <div className="space-y-2">
+            <Label>Recruiter Owner</Label>
+            <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={recruiterOwnerId} onChange={(e) => setRecruiterOwnerId(e.target.value)}>
+              <option value="">Select recruiter...</option>
+              {teamMembers.map((u) => (
+                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400">Owner of the candidate. Used for tracking and metrics.</p>
+          </div>
+
+          {/* Interviewers */}
+          <div className="space-y-2">
+            <Label>Interviewers</Label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selectedInterviewers.map((uid) => {
+                const u = teamMembers.find((m) => m.id === uid);
+                return u ? (
+                  <Badge key={uid} variant="secondary" className="gap-1">
+                    {u.name}
+                    <button type="button" onClick={() => setSelectedInterviewers(selectedInterviewers.filter((id) => id !== uid))}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ) : null;
+              })}
+            </div>
+            <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value="" onChange={(e) => {
+                if (e.target.value && !selectedInterviewers.includes(e.target.value)) {
+                  setSelectedInterviewers([...selectedInterviewers, e.target.value]);
+                }
+                e.target.value = "";
+              }}>
+              <option value="">Add interviewer...</option>
+              {teamMembers.filter((u) => !selectedInterviewers.includes(u.id)).map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-2">
+            <Label>Notes</Label>
+            <Textarea rows={3} placeholder="Interview agenda, preparation notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving || !selectedCandidate || !selectedSubmissionId}>
+              {saving ? "Scheduling..." : "Schedule Interview"}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );
