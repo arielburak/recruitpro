@@ -29,6 +29,7 @@ model Organization {
   subscription Subscription?
   activities   Activity[]
   engagements  FirmEngagement[]
+  interviews   Interview[]
 }
 
 model User {
