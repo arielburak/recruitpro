@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { del, getDownloadUrl } from "@vercel/blob";
+import { del, head } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
@@ -26,8 +26,9 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const downloadUrl = getDownloadUrl(document.url);
-    return NextResponse.redirect(downloadUrl);
+    // For private blobs, use head() to get the downloadUrl (signed URL)
+    const blobInfo = await head(document.url);
+    return NextResponse.redirect(blobInfo.downloadUrl);
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Download failed" },
