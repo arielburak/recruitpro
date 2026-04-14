@@ -353,38 +353,92 @@ function extractName(lines: string[], result: Record<string, any>, fileName?: st
 }
 
 /**
- * Extract location, avoiding tech terms that match "Word, Word" pattern
+ * Known cities / regions / countries for location detection
+ */
+const KNOWN_LOCATIONS = /\b(Buenos Aires|CABA|Capital Federal|C\.A\.B\.A|Córdoba|Rosario|Mendoza|Mar del Plata|La Plata|Tucumán|Santa Fe|Salta|San Juan|Neuquén|Bahía Blanca|Resistencia|Corrientes|Posadas|San Luis|Santiago del Estero|Formosa|Catamarca|La Rioja|Jujuy|Río Gallegos|Ushuaia|Rawson|Viedma|New York|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Austin|Jacksonville|San Francisco|Columbus|Indianapolis|Fort Worth|Charlotte|Seattle|Denver|Washington|Nashville|Oklahoma City|El Paso|Boston|Portland|Las Vegas|Memphis|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Mesa|Kansas City|Atlanta|Omaha|Colorado Springs|Raleigh|Long Beach|Virginia Beach|Miami|Oakland|Minneapolis|Tampa|Tulsa|Arlington|New Orleans|London|Paris|Madrid|Barcelona|Berlin|Munich|Amsterdam|Dublin|São Paulo|Rio de Janeiro|Santiago|Lima|Bogotá|México|Guadalajara|Monterrey|Toronto|Vancouver|Montreal|Sydney|Melbourne|Singapore|Hong Kong|Tokyo|Shanghai|Beijing|Dubai|Mumbai|Bangalore|Argentina|United States|USA|UK|United Kingdom|Spain|Germany|France|Brazil|Chile|Colombia|Peru|Mexico|Canada|Australia|Remote|Remoto)\b/i;
+
+const US_STATES = /\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
+
+const AR_PROVINCES = /\b(Buenos Aires|CABA|Capital Federal|Córdoba|Santa Fe|Mendoza|Tucumán|Entre Ríos|Salta|Misiones|Chaco|Corrientes|Santiago del Estero|San Juan|Jujuy|Río Negro|Neuquén|Formosa|Chubut|San Luis|Catamarca|La Rioja|La Pampa|Santa Cruz|Tierra del Fuego)\b/i;
+
+/**
+ * Extract location with multiple strategies, prioritizing the header area.
+ * Skips lines that belong to experience/education sections.
  */
 function extractLocation(lines: string[], result: Record<string, any>) {
-  for (const line of lines) {
-    // Skip lines with tech words
-    if (TECH_WORDS.test(line)) continue;
-    if (SECTION_HEADINGS.test(line)) continue;
+  // Strategy 1: Look for explicit location labels in the header (first ~20 lines)
+  const headerLines = lines.slice(0, 20);
 
-    // Try full address line (e.g., "34 Morton St, New York, NY 10014")
-    const fullAddressMatch = line.match(
-      /\d+\s+[\w\s]+(?:St|Ave|Blvd|Rd|Dr|Lane|Way|Ct|Pl|Circle|Drive|Street|Avenue|Boulevard|Road|Apartment|Apt\.?)[^•]*,\s*([A-Z][a-zA-Z\s]+),\s*([A-Z]{2})\s*\d{5}/i
-    );
-    if (fullAddressMatch) {
-      result.location = `${fullAddressMatch[1].trim()}, ${fullAddressMatch[2]}`;
+  for (const line of headerLines) {
+    // Explicit labels: "Location: Buenos Aires", "📍 New York, NY", "Ubicación: CABA"
+    const labelMatch = line.match(/(?:location|ubicaci[oó]n|📍|domicilio|direcci[oó]n|residencia)\s*[:]\s*(.+)/i);
+    if (labelMatch) {
+      result.location = labelMatch[1].trim().replace(/[|•·,]+$/, "").trim();
+      return;
+    }
+  }
+
+  // Strategy 2: Look for known city/country names in the header area
+  // Only consider lines before any section heading (experience, education, etc.)
+  let headerEnd = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (SECTION_HEADINGS.test(lines[i])) {
+      headerEnd = i;
+      break;
+    }
+  }
+
+  const resumeHeader = lines.slice(0, Math.min(headerEnd, 20));
+
+  for (const line of resumeHeader) {
+    // Skip lines that look like email, phone, URLs, or names
+    if (line.includes("@")) continue;
+    if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
+    if (TECH_WORDS.test(line)) continue;
+    if (/\b(LLP|LLC|LTD|Inc|Corp|University|Instituto|Facultad|Estudio)\b/i.test(line)) continue;
+
+    // Check if line contains a known location
+    const knownMatch = line.match(KNOWN_LOCATIONS);
+    if (knownMatch) {
+      // Try to get a more complete location string like "Buenos Aires, Argentina" or "New York, NY"
+      // Look for "KnownCity, State/Country" pattern
+      const fullPattern = new RegExp(
+        `(${knownMatch[0]}(?:\\s*,\\s*(?:${US_STATES.source}|${AR_PROVINCES.source}|[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*))?)`
+      );
+      const fullMatch = line.match(fullPattern);
+      result.location = fullMatch ? fullMatch[1].trim() : knownMatch[0];
       return;
     }
 
-    // Try "City, State" or "City, ST" — but NOT tech terms like "Nutanix, Vmware"
-    const locationMatch = line.match(
-      /([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*),\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)*|[A-Z]{2})\b/
+    // Try "City, State/Province" pattern but ONLY in the header
+    const cityStateMatch = line.match(
+      /([A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*)\s*,\s*([A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*|[A-Z]{2})\b/
     );
-    if (locationMatch) {
-      const candidate = locationMatch[0];
-      const word1 = locationMatch[1];
-      const word2 = locationMatch[2];
-      // Filter out tech terms and company names
+    if (cityStateMatch) {
+      const word1 = cityStateMatch[1];
+      const word2 = cityStateMatch[2];
+      // Must not be tech terms, company names, or person names
       if (
         !TECH_WORDS.test(word1) && !TECH_WORDS.test(word2) &&
-        !/\b(LLP|LLC|LTD|Inc|Corp)\b/i.test(line) &&
-        !NOT_A_NAME.test(word1) // Skip abbreviations
+        !NOT_A_NAME.test(word1) && !NOT_A_NAME.test(word2) &&
+        !/\b(LLP|LLC|LTD|Inc|Corp|Esq)\b/i.test(line) &&
+        // At least one part should look like a location (state abbreviation or known name)
+        (US_STATES.test(word2) || AR_PROVINCES.test(word1) || AR_PROVINCES.test(word2) || KNOWN_LOCATIONS.test(word1) || KNOWN_LOCATIONS.test(word2))
       ) {
-        result.location = candidate;
+        result.location = cityStateMatch[0];
+        return;
+      }
+    }
+  }
+
+  // Strategy 3: Check if there's a standalone known location anywhere in header
+  for (const line of resumeHeader) {
+    const trimmed = line.trim();
+    // Very short lines that are just a location name
+    if (trimmed.length < 40 && KNOWN_LOCATIONS.test(trimmed) && !TECH_WORDS.test(trimmed)) {
+      // Make sure it's not a person's name or company
+      if (!/\b(LLP|LLC|LTD|Inc|Corp)\b/i.test(trimmed)) {
+        result.location = trimmed;
         return;
       }
     }
