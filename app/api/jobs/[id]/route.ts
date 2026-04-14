@@ -11,52 +11,27 @@ export async function GET(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    let job;
-    try {
-      job = await prisma.job.findFirst({
-        where: { id, organizationId: ctx.organizationId },
-        include: {
-          client: true,
-          stages: { orderBy: { order: "asc" } },
-          assignments: { include: { user: { select: { id: true, name: true } } } },
-          documents: { orderBy: { createdAt: "desc" } },
-          submissions: {
-            include: {
-              candidate: {
-                select: {
-                  id: true, firstName: true, lastName: true,
-                  currentTitle: true, currentCompany: true, location: true,
-                },
+    const job = await prisma.job.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      include: {
+        client: true,
+        stages: { orderBy: { order: "asc" } },
+        assignments: { include: { user: { select: { id: true, name: true } } } },
+        documents: { orderBy: { createdAt: "desc" } },
+        submissions: {
+          include: {
+            candidate: {
+              select: {
+                id: true, firstName: true, lastName: true,
+                currentTitle: true, currentCompany: true, location: true,
               },
-              stage: true,
-              _count: { select: { comments: true, ratings: true } },
             },
+            stage: true,
+            _count: { select: { comments: true, ratings: true } },
           },
         },
-      });
-    } catch {
-      // Fallback: documents relation may not exist yet in DB
-      job = await prisma.job.findFirst({
-        where: { id, organizationId: ctx.organizationId },
-        include: {
-          client: true,
-          stages: { orderBy: { order: "asc" } },
-          assignments: { include: { user: { select: { id: true, name: true } } } },
-          submissions: {
-            include: {
-              candidate: {
-                select: {
-                  id: true, firstName: true, lastName: true,
-                  currentTitle: true, currentCompany: true, location: true,
-                },
-              },
-              stage: true,
-              _count: { select: { comments: true, ratings: true } },
-            },
-          },
-        },
-      });
-    }
+      },
+    });
 
     if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
