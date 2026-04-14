@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download } from "lucide-react";
+import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -39,10 +39,6 @@ export default function JobDetailPage() {
   const [assignSearch, setAssignSearch] = useState("");
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignSearching, setAssignSearching] = useState(false);
-
-  // Document upload state
-  const [uploadingJD, setUploadingJD] = useState(false);
-  const [uploadingAdditional, setUploadingAdditional] = useState(false);
 
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${params.id}`);
@@ -175,39 +171,6 @@ export default function JobDetailPage() {
       body: JSON.stringify({ userId }),
     });
     fetchJob();
-  }
-
-  async function uploadJobDocument(file: File, category: "JOB_DESCRIPTION" | "ADDITIONAL") {
-    const setUploading = category === "JOB_DESCRIPTION" ? setUploadingJD : setUploadingAdditional;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("category", category);
-      const res = await fetch(`/api/jobs/${params.id}/documents`, { method: "POST", body: formData });
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || "Upload failed");
-      } else {
-        fetchJob();
-      }
-    } catch {
-      alert("Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function deleteJobDocument(docId: string) {
-    if (!confirm("Delete this document?")) return;
-    await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-    fetchJob();
-  }
-
-  function formatBytes(bytes: number) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
   if (loading) return <div className="h-96 bg-gray-100 rounded-lg animate-pulse" />;
@@ -409,90 +372,6 @@ export default function JobDetailPage() {
                   <p className="whitespace-pre-wrap mt-1">{job.description}</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Job Description Document */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-500">Job Description</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                const jdDoc = job.documents?.find((d: any) => d.category === "JOB_DESCRIPTION");
-                if (jdDoc) {
-                  return (
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-indigo-500" />
-                        <div>
-                          <p className="text-sm font-medium truncate max-w-xs">{jdDoc.name}</p>
-                          <p className="text-xs text-gray-400">{formatBytes(jdDoc.size)} · {formatDate(jdDoc.createdAt)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <a href={`/api/documents/${jdDoc.id}`} target="_blank" rel="noopener noreferrer">
-                          <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
-                        </a>
-                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id)} className="text-red-400 hover:text-red-600">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              <label className={`mt-3 flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${uploadingJD ? "opacity-50 pointer-events-none" : "hover:border-indigo-300 hover:bg-indigo-50/50"}`}>
-                <Upload className="h-6 w-6 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-500">
-                  {uploadingJD ? "Uploading..." : (job.documents?.find((d: any) => d.category === "JOB_DESCRIPTION") ? "Replace Job Description" : "Upload Job Description")}
-                </span>
-                <span className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, TXT (max 10MB)</span>
-                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadJobDocument(file, "JOB_DESCRIPTION");
-                  e.target.value = "";
-                }} />
-              </label>
-            </CardContent>
-          </Card>
-
-          {/* Additional Documents */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-500">Additional Documents</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {job.documents?.filter((d: any) => d.category === "ADDITIONAL").map((doc: any) => (
-                <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
-                      <p className="text-xs text-gray-400">{formatBytes(doc.size)} · {formatDate(doc.createdAt)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <a href={`/api/documents/${doc.id}`} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
-                    </a>
-                    <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${uploadingAdditional ? "opacity-50 pointer-events-none" : "hover:border-indigo-300 hover:bg-indigo-50/50"}`}>
-                <Upload className="h-6 w-6 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-500">{uploadingAdditional ? "Uploading..." : "Upload Document"}</span>
-                <span className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, TXT, PNG, JPG (max 10MB)</span>
-                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadJobDocument(file, "ADDITIONAL");
-                  e.target.value = "";
-                }} />
-              </label>
             </CardContent>
           </Card>
         </TabsContent>
