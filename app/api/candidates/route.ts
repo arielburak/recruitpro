@@ -30,14 +30,59 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Filters
+    const ownerId = searchParams.get("ownerId");
+    const location = searchParams.get("location");
+    const jobId = searchParams.get("jobId");
+    const clientId = searchParams.get("clientId");
+
+    if (ownerId) {
+      const ownerIds = ownerId.split(",");
+      where.ownerId = ownerIds.length === 1 ? ownerIds[0] : { in: ownerIds };
+    }
+
+    if (location) {
+      const locations = location.split(",");
+      where.location = locations.length === 1
+        ? locations[0]
+        : { in: locations };
+    }
+
+    if (jobId) {
+      const jobIds = jobId.split(",");
+      where.submissions = {
+        some: { jobId: jobIds.length === 1 ? jobIds[0] : { in: jobIds } },
+      };
+    }
+
+    if (clientId) {
+      const clientIds = clientId.split(",");
+      where.submissions = {
+        ...where.submissions,
+        some: {
+          ...where.submissions?.some,
+          job: {
+            clientId: clientIds.length === 1 ? clientIds[0] : { in: clientIds },
+          },
+        },
+      };
+    }
+
+    // Sorting
+    const sort = searchParams.get("sort");
+    let orderBy: any = { createdAt: "desc" };
+    if (sort === "name_asc") orderBy = [{ firstName: "asc" }, { lastName: "asc" }];
+    else if (sort === "name_desc") orderBy = [{ firstName: "desc" }, { lastName: "desc" }];
+    else if (sort === "created_asc") orderBy = { createdAt: "asc" };
+
     const [candidates, total] = await Promise.all([
       prisma.candidate.findMany({
         where,
         include: {
-          owner: { select: { name: true } },
+          owner: { select: { id: true, name: true } },
           _count: { select: { submissions: true } },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy,
         skip,
         take: limit,
       }),
