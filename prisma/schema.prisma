@@ -571,9 +571,10 @@ model ClientJob {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  client      Client           @relation(fields: [clientId], references: [id])
-  postedBy    ClientUser       @relation(fields: [postedById], references: [id])
-  engagements FirmEngagement[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  postedBy           ClientUser          @relation(fields: [postedById], references: [id])
+  engagements        FirmEngagement[]
+  pendingFirmInvites PendingFirmInvite[]
 
   @@index([clientId])
   @@index([status])
@@ -597,6 +598,22 @@ model FirmEngagement {
   @@unique([clientJobId, organizationId])
   @@index([organizationId])
   @@index([organizationId, status])
+}
+
+// ─── PENDING FIRM INVITES (email invites before firm registers) ───
+
+model PendingFirmInvite {
+  id          String   @id @default(cuid())
+  email       String
+  clientJobId String
+  message     String?
+  clientId    String
+  createdAt   DateTime @default(now())
+
+  clientJob ClientJob @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@unique([email, clientJobId])
 }
 
 // ─── BILLING ───

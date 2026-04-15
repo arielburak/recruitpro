@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireActiveSubscription, SubscriptionError } from "@/lib/subscription-guard";
 
 export async function PUT(
   request: Request,
@@ -30,6 +31,19 @@ export async function PUT(
     }
 
     if (action === "accept") {
+      // Verify active subscription before accepting
+      try {
+        await requireActiveSubscription(ctx.organizationId);
+      } catch (e) {
+        if (e instanceof SubscriptionError) {
+          return NextResponse.json(
+            { error: e.message, code: "SUBSCRIPTION_REQUIRED" },
+            { status: 403 }
+          );
+        }
+        throw e;
+      }
+
       // Get org default stages
       const org = await prisma.organization.findUnique({
         where: { id: ctx.organizationId },

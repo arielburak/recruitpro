@@ -107,9 +107,23 @@ export default function JobDetailPage() {
 
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${params.id}`);
-    if (res.ok) setJob(await res.json());
+    if (res.ok) {
+      setJob(await res.json());
+    } else {
+      const data = await res.json().catch(() => ({}));
+      // If this is a ClientJob ID with an accepted engagement, redirect to the real job
+      if (res.status === 307 && data.redirect) {
+        router.replace(data.redirect);
+        return;
+      }
+      // If this is a ClientJob with a pending engagement, redirect to engagements
+      if (data.error === "pending_engagement") {
+        router.replace("/engagements");
+        return;
+      }
+    }
     setLoading(false);
-  }, [params.id]);
+  }, [params.id, router]);
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
 

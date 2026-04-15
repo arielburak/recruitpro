@@ -7,7 +7,7 @@ function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-// GET - search for recruiting firms on the platform
+// GET - search for recruiting firms on the platform (only firms with active subscriptions)
 export async function GET(request: Request) {
   try {
     await getClientContext();
@@ -17,12 +17,31 @@ export async function GET(request: Request) {
     const firms = await prisma.organization.findMany({
       where: {
         name: { contains: q, mode: "insensitive" },
+        subscription: {
+          status: { in: ["ACTIVE", "TRIALING"] },
+        },
       },
       select: { id: true, name: true, logo: true, _count: { select: { users: true } } },
       take: 20,
     });
 
-    return NextResponse.json(firms);
+    // Filter out firms with expired trials
+    const now = new Date();
+    const activeFirms = [];
+    for (const firm of firms) {
+      const sub = await prisma.subscription.findUnique({
+        where: { organizationId: firm.id },
+        select: { status: true, trialEndsAt: true },
+      });
+      if (!sub) continue;
+      if (sub.status === "ACTIVE") {
+        activeFirms.push(firm);
+      } else if (sub.status === "TRIALING" && (!sub.trialEndsAt || now <= sub.trialEndsAt)) {
+        activeFirms.push(firm);
+      }
+    }
+
+    return NextResponse.json(activeFirms);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
@@ -59,6 +78,18 @@ export async function POST(request: Request) {
       if (user) {
         orgId = user.organizationId;
       } else {
+        // Save pending invite so it can be picked up after registration/login
+        await prisma.pendingFirmInvite.upsert({
+          where: { email_clientJobId: { email, clientJobId } },
+          update: { message: message || null },
+          create: {
+            email,
+            clientJobId,
+            clientId: ctx.clientId,
+            message: message || null,
+          },
+        });
+
         // Send email invite to join the platform
         try {
           const baseUrl = process.env.NEXTAUTH_URL ||
@@ -74,9 +105,12 @@ export async function POST(request: Request) {
                 <p><strong>${job.title}</strong></p>
                 <p>${message || "They'd like you to work on this role."}</p>
                 <p>Join Recruiting ATS to manage this engagement:</p>
-                <a href="${baseUrl}/register" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
+                <a href="${baseUrl}/register?invite=${clientJobId}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
                   Join Recruiting ATS
                 </a>
+                <p style="margin-top: 16px; font-size: 13px; color: #6b7280;">
+                  Already have an account? <a href="${baseUrl}/login" style="color: #4f46e5;">Sign in here</a>
+                </p>
               </div>
             `,
           });

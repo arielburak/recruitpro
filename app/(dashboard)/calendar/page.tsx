@@ -806,6 +806,9 @@ function CreateInterviewModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // Interview purpose
+  const [purpose, setPurpose] = useState<"CANDIDATE" | "CLIENT" | null>(null);
+
   // Form state
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(defaultDate ? defaultDate.toISOString().split("T")[0] : "");

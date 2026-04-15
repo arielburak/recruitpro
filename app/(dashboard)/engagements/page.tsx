@@ -24,6 +24,7 @@ export default function EngagementsPage() {
   const [engagements, setEngagements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/engagements")
@@ -35,6 +36,7 @@ export default function EngagementsPage() {
 
   async function respond(id: string, action: "accept" | "decline") {
     setResponding(id);
+    setSubscriptionError(null);
     try {
       const res = await fetch(`/api/engagements/${id}`, {
         method: "PUT",
@@ -42,6 +44,12 @@ export default function EngagementsPage() {
         body: JSON.stringify({ action }),
       });
       const data = await res.json();
+
+      if (data.code === "SUBSCRIPTION_REQUIRED") {
+        setSubscriptionError(data.error);
+        setResponding(null);
+        return;
+      }
 
       if (action === "accept" && data.jobId) {
         router.push(`/jobs/${data.jobId}`);
@@ -80,6 +88,26 @@ export default function EngagementsPage() {
           Job requests from hiring companies looking for recruiting help
         </p>
       </div>
+
+      {subscriptionError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <XCircle className="h-5 w-5 text-red-600" />
+            </div>
+            <div>
+              <p className="font-medium text-red-900 text-sm">{subscriptionError}</p>
+              <p className="text-xs text-red-600 mt-0.5">You need an active subscription to accept engagement requests.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => router.push("/admin/billing")}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition shrink-0"
+          >
+            Go to Billing
+          </button>
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="space-y-3">

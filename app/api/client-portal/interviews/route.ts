@@ -32,11 +32,18 @@ export async function GET(request: NextRequest) {
         meetingLink: true,
         location: true,
         timezone: true,
+        notes: true,
         candidate: {
           select: { firstName: true, lastName: true },
         },
         job: {
           select: { title: true },
+        },
+        creator: {
+          select: { name: true },
+        },
+        interviewers: {
+          include: { user: { select: { name: true } } },
         },
       },
       orderBy: { startTime: "asc" },
@@ -52,12 +59,101 @@ export async function GET(request: NextRequest) {
       meetingLink: i.meetingLink,
       location: i.location,
       timezone: i.timezone,
+      notes: i.notes,
       candidateName: `${i.candidate.firstName} ${i.candidate.lastName}`,
       jobTitle: i.job.title,
+      createdBy: i.creator?.name || "Unknown",
+      interviewers: i.interviewers.map((a) => a.user.name),
     }));
 
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const ctx = await getClientContext();
+    const body = await request.json();
+
+    const {
+      title,
+      startTime,
+      endTime,
+      type,
+      candidateId,
+      submissionId,
+      meetingLink,
+      location,
+      timezone,
+      notes,
+      teamMemberIds,
+    } = body;
+
+    if (!title || !startTime || !endTime || !candidateId || !submissionId) {
+      return NextResponse.json(
+        { error: "Title, times, candidate, and submission are required" },
+        { status: 400 }
+      );
+    }
+
+    // Verify submission belongs to this client and is shared
+    const submission = await prisma.candidateSubmission.findFirst({
+      where: {
+        id: submissionId,
+        isSharedWithClient: true,
+        job: { clientId: ctx.clientId },
+      },
+      include: {
+        job: { select: { id: true, organizationId: true } },
+      },
+    });
+
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found or not shared with you" }, { status: 404 });
+    }
+
+    // We need a createdBy userId — use the first user from the org that owns the job
+    // (since Interview.createdBy requires a User, not a ClientUser)
+    const orgUser = await prisma.user.findFirst({
+      where: { organizationId: submission.job.organizationId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!orgUser) {
+      return NextResponse.json({ error: "No organization user found" }, { status: 500 });
+    }
+
+    const interview = await prisma.interview.create({
+      data: {
+        title,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        type: type || "VIDEO",
+        notes: notes || null,
+        meetingLink: meetingLink || null,
+        location: location || null,
+        timezone: timezone || "America/Argentina/Buenos_Aires",
+        submissionId,
+        jobId: submission.job.id,
+        candidateId,
+        organizationId: submission.job.organizationId,
+        createdBy: orgUser.id,
+      },
+      select: {
+        id: true,
+        title: true,
+        startTime: true,
+        endTime: true,
+        type: true,
+        status: true,
+      },
+    });
+
+    return NextResponse.json(interview, { status: 201 });
+  } catch (error: any) {
+    console.error("[client-portal/interviews] Create error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
