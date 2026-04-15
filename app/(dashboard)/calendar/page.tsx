@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Globe,
   Pencil,
+  Building2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -113,6 +114,15 @@ type Interview = {
   job: { id: string; title: string; client: { name: string } };
   creator: { name: string };
   interviewers: { user: { id: string; name: string } }[];
+  clientContacts?: { contact: { id: string; firstName: string; lastName: string; email?: string; title?: string } }[];
+};
+
+type ClientContactOption = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  title?: string;
 };
 
 type CandidateOption = {
@@ -416,6 +426,20 @@ export default function CalendarPage() {
                     </div>
                   )}
 
+                  {selectedInterview.clientContacts && selectedInterview.clientContacts.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-1">Client Contacts</p>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedInterview.clientContacts.map((cc) => (
+                          <Badge key={cc.contact.id} variant="secondary" className="text-xs bg-amber-50 text-amber-700">
+                            {cc.contact.firstName} {cc.contact.lastName}
+                            {cc.contact.title && <span className="text-amber-500 ml-0.5">· {cc.contact.title}</span>}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <p className="text-xs text-gray-400 uppercase mb-1">Scheduled by</p>
                     <p className="text-sm">{selectedInterview.creator.name}</p>
@@ -556,6 +580,10 @@ function CreateInterviewModal({
   const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([]);
   const [recruiterOwnerId, setRecruiterOwnerId] = useState("");
 
+  // Client contacts
+  const [clientContacts, setClientContacts] = useState<ClientContactOption[]>([]);
+  const [selectedClientContacts, setSelectedClientContacts] = useState<string[]>([]);
+
   // Fetch team members
   useEffect(() => {
     fetch("/api/users/search?q=")
@@ -601,6 +629,35 @@ function CreateInterviewModal({
     return () => clearTimeout(timeout);
   }, [candidateSearch]);
 
+  // Fetch client contacts when submission changes
+  useEffect(() => {
+    if (!selectedSubmissionId || !selectedCandidate) return;
+    const sub = selectedCandidate.submissions.find((s) => s.id === selectedSubmissionId);
+    if (!sub) return;
+    // We need the clientId — fetch it from the job
+    fetch(`/api/jobs/${sub.job.id}`)
+      .then((r) => r.json())
+      .then((job) => {
+        if (job.clientId) {
+          fetch(`/api/contacts?clientId=${job.clientId}`)
+            .then((r) => r.json())
+            .then((contacts) => {
+              setClientContacts(
+                (contacts || []).map((c: any) => ({
+                  id: c.id,
+                  firstName: c.firstName,
+                  lastName: c.lastName,
+                  email: c.email,
+                  title: c.title,
+                }))
+              );
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [selectedSubmissionId, selectedCandidate]);
+
   async function selectCandidate(candidate: CandidateOption) {
     // Fetch full candidate with submissions
     try {
@@ -619,16 +676,16 @@ function CreateInterviewModal({
         setSelectedCandidate(withSubs);
         setCandidateDropdownOpen(false);
         setCandidateSearch("");
-        // Auto-set title
         setTitle(`Interview - ${full.firstName} ${full.lastName}`);
-        // Auto-select first submission if only one
         if (withSubs.submissions.length === 1) {
           setSelectedSubmissionId(withSubs.submissions[0].id);
         }
-        // Set recruiter owner from candidate
         if (full.ownerId) {
           setRecruiterOwnerId(full.ownerId);
         }
+        // Reset client contacts when candidate changes
+        setSelectedClientContacts([]);
+        setClientContacts([]);
       }
     } catch { /* silent */ }
   }
@@ -671,6 +728,7 @@ function CreateInterviewModal({
           timezone,
           notes: notes || undefined,
           interviewerIds: selectedInterviewers.length > 0 ? selectedInterviewers : undefined,
+          clientContactIds: selectedClientContacts.length > 0 ? selectedClientContacts : undefined,
         }),
       });
 
@@ -923,6 +981,49 @@ function CreateInterviewModal({
             </select>
           </div>
 
+          {/* Client Contacts (Hiring Company) */}
+          {clientContacts.length > 0 && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Building2 className="h-3.5 w-3.5 text-gray-400" /> Client Contacts
+                <span className="text-xs text-gray-400 font-normal ml-1">(will receive invite)</span>
+              </Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedClientContacts.map((cid) => {
+                  const c = clientContacts.find((cc) => cc.id === cid);
+                  return c ? (
+                    <Badge key={cid} variant="secondary" className="gap-1 bg-amber-50 text-amber-700">
+                      {c.firstName} {c.lastName}
+                      {c.title && <span className="text-amber-500">· {c.title}</span>}
+                      <button type="button" onClick={() => setSelectedClientContacts(selectedClientContacts.filter((id) => id !== cid))}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+              <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                value="" onChange={(e) => {
+                  if (e.target.value && !selectedClientContacts.includes(e.target.value)) {
+                    setSelectedClientContacts([...selectedClientContacts, e.target.value]);
+                  }
+                  e.target.value = "";
+                }}>
+                <option value="">Add client contact...</option>
+                {clientContacts.filter((c) => !selectedClientContacts.includes(c.id)).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName}{c.title ? ` (${c.title})` : ""}{c.email ? ` — ${c.email}` : ""}
+                  </option>
+                ))}
+              </select>
+              {selectedClientContacts.length > 0 && (
+                <p className="text-xs text-amber-600">
+                  {selectedClientContacts.length} contact{selectedClientContacts.length > 1 ? "s" : ""} will receive an interview invite email.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Notes */}
           <div className="space-y-2">
             <Label>Notes</Label>
@@ -981,10 +1082,38 @@ function EditInterviewModal({
     interview.interviewers?.map((iv) => iv.user.id) || []
   );
 
+  // Client contacts
+  const [clientContacts, setClientContacts] = useState<ClientContactOption[]>([]);
+  const [selectedClientContacts, setSelectedClientContacts] = useState<string[]>(
+    interview.clientContacts?.map((cc) => cc.contact.id) || []
+  );
+
   useEffect(() => {
     fetch("/api/users/search?q=")
       .then((r) => r.json())
       .then((data) => setTeamMembers(data.users || []))
+      .catch(() => {});
+    // Fetch client contacts for this job's client
+    fetch(`/api/jobs/${interview.job.id}`)
+      .then((r) => r.json())
+      .then((job) => {
+        if (job.clientId) {
+          fetch(`/api/contacts?clientId=${job.clientId}`)
+            .then((r) => r.json())
+            .then((contacts) => {
+              setClientContacts(
+                (contacts || []).map((c: any) => ({
+                  id: c.id,
+                  firstName: c.firstName,
+                  lastName: c.lastName,
+                  email: c.email,
+                  title: c.title,
+                }))
+              );
+            })
+            .catch(() => {});
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -1017,6 +1146,7 @@ function EditInterviewModal({
           timezone,
           notes: notes || null,
           interviewerIds: selectedInterviewers,
+          clientContactIds: selectedClientContacts,
         }),
       });
 
@@ -1291,6 +1421,47 @@ function EditInterviewModal({
                 ))}
             </select>
           </div>
+
+          {/* Client Contacts (Hiring Company) */}
+          {clientContacts.length > 0 && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Building2 className="h-3.5 w-3.5 text-gray-400" /> Client Contacts
+                <span className="text-xs text-gray-400 font-normal ml-1">(hiring company)</span>
+              </Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedClientContacts.map((cid) => {
+                  const c = clientContacts.find((cc) => cc.id === cid);
+                  return c ? (
+                    <Badge key={cid} variant="secondary" className="gap-1 bg-amber-50 text-amber-700">
+                      {c.firstName} {c.lastName}
+                      {c.title && <span className="text-amber-500">· {c.title}</span>}
+                      <button type="button" onClick={() => setSelectedClientContacts(selectedClientContacts.filter((id) => id !== cid))}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value && !selectedClientContacts.includes(e.target.value)) {
+                    setSelectedClientContacts([...selectedClientContacts, e.target.value]);
+                  }
+                  e.target.value = "";
+                }}
+              >
+                <option value="">Add client contact...</option>
+                {clientContacts.filter((c) => !selectedClientContacts.includes(c.id)).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName}{c.title ? ` (${c.title})` : ""}{c.email ? ` — ${c.email}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Notes */}
           <div className="space-y-2">

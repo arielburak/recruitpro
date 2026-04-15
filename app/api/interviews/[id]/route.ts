@@ -20,6 +20,9 @@ export async function GET(
         interviewers: {
           include: { user: { select: { id: true, name: true, email: true } } },
         },
+        clientContacts: {
+          include: { contact: { select: { id: true, firstName: true, lastName: true, email: true, title: true } } },
+        },
         submission: { select: { id: true, stage: { select: { name: true } } } },
       },
     });
@@ -43,7 +46,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const { title, startTime, endTime, type, status, notes, meetingLink, location, timezone, interviewerIds } = body;
+    const { title, startTime, endTime, type, status, notes, meetingLink, location, timezone, interviewerIds, clientContactIds } = body;
 
     // Verify interview exists and belongs to org
     const existing = await prisma.interview.findFirst({
@@ -72,16 +75,29 @@ export async function PUT(
 
     // Update interviewers if provided
     if (interviewerIds !== undefined) {
-      // Remove all existing assignments
       await prisma.interviewAssignment.deleteMany({
         where: { interviewId: id },
       });
-      // Create new assignments
       if (interviewerIds.length > 0) {
         await prisma.interviewAssignment.createMany({
           data: interviewerIds.map((userId: string) => ({
             interviewId: id,
             userId,
+          })),
+        });
+      }
+    }
+
+    // Update client contacts if provided
+    if (clientContactIds !== undefined) {
+      await prisma.interviewClientContact.deleteMany({
+        where: { interviewId: id },
+      });
+      if (clientContactIds.length > 0) {
+        await prisma.interviewClientContact.createMany({
+          data: clientContactIds.map((contactId: string) => ({
+            interviewId: id,
+            contactId,
           })),
         });
       }
@@ -103,6 +119,9 @@ export async function PUT(
         creator: { select: { name: true } },
         interviewers: {
           include: { user: { select: { id: true, name: true } } },
+        },
+        clientContacts: {
+          include: { contact: { select: { id: true, firstName: true, lastName: true, email: true, title: true } } },
         },
       },
     });

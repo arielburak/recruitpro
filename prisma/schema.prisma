@@ -115,6 +115,7 @@ model Contact {
   organization Organization @relation(fields: [organizationId], references: [id])
   jobs         Job[]        @relation("HiringManager")
   deals        Deal[]
+  interviews   InterviewClientContact[]
 
   @@index([clientId])
   @@index([organizationId])
@@ -357,7 +358,8 @@ model Interview {
   candidate    Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   organization Organization        @relation(fields: [organizationId], references: [id])
   creator      User                @relation("InterviewCreator", fields: [createdBy], references: [id])
-  interviewers InterviewAssignment[]
+  interviewers    InterviewAssignment[]
+  clientContacts  InterviewClientContact[]
 
   @@index([organizationId, startTime])
   @@index([candidateId])
@@ -374,6 +376,17 @@ model InterviewAssignment {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([interviewId, userId])
+}
+
+model InterviewClientContact {
+  id          String @id @default(cuid())
+  interviewId String
+  contactId   String
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, contactId])
 }
 
 enum InterviewType {

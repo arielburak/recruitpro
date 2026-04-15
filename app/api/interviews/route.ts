@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
-import { sendInterviewInviteEmail } from "@/lib/email";
+import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +34,9 @@ export async function GET(request: NextRequest) {
         interviewers: {
           include: { user: { select: { id: true, name: true } } },
         },
+        clientContacts: {
+          include: { contact: { select: { id: true, firstName: true, lastName: true, email: true, title: true } } },
+        },
       },
       orderBy: { startTime: "asc" },
     });
@@ -62,6 +65,7 @@ export async function POST(request: Request) {
       location,
       timezone,
       interviewerIds,
+      clientContactIds,
     } = body;
 
     if (!title || !startTime || !endTime || !candidateId || !jobId || !submissionId) {
@@ -105,10 +109,18 @@ export async function POST(request: Request) {
               create: interviewerIds.map((userId: string) => ({ userId })),
             }
           : undefined,
+        clientContacts: clientContactIds?.length
+          ? {
+              create: clientContactIds.map((contactId: string) => ({ contactId })),
+            }
+          : undefined,
       },
       include: {
         candidate: { select: { firstName: true, lastName: true, email: true } },
         job: { select: { title: true, client: { select: { name: true } } } },
+        clientContacts: {
+          include: { contact: { select: { firstName: true, lastName: true, email: true } } },
+        },
       },
     });
 
@@ -120,28 +132,38 @@ export async function POST(request: Request) {
       organizationId: ctx.organizationId,
     });
 
-    // Send interview invite email to candidate
+    // Send invite emails
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const emailDateOpts = {
+      weekday: "long" as const, year: "numeric" as const, month: "long" as const, day: "numeric" as const,
+      timeZone: interviewTz,
+    };
+    const emailTimeOpts = {
+      hour: "numeric" as const, minute: "2-digit" as const, hour12: true as const,
+      timeZone: interviewTz,
+    };
+    const formattedDate = start.toLocaleDateString("en-US", emailDateOpts);
+    const formattedStart = start.toLocaleTimeString("en-US", emailTimeOpts);
+    const formattedEnd = end.toLocaleTimeString("en-US", emailTimeOpts);
+
+    // Get org name for client contact emails
+    const org = await prisma.organization.findUnique({
+      where: { id: ctx.organizationId },
+      select: { name: true },
+    });
+
+    // 1) Email to candidate
     if (interview.candidate.email) {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
       try {
         await sendInterviewInviteEmail({
           to: interview.candidate.email,
           candidateName: interview.candidate.firstName,
           jobTitle: interview.job.title,
           clientName: interview.job.client?.name || "",
-          interviewDate: start.toLocaleDateString("en-US", {
-            weekday: "long", year: "numeric", month: "long", day: "numeric",
-            timeZone: interviewTz,
-          }),
-          interviewTime: start.toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit", hour12: true,
-            timeZone: interviewTz,
-          }),
-          interviewEndTime: end.toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit", hour12: true,
-            timeZone: interviewTz,
-          }),
+          interviewDate: formattedDate,
+          interviewTime: formattedStart,
+          interviewEndTime: formattedEnd,
           timezone: interviewTz,
           interviewType: type || "VIDEO",
           meetingLink: meetingLink || undefined,
@@ -150,8 +172,37 @@ export async function POST(request: Request) {
           recruiterName: ctx.userName,
         });
       } catch (emailErr) {
-        console.error("[interview] Failed to send invite email:", emailErr);
-        // Don't fail the interview creation if email fails
+        console.error("[interview] Failed to send candidate invite:", emailErr);
+      }
+    }
+
+    // 2) Emails to client contacts (hiring company)
+    if (interview.clientContacts?.length > 0) {
+      const candidateFullName = `${interview.candidate.firstName} ${interview.candidate.lastName}`;
+      for (const cc of interview.clientContacts) {
+        if (cc.contact.email) {
+          try {
+            await sendInterviewInviteToClientContact({
+              to: cc.contact.email,
+              contactName: cc.contact.firstName,
+              candidateName: candidateFullName,
+              jobTitle: interview.job.title,
+              clientName: interview.job.client?.name || "",
+              interviewDate: formattedDate,
+              interviewTime: formattedStart,
+              interviewEndTime: formattedEnd,
+              timezone: interviewTz,
+              interviewType: type || "VIDEO",
+              meetingLink: meetingLink || undefined,
+              location: location || undefined,
+              notes: notes || undefined,
+              recruiterName: ctx.userName,
+              firmName: org?.name || "Our recruiting team",
+            });
+          } catch (emailErr) {
+            console.error(`[interview] Failed to send client contact invite to ${cc.contact.email}:`, emailErr);
+          }
+        }
       }
     }
 
