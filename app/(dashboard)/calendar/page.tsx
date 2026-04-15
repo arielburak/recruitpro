@@ -810,7 +810,8 @@ function CreateInterviewModal({
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(defaultDate ? defaultDate.toISOString().split("T")[0] : "");
   const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
+  const [endTime, setEndTime] = useState("09:30");
+  const [duration, setDuration] = useState(30);
   const [type, setType] = useState("VIDEO");
   const [platform, setPlatform] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
@@ -1090,19 +1091,83 @@ function CreateInterviewModal({
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Interview - Candidate Name" />
           </div>
 
-          {/* Date & Time */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Date & Time — Calendly-style */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Date *</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
             </div>
             <div className="space-y-2">
-              <Label>Start *</Label>
-              <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
+              <Label>Duration</Label>
+              <div className="flex gap-1">
+                {[15, 30, 45, 60, 90].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      setDuration(d);
+                      // Auto-update end time
+                      if (startTime) {
+                        const [h, m] = startTime.split(":").map(Number);
+                        const totalMin = h * 60 + m + d;
+                        const endH = Math.floor(totalMin / 60) % 24;
+                        const endM = totalMin % 60;
+                        setEndTime(`${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      duration === d
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {d < 60 ? `${d}m` : d === 60 ? "1h" : "1.5h"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Start Time *</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={startTime}
+                onChange={(e) => {
+                  const newStart = e.target.value;
+                  setStartTime(newStart);
+                  // Auto-update end time based on duration
+                  const [h, m] = newStart.split(":").map(Number);
+                  const totalMin = h * 60 + m + duration;
+                  const endH = Math.floor(totalMin / 60) % 24;
+                  const endM = totalMin % 60;
+                  setEndTime(`${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`);
+                }}
+              >
+                {Array.from({ length: 40 }, (_, i) => {
+                  const h = Math.floor((i * 30 + 7 * 60) / 60);
+                  const m = (i * 30 + 7 * 60) % 60;
+                  if (h >= 24) return null;
+                  const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                  const label = new Date(`2000-01-01T${val}`).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
+                  return <option key={val} value={val}>{label}</option>;
+                })}
+              </select>
             </div>
             <div className="space-y-2">
-              <Label>End *</Label>
-              <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
+              <Label>End Time</Label>
+              <div className="flex h-10 w-full rounded-md border border-input bg-gray-50 px-3 py-2 text-sm items-center text-gray-600">
+                {endTime && new Date(`2000-01-01T${endTime}`).toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                })}
+                <span className="ml-auto text-xs text-gray-400">{duration} min</span>
+              </div>
             </div>
           </div>
 
@@ -1342,6 +1407,7 @@ function EditInterviewModal({
     startDt.toTimeString().slice(0, 5)
   );
   const [endTime, setEndTime] = useState(endDt.toTimeString().slice(0, 5));
+  const [duration, setDuration] = useState(Math.round((endDt.getTime() - startDt.getTime()) / 60000));
   const [type, setType] = useState(interview.type);
   const [status, setStatus] = useState(interview.status);
   const [meetingLink, setMeetingLink] = useState(interview.meetingLink || "");
@@ -1509,34 +1575,81 @@ function EditInterviewModal({
             </div>
           </div>
 
-          {/* Date & Time */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Date & Time — Calendly-style */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Date</Label>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-              />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
             </div>
             <div className="space-y-2">
-              <Label>Start</Label>
-              <Input
-                type="time"
+              <Label>Duration</Label>
+              <div className="flex gap-1">
+                {[15, 30, 45, 60, 90].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      setDuration(d);
+                      if (startTime) {
+                        const [h, m] = startTime.split(":").map(Number);
+                        const totalMin = h * 60 + m + d;
+                        const endH = Math.floor(totalMin / 60) % 24;
+                        const endM = totalMin % 60;
+                        setEndTime(`${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      duration === d
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {d < 60 ? `${d}m` : d === 60 ? "1h" : "1.5h"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Start Time</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-              />
+                onChange={(e) => {
+                  const newStart = e.target.value;
+                  setStartTime(newStart);
+                  const [h, m] = newStart.split(":").map(Number);
+                  const totalMin = h * 60 + m + duration;
+                  const endH = Math.floor(totalMin / 60) % 24;
+                  const endM = totalMin % 60;
+                  setEndTime(`${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`);
+                }}
+              >
+                {Array.from({ length: 40 }, (_, i) => {
+                  const h = Math.floor((i * 30 + 7 * 60) / 60);
+                  const m = (i * 30 + 7 * 60) % 60;
+                  if (h >= 24) return null;
+                  const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                  const label = new Date(`2000-01-01T${val}`).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
+                  return <option key={val} value={val}>{label}</option>;
+                })}
+              </select>
             </div>
             <div className="space-y-2">
-              <Label>End</Label>
-              <Input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-              />
+              <Label>End Time</Label>
+              <div className="flex h-10 w-full rounded-md border border-input bg-gray-50 px-3 py-2 text-sm items-center text-gray-600">
+                {endTime && new Date(`2000-01-01T${endTime}`).toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                })}
+                <span className="ml-auto text-xs text-gray-400">{duration} min</span>
+              </div>
             </div>
           </div>
 
