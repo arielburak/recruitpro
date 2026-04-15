@@ -6,11 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Video, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
 export default function AdminSettingsPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto space-y-6"><h1 className="text-2xl font-bold">Settings</h1><div className="h-40 bg-gray-50 rounded-lg animate-pulse" /></div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const [saved, setSaved] = useState(false);
