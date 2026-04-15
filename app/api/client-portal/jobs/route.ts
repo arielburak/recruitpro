@@ -92,7 +92,7 @@ export async function POST(request: Request) {
         location: body.location || null,
         salaryRange: body.salaryRange || null,
         jobType: body.jobType || "Full-time",
-        isRemote: body.isRemote || false,
+        isRemote: body.workMode ? body.workMode !== "ON_SITE" : (body.isRemote || false),
         clientId: ctx.clientId,
         postedById: ctx.clientUserId,
       },

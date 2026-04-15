@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Briefcase } from "lucide-react";
+import { ArrowLeft, Briefcase, Upload, FileText, X, Loader2 } from "lucide-react";
 
 const JOB_TYPES = ["Full-time", "Part-time", "Contract", "Temporary", "Internship"];
 
@@ -16,6 +16,39 @@ export default function PostJobPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // File upload & parsing state
+  const [jdFile, setJdFile] = useState<File | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [parseStatus, setParseStatus] = useState("");
+  const [description, setDescription] = useState("");
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
+  async function handleFileUpload(file: File) {
+    setJdFile(file);
+    setParsing(true);
+    setParseStatus("Extracting text...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/client-portal/parse-document", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (data.text && data.text.trim()) {
+        setDescription(data.text.trim());
+        setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
+      } else if (data.error) {
+        setParseStatus(`Could not extract text: ${data.error}`);
+      } else {
+        setParseStatus("No text could be extracted from this file");
+      }
+    } catch {
+      setParseStatus("Failed to parse file");
+    } finally {
+      setParsing(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -30,12 +63,12 @@ export default function PostJobPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: fd.get("title"),
-          description: fd.get("description"),
+          description: description || fd.get("description"),
           requirements: fd.get("requirements"),
           location: fd.get("location"),
           salaryRange: fd.get("salaryRange"),
           jobType: fd.get("jobType"),
-          isRemote: fd.get("isRemote") === "on",
+          workMode: fd.get("workMode"),
         }),
       });
 
@@ -79,14 +112,77 @@ export default function PostJobPage() {
 
         <Card>
           <CardContent className="p-5 space-y-4">
+            {/* JD File Upload */}
+            <div className="space-y-2">
+              <Label>Job Description File</Label>
+              {jdFile ? (
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5 text-emerald-500" />
+                    <div>
+                      <p className="text-sm font-medium truncate max-w-xs">{jdFile.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {(jdFile.size / 1024).toFixed(1)} KB
+                        {parsing && (
+                          <span className="ml-2 text-emerald-500">
+                            <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                            Parsing...
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setJdFile(null); setParseStatus(""); }}
+                    className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
+                  <Upload className="h-6 w-6 text-gray-400 mb-2" />
+                  <span className="text-sm text-gray-500">Upload Job Description</span>
+                  <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB) — text will be extracted and fill the description</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+              {parseStatus && !parsing && (
+                <p className={`text-xs ${parseStatus.startsWith("Text extracted") ? "text-green-600" : "text-amber-600"}`}>
+                  {parseStatus}
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="title">Job Title *</Label>
               <Input id="title" name="title" placeholder="e.g. Senior Software Engineer" required />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Job Description</Label>
-              <Textarea id="description" name="description" rows={5} placeholder="Describe the role, responsibilities, team structure..." />
+              <Label htmlFor="description">
+                Job Description
+                {description ? <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span> : ""}
+              </Label>
+              <Textarea
+                ref={descRef}
+                id="description"
+                name="description"
+                rows={description ? 12 : 5}
+                placeholder="Describe the role, responsibilities, team structure..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
             </div>
 
             <div className="space-y-2">
@@ -111,7 +207,7 @@ export default function PostJobPage() {
                 <select
                   id="jobType"
                   name="jobType"
-                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                   defaultValue="Full-time"
                 >
                   {JOB_TYPES.map((t) => (
@@ -120,11 +216,17 @@ export default function PostJobPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label className="block mb-3">Remote?</Label>
-                <label className="inline-flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="isRemote" className="rounded border-gray-300" />
-                  This position is remote-friendly
-                </label>
+                <Label htmlFor="workMode">Work Arrangement</Label>
+                <select
+                  id="workMode"
+                  name="workMode"
+                  className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  defaultValue="ON_SITE"
+                >
+                  <option value="ON_SITE">On-site</option>
+                  <option value="REMOTE">Remote</option>
+                  <option value="HYBRID">Hybrid</option>
+                </select>
               </div>
             </div>
           </CardContent>
@@ -132,7 +234,7 @@ export default function PostJobPage() {
 
         <div className="flex items-center justify-between pt-2">
           <p className="text-xs text-gray-400">You can invite recruiting firms after posting</p>
-          <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
+          <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={loading || parsing}>
             {loading ? "Posting..." : "Post Job"}
           </Button>
         </div>

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getOrgContext } from "@/lib/tenant";
+import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
 
 export async function POST(request: Request) {
   try {
-    await getOrgContext(); // Auth check
+    await getClientContext(); // Auth check — client users only
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
