@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { Briefcase, LayoutDashboard, FolderOpen, LogOut } from "lucide-react";
+import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar } from "lucide-react";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -14,8 +14,8 @@ export default function ClientPortalLayout({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/[a-z0-9]+$/.test(pathname);
-  const isLoggedIn = !!(session?.user as any)?.isClientUser;
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|calendar)[a-z0-9]+$/.test(pathname);
+  const showNav = !isPublicPage;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -38,11 +38,15 @@ export default function ClientPortalLayout({
               </div>
             </Link>
 
-            {isLoggedIn && !isPublicPage && (
+            {showNav && (
               <nav className="hidden sm:flex items-center gap-1 ml-4">
                 <NavLink href="/client-portal/dashboard" current={pathname === "/client-portal/dashboard"}>
                   <LayoutDashboard className="h-4 w-4" />
                   Dashboard
+                </NavLink>
+                <NavLink href="/client-portal/calendar" current={pathname === "/client-portal/calendar"}>
+                  <Calendar className="h-4 w-4" />
+                  Calendar
                 </NavLink>
                 <NavLink href="/client-portal/jobs/new" current={pathname === "/client-portal/jobs/new"}>
                   <FolderOpen className="h-4 w-4" />
@@ -53,7 +57,7 @@ export default function ClientPortalLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            {isLoggedIn && !isPublicPage ? (
+            {showNav ? (
               <>
                 <span className="text-sm text-gray-500 hidden md:block">
                   {(session?.user as any)?.clientName}
@@ -84,7 +88,7 @@ export default function ClientPortalLayout({
             Powered by{" "}
             <span className="font-semibold text-emerald-600">Recruiting ATS</span>
           </p>
-          {isLoggedIn && !isPublicPage && (
+          {showNav && (
             <Link href="/client-portal/dashboard" className="text-xs text-gray-400 hover:text-emerald-600 transition-colors">
               Back to Dashboard
             </Link>
