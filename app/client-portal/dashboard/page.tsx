@@ -62,8 +62,15 @@ export default function ClientDashboardPage() {
   async function fetchTeam() {
     try {
       const res = await fetch("/api/client-portal/team");
-      if (res.ok) setTeamMembers(await res.json());
-    } catch {}
+      if (res.ok) {
+        setTeamMembers(await res.json());
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("[fetchTeam] Failed:", res.status, err);
+      }
+    } catch (e) {
+      console.error("[fetchTeam] Error:", e);
+    }
   }
 
   async function inviteMember(e: React.FormEvent) {
@@ -79,7 +86,8 @@ export default function ClientDashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setInviteResult({ type: "error", message: data.error || "Failed to invite" });
+        const debugInfo = data.debug ? ` [session: ${JSON.stringify(data.debug)}]` : "";
+        setInviteResult({ type: "error", message: (data.error || "Failed to invite") + debugInfo });
       } else {
         setInviteResult({
           type: "success",
