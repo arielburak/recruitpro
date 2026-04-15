@@ -1369,45 +1369,57 @@ function CreateInterviewModal({
             </select>
           </div>
 
-          {/* Client Contacts (only for Client Interview purpose) */}
-          {purpose === "CLIENT" && clientContacts.length > 0 && (
+          {/* Client Contacts (for Client Interview purpose) */}
+          {purpose === "CLIENT" && (
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-gray-400" /> Client Contacts
+                <Building2 className="h-3.5 w-3.5 text-amber-500" /> Client Contacts
                 <span className="text-xs text-gray-400 font-normal ml-1">(will receive invite)</span>
               </Label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {selectedClientContacts.map((cid) => {
-                  const c = clientContacts.find((cc) => cc.id === cid);
-                  return c ? (
-                    <Badge key={cid} variant="secondary" className="gap-1 bg-amber-50 text-amber-700">
-                      {c.firstName} {c.lastName}
-                      {c.title && <span className="text-amber-500">· {c.title}</span>}
-                      <button type="button" onClick={() => setSelectedClientContacts(selectedClientContacts.filter((id) => id !== cid))}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ) : null;
-                })}
-              </div>
-              <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                value="" onChange={(e) => {
-                  if (e.target.value && !selectedClientContacts.includes(e.target.value)) {
-                    setSelectedClientContacts([...selectedClientContacts, e.target.value]);
-                  }
-                  e.target.value = "";
-                }}>
-                <option value="">Add client contact...</option>
-                {clientContacts.filter((c) => !selectedClientContacts.includes(c.id)).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.firstName} {c.lastName}{c.title ? ` (${c.title})` : ""}{c.email ? ` — ${c.email}` : ""}
-                  </option>
-                ))}
-              </select>
-              {selectedClientContacts.length > 0 && (
-                <p className="text-xs text-amber-600">
-                  {selectedClientContacts.length} contact{selectedClientContacts.length > 1 ? "s" : ""} will receive an interview invite email.
+              {clientContacts.length === 0 ? (
+                <p className="text-xs text-gray-400 bg-gray-50 p-3 rounded-lg">
+                  {!selectedCandidate
+                    ? "Select a candidate first to load client contacts for that job."
+                    : !selectedSubmissionId
+                    ? "Select a job/pipeline to load client contacts."
+                    : "No contacts found for this client. Add contacts from the Clients section first."}
                 </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {selectedClientContacts.map((cid) => {
+                      const c = clientContacts.find((cc) => cc.id === cid);
+                      return c ? (
+                        <Badge key={cid} variant="secondary" className="gap-1 bg-amber-50 text-amber-700">
+                          {c.firstName} {c.lastName}
+                          {c.title && <span className="text-amber-500">· {c.title}</span>}
+                          <button type="button" onClick={() => setSelectedClientContacts(selectedClientContacts.filter((id) => id !== cid))}>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    value="" onChange={(e) => {
+                      if (e.target.value && !selectedClientContacts.includes(e.target.value)) {
+                        setSelectedClientContacts([...selectedClientContacts, e.target.value]);
+                      }
+                      e.target.value = "";
+                    }}>
+                    <option value="">Add client contact...</option>
+                    {clientContacts.filter((c) => !selectedClientContacts.includes(c.id)).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.firstName} {c.lastName}{c.title ? ` (${c.title})` : ""}{c.email ? ` — ${c.email}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedClientContacts.length > 0 && (
+                    <p className="text-xs text-amber-600">
+                      {selectedClientContacts.length} contact{selectedClientContacts.length > 1 ? "s" : ""} will receive an interview invite email.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
