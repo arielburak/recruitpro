@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
+import { sendClientTeamInviteEmail } from "@/lib/email";
 
 // List all team members for this client
 export async function GET() {
@@ -116,14 +117,36 @@ export async function POST(request: Request) {
       },
     });
 
-    // TODO: Send invitation email with the set-password link
-    // For now, return the token so the UI can show the invite link
     const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
     const inviteLink = `${baseUrl}/client-portal/set-password?token=${token}&email=${encodeURIComponent(email)}`;
+
+    // Get inviter info and company name for the email
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    const inviterName = user?.name || "Your colleague";
+    const companyName = client?.name || "your company";
+
+    // Send invitation email
+    try {
+      await sendClientTeamInviteEmail({
+        to: email,
+        inviteUrl: inviteLink,
+        inviterName,
+        companyName,
+        memberName: name,
+        title: title || undefined,
+      });
+    } catch (emailErr) {
+      console.error("[team/POST] Failed to send invite email:", emailErr);
+      // Don't fail the request if email fails — user was still created
+    }
 
     return NextResponse.json({
       id: clientUser.id,
       inviteLink,
+      emailSent: true,
     }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

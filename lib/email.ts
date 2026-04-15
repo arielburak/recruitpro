@@ -323,6 +323,46 @@ export async function sendInterviewInviteToClientContact({
   });
 }
 
+export async function sendClientTeamInviteEmail({
+  to,
+  inviteUrl,
+  inviterName,
+  companyName,
+  memberName,
+  title,
+}: {
+  to: string;
+  inviteUrl: string;
+  inviterName: string;
+  companyName: string;
+  memberName: string;
+  title?: string;
+}) {
+  const titleLine = title ? `<p style="color: #6b7280;">Role: <strong>${title}</strong></p>` : "";
+  const html = wrapTemplate(
+    `You've been added to ${companyName}'s hiring team`,
+    `<p>Hi ${memberName},</p>
+     <p><strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong>'s hiring team on ${appName}.</p>
+     ${titleLine}
+     <p>With your account, you can:</p>
+     <ul style="color: #4b5563; padding-left: 20px;">
+       <li>View and post job openings</li>
+       <li>Track recruiting firm activity</li>
+       <li>Review shared candidates</li>
+       <li>Manage your team's hiring pipeline</li>
+     </ul>
+     <p>Click below to set your password and get started.</p>`,
+    inviteUrl,
+    "Set Password & Get Started"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${inviterName} invited you to ${companyName}'s hiring team on ${appName}`,
+    html,
+  });
+}
+
 export async function sendClientSetPasswordEmail({
   to,
   setPasswordUrl,

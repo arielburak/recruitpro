@@ -14,11 +14,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Client portal with token - allow (pages + API)
-  if (pathname.startsWith("/client-portal/") && !pathname.startsWith("/client-portal/dashboard")) {
+  // Client portal public pages (login, set-password, reset-password) — always allow
+  const clientPublicPaths = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
+  if (clientPublicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
-  if (pathname.startsWith("/api/client-portal/")) {
+
+  // Client portal API routes that don't need session (register, check-account)
+  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password"];
+  if (clientPublicApis.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
@@ -30,7 +34,7 @@ export async function proxy(request: NextRequest) {
   });
 
   if (!token) {
-    const isClientPortal = pathname.startsWith("/client-portal");
+    const isClientPortal = pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal");
     const loginUrl = isClientPortal ? "/client-portal/login" : "/login";
     return NextResponse.redirect(new URL(loginUrl, request.url));
   }
@@ -40,6 +44,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/client-portal/dashboard", request.url));
   }
 
+  // Staffing firm users accessing client portal → redirect to client login
+  // (they need to sign out of staffing and sign in as client)
+  if (!token.isClientUser && (pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal"))) {
+    // For pages, redirect to client login
+    if (pathname.startsWith("/client-portal")) {
+      return NextResponse.redirect(new URL("/client-portal/login", request.url));
+    }
+    // For API calls, return 401 so the UI can handle it
+    return NextResponse.json({ error: "Please sign in to the client portal" }, { status: 401 });
+  }
 
   // Internal users: check subscription status for non-admin routes
   if (!token.isClientUser && !pathname.startsWith("/admin/billing") && !pathname.startsWith("/api/")) {
