@@ -43,6 +43,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberName, setMemberName] = useState("");
+  const [memberTitle, setMemberTitle] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [addingMember, setAddingMember] = useState(false);
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
@@ -81,7 +82,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       const res = await fetch("/api/client-portal/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim() }),
+        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim(), title: memberTitle.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -93,6 +94,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           link: data.inviteLink,
         });
         setMemberName("");
+        setMemberTitle("");
         setMemberEmail("");
         fetchTeam();
       }
@@ -237,7 +239,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               {showAddMember && (
                 <form onSubmit={addMember} className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Name</Label>
+                    <Label className="text-xs">Name *</Label>
                     <Input
                       value={memberName}
                       onChange={(e) => setMemberName(e.target.value)}
@@ -247,7 +249,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Email</Label>
+                    <Label className="text-xs">Job Title</Label>
+                    <Input
+                      value={memberTitle}
+                      onChange={(e) => setMemberTitle(e.target.value)}
+                      placeholder="e.g. Hiring Manager"
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email *</Label>
                     <Input
                       type="email"
                       value={memberEmail}
@@ -297,6 +308,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-gray-900 truncate">{member.name}</p>
+                        {member.title && <p className="text-[10px] text-gray-500 truncate">{member.title}</p>}
                         <a href={`mailto:${member.email}`} className="text-[11px] text-emerald-600 hover:underline truncate block">{member.email}</a>
                       </div>
                     </div>

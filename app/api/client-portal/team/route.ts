@@ -29,6 +29,7 @@ export async function GET() {
         id: true,
         name: true,
         email: true,
+        title: true,
         isActive: true,
         createdAt: true,
       },
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
 
     const email = body.email.trim().toLowerCase();
     const name = body.name.trim();
+    const title = body.title?.trim() || null;
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
       // Reactivate deactivated user
       await prisma.clientUser.update({
         where: { id: existing.id },
-        data: { isActive: true, name },
+        data: { isActive: true, name, title },
       });
       return NextResponse.json({ id: existing.id, reactivated: true }, { status: 200 });
     }
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
       data: {
         email,
         name,
+        title,
         clientId,
       },
     });

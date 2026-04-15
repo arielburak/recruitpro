@@ -43,6 +43,7 @@ export default function ClientDashboardPage() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteName, setInviteName] = useState("");
+  const [inviteTitle, setInviteTitle] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
@@ -74,7 +75,7 @@ export default function ClientDashboardPage() {
       const res = await fetch("/api/client-portal/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: inviteName.trim(), email: inviteEmail.trim() }),
+        body: JSON.stringify({ name: inviteName.trim(), email: inviteEmail.trim(), title: inviteTitle.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -86,6 +87,7 @@ export default function ClientDashboardPage() {
           link: data.inviteLink,
         });
         setInviteName("");
+        setInviteTitle("");
         setInviteEmail("");
         fetchTeam();
       }
@@ -394,7 +396,7 @@ export default function ClientDashboardPage() {
               <form onSubmit={inviteMember} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Name</Label>
+                    <Label className="text-xs">Name *</Label>
                     <Input
                       value={inviteName}
                       onChange={(e) => setInviteName(e.target.value)}
@@ -404,16 +406,25 @@ export default function ClientDashboardPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Email</Label>
+                    <Label className="text-xs">Job Title</Label>
                     <Input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="john@company.com"
+                      value={inviteTitle}
+                      onChange={(e) => setInviteTitle(e.target.value)}
+                      placeholder="e.g. VP of Engineering"
                       className="text-sm"
-                      required
                     />
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Email *</Label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="john@company.com"
+                    className="text-sm"
+                    required
+                  />
                 </div>
                 <Button
                   type="submit"
@@ -466,7 +477,8 @@ export default function ClientDashboardPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">{member.name}</p>
-                      <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                      {member.title && <p className="text-[11px] text-gray-500 truncate">{member.title}</p>}
+                      <p className="text-xs text-gray-400 truncate">{member.email}</p>
                     </div>
                   </div>
                   <div className="relative">
