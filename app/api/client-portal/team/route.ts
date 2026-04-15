@@ -8,17 +8,23 @@ import { randomBytes } from "crypto";
 // List all team members for this client
 export async function GET() {
   try {
-    let ctx;
-    try {
-      ctx = await getClientContext();
-    } catch (authErr: any) {
-      const session = await getServerSession(authOptions);
-      console.error("[team/GET] Auth failed:", authErr.message, "Session:", JSON.stringify(session?.user));
-      return NextResponse.json({ error: authErr.message }, { status: 401 });
+    const session = await getServerSession(authOptions);
+    const user = session?.user as any;
+
+    let clientId = user?.clientId;
+    if (!clientId && user?.email) {
+      const clientUser = await prisma.clientUser.findFirst({
+        where: { email: user.email, isActive: true },
+      });
+      if (clientUser) clientId = clientUser.clientId;
+    }
+
+    if (!clientId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const members = await prisma.clientUser.findMany({
-      where: { clientId: ctx.clientId },
+      where: { clientId },
       select: {
         id: true,
         name: true,
@@ -38,15 +44,30 @@ export async function GET() {
 // Invite a new team member
 export async function POST(request: Request) {
   try {
-    let ctx;
-    try {
-      ctx = await getClientContext();
-    } catch (authErr: any) {
-      // Debug: log session state when auth fails
-      const session = await getServerSession(authOptions);
-      console.error("[team/POST] Auth failed:", authErr.message, "Session:", JSON.stringify(session?.user));
-      return NextResponse.json({ error: authErr.message }, { status: 401 });
+    const session = await getServerSession(authOptions);
+    const user = session?.user as any;
+
+    // If no clientId in session, try to find the clientUser by email
+    let clientId = user?.clientId;
+    let clientUserId = user?.id;
+
+    if (!clientId && user?.email) {
+      const clientUser = await prisma.clientUser.findFirst({
+        where: { email: user.email, isActive: true },
+      });
+      if (clientUser) {
+        clientId = clientUser.clientId;
+        clientUserId = clientUser.id;
+      }
     }
+
+    if (!clientId) {
+      return NextResponse.json({
+        error: "Unauthorized: Not a client user",
+        debug: { hasSession: !!session, email: user?.email, clientId: user?.clientId, isClientUser: user?.isClientUser },
+      }, { status: 401 });
+    }
+
     const body = await request.json();
 
     if (!body.email || !body.name) {
@@ -58,7 +79,7 @@ export async function POST(request: Request) {
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({
-      where: { email, clientId: ctx.clientId },
+      where: { email, clientId },
     });
 
     if (existing) {
@@ -78,7 +99,7 @@ export async function POST(request: Request) {
       data: {
         email,
         name,
-        clientId: ctx.clientId,
+        clientId,
       },
     });
 
@@ -87,7 +108,7 @@ export async function POST(request: Request) {
     await prisma.clientPortalToken.create({
       data: {
         token,
-        clientId: ctx.clientId,
+        clientId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
