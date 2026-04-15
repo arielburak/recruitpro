@@ -23,6 +23,8 @@ import {
   UserPlus,
   Copy,
   Check,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/utils";
@@ -48,6 +50,50 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [addingMember, setAddingMember] = useState(false);
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    requirements: "",
+    location: "",
+    salaryRange: "",
+    jobType: "Full-time",
+    workMode: "ON_SITE",
+    status: "OPEN",
+  });
+
+  function startEditing() {
+    setEditForm({
+      title: job.title || "",
+      description: job.description || "",
+      requirements: job.requirements || "",
+      location: job.location || "",
+      salaryRange: job.salaryRange || "",
+      jobType: job.jobType || "Full-time",
+      workMode: job.isRemote ? "REMOTE" : "ON_SITE",
+      status: job.status || "OPEN",
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        setEditing(false);
+        fetchJob();
+      }
+    } catch {}
+    setSaving(false);
+  }
 
   useEffect(() => {
     fetchJob();
@@ -191,33 +237,129 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             <span>· Posted {formatDate(job.createdAt)}</span>
           </div>
         </div>
-        <Badge className={`text-sm ${job.status === "OPEN" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-          {job.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {!editing && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+              <Pencil className="h-3 w-3" />
+              Edit
+            </Button>
+          )}
+          <Badge className={`text-sm ${job.status === "OPEN" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+            {job.status}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Job Details */}
         <div className="lg:col-span-2 space-y-4">
-          {job.description && (
+          {editing ? (
             <Card>
-              <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
-            </Card>
-          )}
-          {job.requirements && (
-            <Card>
-              <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
-            </Card>
-          )}
-          {job.salaryRange && (
-            <Card>
-              <CardContent className="p-4">
-                <span className="text-sm text-gray-500">Salary Range: </span>
-                <span className="font-medium">{job.salaryRange}</span>
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Edit Job</h3>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="text-xs" onClick={() => setEditing(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 gap-1 text-xs" onClick={saveEdit} disabled={saving}>
+                      <Save className="h-3 w-3" />
+                      {saving ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Job Title *</Label>
+                  <Input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea rows={10} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Requirements</Label>
+                  <Textarea rows={5} value={editForm.requirements} onChange={(e) => setEditForm({ ...editForm, requirements: e.target.value })} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Location</Label>
+                    <Input value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Salary Range</Label>
+                    <Input value={editForm.salaryRange} onChange={(e) => setEditForm({ ...editForm, salaryRange: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Job Type</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.jobType} onChange={(e) => setEditForm({ ...editForm, jobType: e.target.value })}>
+                      {["Full-time", "Part-time", "Contract", "Temporary", "Internship"].map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Work Arrangement</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.workMode} onChange={(e) => setEditForm({ ...editForm, workMode: e.target.value })}>
+                      <option value="ON_SITE">On-site</option>
+                      <option value="REMOTE">Remote</option>
+                      <option value="HYBRID">Hybrid</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                      <option value="OPEN">Open</option>
+                      <option value="FILLED">Filled</option>
+                      <option value="CLOSED">Closed</option>
+                    </select>
+                  </div>
+                </div>
               </CardContent>
             </Card>
+          ) : (
+            <>
+              {job.description && (
+                <Card>
+                  <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
+                </Card>
+              )}
+              {job.requirements && (
+                <Card>
+                  <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
+                </Card>
+              )}
+              {job.salaryRange && (
+                <Card>
+                  <CardContent className="p-4">
+                    <span className="text-sm text-gray-500">Salary Range: </span>
+                    <span className="font-medium">{job.salaryRange}</span>
+                  </CardContent>
+                </Card>
+              )}
+              {!job.description && !job.requirements && !job.salaryRange && (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-sm text-gray-400 mb-2">No description added yet</p>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+                      <Pencil className="h-3 w-3" />
+                      Add Details
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
 

@@ -2,6 +2,44 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getClientContext();
+    const { id } = await params;
+    const body = await request.json();
+
+    // Verify job belongs to this client
+    const existing = await prisma.clientJob.findFirst({
+      where: { id, clientId: ctx.clientId },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
+    const updated = await prisma.clientJob.update({
+      where: { id },
+      data: {
+        title: body.title ?? existing.title,
+        description: body.description ?? existing.description,
+        requirements: body.requirements ?? existing.requirements,
+        location: body.location ?? existing.location,
+        salaryRange: body.salaryRange ?? existing.salaryRange,
+        jobType: body.jobType ?? existing.jobType,
+        isRemote: body.workMode ? body.workMode !== "ON_SITE" : existing.isRemote,
+        status: body.status ?? existing.status,
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
