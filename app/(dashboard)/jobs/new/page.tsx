@@ -278,7 +278,7 @@ function NewJobContent() {
                 <Input name="location" placeholder="New York, NY" />
               </div>
               <div className="space-y-2">
-                <Label>Work Mode</Label>
+                <Label>Work Arrangement</Label>
                 <select name="workMode" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="ON_SITE">
                   <option value="ON_SITE">On-site</option>
                   <option value="REMOTE">Remote</option>

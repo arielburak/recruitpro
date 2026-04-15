@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_MODE_LABELS, WORK_MODE_COLORS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -167,7 +167,7 @@ export default function JobsPage() {
 
   // Multi-select filters
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [workModeFilter, setWorkModeFilter] = useState<string[]>([]);
+  const [workArrangementFilter, setWorkArrangementFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [recruiterFilter, setRecruiterFilter] = useState<string[]>([]);
@@ -192,7 +192,7 @@ export default function JobsPage() {
   // Extract unique filter options with counts
   const filterOptions = useMemo(() => {
     const statuses = new Map<string, number>();
-    const workModes = new Map<string, number>();
+    const workArrangements = new Map<string, number>();
     const locations = new Map<string, number>();
     const clients = new Map<string, { name: string; count: number }>();
     const recruiters = new Map<string, { name: string; count: number }>();
@@ -201,7 +201,7 @@ export default function JobsPage() {
       statuses.set(j.status, (statuses.get(j.status) || 0) + 1);
 
       const wm = j.workMode || "ON_SITE";
-      workModes.set(wm, (workModes.get(wm) || 0) + 1);
+      workArrangements.set(wm, (workArrangements.get(wm) || 0) + 1);
 
       if (j.location) {
         const loc = j.location.trim();
@@ -227,8 +227,8 @@ export default function JobsPage() {
       statuses: Array.from(statuses.entries())
         .map(([value, count]) => ({ value, label: JOB_STATUS_LABELS[value] || value, count }))
         .sort((a, b) => b.count - a.count),
-      workModes: Array.from(workModes.entries())
-        .map(([value, count]) => ({ value, label: WORK_MODE_LABELS[value] || value, count }))
+      workArrangements: Array.from(workArrangements.entries())
+        .map(([value, count]) => ({ value, label: WORK_ARRANGEMENT_LABELS[value] || value, count }))
         .sort((a, b) => b.count - a.count),
       locations: Array.from(locations.entries())
         .map(([value, count]) => ({ value, label: value, count }))
@@ -254,17 +254,17 @@ export default function JobsPage() {
           return false;
       }
       if (statusFilter.length > 0 && !statusFilter.includes(j.status)) return false;
-      if (workModeFilter.length > 0 && !workModeFilter.includes(j.workMode || "ON_SITE")) return false;
+      if (workArrangementFilter.length > 0 && !workArrangementFilter.includes(j.workMode || "ON_SITE")) return false;
       if (locationFilter.length > 0 && !locationFilter.includes(j.location?.trim())) return false;
       if (clientFilter.length > 0 && !clientFilter.includes(j.client.id)) return false;
       if (recruiterFilter.length > 0 && !(j.assignments || []).some((a: any) => recruiterFilter.includes(a.user.id))) return false;
       return true;
     });
-  }, [jobs, search, statusFilter, workModeFilter, locationFilter, clientFilter, recruiterFilter]);
+  }, [jobs, search, statusFilter, workArrangementFilter, locationFilter, clientFilter, recruiterFilter]);
 
   const activeFilters = [
     ...statusFilter.map((v) => ({ type: "Status", value: v, label: JOB_STATUS_LABELS[v] || v, clear: () => setStatusFilter(statusFilter.filter((x) => x !== v)) })),
-    ...workModeFilter.map((v) => ({ type: "Work Mode", value: v, label: WORK_MODE_LABELS[v] || v, clear: () => setWorkModeFilter(workModeFilter.filter((x) => x !== v)) })),
+    ...workArrangementFilter.map((v) => ({ type: "Arrangement", value: v, label: WORK_ARRANGEMENT_LABELS[v] || v, clear: () => setWorkArrangementFilter(workArrangementFilter.filter((x) => x !== v)) })),
     ...clientFilter.map((v) => ({ type: "Client", value: v, label: filterOptions.clients.find((c) => c.value === v)?.label || v, clear: () => setClientFilter(clientFilter.filter((x) => x !== v)) })),
     ...locationFilter.map((v) => ({ type: "Location", value: v, label: v, clear: () => setLocationFilter(locationFilter.filter((x) => x !== v)) })),
     ...recruiterFilter.map((v) => ({ type: "Recruiter", value: v, label: filterOptions.recruiters.find((r) => r.value === v)?.label || v, clear: () => setRecruiterFilter(recruiterFilter.filter((x) => x !== v)) })),
@@ -272,7 +272,7 @@ export default function JobsPage() {
 
   function clearAllFilters() {
     setStatusFilter([]);
-    setWorkModeFilter([]);
+    setWorkArrangementFilter([]);
     setLocationFilter([]);
     setClientFilter([]);
     setRecruiterFilter([]);
@@ -310,11 +310,11 @@ export default function JobsPage() {
             colorMap={JOB_STATUS_COLORS}
           />
           <MultiFilter
-            label="Work Mode"
-            selected={workModeFilter}
-            options={filterOptions.workModes}
-            onChange={setWorkModeFilter}
-            colorMap={WORK_MODE_COLORS}
+            label="Work Arrangement"
+            selected={workArrangementFilter}
+            options={filterOptions.workArrangements}
+            onChange={setWorkArrangementFilter}
+            colorMap={WORK_ARRANGEMENT_COLORS}
           />
           <MultiFilter
             label="Client"
@@ -412,8 +412,8 @@ export default function JobsPage() {
                   </Badge>
                 </div>
                 <div>
-                  <Badge className={`${WORK_MODE_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
-                    {WORK_MODE_LABELS[j.workMode] || "On-site"}
+                  <Badge className={`${WORK_ARRANGEMENT_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
+                    {WORK_ARRANGEMENT_LABELS[j.workMode] || "On-site"}
                   </Badge>
                 </div>
                 <div className="min-w-0">
