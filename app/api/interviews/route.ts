@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
+import { getValidAccessToken, createGoogleCalendarEvent } from "@/lib/google-calendar";
 
 export async function GET(request: NextRequest) {
   try {
@@ -61,11 +62,12 @@ export async function POST(request: Request) {
       jobId,
       submissionId,
       notes,
-      meetingLink,
+      meetingLink: manualMeetingLink,
       location,
       timezone,
       interviewerIds,
       clientContactIds,
+      platform,
     } = body;
 
     if (!title || !startTime || !endTime || !candidateId || !jobId || !submissionId) {
@@ -88,6 +90,75 @@ export async function POST(request: Request) {
     }
 
     const interviewTz = timezone || "America/Argentina/Buenos_Aires";
+
+    // Auto-generate Google Meet link if platform is google_meet and user has integration
+    let meetingLink = manualMeetingLink || "";
+    let googleEventId: string | null = null;
+
+    if (platform === "google_meet" && !manualMeetingLink) {
+      try {
+        const accessToken = await getValidAccessToken(ctx.userId);
+        if (accessToken) {
+          // Collect attendee emails
+          const attendees: { email: string; displayName?: string }[] = [];
+
+          // Get candidate email
+          const candidateData = await prisma.candidate.findUnique({
+            where: { id: candidateId },
+            select: { email: true, firstName: true, lastName: true },
+          });
+          if (candidateData?.email) {
+            attendees.push({
+              email: candidateData.email,
+              displayName: `${candidateData.firstName} ${candidateData.lastName}`,
+            });
+          }
+
+          // Get client contact emails
+          if (clientContactIds?.length) {
+            const contacts = await prisma.contact.findMany({
+              where: { id: { in: clientContactIds } },
+              select: { email: true, firstName: true, lastName: true },
+            });
+            for (const c of contacts) {
+              if (c.email) {
+                attendees.push({
+                  email: c.email,
+                  displayName: `${c.firstName} ${c.lastName}`,
+                });
+              }
+            }
+          }
+
+          // Get interviewer emails
+          if (interviewerIds?.length) {
+            const interviewerUsers = await prisma.user.findMany({
+              where: { id: { in: interviewerIds } },
+              select: { email: true, name: true },
+            });
+            for (const u of interviewerUsers) {
+              attendees.push({ email: u.email, displayName: u.name });
+            }
+          }
+
+          const calEvent = await createGoogleCalendarEvent({
+            accessToken,
+            summary: title || `Interview - ${candidateData?.firstName || "Candidate"}`,
+            description: notes || undefined,
+            startTime: new Date(startTime).toISOString(),
+            endTime: new Date(endTime).toISOString(),
+            timezone: interviewTz,
+            attendees,
+          });
+
+          meetingLink = calEvent.meetLink;
+          googleEventId = calEvent.eventId;
+        }
+      } catch (calErr) {
+        console.error("[interview] Failed to create Google Calendar event:", calErr);
+        // Continue without Meet link - don't block interview creation
+      }
+    }
 
     const interview = await prisma.interview.create({
       data: {

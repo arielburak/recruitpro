@@ -24,6 +24,7 @@ import {
   Globe,
   Pencil,
   Building2,
+  CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -561,8 +562,11 @@ function CreateInterviewModal({
   const [meetingLink, setMeetingLink] = useState("");
   const [location, setLocation] = useState("");
   const [timezone, setTimezone] = useState("America/Argentina/Buenos_Aires");
-  const [calendlyLink, setCalendlyLink] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Google Calendar integration status
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
 
   // Candidate search
   const [candidateSearch, setCandidateSearch] = useState("");
@@ -584,11 +588,18 @@ function CreateInterviewModal({
   const [clientContacts, setClientContacts] = useState<ClientContactOption[]>([]);
   const [selectedClientContacts, setSelectedClientContacts] = useState<string[]>([]);
 
-  // Fetch team members
+  // Fetch team members + google status
   useEffect(() => {
     fetch("/api/users/search?q=")
       .then((r) => r.json())
       .then((data) => setTeamMembers(data.users || []))
+      .catch(() => {});
+    fetch("/api/integrations/google/status")
+      .then((r) => r.json())
+      .then((data) => {
+        setGoogleConnected(data.connected || false);
+        setGoogleEmail(data.email || null);
+      })
       .catch(() => {});
   }, []);
 
@@ -723,7 +734,8 @@ function CreateInterviewModal({
           candidateId: selectedCandidate.id,
           jobId: selectedSubmission!.job.id,
           submissionId: selectedSubmissionId,
-          meetingLink: meetingLink || calendlyLink || undefined,
+          platform,
+          meetingLink: meetingLink || undefined,
           location: type === "IN_PERSON" ? location : undefined,
           timezone,
           notes: notes || undefined,
@@ -896,39 +908,48 @@ function CreateInterviewModal({
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
-              {platform === "google_meet" && (
-                <p className="text-xs text-gray-500">Paste your Google Meet link below, or create one from <a href="https://meet.google.com/new" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">meet.google.com</a></p>
+
+              {platform === "google_meet" && googleConnected && (
+                <div className="flex items-center gap-2 bg-green-50 p-2.5 rounded-lg text-sm">
+                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                  <div>
+                    <p className="text-green-800 font-medium text-xs">Google Meet link will be auto-generated</p>
+                    <p className="text-green-600 text-xs">Connected as {googleEmail}. A calendar event with Meet link will be created and sent to all participants.</p>
+                  </div>
+                </div>
               )}
+
+              {platform === "google_meet" && !googleConnected && (
+                <div className="bg-amber-50 p-2.5 rounded-lg text-sm space-y-1.5">
+                  <p className="text-amber-700 text-xs">
+                    Google Calendar not connected. <a href="/admin/settings" className="text-indigo-600 hover:underline font-medium">Connect in Settings</a> to auto-generate Meet links, or paste a link manually below.
+                  </p>
+                  <Input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+                </div>
+              )}
+
               {platform === "teams" && (
-                <p className="text-xs text-gray-500">Paste your Teams meeting link below, or create one from <a href="https://teams.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">teams.microsoft.com</a></p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">Paste your Teams meeting link below, or create one from <a href="https://teams.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">teams.microsoft.com</a></p>
+                  <Input placeholder="https://teams.microsoft.com/l/meetup-join/..." value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+                </div>
               )}
+
               {platform === "zoom" && (
-                <p className="text-xs text-gray-500">Paste your Zoom meeting link below</p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">Paste your Zoom meeting link below</p>
+                  <Input placeholder="https://zoom.us/j/..." value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+                </div>
               )}
-              {platform !== "none" && (
-                <Input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+
+              {platform === "custom" && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">Paste any meeting or scheduling link</p>
+                  <Input placeholder="https://..." value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
+                </div>
               )}
             </div>
           )}
-
-          {/* Calendly Link */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              <ExternalLink className="h-3.5 w-3.5 text-gray-400" /> Calendly Link
-            </Label>
-            <Input
-              placeholder="https://calendly.com/your-name/30min"
-              value={calendlyLink}
-              onChange={(e) => setCalendlyLink(e.target.value)}
-            />
-            <p className="text-xs text-gray-400">
-              Paste a Calendly scheduling link to share with the candidate.
-              {!calendlyLink && " "}
-              {!calendlyLink && (
-                <a href="https://calendly.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Create one at calendly.com</a>
-              )}
-            </p>
-          </div>
 
           {/* Location (for IN_PERSON) */}
           {type === "IN_PERSON" && (

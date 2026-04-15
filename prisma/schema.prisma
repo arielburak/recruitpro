@@ -52,8 +52,26 @@ model User {
   jobAssignments        JobAssignment[]
   createdInterviews     Interview[]           @relation("InterviewCreator")
   interviewAssignments  InterviewAssignment[]
+  integrations          UserIntegration[]
 
   @@index([organizationId])
+}
+
+model UserIntegration {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // "google_calendar" | "microsoft_teams"
+  accessToken  String   @db.Text
+  refreshToken String?  @db.Text
+  expiresAt    DateTime?
+  email        String?  // connected account email
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 enum UserRole {
