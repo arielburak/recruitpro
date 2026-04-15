@@ -37,15 +37,19 @@ export async function GET(request: NextRequest) {
     // Exchange code for tokens
     const origin = request.nextUrl.origin;
     const redirectUri = `${origin}/api/integrations/google/callback`;
+    console.log("[google-callback] Exchanging code, redirectUri:", redirectUri);
+
     const tokens = await exchangeGoogleCode(code, redirectUri);
+    console.log("[google-callback] Got tokens, has refresh:", !!tokens.refresh_token);
 
     // Get the connected Google email
     const email = await getGoogleEmail(tokens.access_token);
+    console.log("[google-callback] Email:", email);
 
     // Save or update integration
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
-    await prisma.userIntegration.upsert({
+    await (prisma as any).userIntegration.upsert({
       where: {
         userId_provider: { userId, provider: "google_calendar" },
       },
@@ -69,7 +73,7 @@ export async function GET(request: NextRequest) {
       new URL("/admin/settings?google=connected", request.nextUrl.origin)
     );
   } catch (error: any) {
-    console.error("[google-callback] Error:", error);
+    console.error("[google-callback] Error:", error.message, error.stack);
     return NextResponse.redirect(
       new URL("/admin/settings?google=error", request.nextUrl.origin)
     );

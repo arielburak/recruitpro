@@ -83,7 +83,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{
  * Get a valid access token for a user, refreshing if needed
  */
 export async function getValidAccessToken(userId: string): Promise<string | null> {
-  const integration = await prisma.userIntegration.findUnique({
+  const integration = await (prisma as any).userIntegration.findUnique({
     where: { userId_provider: { userId, provider: "google_calendar" } },
   });
 
@@ -103,7 +103,7 @@ export async function getValidAccessToken(userId: string): Promise<string | null
     const refreshed = await refreshAccessToken(integration.refreshToken);
     const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
 
-    await prisma.userIntegration.update({
+    await (prisma as any).userIntegration.update({
       where: { id: integration.id },
       data: {
         accessToken: refreshed.access_token,

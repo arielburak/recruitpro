@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const ctx = await getOrgContext();
 
-    const integration = await prisma.userIntegration.findUnique({
+    const integration = await (prisma as any).userIntegration.findUnique({
       where: {
         userId_provider: { userId: ctx.userId, provider: "google_calendar" },
       },
@@ -27,7 +27,7 @@ export async function DELETE() {
   try {
     const ctx = await getOrgContext();
 
-    await prisma.userIntegration.deleteMany({
+    await (prisma as any).userIntegration.deleteMany({
       where: { userId: ctx.userId, provider: "google_calendar" },
     });
 
