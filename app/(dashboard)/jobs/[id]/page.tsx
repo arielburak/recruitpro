@@ -457,13 +457,11 @@ export default function JobDetailPage() {
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
-          <Card>
-            <CardContent className="p-5 space-y-5">
+          <div className="border rounded-xl bg-white p-5 space-y-5">
               {!editing ? (
                 <>
-                  {/* Header row: title + edit button */}
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Job Details</h3>
+                  {/* Header row: edit button */}
+                  <div className="flex items-center justify-end">
                     <Button variant="outline" size="sm" onClick={startEditing} className="h-8">
                       <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
                     </Button>
@@ -658,8 +656,7 @@ export default function JobDetailPage() {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
+          </div>
 
           {/* Job Description Document */}
           <Card>
