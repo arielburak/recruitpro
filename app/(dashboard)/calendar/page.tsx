@@ -413,7 +413,7 @@ export default function CalendarPage() {
 
         {/* Sidebar */}
         <div className="space-y-4">
-          {selectedInterview && (
+          {selectedInterview && (<>
             <Card className="border-indigo-200">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -733,7 +733,7 @@ export default function CalendarPage() {
                 )}
               </CardContent>
             </Card>
-          )}
+          </>)}
 
           <Card>
             <CardContent className="p-4">
