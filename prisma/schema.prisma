@@ -52,6 +52,7 @@ model User {
   jobAssignments        JobAssignment[]
   createdInterviews     Interview[]           @relation("InterviewCreator")
   interviewAssignments  InterviewAssignment[]
+  interviewFeedback     InterviewFeedback[]
   integrations          UserIntegration[]
 
   @@index([organizationId])
@@ -379,6 +380,7 @@ model Interview {
   creator      User                @relation("InterviewCreator", fields: [createdBy], references: [id])
   interviewers    InterviewAssignment[]
   clientContacts  InterviewClientContact[]
+  feedback        InterviewFeedback[]
 
   @@index([organizationId, startTime])
   @@index([candidateId])
@@ -406,6 +408,23 @@ model InterviewClientContact {
   contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([interviewId, contactId])
+}
+
+model InterviewFeedback {
+  id           String   @id @default(cuid())
+  interviewId  String
+  type         String   @default("INTERNAL") // INTERNAL | CLIENT
+  rating       Int?     // 1-5 star rating
+  comment      String   @db.Text
+  authorName   String   // For client feedback (no user account needed)
+  userId       String?  // Null for client feedback
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([interviewId])
 }
 
 enum InterviewType {

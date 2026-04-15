@@ -25,6 +25,9 @@ import {
   Pencil,
   Building2,
   CheckCircle,
+  MessageSquare,
+  Star,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -118,6 +121,16 @@ type Interview = {
   clientContacts?: { contact: { id: string; firstName: string; lastName: string; email?: string; title?: string } }[];
 };
 
+type InterviewFeedback = {
+  id: string;
+  type: string;
+  rating: number | null;
+  comment: string;
+  authorName: string;
+  userId: string | null;
+  createdAt: string;
+};
+
 type ClientContactOption = {
   id: string;
   firstName: string;
@@ -157,6 +170,16 @@ export default function CalendarPage() {
 
   // Edit modal state
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
+
+  // Feedback state
+  const [feedbackList, setFeedbackList] = useState<InterviewFeedback[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<"INTERNAL" | "CLIENT">("INTERNAL");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackAuthor, setFeedbackAuthor] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -244,6 +267,50 @@ export default function CalendarPage() {
     await fetch(`/api/interviews/${id}`, { method: "DELETE" });
     setSelectedInterview(null);
     fetchInterviews();
+  }
+
+  // Fetch feedback when interview is selected
+  useEffect(() => {
+    if (selectedInterview) {
+      fetchFeedback(selectedInterview.id);
+    } else {
+      setFeedbackList([]);
+      setShowFeedbackForm(false);
+    }
+  }, [selectedInterview?.id]);
+
+  async function fetchFeedback(interviewId: string) {
+    setFeedbackLoading(true);
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/feedback`);
+      if (res.ok) setFeedbackList(await res.json());
+    } catch { /* silent */ }
+    setFeedbackLoading(false);
+  }
+
+  async function submitFeedback() {
+    if (!selectedInterview || !feedbackComment.trim()) return;
+    setFeedbackSubmitting(true);
+    try {
+      const res = await fetch(`/api/interviews/${selectedInterview.id}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: feedbackType,
+          rating: feedbackRating || null,
+          comment: feedbackComment,
+          authorName: feedbackType === "CLIENT" ? feedbackAuthor : undefined,
+        }),
+      });
+      if (res.ok) {
+        setFeedbackComment("");
+        setFeedbackRating(0);
+        setFeedbackAuthor("");
+        setShowFeedbackForm(false);
+        fetchFeedback(selectedInterview.id);
+      }
+    } catch { /* silent */ }
+    setFeedbackSubmitting(false);
   }
 
   async function handleStatusChange(id: string, status: string) {
@@ -473,6 +540,197 @@ export default function CalendarPage() {
                     </Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Feedback Section */}
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm flex items-center gap-1.5">
+                    <MessageSquare className="h-4 w-4 text-gray-400" />
+                    Feedback
+                    {feedbackList.length > 0 && (
+                      <span className="text-xs text-gray-400">({feedbackList.length})</span>
+                    )}
+                  </h3>
+                  {!showFeedbackForm && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => setShowFeedbackForm(true)}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add
+                    </Button>
+                  )}
+                </div>
+
+                {/* Add feedback form */}
+                {showFeedbackForm && (
+                  <div className="border rounded-lg p-3 space-y-3 bg-gray-50/50">
+                    {/* Type toggle */}
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setFeedbackType("INTERNAL")}
+                        className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+                          feedbackType === "INTERNAL"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "text-gray-500 hover:bg-gray-100"
+                        }`}
+                      >
+                        Internal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeedbackType("CLIENT")}
+                        className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+                          feedbackType === "CLIENT"
+                            ? "bg-amber-100 text-amber-700"
+                            : "text-gray-500 hover:bg-gray-100"
+                        }`}
+                      >
+                        Client
+                      </button>
+                    </div>
+
+                    {/* Client author name */}
+                    {feedbackType === "CLIENT" && (
+                      <Input
+                        placeholder="Client contact name..."
+                        value={feedbackAuthor}
+                        onChange={(e) => setFeedbackAuthor(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    )}
+
+                    {/* Star rating */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-400 mr-1">Rating:</span>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setFeedbackRating(feedbackRating === s ? 0 : s)}
+                          className="p-0.5"
+                        >
+                          <Star
+                            className={`h-4 w-4 transition-colors ${
+                              s <= feedbackRating
+                                ? "fill-yellow-400 text-yellow-400"
+                                : "text-gray-300 hover:text-yellow-300"
+                            }`}
+                          />
+                        </button>
+                      ))}
+                      {feedbackRating > 0 && (
+                        <span className="text-xs text-gray-400 ml-1">{feedbackRating}/5</span>
+                      )}
+                    </div>
+
+                    {/* Comment */}
+                    <Textarea
+                      placeholder={
+                        feedbackType === "INTERNAL"
+                          ? "Internal notes on the interview..."
+                          : "Client feedback on the candidate..."
+                      }
+                      value={feedbackComment}
+                      onChange={(e) => setFeedbackComment(e.target.value)}
+                      rows={3}
+                      className="text-xs resize-none"
+                    />
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setShowFeedbackForm(false);
+                          setFeedbackComment("");
+                          setFeedbackRating(0);
+                          setFeedbackAuthor("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={submitFeedback}
+                        disabled={feedbackSubmitting || !feedbackComment.trim() || (feedbackType === "CLIENT" && !feedbackAuthor.trim())}
+                      >
+                        {feedbackSubmitting ? "Saving..." : (
+                          <><Send className="h-3 w-3 mr-1" /> Submit</>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Feedback list */}
+                {feedbackLoading ? (
+                  <div className="space-y-2">
+                    <div className="h-16 bg-gray-100 rounded animate-pulse" />
+                  </div>
+                ) : feedbackList.length === 0 && !showFeedbackForm ? (
+                  <p className="text-xs text-gray-400 text-center py-3">
+                    No feedback yet
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {feedbackList.map((fb) => (
+                      <div
+                        key={fb.id}
+                        className={`rounded-lg p-3 text-xs space-y-1.5 ${
+                          fb.type === "CLIENT"
+                            ? "bg-amber-50 border border-amber-100"
+                            : "bg-gray-50 border border-gray-100"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              className={`text-[9px] px-1.5 py-0 ${
+                                fb.type === "CLIENT"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-indigo-100 text-indigo-700"
+                              }`}
+                            >
+                              {fb.type === "CLIENT" ? "Client" : "Internal"}
+                            </Badge>
+                            <span className="font-medium text-gray-700">
+                              {fb.authorName}
+                            </span>
+                          </div>
+                          <span className="text-gray-400 text-[10px]">
+                            {new Date(fb.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {fb.rating && (
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star
+                                key={s}
+                                className={`h-3 w-3 ${
+                                  s <= fb.rating!
+                                    ? "fill-yellow-400 text-yellow-400"
+                                    : "text-gray-300"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                          {fb.comment}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
