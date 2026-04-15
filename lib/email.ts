@@ -158,6 +158,87 @@ export async function sendClientPortalShareEmail({
   });
 }
 
+export async function sendInterviewInviteEmail({
+  to,
+  candidateName,
+  jobTitle,
+  clientName,
+  interviewDate,
+  interviewTime,
+  interviewEndTime,
+  timezone,
+  interviewType,
+  meetingLink,
+  location,
+  notes,
+  recruiterName,
+}: {
+  to: string;
+  candidateName: string;
+  jobTitle: string;
+  clientName: string;
+  interviewDate: string;
+  interviewTime: string;
+  interviewEndTime: string;
+  timezone: string;
+  interviewType: string;
+  meetingLink?: string;
+  location?: string;
+  notes?: string;
+  recruiterName: string;
+}) {
+  const typeLabel =
+    interviewType === "VIDEO" ? "Video Call" : interviewType === "PHONE" ? "Phone Call" : "In Person";
+
+  const tzLabel = timezone.split("/").pop()?.replace(/_/g, " ") || timezone;
+
+  let detailsHtml = `
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+      <tr>
+        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6; width: 120px;">Position</td>
+        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${jobTitle} @ ${clientName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Date</td>
+        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewDate}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Time</td>
+        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewTime} - ${interviewEndTime} (${tzLabel})</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Format</td>
+        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${typeLabel}</td>
+      </tr>
+      ${location ? `<tr>
+        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Location</td>
+        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${location}</td>
+      </tr>` : ""}
+    </table>`;
+
+  if (notes) {
+    detailsHtml += `<p style="font-size: 13px; color: #6b7280; margin: 12px 0 4px 0;">Additional notes:</p>
+    <p style="font-size: 14px; color: #374151; background: #f9fafb; padding: 12px; border-radius: 8px; white-space: pre-wrap;">${notes}</p>`;
+  }
+
+  const html = wrapTemplate(
+    "Interview Invitation",
+    `<p>Hi ${candidateName},</p>
+     <p>You have been scheduled for an interview. Here are the details:</p>
+     ${detailsHtml}
+     <p style="margin-top: 16px;">If you need to reschedule or have any questions, please contact <strong>${recruiterName}</strong>.</p>
+     <p>Good luck!</p>`,
+    meetingLink || undefined,
+    meetingLink ? "Join Meeting" : undefined
+  );
+
+  return sendEmail({
+    to,
+    subject: `Interview Invitation: ${jobTitle} @ ${clientName}`,
+    html,
+  });
+}
+
 export async function sendClientSetPasswordEmail({
   to,
   setPasswordUrl,

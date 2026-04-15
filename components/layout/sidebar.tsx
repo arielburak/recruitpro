@@ -138,7 +138,7 @@ export function Sidebar() {
   const sidebarContent = (
     <>
       {/* Logo */}
-      <Link href="/" className="flex items-center gap-2.5 px-5 py-5 hover:opacity-90 transition-opacity">
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-5 py-5 hover:opacity-90 transition-opacity">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
           <Briefcase size={16} className="text-white" />
         </div>
@@ -203,7 +203,7 @@ export function Sidebar() {
         >
           <Menu size={22} />
         </button>
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600">
             <Briefcase size={13} className="text-white" />
           </div>

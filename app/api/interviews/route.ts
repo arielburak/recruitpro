@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { sendInterviewInviteEmail } from "@/lib/email";
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,6 +83,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Submission not found" }, { status: 404 });
     }
 
+    const interviewTz = timezone || "America/Argentina/Buenos_Aires";
+
     const interview = await prisma.interview.create({
       data: {
         title,
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
         notes,
         meetingLink,
         location,
-        timezone: timezone || "America/Argentina/Buenos_Aires",
+        timezone: interviewTz,
         submissionId,
         jobId,
         candidateId,
@@ -104,8 +107,8 @@ export async function POST(request: Request) {
           : undefined,
       },
       include: {
-        candidate: { select: { firstName: true, lastName: true } },
-        job: { select: { title: true } },
+        candidate: { select: { firstName: true, lastName: true, email: true } },
+        job: { select: { title: true, client: { select: { name: true } } } },
       },
     });
 
@@ -116,6 +119,41 @@ export async function POST(request: Request) {
       candidateId,
       organizationId: ctx.organizationId,
     });
+
+    // Send interview invite email to candidate
+    if (interview.candidate.email) {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      try {
+        await sendInterviewInviteEmail({
+          to: interview.candidate.email,
+          candidateName: interview.candidate.firstName,
+          jobTitle: interview.job.title,
+          clientName: interview.job.client?.name || "",
+          interviewDate: start.toLocaleDateString("en-US", {
+            weekday: "long", year: "numeric", month: "long", day: "numeric",
+            timeZone: interviewTz,
+          }),
+          interviewTime: start.toLocaleTimeString("en-US", {
+            hour: "numeric", minute: "2-digit", hour12: true,
+            timeZone: interviewTz,
+          }),
+          interviewEndTime: end.toLocaleTimeString("en-US", {
+            hour: "numeric", minute: "2-digit", hour12: true,
+            timeZone: interviewTz,
+          }),
+          timezone: interviewTz,
+          interviewType: type || "VIDEO",
+          meetingLink: meetingLink || undefined,
+          location: location || undefined,
+          notes: notes || undefined,
+          recruiterName: ctx.userName,
+        });
+      } catch (emailErr) {
+        console.error("[interview] Failed to send invite email:", emailErr);
+        // Don't fail the interview creation if email fails
+      }
+    }
 
     return NextResponse.json(interview, { status: 201 });
   } catch (error: any) {
