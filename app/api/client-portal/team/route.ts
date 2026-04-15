@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
@@ -7,7 +8,14 @@ import { randomBytes } from "crypto";
 // List all team members for this client
 export async function GET() {
   try {
-    const ctx = await getClientContext();
+    let ctx;
+    try {
+      ctx = await getClientContext();
+    } catch (authErr: any) {
+      const session = await getServerSession(authOptions);
+      console.error("[team/GET] Auth failed:", authErr.message, "Session:", JSON.stringify(session?.user));
+      return NextResponse.json({ error: authErr.message }, { status: 401 });
+    }
 
     const members = await prisma.clientUser.findMany({
       where: { clientId: ctx.clientId },
@@ -30,7 +38,15 @@ export async function GET() {
 // Invite a new team member
 export async function POST(request: Request) {
   try {
-    const ctx = await getClientContext();
+    let ctx;
+    try {
+      ctx = await getClientContext();
+    } catch (authErr: any) {
+      // Debug: log session state when auth fails
+      const session = await getServerSession(authOptions);
+      console.error("[team/POST] Auth failed:", authErr.message, "Session:", JSON.stringify(session?.user));
+      return NextResponse.json({ error: authErr.message }, { status: 401 });
+    }
     const body = await request.json();
 
     if (!body.email || !body.name) {
