@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,7 @@ function ForgotPasswordSection({
 
 export default function ClientPortalLoginPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -109,6 +110,16 @@ export default function ClientPortalLoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [isInvitedUser, setIsInvitedUser] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [clearingSession, setClearingSession] = useState(false);
+
+  // If there's an existing non-client session (staffing firm), clear it
+  // so the client login can create a fresh session
+  useEffect(() => {
+    if (session?.user && !(session.user as any).isClientUser) {
+      setClearingSession(true);
+      signOut({ redirect: false }).then(() => setClearingSession(false));
+    }
+  }, [session]);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

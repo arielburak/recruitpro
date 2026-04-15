@@ -40,6 +40,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/client-portal/dashboard", request.url));
   }
 
+
   // Internal users: check subscription status for non-admin routes
   if (!token.isClientUser && !pathname.startsWith("/admin/billing") && !pathname.startsWith("/api/")) {
     // Subscription check is handled at the layout level to avoid DB calls in middleware
