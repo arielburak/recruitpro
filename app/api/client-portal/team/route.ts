@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
@@ -9,23 +7,10 @@ import { sendClientTeamInviteEmail } from "@/lib/email";
 // List all team members for this client
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    const user = session?.user as any;
-
-    let clientId = user?.clientId;
-    if (!clientId && user?.email) {
-      const clientUser = await prisma.clientUser.findFirst({
-        where: { email: user.email, isActive: true },
-      });
-      if (clientUser) clientId = clientUser.clientId;
-    }
-
-    if (!clientId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const ctx = await getClientContext();
 
     const members = await prisma.clientUser.findMany({
-      where: { clientId },
+      where: { clientId: ctx.clientId },
       select: {
         id: true,
         name: true,
@@ -46,30 +31,7 @@ export async function GET() {
 // Invite a new team member
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const user = session?.user as any;
-
-    // If no clientId in session, try to find the clientUser by email
-    let clientId = user?.clientId;
-    let clientUserId = user?.id;
-
-    if (!clientId && user?.email) {
-      const clientUser = await prisma.clientUser.findFirst({
-        where: { email: user.email, isActive: true },
-      });
-      if (clientUser) {
-        clientId = clientUser.clientId;
-        clientUserId = clientUser.id;
-      }
-    }
-
-    if (!clientId) {
-      return NextResponse.json({
-        error: "Unauthorized: Not a client user",
-        debug: { hasSession: !!session, email: user?.email, clientId: user?.clientId, isClientUser: user?.isClientUser },
-      }, { status: 401 });
-    }
-
+    const ctx = await getClientContext();
     const body = await request.json();
 
     if (!body.email || !body.name) {
@@ -82,14 +44,13 @@ export async function POST(request: Request) {
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({
-      where: { email, clientId },
+      where: { email, clientId: ctx.clientId },
     });
 
     if (existing) {
       if (existing.isActive) {
         return NextResponse.json({ error: "A team member with this email already exists" }, { status: 409 });
       }
-      // Reactivate deactivated user
       await prisma.clientUser.update({
         where: { id: existing.id },
         data: { isActive: true, name, title },
@@ -99,12 +60,7 @@ export async function POST(request: Request) {
 
     // Create the user (no password yet — they'll set it via token)
     const clientUser = await prisma.clientUser.create({
-      data: {
-        email,
-        name,
-        title,
-        clientId,
-      },
+      data: { email, name, title, clientId: ctx.clientId },
     });
 
     // Create a token so the new user can set their password
@@ -112,35 +68,31 @@ export async function POST(request: Request) {
     await prisma.clientPortalToken.create({
       data: {
         token,
-        clientId,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        clientId: ctx.clientId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
     const inviteLink = `${baseUrl}/client-portal/set-password?token=${token}&email=${encodeURIComponent(email)}`;
 
-    // Get inviter info and company name for the email
+    // Send invitation email
     const client = await prisma.client.findUnique({
-      where: { id: clientId },
+      where: { id: ctx.clientId },
       select: { name: true },
     });
-    const inviterName = user?.name || "Your colleague";
-    const companyName = client?.name || "your company";
 
-    // Send invitation email
     try {
       await sendClientTeamInviteEmail({
         to: email,
         inviteUrl: inviteLink,
-        inviterName,
-        companyName,
+        inviterName: ctx.clientName || "Your colleague",
+        companyName: client?.name || "your company",
         memberName: name,
         title: title || undefined,
       });
     } catch (emailErr) {
       console.error("[team/POST] Failed to send invite email:", emailErr);
-      // Don't fail the request if email fails — user was still created
     }
 
     return NextResponse.json({

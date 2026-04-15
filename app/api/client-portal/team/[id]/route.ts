@@ -1,39 +1,25 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
-
-async function getClientId() {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (user?.clientId) return { clientId: user.clientId, userId: user.id };
-  if (user?.email) {
-    const cu = await prisma.clientUser.findFirst({ where: { email: user.email, isActive: true } });
-    if (cu) return { clientId: cu.clientId, userId: cu.id };
-  }
-  return null;
-}
+import { getClientContext } from "@/lib/tenant";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getClientId();
-    if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const ctx = await getClientContext();
     const { id } = await params;
     const body = await request.json();
 
     const member = await prisma.clientUser.findFirst({
-      where: { id, clientId: auth.clientId },
+      where: { id, clientId: ctx.clientId },
     });
 
     if (!member) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    if (id === auth.userId && body.isActive === false) {
+    if (id === ctx.clientUserId && body.isActive === false) {
       return NextResponse.json({ error: "You cannot deactivate yourself" }, { status: 400 });
     }
 
@@ -54,20 +40,18 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getClientId();
-    if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+    const ctx = await getClientContext();
     const { id } = await params;
 
     const member = await prisma.clientUser.findFirst({
-      where: { id, clientId: auth.clientId },
+      where: { id, clientId: ctx.clientId },
     });
 
     if (!member) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    if (id === auth.userId) {
+    if (id === ctx.clientUserId) {
       return NextResponse.json({ error: "You cannot remove yourself" }, { status: 400 });
     }
 
