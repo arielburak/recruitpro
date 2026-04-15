@@ -32,9 +32,15 @@ export default function ClientPortalLayout({
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">
                   Client Portal
                 </h1>
-                <p className="text-xs text-gray-500 leading-tight">
-                  Manage your hiring pipeline
-                </p>
+                {(session?.user as any)?.clientName ? (
+                  <p className="text-[11px] text-gray-400 leading-tight">
+                    {(session?.user as any)?.clientName}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 leading-tight">
+                    Manage your hiring pipeline
+                  </p>
+                )}
               </div>
             </Link>
 

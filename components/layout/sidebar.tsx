@@ -142,9 +142,16 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
           <Briefcase size={16} className="text-white" />
         </div>
-        <span className="text-lg font-semibold tracking-tight text-white">
-          Recruiting ATS
-        </span>
+        <div>
+          <span className="text-lg font-semibold tracking-tight text-white leading-tight block">
+            Recruiting ATS
+          </span>
+          {session?.user?.organizationName && (
+            <span className="text-[11px] text-gray-400 leading-tight block">
+              {session.user.organizationName}
+            </span>
+          )}
+        </div>
       </Link>
 
       {/* Separator */}
@@ -207,9 +214,16 @@ export function Sidebar() {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600">
             <Briefcase size={13} className="text-white" />
           </div>
-          <span className="text-base font-semibold text-gray-900">
-            Recruiting ATS
-          </span>
+          <div>
+            <span className="text-base font-semibold text-gray-900 leading-tight block">
+              Recruiting ATS
+            </span>
+            {session?.user?.organizationName && (
+              <span className="text-[10px] text-gray-400 leading-tight block">
+                {session.user.organizationName}
+              </span>
+            )}
+          </div>
         </Link>
       </div>
 

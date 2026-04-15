@@ -20,7 +20,11 @@ import {
   Phone,
   Plus,
   X,
+  UserPlus,
+  Copy,
+  Check,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/utils";
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -35,8 +39,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
 
+  // Team member management state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [memberName, setMemberName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
+  const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
   useEffect(() => {
     fetchJob();
+    fetchTeam();
   }, [id]);
 
   async function fetchJob() {
@@ -49,6 +63,43 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       }
     } catch {}
     setLoading(false);
+  }
+
+  async function fetchTeam() {
+    try {
+      const res = await fetch("/api/client-portal/team");
+      if (res.ok) setTeamMembers(await res.json());
+    } catch {}
+  }
+
+  async function addMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!memberName.trim() || !memberEmail.trim()) return;
+    setAddingMember(true);
+    setMemberResult(null);
+    try {
+      const res = await fetch("/api/client-portal/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMemberResult({ type: "error", message: data.error || "Failed to add" });
+      } else {
+        setMemberResult({
+          type: "success",
+          message: data.reactivated ? "Team member reactivated!" : "Member invited!",
+          link: data.inviteLink,
+        });
+        setMemberName("");
+        setMemberEmail("");
+        fetchTeam();
+      }
+    } catch {
+      setMemberResult({ type: "error", message: "Something went wrong" });
+    }
+    setAddingMember(false);
   }
 
   async function searchFirms(query: string) {
@@ -170,24 +221,109 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
         {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Your Recruiting Team */}
+          {/* Your Internal Team */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-600" />
+                Your Team
+              </CardTitle>
+              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => { setShowAddMember(!showAddMember); setMemberResult(null); }}>
+                <UserPlus className="h-3 w-3" />
+                Add
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {showAddMember && (
+                <form onSubmit={addMember} className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Name</Label>
+                    <Input
+                      value={memberName}
+                      onChange={(e) => setMemberName(e.target.value)}
+                      placeholder="Jane Smith"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email</Label>
+                    <Input
+                      type="email"
+                      value={memberEmail}
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      placeholder="jane@company.com"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <Button type="submit" size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs" disabled={addingMember}>
+                    <Mail className="h-3 w-3" />
+                    {addingMember ? "Adding..." : "Send Invite"}
+                  </Button>
+                  {memberResult && (
+                    <div className={`text-xs p-2 rounded ${memberResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                      <p>{memberResult.message}</p>
+                      {memberResult.link && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <input readOnly value={memberResult.link} className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(memberResult.link!);
+                              setCopiedLink(true);
+                              setTimeout(() => setCopiedLink(false), 2000);
+                            }}
+                            className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                          >
+                            {copiedLink ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3 text-gray-400" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </form>
+              )}
+              {teamMembers.filter(m => m.isActive).length === 0 ? (
+                <p className="text-sm text-gray-400 py-3 text-center">
+                  No team members yet. Add colleagues to collaborate.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {teamMembers.filter(m => m.isActive).map((member: any) => (
+                    <div key={member.id} className="flex items-center gap-2.5 p-2 bg-gray-50 rounded-lg">
+                      <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">{member.name}</p>
+                        <a href={`mailto:${member.email}`} className="text-[11px] text-emerald-600 hover:underline truncate block">{member.email}</a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Assigned Recruiters (from staffing firms) */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-600" />
-                Your Recruiting Team
+                <Users className="h-4 w-4 text-indigo-600" />
+                Assigned Recruiters
               </CardTitle>
             </CardHeader>
             <CardContent>
               {!job.teamMembers || job.teamMembers.length === 0 ? (
                 <p className="text-sm text-gray-400 py-3 text-center">
-                  No team members assigned yet.
+                  No recruiters assigned yet.
                 </p>
               ) : (
                 <div className="space-y-3">
                   {job.teamMembers.map((member: any) => (
                     <div key={member.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg">
-                      <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                      <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
                         {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -196,7 +332,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         <div className="mt-1.5 space-y-0.5">
                           <a
                             href={`mailto:${member.email}`}
-                            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:underline"
+                            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:underline"
                           >
                             <Mail className="h-3 w-3" />
                             {member.email}
