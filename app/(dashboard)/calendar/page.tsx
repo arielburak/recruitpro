@@ -1029,6 +1029,51 @@ function CreateInterviewModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>}
 
+          {/* Purpose Selector */}
+          {!purpose ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 font-medium">What type of interview is this?</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPurpose("CANDIDATE")}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-center group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
+                    <User className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Candidate Call</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Screen or interview a candidate directly</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPurpose("CLIENT")}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-center group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
+                    <Building2 className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Client Interview</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Coordinate interview with the hiring company</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          ) : (
+          <>
+
+          {/* Purpose Badge */}
+          <div className="flex items-center justify-between">
+            <Badge className={`text-xs ${purpose === "CANDIDATE" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>
+              {purpose === "CANDIDATE" ? "Candidate Call" : "Client Interview"}
+            </Badge>
+            <button type="button" onClick={() => { setPurpose(null); setSelectedCandidate(null); setSelectedSubmissionId(""); setTitle(""); setSelectedClientContacts([]); }}
+              className="text-xs text-gray-400 hover:text-gray-600">Change type</button>
+          </div>
+
           {/* Candidate Search */}
           <div className="space-y-2">
             <Label>Candidate *</Label>
@@ -1294,9 +1339,9 @@ function CreateInterviewModal({
             <p className="text-xs text-gray-400">Owner of the candidate. Used for tracking and metrics.</p>
           </div>
 
-          {/* Interviewers */}
+          {/* Include Team Members */}
           <div className="space-y-2">
-            <Label>Interviewers</Label>
+            <Label>Include Team Members</Label>
             <div className="flex flex-wrap gap-2 mb-2">
               {selectedInterviewers.map((uid) => {
                 const u = teamMembers.find((m) => m.id === uid);
@@ -1317,15 +1362,15 @@ function CreateInterviewModal({
                 }
                 e.target.value = "";
               }}>
-              <option value="">Add interviewer...</option>
+              <option value="">Add team member...</option>
               {teamMembers.filter((u) => !selectedInterviewers.includes(u.id)).map((u) => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Client Contacts (Hiring Company) */}
-          {clientContacts.length > 0 && (
+          {/* Client Contacts (only for Client Interview purpose) */}
+          {purpose === "CLIENT" && clientContacts.length > 0 && (
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Building2 className="h-3.5 w-3.5 text-gray-400" /> Client Contacts
@@ -1380,6 +1425,9 @@ function CreateInterviewModal({
               {saving ? "Scheduling..." : "Schedule Interview"}
             </Button>
           </div>
+
+          </>
+          )}
         </form>
       </div>
     </div>
