@@ -458,46 +458,48 @@ export default function JobDetailPage() {
 
         <TabsContent value="details" className="space-y-4">
           <Card>
-            <CardContent className="p-6 space-y-4">
+            <CardContent className="p-5 space-y-5">
               {!editing ? (
                 <>
-                  <div className="flex justify-end">
-                    <Button variant="outline" size="sm" onClick={startEditing}>
-                      <Pencil className="h-4 w-4 mr-1" /> Edit
+                  {/* Header row: title + edit button */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Job Details</h3>
+                    <Button variant="outline" size="sm" onClick={startEditing} className="h-8">
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
                     </Button>
                   </div>
 
-                  {/* Key info cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                      <p className="font-semibold text-gray-900">{job.client.name}</p>
+                  {/* Key info — compact 2-column layout */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Client</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.client.name}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Status</p>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Status</p>
                       <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Location</p>
-                      <p className="font-semibold text-gray-900">{job.location || "—"}</p>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Location</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.location || "—"}</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Work Mode</p>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Work Mode</p>
                       <Badge className={WORK_MODE_COLORS[job.workMode] || "bg-gray-100 text-gray-800"}>
                         {WORK_MODE_LABELS[job.workMode] || "On-site"}
                       </Badge>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Salary</p>
-                      <p className="font-semibold text-gray-900">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Salary</p>
+                      <p className="text-sm font-semibold text-gray-900">
                         {job.salary ? (
-                          <>{job.salary} <span className="text-sm font-normal text-gray-500">{job.currency || "USD"}</span></>
+                          <>{job.salary} <span className="text-xs font-normal text-gray-500">{job.currency || "USD"}</span></>
                         ) : "—"}
                       </p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Fee</p>
-                      <p className="font-semibold text-gray-900">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Fee</p>
+                      <p className="text-sm font-semibold text-gray-900">
                         {job.feeAmount ? (
                           job.feeType === "PERCENTAGE"
                             ? `${job.feeAmount}%`
@@ -505,18 +507,28 @@ export default function JobDetailPage() {
                         ) : "—"}
                       </p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
-                      <p className="font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
+                    <div className="bg-gray-50 rounded-lg p-3 col-span-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
                     </div>
                   </div>
 
-                  {/* Description */}
+                  {/* Description — with proper paragraph spacing */}
                   {job.description && (
-                    <div className="mt-2">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Description</p>
+                    <div>
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">Description</p>
                       <div className="bg-gray-50 rounded-lg p-5 max-h-[500px] overflow-y-auto">
-                        <p className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">{job.description}</p>
+                        <div className="text-sm text-gray-800 leading-relaxed space-y-3">
+                          {job.description.split(/\n\s*\n/).map((paragraph: string, i: number) => (
+                            <div key={i}>
+                              {paragraph.split("\n").map((line: string, j: number) => (
+                                <p key={j} className={line.trim() === line.trim().toUpperCase() && line.trim().length > 3 ? "font-semibold text-gray-900 mt-3 first:mt-0" : ""}>
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
