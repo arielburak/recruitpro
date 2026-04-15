@@ -62,9 +62,27 @@ export async function GET() {
           }
         }
 
+        // Count shared candidates per firm (organization)
+        const firmCandidateCounts: Record<string, number> = {};
+        for (const eng of job.engagements) {
+          if (eng.status === "ACCEPTED") {
+            const count = await prisma.candidateSubmission.count({
+              where: {
+                isSharedWithClient: true,
+                job: {
+                  clientId: ctx.clientId,
+                  organizationId: eng.organization.id,
+                },
+              },
+            });
+            firmCandidateCounts[eng.organization.id] = count;
+          }
+        }
+
         return {
           ...job,
           teamMembers: Array.from(teamMap.values()),
+          firmCandidateCounts,
         };
       })
     );

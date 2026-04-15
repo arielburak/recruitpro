@@ -361,37 +361,88 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           {/* Recruiting Firms */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recruiting Firms</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-indigo-600" />
+                Assigned Firms
+              </CardTitle>
               <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowInvite(!showInvite)}>
                 <Plus className="h-3 w-3" />
                 Invite
               </Button>
             </CardHeader>
             <CardContent>
+              {/* Summary Stats */}
+              {job.engagements?.length > 0 && (
+                <div className="flex gap-3 mb-3">
+                  <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-green-700">
+                      {job.engagements.filter((e: any) => e.status === "ACCEPTED").length}
+                    </p>
+                    <p className="text-[10px] text-green-600">Active</p>
+                  </div>
+                  <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-amber-700">
+                      {job.engagements.filter((e: any) => e.status === "PENDING").length}
+                    </p>
+                    <p className="text-[10px] text-amber-600">Pending</p>
+                  </div>
+                  <div className="flex-1 bg-blue-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-blue-700">
+                      {Object.values(job.firmCandidateCounts || {}).reduce((a: number, b: any) => a + (b as number), 0) as number}
+                    </p>
+                    <p className="text-[10px] text-blue-600">Candidates</p>
+                  </div>
+                </div>
+              )}
+
               {job.engagements?.length === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
                   No firms invited yet. Click Invite to get started.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {job.engagements?.map((eng: any) => (
-                    <div key={eng.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                          <Building2 className="h-4 w-4 text-indigo-600" />
+                  {job.engagements?.map((eng: any) => {
+                    const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
+                    return (
+                      <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                              <Building2 className="h-4 w-4 text-indigo-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{eng.organization.name}</p>
+                              <p className="text-[10px] text-gray-400">Invited {formatDate(eng.invitedAt)}</p>
+                            </div>
+                          </div>
+                          <Badge className={`text-[10px] ${statusColor[eng.status]}`}>
+                            {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
+                            {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {eng.status === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
+                            {eng.status.toLowerCase()}
+                          </Badge>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium">{eng.organization.name}</p>
-                          <p className="text-xs text-gray-400">{formatDate(eng.invitedAt)}</p>
-                        </div>
+                        {eng.status === "ACCEPTED" && (
+                          <div className="flex items-center gap-3 ml-10 mt-1">
+                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
+                            </span>
+                            {eng.message && (
+                              <span className="text-[10px] text-gray-400 truncate max-w-[120px]" title={eng.message}>
+                                &quot;{eng.message}&quot;
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {eng.status === "PENDING" && (
+                          <p className="text-[10px] text-amber-600 ml-10 mt-1">
+                            Waiting for response...
+                          </p>
+                        )}
                       </div>
-                      <Badge className={`text-xs ${statusColor[eng.status]}`}>
-                        {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
-                        {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
-                        {eng.status.toLowerCase()}
-                      </Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar } from "lucide-react";
+import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List } from "lucide-react";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -49,6 +49,10 @@ export default function ClientPortalLayout({
                 <NavLink href="/client-portal/dashboard" current={pathname === "/client-portal/dashboard"}>
                   <LayoutDashboard className="h-4 w-4" />
                   Dashboard
+                </NavLink>
+                <NavLink href="/client-portal/jobs" current={pathname === "/client-portal/jobs" && !pathname.includes("/new")}>
+                  <List className="h-4 w-4" />
+                  Jobs
                 </NavLink>
                 <NavLink href="/client-portal/calendar" current={pathname === "/client-portal/calendar"}>
                   <Calendar className="h-4 w-4" />

@@ -2,46 +2,58 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 
-// List candidates shared with this client (for interview scheduling)
+// List candidates shared with this client
 export async function GET(request: NextRequest) {
   try {
     const ctx = await getClientContext();
     const search = request.nextUrl.searchParams.get("search") || "";
+    const firmId = request.nextUrl.searchParams.get("firmId") || "";
+
+    const where: any = {
+      isSharedWithClient: true,
+      job: { clientId: ctx.clientId },
+    };
+
+    if (search.length >= 2) {
+      where.candidate = {
+        OR: [
+          { firstName: { contains: search, mode: "insensitive" as const } },
+          { lastName: { contains: search, mode: "insensitive" as const } },
+        ],
+      };
+    }
+
+    if (firmId) {
+      where.job.organizationId = firmId;
+    }
 
     const submissions = await prisma.candidateSubmission.findMany({
-      where: {
-        isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
-        ...(search.length >= 2
-          ? {
-              candidate: {
-                OR: [
-                  { firstName: { contains: search, mode: "insensitive" as const } },
-                  { lastName: { contains: search, mode: "insensitive" as const } },
-                ],
-              },
-            }
-          : {}),
-      },
+      where,
       select: {
         id: true,
+        createdAt: true,
         candidate: {
           select: {
             id: true,
             firstName: true,
             lastName: true,
             currentTitle: true,
+            currentCompany: true,
+            location: true,
           },
         },
         job: {
           select: {
             id: true,
             title: true,
+            organization: {
+              select: { id: true, name: true },
+            },
           },
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 50,
     });
 
     // Group by candidate
@@ -50,7 +62,9 @@ export async function GET(request: NextRequest) {
       firstName: string;
       lastName: string;
       currentTitle: string | null;
-      submissions: { id: string; jobId: string; jobTitle: string }[];
+      currentCompany: string | null;
+      location: string | null;
+      submissions: { id: string; jobId: string; jobTitle: string; firmId: string; firmName: string; sharedAt: string }[];
     }>();
 
     for (const sub of submissions) {
@@ -61,6 +75,8 @@ export async function GET(request: NextRequest) {
           firstName: c.firstName,
           lastName: c.lastName,
           currentTitle: c.currentTitle,
+          currentCompany: c.currentCompany,
+          location: c.location,
           submissions: [],
         });
       }
@@ -68,6 +84,9 @@ export async function GET(request: NextRequest) {
         id: sub.id,
         jobId: sub.job.id,
         jobTitle: sub.job.title,
+        firmId: sub.job.organization.id,
+        firmName: sub.job.organization.name,
+        sharedAt: sub.createdAt.toISOString(),
       });
     }
 
