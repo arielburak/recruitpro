@@ -43,10 +43,20 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const { title, startTime, endTime, type, status, notes, meetingLink, location, timezone } = body;
+    const { title, startTime, endTime, type, status, notes, meetingLink, location, timezone, interviewerIds } = body;
 
-    const updated = await prisma.interview.updateMany({
+    // Verify interview exists and belongs to org
+    const existing = await prisma.interview.findFirst({
       where: { id, organizationId: ctx.organizationId },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Update interview fields
+    await prisma.interview.update({
+      where: { id },
       data: {
         ...(title !== undefined && { title }),
         ...(startTime !== undefined && { startTime: new Date(startTime) }),
@@ -60,20 +70,44 @@ export async function PUT(
       },
     });
 
-    if (updated.count === 0) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    if (status) {
-      await logActivity({
-        action: "interview.updated",
-        description: `${ctx.userName} updated interview "${title || id}" - status: ${status}`,
-        userId: ctx.userId,
-        organizationId: ctx.organizationId,
+    // Update interviewers if provided
+    if (interviewerIds !== undefined) {
+      // Remove all existing assignments
+      await prisma.interviewAssignment.deleteMany({
+        where: { interviewId: id },
       });
+      // Create new assignments
+      if (interviewerIds.length > 0) {
+        await prisma.interviewAssignment.createMany({
+          data: interviewerIds.map((userId: string) => ({
+            interviewId: id,
+            userId,
+          })),
+        });
+      }
     }
 
-    return NextResponse.json({ success: true });
+    await logActivity({
+      action: "interview.updated",
+      description: `${ctx.userName} updated interview "${title || existing.title}"`,
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+    });
+
+    // Return the full updated interview
+    const updated = await prisma.interview.findFirst({
+      where: { id },
+      include: {
+        candidate: { select: { id: true, firstName: true, lastName: true } },
+        job: { select: { id: true, title: true, client: { select: { name: true } } } },
+        creator: { select: { name: true } },
+        interviewers: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

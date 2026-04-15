@@ -22,6 +22,7 @@ import {
   Trash2,
   ExternalLink,
   Globe,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -142,6 +143,9 @@ export default function CalendarPage() {
   // Create modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createDate, setCreateDate] = useState<Date | null>(null);
+
+  // Edit modal state
+  const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -336,9 +340,14 @@ export default function CalendarPage() {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-sm">{selectedInterview.title}</h3>
-                  <button onClick={() => setSelectedInterview(null)} className="text-gray-400 hover:text-gray-600">
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setEditingInterview(selectedInterview)} className="text-gray-400 hover:text-indigo-600 p-0.5 rounded hover:bg-indigo-50" title="Edit interview">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => setSelectedInterview(null)} className="text-gray-400 hover:text-gray-600">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -485,6 +494,19 @@ export default function CalendarPage() {
           defaultDate={createDate}
           onClose={() => setShowCreateModal(false)}
           onCreated={() => { setShowCreateModal(false); fetchInterviews(); }}
+        />
+      )}
+
+      {/* Edit Interview Modal */}
+      {editingInterview && (
+        <EditInterviewModal
+          interview={editingInterview}
+          onClose={() => setEditingInterview(null)}
+          onUpdated={(updated) => {
+            setEditingInterview(null);
+            setSelectedInterview(updated);
+            fetchInterviews();
+          }}
         />
       )}
     </div>
@@ -912,6 +934,382 @@ function CreateInterviewModal({
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving || !selectedCandidate || !selectedSubmissionId}>
               {saving ? "Scheduling..." : "Schedule Interview"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit Interview Modal ───
+
+function EditInterviewModal({
+  interview,
+  onClose,
+  onUpdated,
+}: {
+  interview: Interview;
+  onClose: () => void;
+  onUpdated: (updated: Interview) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Parse existing values
+  const startDt = new Date(interview.startTime);
+  const endDt = new Date(interview.endTime);
+
+  const [title, setTitle] = useState(interview.title);
+  const [date, setDate] = useState(startDt.toISOString().split("T")[0]);
+  const [startTime, setStartTime] = useState(
+    startDt.toTimeString().slice(0, 5)
+  );
+  const [endTime, setEndTime] = useState(endDt.toTimeString().slice(0, 5));
+  const [type, setType] = useState(interview.type);
+  const [status, setStatus] = useState(interview.status);
+  const [meetingLink, setMeetingLink] = useState(interview.meetingLink || "");
+  const [location, setLocation] = useState(interview.location || "");
+  const [timezone, setTimezone] = useState(
+    interview.timezone || "America/Argentina/Buenos_Aires"
+  );
+  const [notes, setNotes] = useState(interview.notes || "");
+
+  // Team members
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>(
+    interview.interviewers?.map((iv) => iv.user.id) || []
+  );
+
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => r.json())
+      .then((data) => setTeamMembers(data.users || []))
+      .catch(() => {});
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+
+    const startDateTime = new Date(`${date}T${startTime}:00`);
+    const endDateTime = new Date(`${date}T${endTime}:00`);
+
+    if (endDateTime <= startDateTime) {
+      setError("End time must be after start time");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/interviews/${interview.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString(),
+          type,
+          status,
+          meetingLink: meetingLink || null,
+          location: type === "IN_PERSON" ? location : null,
+          timezone,
+          notes: notes || null,
+          interviewerIds: selectedInterviewers,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json();
+        setError(body.error || "Failed to update interview");
+        setSaving(false);
+        return;
+      }
+
+      const updated = await res.json();
+      onUpdated(updated);
+    } catch {
+      setError("Failed to update interview");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto m-4">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h2 className="text-lg font-semibold">Edit Interview</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {interview.candidate.firstName} {interview.candidate.lastName} — {interview.job.title} @ {interview.job.client.name}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
+            <X className="h-5 w-5 text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">
+              {error}
+            </div>
+          )}
+
+          {/* Candidate (read-only) */}
+          <div className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-indigo-500" />
+              <span className="text-sm font-medium">
+                {interview.candidate.firstName} {interview.candidate.lastName}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Briefcase className="h-3 w-3" />
+              {interview.job.title}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Interview title"
+            />
+          </div>
+
+          {/* Status */}
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(["SCHEDULED", "COMPLETED", "NO_SHOW", "CANCELLED"] as const).map(
+                (s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      status === s
+                        ? STATUS_COLORS[s]
+                        : "bg-gray-50 text-gray-400 hover:bg-gray-100"
+                    }`}
+                    onClick={() => setStatus(s)}
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Date & Time */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Start</Label>
+              <Input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>End</Label>
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Timezone */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-gray-400" /> Timezone
+            </Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              <optgroup label="Americas">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Americas").map(
+                  (t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label} ({t.offset})
+                    </option>
+                  )
+                )}
+              </optgroup>
+              <optgroup label="Europe">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Europe").map(
+                  (t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label} ({t.offset})
+                    </option>
+                  )
+                )}
+              </optgroup>
+              <optgroup label="Asia & Middle East">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Asia").map(
+                  (t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label} ({t.offset})
+                    </option>
+                  )
+                )}
+              </optgroup>
+              <optgroup label="Oceania">
+                {TIMEZONE_OPTIONS.filter((t) => t.region === "Oceania").map(
+                  (t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label} ({t.offset})
+                    </option>
+                  )
+                )}
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Interview Type */}
+          <div className="space-y-2">
+            <Label>Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {TYPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`flex items-center justify-center gap-2 p-2.5 rounded-lg border text-sm transition-colors ${
+                    type === opt.value
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                      : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                  onClick={() => setType(opt.value)}
+                >
+                  <opt.icon className="h-4 w-4" />
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Meeting Link */}
+          <div className="space-y-2">
+            <Label>Meeting / Calendly Link</Label>
+            <Input
+              placeholder="https://meet.google.com/... or https://calendly.com/..."
+              value={meetingLink}
+              onChange={(e) => setMeetingLink(e.target.value)}
+            />
+          </div>
+
+          {/* Location (for IN_PERSON) */}
+          {type === "IN_PERSON" && (
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                placeholder="Office address or room"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Interviewers */}
+          <div className="space-y-2">
+            <Label>Interviewers</Label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selectedInterviewers.map((uid) => {
+                const u = teamMembers.find((m) => m.id === uid);
+                return u ? (
+                  <Badge key={uid} variant="secondary" className="gap-1">
+                    {u.name}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedInterviewers(
+                          selectedInterviewers.filter((id) => id !== uid)
+                        )
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ) : (
+                  <Badge key={uid} variant="secondary" className="gap-1">
+                    {uid.slice(0, 8)}...
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedInterviewers(
+                          selectedInterviewers.filter((id) => id !== uid)
+                        )
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                );
+              })}
+            </div>
+            <select
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value=""
+              onChange={(e) => {
+                if (
+                  e.target.value &&
+                  !selectedInterviewers.includes(e.target.value)
+                ) {
+                  setSelectedInterviewers([
+                    ...selectedInterviewers,
+                    e.target.value,
+                  ]);
+                }
+                e.target.value = "";
+              }}
+            >
+              <option value="">Add interviewer...</option>
+              {teamMembers
+                .filter((u) => !selectedInterviewers.includes(u.id))
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-2">
+            <Label>Notes</Label>
+            <Textarea
+              rows={3}
+              placeholder="Interview agenda, preparation notes..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </form>
