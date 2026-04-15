@@ -22,6 +22,8 @@ import {
   ExternalLink,
   Calendar as CalendarIcon,
   Users,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 // ─── Constants ───
@@ -114,6 +116,71 @@ export default function ClientCalendarPage() {
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createDate, setCreateDate] = useState<Date | null>(null);
+
+  // Edit mode
+  const [editingInterview, setEditingInterview] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    date: "",
+    startTime: "09:00",
+    endTime: "09:30",
+    type: "VIDEO",
+    status: "SCHEDULED",
+    meetingLink: "",
+    location: "",
+    timezone: "America/Argentina/Buenos_Aires",
+    notes: "",
+  });
+
+  function startEditInterview(iv: Interview) {
+    const start = new Date(iv.startTime);
+    const end = new Date(iv.endTime);
+    setEditForm({
+      title: iv.title || "",
+      date: start.toISOString().split("T")[0],
+      startTime: `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`,
+      endTime: `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`,
+      type: iv.type || "VIDEO",
+      status: iv.status || "SCHEDULED",
+      meetingLink: iv.meetingLink || "",
+      location: iv.location || "",
+      timezone: iv.timezone || "America/Argentina/Buenos_Aires",
+      notes: iv.notes || "",
+    });
+    setEditingInterview(true);
+  }
+
+  async function saveEditInterview() {
+    if (!selectedInterview) return;
+    setSavingEdit(true);
+    try {
+      const startDateTime = new Date(`${editForm.date}T${editForm.startTime}:00`);
+      const endDateTime = new Date(`${editForm.date}T${editForm.endTime}:00`);
+      const res = await fetch(`/api/client-portal/interviews/${selectedInterview.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editForm.title,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString(),
+          type: editForm.type,
+          status: editForm.status,
+          meetingLink: editForm.meetingLink || undefined,
+          location: editForm.type === "IN_PERSON" ? editForm.location : undefined,
+          timezone: editForm.timezone,
+          notes: editForm.notes || undefined,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedInterview(updated);
+        setEditingInterview(false);
+        fetchInterviews();
+      }
+    } catch {}
+    setSavingEdit(false);
+  }
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -303,87 +370,206 @@ export default function ClientCalendarPage() {
           {selectedInterview ? (
             <Card className="border-emerald-200">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-900 truncate pr-2">{selectedInterview.title}</h3>
-                  <button onClick={() => setSelectedInterview(null)} className="p-1 hover:bg-gray-100 rounded">
-                    <X className="h-3.5 w-3.5 text-gray-400" />
-                  </button>
-                </div>
-
-                <Badge className={`text-xs mb-3 ${STATUS_COLORS[selectedInterview.status] || "bg-gray-100 text-gray-600"}`}>
-                  {STATUS_LABELS[selectedInterview.status] || selectedInterview.status}
-                </Badge>
-
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-start gap-2.5">
-                    <Clock className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium">{formatDate(selectedInterview.startTime)}</p>
-                      <p className="text-gray-500">
-                        {formatTime(selectedInterview.startTime, selectedInterview.timezone)} – {formatTime(selectedInterview.endTime, selectedInterview.timezone)}
-                      </p>
+                {editingInterview ? (
+                  /* ── Edit Mode ── */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-sm font-semibold text-gray-900">Edit Interview</h3>
+                      <div className="flex gap-1.5">
+                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingInterview(false)}>Cancel</Button>
+                        <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 gap-1" onClick={saveEditInterview} disabled={savingEdit}>
+                          <Save className="h-3 w-3" />{savingEdit ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2.5">
-                    <User className="h-4 w-4 text-gray-400 shrink-0" />
-                    <p>{selectedInterview.candidateName}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2.5">
-                    <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
-                    <p className="text-gray-600">{selectedInterview.jobTitle}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2.5">
-                    <TypeIcon className="h-4 w-4 text-gray-400 shrink-0" />
-                    <p className="text-gray-600">{TYPE_LABELS[selectedInterview.type] || selectedInterview.type}</p>
-                  </div>
-
-                  {selectedInterview.location && (
-                    <div className="flex items-center gap-2.5">
-                      <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
-                      <p className="text-gray-600">{selectedInterview.location}</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Title</Label>
+                      <Input className="h-8 text-sm" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
                     </div>
-                  )}
 
-                  {selectedInterview.interviewers && selectedInterview.interviewers.length > 0 && (
-                    <div className="flex items-start gap-2.5">
-                      <Users className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">Team Members</p>
-                        {selectedInterview.interviewers.map((name, i) => (
-                          <p key={i} className="text-gray-600">{name}</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Date</Label>
+                      <Input type="date" className="h-8 text-sm" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Start</Label>
+                        <select className="flex h-8 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs"
+                          value={editForm.startTime} onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}>
+                          {Array.from({ length: 40 }, (_, i) => {
+                            const h = Math.floor((i * 30 + 7 * 60) / 60);
+                            const m = (i * 30 + 7 * 60) % 60;
+                            if (h >= 24) return null;
+                            const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                            const label = new Date(`2000-01-01T${val}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                            return <option key={val} value={val}>{label}</option>;
+                          })}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">End</Label>
+                        <select className="flex h-8 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs"
+                          value={editForm.endTime} onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}>
+                          {Array.from({ length: 40 }, (_, i) => {
+                            const h = Math.floor((i * 30 + 7 * 60) / 60);
+                            const m = (i * 30 + 7 * 60) % 60;
+                            if (h >= 24) return null;
+                            const val = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                            const label = new Date(`2000-01-01T${val}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                            return <option key={val} value={val}>{label}</option>;
+                          })}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Type</Label>
+                      <div className="grid grid-cols-3 gap-1">
+                        {TYPE_OPTIONS.map((opt) => (
+                          <button key={opt.value} type="button"
+                            className={`flex items-center justify-center gap-1 p-1.5 rounded border text-[11px] transition-colors ${
+                              editForm.type === opt.value ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-gray-200 hover:bg-gray-50"
+                            }`}
+                            onClick={() => setEditForm({ ...editForm, type: opt.value })}>
+                            <opt.icon className="h-3 w-3" />{opt.label}
+                          </button>
                         ))}
                       </div>
                     </div>
-                  )}
 
-                  {selectedInterview.notes && (
-                    <div className="pt-2 border-t">
-                      <p className="text-xs text-gray-500 mb-1">Notes</p>
-                      <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedInterview.notes}</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Status</Label>
+                      <select className="flex h-8 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs"
+                        value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                        <option value="SCHEDULED">Scheduled</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="CANCELLED">Cancelled</option>
+                        <option value="NO_SHOW">No Show</option>
+                      </select>
                     </div>
-                  )}
 
-                  {selectedInterview.meetingLink && (
-                    <a
-                      href={selectedInterview.meetingLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium mt-2"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Join Meeting
-                    </a>
-                  )}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Timezone</Label>
+                      <select className="flex h-8 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs"
+                        value={editForm.timezone} onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}>
+                        {TIMEZONE_OPTIONS.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label} ({t.offset})</option>
+                        ))}
+                      </select>
+                    </div>
 
-                  {selectedInterview.createdBy && (
-                    <p className="text-xs text-gray-400 pt-2 border-t">
-                      Scheduled by {selectedInterview.createdBy}
-                    </p>
-                  )}
-                </div>
+                    {editForm.type === "VIDEO" && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Meeting Link</Label>
+                        <Input className="h-8 text-sm" placeholder="https://meet.google.com/..." value={editForm.meetingLink} onChange={(e) => setEditForm({ ...editForm, meetingLink: e.target.value })} />
+                      </div>
+                    )}
+
+                    {editForm.type === "IN_PERSON" && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Location</Label>
+                        <Input className="h-8 text-sm" placeholder="Office address" value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Notes</Label>
+                      <Textarea rows={3} className="text-sm" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                  </div>
+                ) : (
+                  /* ── View Mode ── */
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-900 truncate pr-2">{selectedInterview.title}</h3>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => startEditInterview(selectedInterview)} className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                          <Pencil className="h-3.5 w-3.5 text-gray-400" />
+                        </button>
+                        <button onClick={() => { setSelectedInterview(null); setEditingInterview(false); }} className="p-1 hover:bg-gray-100 rounded">
+                          <X className="h-3.5 w-3.5 text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <Badge className={`text-xs mb-3 ${STATUS_COLORS[selectedInterview.status] || "bg-gray-100 text-gray-600"}`}>
+                      {STATUS_LABELS[selectedInterview.status] || selectedInterview.status}
+                    </Badge>
+
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-start gap-2.5">
+                        <Clock className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-medium">{formatDate(selectedInterview.startTime)}</p>
+                          <p className="text-gray-500">
+                            {formatTime(selectedInterview.startTime, selectedInterview.timezone)} – {formatTime(selectedInterview.endTime, selectedInterview.timezone)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5">
+                        <User className="h-4 w-4 text-gray-400 shrink-0" />
+                        <p>{selectedInterview.candidateName}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5">
+                        <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
+                        <p className="text-gray-600">{selectedInterview.jobTitle}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5">
+                        <TypeIcon className="h-4 w-4 text-gray-400 shrink-0" />
+                        <p className="text-gray-600">{TYPE_LABELS[selectedInterview.type] || selectedInterview.type}</p>
+                      </div>
+
+                      {selectedInterview.location && (
+                        <div className="flex items-center gap-2.5">
+                          <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+                          <p className="text-gray-600">{selectedInterview.location}</p>
+                        </div>
+                      )}
+
+                      {selectedInterview.interviewers && selectedInterview.interviewers.length > 0 && (
+                        <div className="flex items-start gap-2.5">
+                          <Users className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Team Members</p>
+                            {selectedInterview.interviewers.map((name, i) => (
+                              <p key={i} className="text-gray-600">{name}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedInterview.notes && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs text-gray-500 mb-1">Notes</p>
+                          <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedInterview.notes}</p>
+                        </div>
+                      )}
+
+                      {selectedInterview.meetingLink && (
+                        <a
+                          href={selectedInterview.meetingLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium mt-2"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Join Meeting
+                        </a>
+                      )}
+
+                      {selectedInterview.createdBy && (
+                        <p className="text-xs text-gray-400 pt-2 border-t">
+                          Scheduled by {selectedInterview.createdBy}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           ) : (
