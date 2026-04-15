@@ -128,6 +128,7 @@ function NewJobContent() {
         description: description || fd.get("description"),
         clientId: selectedClientId,
         location: fd.get("location"),
+        workMode: fd.get("workMode"),
         currency,
         salary: fd.get("salary"),
         feeType,
@@ -271,10 +272,18 @@ function NewJobContent() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>Location</Label>
-                <Input name="location" placeholder="New York, NY / Remote" />
+                <Input name="location" placeholder="New York, NY" />
+              </div>
+              <div className="space-y-2">
+                <Label>Work Mode</Label>
+                <select name="workMode" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="ON_SITE">
+                  <option value="ON_SITE">On-site</option>
+                  <option value="REMOTE">Remote</option>
+                  <option value="HYBRID">Hybrid</option>
+                </select>
               </div>
               <div className="space-y-2">
                 <Label>Salary Range</Label>

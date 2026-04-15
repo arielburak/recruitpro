@@ -26,3 +26,15 @@ export const JOB_STATUS_COLORS: Record<string, string> = {
   FILLED: "bg-purple-100 text-purple-800",
   CLOSED: "bg-gray-100 text-gray-800",
 };
+
+export const WORK_MODE_LABELS: Record<string, string> = {
+  ON_SITE: "On-site",
+  REMOTE: "Remote",
+  HYBRID: "Hybrid",
+};
+
+export const WORK_MODE_COLORS: Record<string, string> = {
+  ON_SITE: "bg-orange-100 text-orange-800",
+  REMOTE: "bg-emerald-100 text-emerald-800",
+  HYBRID: "bg-sky-100 text-sky-800",
+};

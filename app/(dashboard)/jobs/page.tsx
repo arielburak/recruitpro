@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_MODE_LABELS, WORK_MODE_COLORS } from "@/lib/constants";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -167,6 +167,7 @@ export default function JobsPage() {
 
   // Multi-select filters
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [workModeFilter, setWorkModeFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [recruiterFilter, setRecruiterFilter] = useState<string[]>([]);
@@ -191,12 +192,16 @@ export default function JobsPage() {
   // Extract unique filter options with counts
   const filterOptions = useMemo(() => {
     const statuses = new Map<string, number>();
+    const workModes = new Map<string, number>();
     const locations = new Map<string, number>();
     const clients = new Map<string, { name: string; count: number }>();
     const recruiters = new Map<string, { name: string; count: number }>();
 
     for (const j of jobs) {
       statuses.set(j.status, (statuses.get(j.status) || 0) + 1);
+
+      const wm = j.workMode || "ON_SITE";
+      workModes.set(wm, (workModes.get(wm) || 0) + 1);
 
       if (j.location) {
         const loc = j.location.trim();
@@ -222,6 +227,9 @@ export default function JobsPage() {
       statuses: Array.from(statuses.entries())
         .map(([value, count]) => ({ value, label: JOB_STATUS_LABELS[value] || value, count }))
         .sort((a, b) => b.count - a.count),
+      workModes: Array.from(workModes.entries())
+        .map(([value, count]) => ({ value, label: WORK_MODE_LABELS[value] || value, count }))
+        .sort((a, b) => b.count - a.count),
       locations: Array.from(locations.entries())
         .map(([value, count]) => ({ value, label: value, count }))
         .sort((a, b) => a.label.localeCompare(b.label)),
@@ -246,15 +254,17 @@ export default function JobsPage() {
           return false;
       }
       if (statusFilter.length > 0 && !statusFilter.includes(j.status)) return false;
+      if (workModeFilter.length > 0 && !workModeFilter.includes(j.workMode || "ON_SITE")) return false;
       if (locationFilter.length > 0 && !locationFilter.includes(j.location?.trim())) return false;
       if (clientFilter.length > 0 && !clientFilter.includes(j.client.id)) return false;
       if (recruiterFilter.length > 0 && !(j.assignments || []).some((a: any) => recruiterFilter.includes(a.user.id))) return false;
       return true;
     });
-  }, [jobs, search, statusFilter, locationFilter, clientFilter, recruiterFilter]);
+  }, [jobs, search, statusFilter, workModeFilter, locationFilter, clientFilter, recruiterFilter]);
 
   const activeFilters = [
     ...statusFilter.map((v) => ({ type: "Status", value: v, label: JOB_STATUS_LABELS[v] || v, clear: () => setStatusFilter(statusFilter.filter((x) => x !== v)) })),
+    ...workModeFilter.map((v) => ({ type: "Work Mode", value: v, label: WORK_MODE_LABELS[v] || v, clear: () => setWorkModeFilter(workModeFilter.filter((x) => x !== v)) })),
     ...clientFilter.map((v) => ({ type: "Client", value: v, label: filterOptions.clients.find((c) => c.value === v)?.label || v, clear: () => setClientFilter(clientFilter.filter((x) => x !== v)) })),
     ...locationFilter.map((v) => ({ type: "Location", value: v, label: v, clear: () => setLocationFilter(locationFilter.filter((x) => x !== v)) })),
     ...recruiterFilter.map((v) => ({ type: "Recruiter", value: v, label: filterOptions.recruiters.find((r) => r.value === v)?.label || v, clear: () => setRecruiterFilter(recruiterFilter.filter((x) => x !== v)) })),
@@ -262,6 +272,7 @@ export default function JobsPage() {
 
   function clearAllFilters() {
     setStatusFilter([]);
+    setWorkModeFilter([]);
     setLocationFilter([]);
     setClientFilter([]);
     setRecruiterFilter([]);
@@ -297,6 +308,13 @@ export default function JobsPage() {
             options={filterOptions.statuses}
             onChange={setStatusFilter}
             colorMap={JOB_STATUS_COLORS}
+          />
+          <MultiFilter
+            label="Work Mode"
+            selected={workModeFilter}
+            options={filterOptions.workModes}
+            onChange={setWorkModeFilter}
+            colorMap={WORK_MODE_COLORS}
           />
           <MultiFilter
             label="Client"
@@ -367,10 +385,11 @@ export default function JobsPage() {
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-          <div className="grid grid-cols-[1fr_1fr_100px_140px_100px_80px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
             <div>Title</div>
             <div>Client</div>
             <div>Status</div>
+            <div>Mode</div>
             <div>Location</div>
             <div>Assigned</div>
             <div className="text-right">Cands</div>
@@ -378,7 +397,7 @@ export default function JobsPage() {
 
           {filtered.map((j: any, i: number) => (
             <Link key={j.id} href={`/jobs/${j.id}`} className="block">
-              <div className={`group grid grid-cols-[1fr_1fr_100px_140px_100px_80px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors cursor-pointer ${
+              <div className={`group grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors cursor-pointer ${
                 i < filtered.length - 1 ? "border-b border-gray-100" : ""
               }`}>
                 <div className="min-w-0">
@@ -390,6 +409,11 @@ export default function JobsPage() {
                 <div>
                   <Badge className={`${JOB_STATUS_COLORS[j.status]} text-[10px] px-1.5 py-0`}>
                     {JOB_STATUS_LABELS[j.status]}
+                  </Badge>
+                </div>
+                <div>
+                  <Badge className={`${WORK_MODE_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
+                    {WORK_MODE_LABELS[j.workMode] || "On-site"}
                   </Badge>
                 </div>
                 <div className="min-w-0">

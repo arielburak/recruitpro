@@ -9,6 +9,7 @@ export const jobSchema = z.object({
   feeAmount: z.number().optional().nullable(),
   salary: z.string().optional(),
   location: z.string().optional(),
+  workMode: z.enum(["ON_SITE", "REMOTE", "HYBRID"]).default("ON_SITE"),
   clientId: z.string().min(1, "Client is required"),
 });
 

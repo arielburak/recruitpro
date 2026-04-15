@@ -223,6 +223,7 @@ model Job {
   feeAmount      Decimal?
   salary         String?
   location       String?
+  workMode       String    @default("ON_SITE")
   clientId         String
   hiringManagerId  String?
   organizationId   String

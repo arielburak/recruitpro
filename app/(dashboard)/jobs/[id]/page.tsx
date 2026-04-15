@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_MODE_LABELS, WORK_MODE_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 
@@ -53,6 +53,7 @@ export default function JobDetailPage() {
     description: "",
     status: "OPEN",
     location: "",
+    workMode: "ON_SITE",
     salary: "",
     currency: "USD",
     feeType: "PERCENTAGE",
@@ -67,6 +68,7 @@ export default function JobDetailPage() {
       description: job.description || "",
       status: job.status || "OPEN",
       location: job.location || "",
+      workMode: job.workMode || "ON_SITE",
       salary: job.salary || "",
       currency: job.currency || "USD",
       feeType: job.feeType || "PERCENTAGE",
@@ -480,6 +482,12 @@ export default function JobDetailPage() {
                       <p className="font-semibold text-gray-900">{job.location || "—"}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Work Mode</p>
+                      <Badge className={WORK_MODE_COLORS[job.workMode] || "bg-gray-100 text-gray-800"}>
+                        {WORK_MODE_LABELS[job.workMode] || "On-site"}
+                      </Badge>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Salary</p>
                       <p className="font-semibold text-gray-900">
                         {job.salary ? (
@@ -562,14 +570,26 @@ export default function JobDetailPage() {
                         </select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="space-y-2">
                         <Label>Location</Label>
                         <Input
                           value={editForm.location}
                           onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-                          placeholder="New York, NY / Remote"
+                          placeholder="New York, NY"
                         />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Work Mode</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.workMode}
+                          onChange={(e) => setEditForm({ ...editForm, workMode: e.target.value })}
+                        >
+                          <option value="ON_SITE">On-site</option>
+                          <option value="REMOTE">Remote</option>
+                          <option value="HYBRID">Hybrid</option>
+                        </select>
                       </div>
                       <div className="space-y-2">
                         <Label>Salary Range</Label>
