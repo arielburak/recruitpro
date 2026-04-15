@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
     }
 
     const jobInclude = {
-      client: { select: { name: true } },
+      client: { select: { id: true, name: true } },
       _count: { select: { submissions: true } },
-      assignments: { include: { user: { select: { name: true } } } },
+      assignments: { include: { user: { select: { id: true, name: true } } } },
     };
 
     if (!paginated) {
