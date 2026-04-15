@@ -400,11 +400,7 @@ export default function CalendarPage() {
                     <div className="space-y-1.5">
                       <a href={selectedInterview.meetingLink} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md">
-                        {selectedInterview.meetingLink.includes("calendly.com") ? (
-                          <><Globe className="h-3.5 w-3.5" /> Open Calendly</>
-                        ) : (
-                          <><Video className="h-3.5 w-3.5" /> Join Meeting</>
-                        )}
+                        <Video className="h-3.5 w-3.5" /> Join Meeting
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
@@ -1359,9 +1355,9 @@ function EditInterviewModal({
 
           {/* Meeting Link */}
           <div className="space-y-2">
-            <Label>Meeting / Calendly Link</Label>
+            <Label>Meeting Link</Label>
             <Input
-              placeholder="https://meet.google.com/... or https://calendly.com/..."
+              placeholder="https://meet.google.com/... or https://teams.microsoft.com/..."
               value={meetingLink}
               onChange={(e) => setMeetingLink(e.target.value)}
             />
