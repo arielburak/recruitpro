@@ -6,15 +6,45 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Video, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
+function GoogleCallbackNotifications() {
+  const searchParams = useSearchParams();
+  const googleParam = searchParams.get("google");
+
+  if (!googleParam) return null;
+
+  if (googleParam === "connected") {
+    return (
+      <div className="flex items-center gap-2 bg-green-50 text-green-700 p-3 rounded-lg text-sm">
+        <CheckCircle className="h-4 w-4" />
+        Google Calendar connected successfully! Interviews will now auto-generate Google Meet links.
+      </div>
+    );
+  }
+  if (googleParam === "denied") {
+    return (
+      <div className="flex items-center gap-2 bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm">
+        <AlertCircle className="h-4 w-4" />
+        Google Calendar connection was cancelled. You can try again anytime.
+      </div>
+    );
+  }
+  if (googleParam === "error") {
+    return (
+      <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+        <XCircle className="h-4 w-4" />
+        Failed to connect Google Calendar. Please try again.
+      </div>
+    );
+  }
+  return null;
+}
+
 export default function AdminSettingsPage() {
   const { data: session } = useSession();
-  const searchParams = useSearchParams();
-  const [saved, setSaved] = useState(false);
-
   // Google Calendar integration
   const [googleStatus, setGoogleStatus] = useState<{
     connected: boolean;
@@ -23,9 +53,6 @@ export default function AdminSettingsPage() {
   } | null>(null);
   const [loadingGoogle, setLoadingGoogle] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
-
-  // Check for callback result
-  const googleParam = searchParams.get("google");
 
   useEffect(() => {
     fetchGoogleStatus();
@@ -55,25 +82,9 @@ export default function AdminSettingsPage() {
     <div className="max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      {/* Callback notifications */}
-      {googleParam === "connected" && (
-        <div className="flex items-center gap-2 bg-green-50 text-green-700 p-3 rounded-lg text-sm">
-          <CheckCircle className="h-4 w-4" />
-          Google Calendar connected successfully! Interviews will now auto-generate Google Meet links.
-        </div>
-      )}
-      {googleParam === "denied" && (
-        <div className="flex items-center gap-2 bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm">
-          <AlertCircle className="h-4 w-4" />
-          Google Calendar connection was cancelled. You can try again anytime.
-        </div>
-      )}
-      {googleParam === "error" && (
-        <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-lg text-sm">
-          <XCircle className="h-4 w-4" />
-          Failed to connect Google Calendar. Please try again.
-        </div>
-      )}
+      <Suspense fallback={null}>
+        <GoogleCallbackNotifications />
+      </Suspense>
 
       <Card>
         <CardHeader>
