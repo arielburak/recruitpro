@@ -1,0 +1,13 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Recruiting ATS">
+  <defs>
+    <linearGradient id="bgF" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" ry="14" fill="url(#bgF)"/>
+  <!-- Bold simplified briefcase for small sizes -->
+  <path d="M 24 18 H 40 A 4 4 0 0 1 44 22 V 26 H 38 V 24 H 26 V 26 H 20 V 22 A 4 4 0 0 1 24 18 Z" fill="#FFFFFF"/>
+  <rect x="14" y="26" width="36" height="26" rx="4" ry="4" fill="#FFFFFF"/>
+  <rect x="29" y="36" width="6" height="4" rx="1" ry="1" fill="#6366F1"/>
+</svg>
