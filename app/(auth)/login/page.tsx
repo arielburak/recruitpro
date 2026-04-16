@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { useState, Suspense, useEffect } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,20 @@ import { ArrowLeft, Briefcase, CheckCircle2 } from "lucide-react";
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [clearingSession, setClearingSession] = useState(false);
   const registered = searchParams.get("registered");
+
+  // If a staffing user is already signed in, go to dashboard
+  useEffect(() => {
+    if (session?.user && !(session.user as any).isClientUser) {
+      router.replace("/dashboard");
+    }
+  }, [session, router]);
+
+  const hasClientSession = !!(session?.user && (session.user as any).isClientUser);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -122,6 +133,39 @@ function LoginContent() {
             <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
             <p className="text-gray-500 mt-1">Sign in to your account to continue.</p>
           </div>
+
+          {hasClientSession && (
+            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <p className="text-sm font-medium text-emerald-900 mb-1">
+                You&apos;re signed in as a client user
+              </p>
+              <p className="text-xs text-emerald-700 mb-3">
+                To sign in as a staffing firm, sign out of the client portal first.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                  onClick={() => (window.location.href = "/client-portal/dashboard")}
+                >
+                  Go to Client Dashboard
+                </Button>
+                <Button
+                  size="sm"
+                  className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700"
+                  onClick={async () => {
+                    setClearingSession(true);
+                    await signOut({ redirect: false });
+                    setClearingSession(false);
+                  }}
+                  disabled={clearingSession}
+                >
+                  {clearingSession ? "Signing out..." : "Sign out & Continue"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="space-y-5">
             {registered && (

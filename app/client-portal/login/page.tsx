@@ -112,14 +112,16 @@ export default function ClientPortalLoginPage() {
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [clearingSession, setClearingSession] = useState(false);
 
-  // If there's an existing non-client session (staffing firm), clear it
-  // so the client login can create a fresh session
+  // If there's a client session already, go straight to dashboard
+  // If there's a staffing session, don't touch it — just warn the user
+  // that they need to sign out of staffing first to log in as client
   useEffect(() => {
-    if (session?.user && !(session.user as any).isClientUser) {
-      setClearingSession(true);
-      signOut({ redirect: false }).then(() => setClearingSession(false));
+    if (session?.user && (session.user as any).isClientUser) {
+      router.replace("/client-portal/dashboard");
     }
-  }, [session]);
+  }, [session, router]);
+
+  const hasStaffingSession = !!(session?.user && !(session.user as any).isClientUser);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -274,6 +276,38 @@ export default function ClientPortalLoginPage() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
+          {hasStaffingSession && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm font-medium text-amber-900 mb-1">
+                You&apos;re signed in as a staffing firm user
+              </p>
+              <p className="text-xs text-amber-700 mb-3">
+                {(session?.user as any)?.email || session?.user?.name} — To sign in as a client, sign out first.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-amber-300 text-amber-900 hover:bg-amber-100"
+                  onClick={() => (window.location.href = "/dashboard")}
+                >
+                  Go to Staffing Dashboard
+                </Button>
+                <Button
+                  size="sm"
+                  className="text-xs h-8 bg-amber-600 hover:bg-amber-700"
+                  onClick={async () => {
+                    setClearingSession(true);
+                    await signOut({ redirect: false });
+                    setClearingSession(false);
+                  }}
+                  disabled={clearingSession}
+                >
+                  {clearingSession ? "Signing out..." : "Sign out & Continue"}
+                </Button>
+              </div>
+            </div>
+          )}
           {forgotMode ? (
             <ForgotPasswordSection
               forgotSent={forgotSent}

@@ -129,16 +129,28 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, account }) {
       if (user && (account?.provider === "credentials" || account?.provider === "client-credentials")) {
-        // Existing credentials flow
+        // Fresh credentials sign-in: fully reset fields from the "other side"
+        // to avoid leaking state from a previous session (staffing ↔ client)
+        const isClient = (user as any).isClientUser || false;
         token.id = user.id;
-        token.role = (user as any).role;
-        token.organizationId = (user as any).organizationId;
-        token.organizationName = (user as any).organizationName;
-        token.clientId = (user as any).clientId;
-        token.clientName = (user as any).clientName;
-        token.isClientUser = (user as any).isClientUser || false;
+        token.isClientUser = isClient;
+        if (isClient) {
+          token.clientId = (user as any).clientId;
+          token.clientName = (user as any).clientName;
+          // Clear staffing fields
+          token.role = undefined;
+          token.organizationId = undefined;
+          token.organizationName = undefined;
+        } else {
+          token.role = (user as any).role;
+          token.organizationId = (user as any).organizationId;
+          token.organizationName = (user as any).organizationName;
+          // Clear client fields
+          token.clientId = undefined;
+          token.clientName = undefined;
+        }
       } else if (user && account?.provider && account.provider !== "credentials") {
-        // OAuth flow - look up the DB user
+        // OAuth flow - look up the DB user (always staffing side)
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email! },
           include: { organization: true },
@@ -149,6 +161,9 @@ export const authOptions: NextAuthOptions = {
           token.organizationId = dbUser.organizationId;
           token.organizationName = dbUser.organization.name;
           token.isClientUser = false;
+          // Clear any client fields
+          token.clientId = undefined;
+          token.clientName = undefined;
         }
       }
       return token;
