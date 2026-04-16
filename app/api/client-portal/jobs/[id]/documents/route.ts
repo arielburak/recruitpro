@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { parseDocumentBuffer } from "@/lib/parse-document";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([
@@ -106,6 +107,25 @@ export async function POST(
       addRandomSuffix: false,
     });
 
+    // If uploading a JD, parse the text and update the job's description
+    let parsedText = "";
+    let parseError = "";
+    if (category === "JOB_DESCRIPTION") {
+      try {
+        parsedText = await parseDocumentBuffer(fileBuffer, file.name);
+      } catch (err: any) {
+        parseError = err.message || "Unknown parse error";
+        console.error("[clientjob doc] text extraction failed:", err);
+      }
+
+      if (parsedText.trim()) {
+        await prisma.clientJob.update({
+          where: { id },
+          data: { description: parsedText.trim() },
+        });
+      }
+    }
+
     const document = await prisma.document.create({
       data: {
         name: file.name,
@@ -118,7 +138,12 @@ export async function POST(
       },
     });
 
-    return NextResponse.json(document, { status: 201 });
+    return NextResponse.json({
+      ...document,
+      parsed: parsedText.trim().length > 0,
+      parsedLength: parsedText.trim().length,
+      parseError: parseError || undefined,
+    }, { status: 201 });
   } catch (error: any) {
     console.error("Client job document upload error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [documents, setDocuments] = useState<any[]>([]);
   const [uploadingJD, setUploadingJD] = useState(false);
   const [uploadingAdditional, setUploadingAdditional] = useState(false);
+  const additionalFileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit mode state
   const [editing, setEditing] = useState(false);
@@ -134,6 +135,10 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         alert(data.error || "Upload failed");
       } else {
         fetchDocuments();
+        // If it was a JD, refresh the job to get the newly parsed description
+        if (category === "JOB_DESCRIPTION") {
+          fetchJob();
+        }
       }
     } catch {
       alert("Upload failed");
@@ -464,23 +469,28 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     <FileText className="h-4 w-4" />
                     Additional Documents
                   </CardTitle>
-                  <label className="cursor-pointer">
-                    <Button variant="outline" size="sm" className="gap-1 text-xs pointer-events-none">
-                      {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                      {uploadingAdditional ? "Uploading..." : "Add"}
-                    </Button>
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
-                      disabled={uploadingAdditional}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) uploadDocument(file, "ADDITIONAL");
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    disabled={uploadingAdditional}
+                    onClick={() => additionalFileInputRef.current?.click()}
+                  >
+                    {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    {uploadingAdditional ? "Uploading..." : "Add"}
+                  </Button>
+                  <input
+                    ref={additionalFileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                    disabled={uploadingAdditional}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadDocument(file, "ADDITIONAL");
+                      e.target.value = "";
+                    }}
+                  />
                 </CardHeader>
                 <CardContent>
                   {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
