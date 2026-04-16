@@ -100,8 +100,11 @@ export default function ClientPortalSettingsPage() {
         body: JSON.stringify({ name, title }),
       });
       if (res.ok) {
+        const updated = await res.json();
+        // Update local state immediately for snappy UX
+        setProfile((prev: any) => ({ ...(prev || {}), ...updated }));
         setProfileStatus({ type: "success", message: "Profile updated" });
-        fetchProfile();
+        setTimeout(() => setProfileStatus(null), 3000);
       } else {
         const data = await res.json();
         setProfileStatus({ type: "error", message: data.error || "Failed to update" });
@@ -111,6 +114,13 @@ export default function ClientPortalSettingsPage() {
     }
     setSavingProfile(false);
   }
+
+  // Dirty state detection
+  const isDirty =
+    profile && (
+      name.trim() !== (profile.name || "") ||
+      (title || "").trim() !== (profile.title || "")
+    );
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -248,7 +258,7 @@ export default function ClientPortalSettingsPage() {
                       {profileStatus.message}
                     </p>
                   )}
-                  <Button type="submit" disabled={savingProfile} className="ml-auto bg-emerald-600 hover:bg-emerald-700">
+                  <Button type="submit" disabled={savingProfile || !isDirty} className="ml-auto bg-emerald-600 hover:bg-emerald-700">
                     {savingProfile ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>

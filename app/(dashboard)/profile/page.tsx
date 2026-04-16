@@ -77,8 +77,10 @@ export default function StaffingProfilePage() {
         body: JSON.stringify({ name }),
       });
       if (res.ok) {
+        const updated = await res.json();
+        setProfile((prev: any) => ({ ...(prev || {}), ...updated }));
         setProfileStatus({ type: "success", message: "Profile updated" });
-        fetchProfile();
+        setTimeout(() => setProfileStatus(null), 3000);
       } else {
         const data = await res.json();
         setProfileStatus({ type: "error", message: data.error || "Failed to update" });
@@ -88,6 +90,8 @@ export default function StaffingProfilePage() {
     }
     setSavingProfile(false);
   }
+
+  const isDirty = profile && name.trim() !== (profile.name || "");
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -170,7 +174,7 @@ export default function StaffingProfilePage() {
                       {profileStatus.message}
                     </p>
                   )}
-                  <Button type="submit" disabled={savingProfile} className="ml-auto">
+                  <Button type="submit" disabled={savingProfile || !isDirty} className="ml-auto">
                     {savingProfile ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>

@@ -66,6 +66,7 @@ export default function AdminUsersPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        name: fd.get("name"),
         email: fd.get("email"),
         role: fd.get("role"),
       }),
@@ -135,7 +136,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function resendInvite(email: string, role: string, inviteId: string) {
+  async function resendInvite(email: string, role: string, inviteId: string, name?: string) {
     // Cancel old invite and send a new one
     await fetch("/api/admin/invites", {
       method: "DELETE",
@@ -146,7 +147,7 @@ export default function AdminUsersPage() {
     const res = await fetch("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role }),
+      body: JSON.stringify({ email, role, name }),
     });
 
     if (res.ok) {
@@ -198,6 +199,28 @@ export default function AdminUsersPage() {
               An email invitation will be sent. They can create their own
               account using the link.
             </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  name="name"
+                  type="text"
+                  placeholder="John Smith"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <select
+                  name="role"
+                  className="w-full border rounded-md px-3 py-2 text-sm h-9"
+                  defaultValue="RECRUITER"
+                >
+                  <option value="RECRUITER">Recruiter</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input
@@ -206,16 +229,6 @@ export default function AdminUsersPage() {
                 placeholder="colleague@company.com"
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <select
-                name="role"
-                className="w-full border rounded-md px-3 py-2 text-sm"
-              >
-                <option value="RECRUITER">Recruiter</option>
-                <option value="ADMIN">Admin</option>
-              </select>
             </div>
             <Button
               type="submit"
@@ -328,10 +341,15 @@ export default function AdminUsersPage() {
                           <Mail className="h-5 w-5 text-amber-500" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-600">
-                            {inv.email}
-                          </p>
-                          <p className="text-xs text-gray-400">
+                          {inv.name ? (
+                            <>
+                              <p className="font-medium text-gray-700">{inv.name}</p>
+                              <p className="text-xs text-gray-500">{inv.email}</p>
+                            </>
+                          ) : (
+                            <p className="font-medium text-gray-600">{inv.email}</p>
+                          )}
+                          <p className="text-[11px] text-gray-400 mt-0.5">
                             Invited{" "}
                             {new Date(inv.createdAt).toLocaleDateString()}{" "}
                             &middot; Expires{" "}
@@ -345,7 +363,7 @@ export default function AdminUsersPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() =>
-                            resendInvite(inv.email, inv.role, inv.id)
+                            resendInvite(inv.email, inv.role, inv.id, inv.name)
                           }
                           title="Resend invite"
                         >

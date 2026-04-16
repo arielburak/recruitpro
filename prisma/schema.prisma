@@ -667,6 +667,7 @@ model PasswordResetToken {
 model UserInvite {
   id             String   @id @default(cuid())
   email          String
+  name           String?
   token          String   @unique @default(cuid())
   role           UserRole @default(RECRUITER)
   organizationId String

@@ -43,6 +43,7 @@ export async function GET(
 
     return NextResponse.json({
       email: invite.email,
+      name: invite.name || "",
       role: invite.role,
       organizationName: org?.name || "Unknown",
     });

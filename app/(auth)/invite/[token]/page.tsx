@@ -140,6 +140,7 @@ export default function InvitePage({
                 id="name"
                 name="name"
                 placeholder="John Smith"
+                defaultValue={invite?.name || ""}
                 required
               />
             </div>
