@@ -428,7 +428,7 @@ export default function ClientDetailPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="jobs">
+      <Tabs defaultValue="jobs" className="space-y-3">
         <TabsList>
           <TabsTrigger value="jobs">Jobs / Searches</TabsTrigger>
           <TabsTrigger value="contacts">
@@ -436,13 +436,15 @@ export default function ClientDetailPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="jobs">
+        <TabsContent value="jobs" className="mt-0">
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="p-4">
               {client.jobs?.length === 0 ? (
-                <p className="text-sm text-gray-400">No jobs yet for this client.</p>
+                <div className="text-center py-8">
+                  <p className="text-sm text-gray-400">No jobs yet for this client.</p>
+                </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {client.jobs?.map((j: any) => (
                     <Link key={j.id} href={`/jobs/${j.id}`}>
                       <div className="flex items-center justify-between p-3 rounded-md hover:bg-gray-50 cursor-pointer">
@@ -460,7 +462,7 @@ export default function ClientDetailPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="contacts">
+        <TabsContent value="contacts" className="mt-0">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">

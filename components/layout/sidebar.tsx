@@ -20,6 +20,7 @@ import {
   Inbox,
   Calendar,
   User,
+  UserRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -28,6 +29,7 @@ const mainNavItems = [
   { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Jobs", href: "/jobs", icon: Briefcase },
   { label: "Clients", href: "/clients", icon: Building2 },
+  { label: "Contacts", href: "/contacts", icon: UserRound },
   { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
   { label: "Calendar", href: "/calendar", icon: Calendar },
