@@ -19,6 +19,7 @@ import {
   Upload,
   Inbox,
   Calendar,
+  User,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -37,6 +38,10 @@ const mainNavItems = [
 const adminNavItems = [
   { label: "Team", href: "/admin/users", icon: UserPlus },
   { label: "Settings", href: "/admin/settings", icon: Settings },
+];
+
+const accountNavItems = [
+  { label: "Profile", href: "/profile", icon: User },
 ];
 
 function NavLink({
@@ -90,20 +95,26 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
 
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
-        {initials}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="truncate text-sm font-medium text-gray-200">
-          {session?.user?.name || "User"}
-        </p>
-        <p className="truncate text-xs text-gray-500">
-          {session?.user?.role || "Member"}
-        </p>
-      </div>
+      <Link
+        href="/profile"
+        className="flex items-center gap-3 flex-1 min-w-0 rounded-md -mx-1 px-1 py-1 transition-colors hover:bg-white/5 group"
+        title="View profile"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="truncate text-sm font-medium text-gray-200 group-hover:text-white">
+            {session?.user?.name || "User"}
+          </p>
+          <p className="truncate text-xs text-gray-500">
+            {session?.user?.role || "Member"}
+          </p>
+        </div>
+      </Link>
       <button
         onClick={() => signOut()}
-        className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300"
+        className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"
         title="Sign out"
       >
         <LogOut size={16} />
@@ -188,6 +199,20 @@ export function Sidebar() {
             ))}
           </>
         )}
+
+        {/* Account section (for everyone) */}
+        <div className="!my-4 mx-0 border-t border-white/[0.06]" />
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+          Account
+        </p>
+        {accountNavItems.map((item) => (
+          <NavLink
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            onClick={() => setMobileOpen(false)}
+          />
+        ))}
       </nav>
 
       {/* Separator */}

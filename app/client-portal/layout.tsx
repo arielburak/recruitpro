@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List } from "lucide-react";
+import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List, User } from "lucide-react";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -14,7 +14,7 @@ export default function ClientPortalLayout({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|calendar)[a-z0-9]+$/.test(pathname);
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|calendar|settings)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
 
   return (
@@ -66,12 +66,21 @@ export default function ClientPortalLayout({
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {showNav ? (
               <>
-                <span className="text-sm text-gray-500 hidden md:block">
-                  {(session?.user as any)?.clientName}
-                </span>
+                <Link
+                  href="/client-portal/settings"
+                  className={`flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 rounded-lg ${
+                    pathname === "/client-portal/settings"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                  }`}
+                  title="Profile & Settings"
+                >
+                  <User className="h-4 w-4" />
+                  <span className="hidden sm:inline">{session?.user?.name?.split(" ")[0] || "Profile"}</span>
+                </Link>
                 <button
                   onClick={() => signOut({ callbackUrl: "/client-portal/login" })}
                   className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
