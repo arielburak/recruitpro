@@ -169,24 +169,28 @@ export default function ClientDashboardPage() {
       value: openJobs,
       icon: Briefcase,
       gradient: "from-emerald-500 to-teal-600",
+      href: "/client-portal/jobs",
     },
     {
       label: "Candidates Shared",
       value: totalCandidates,
       icon: Users,
       gradient: "from-blue-500 to-indigo-600",
+      href: "/client-portal/candidates",
     },
     {
       label: "Active Recruiters",
       value: activeRecruiters,
       icon: Handshake,
       gradient: "from-violet-500 to-purple-600",
+      href: null,
     },
     {
       label: "Total Jobs",
       value: totalJobs,
       icon: BarChart3,
       gradient: "from-amber-500 to-orange-600",
+      href: "/client-portal/jobs",
     },
   ];
 
@@ -230,19 +234,31 @@ export default function ClientDashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="border-0 shadow-sm hover:shadow-md transition-all">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className={`p-2 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-sm`}>
-                  <stat.icon className="h-4 w-4 text-white" />
+        {stats.map((stat) => {
+          const inner = (
+            <Card
+              key={stat.label}
+              className={`border-0 shadow-sm transition-all ${stat.href ? "hover:shadow-md hover:-translate-y-0.5 cursor-pointer" : ""}`}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`p-2 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-sm`}>
+                    <stat.icon className="h-4 w-4 text-white" />
+                  </div>
                 </div>
-              </div>
-              <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
-            </CardContent>
-          </Card>
-        ))}
+                <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+              </CardContent>
+            </Card>
+          );
+          return stat.href ? (
+            <Link key={stat.label} href={stat.href}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={stat.label}>{inner}</div>
+          );
+        })}
       </div>
 
       {/* Quick Action / Empty State */}

@@ -32,6 +32,14 @@ import {
   Loader2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { formatDate } from "@/lib/utils";
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -55,6 +63,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [addingMember, setAddingMember] = useState(false);
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Candidates for this job
+  const [jobCandidates, setJobCandidates] = useState<any[]>([]);
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -110,7 +121,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchJob();
     fetchTeam();
     fetchDocuments();
+    fetchJobCandidates();
   }, [id]);
+
+  async function fetchJobCandidates() {
+    try {
+      const res = await fetch(`/api/client-portal/candidates?flat=true&jobId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJobCandidates(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  }
 
   async function fetchDocuments() {
     try {
@@ -403,6 +425,55 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   </CardContent>
                 </Card>
               )}
+
+              {/* Candidates shared for this job */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
+                  </CardTitle>
+                  {jobCandidates.length > 0 && (
+                    <Link href={`/client-portal/candidates?jobId=${id}`} className="text-xs text-emerald-600 hover:underline">
+                      View all →
+                    </Link>
+                  )}
+                </CardHeader>
+                <CardContent className="p-0">
+                  {jobCandidates.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No candidates shared yet.</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Your recruiting firms will share candidates here as they find them.
+                      </p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead>Stage</TableHead>
+                          <TableHead>Firm</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Rating</TableHead>
+                          <TableHead>Shared</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {jobCandidates.map((row) => (
+                          <CandidateTableRow
+                            key={row.submissionId}
+                            row={row}
+                            showJob={false}
+                            onRated={fetchJobCandidates}
+                          />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Documents */}
               <Card>
