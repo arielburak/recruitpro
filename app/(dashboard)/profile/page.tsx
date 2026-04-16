@@ -11,6 +11,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Badge } from "@/components/ui/badge";
 import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Calendar, Video, Plug, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { FEATURES } from "@/lib/feature-flags";
 
 export default function StaffingProfilePage() {
   const { data: session, update: updateSession } = useSession();
@@ -98,7 +99,7 @@ export default function StaffingProfilePage() {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role }),
+        body: JSON.stringify({ name }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -191,16 +192,18 @@ export default function StaffingProfilePage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="ADMIN">Admin</option>
-                    <option value="PARTNER">Partner</option>
-                    <option value="RECRUITER">Recruiter</option>
-                  </select>
-                  <p className="text-xs text-gray-400">Admins can manage the team and billing</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={role === "ADMIN" ? "Admin" : "User"}
+                      disabled
+                      className="bg-gray-50"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {role === "ADMIN"
+                      ? "You can manage the team and billing. Only other admins can change your role."
+                      : "Contact an admin to change your role."}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
@@ -277,7 +280,8 @@ export default function StaffingProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Integrations */}
+          {/* Integrations — hidden while Google OAuth verification is pending */}
+          {FEATURES.calendarIntegrations && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -379,6 +383,7 @@ export default function StaffingProfilePage() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
 
         {/* Right Sidebar */}
@@ -407,7 +412,7 @@ export default function StaffingProfilePage() {
                       {displayRole && (
                         <div className="flex items-center gap-2 text-gray-600">
                           <Shield className="h-3.5 w-3.5 text-gray-400" />
-                          <span>Role: <Badge variant="secondary" className="text-[10px]">{displayRole}</Badge></span>
+                          <span>Role: <Badge variant={displayRole === "ADMIN" ? "default" : "secondary"} className="text-[10px]">{displayRole === "ADMIN" ? "Admin" : "User"}</Badge></span>
                         </div>
                       )}
                       {displayOrg && (
@@ -434,7 +439,7 @@ export default function StaffingProfilePage() {
                 <Users className="h-4 w-4 text-indigo-500" />
                 Your Team
               </CardTitle>
-              {(profile?.role === "ADMIN" || profile?.role === "PARTNER") && (
+              {profile?.role === "ADMIN" && (
                 <Link href="/admin/users">
                   <Button variant="ghost" size="sm" className="text-xs h-7">Manage</Button>
                 </Link>

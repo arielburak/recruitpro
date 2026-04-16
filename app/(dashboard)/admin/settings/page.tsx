@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Video, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { FEATURES } from "@/lib/feature-flags";
 
 export default function AdminSettingsPage() {
   return (
@@ -98,7 +99,8 @@ function SettingsContent() {
         </CardContent>
       </Card>
 
-      {/* Calendar Integrations */}
+      {/* Calendar Integrations — hidden while Google OAuth verification is pending */}
+      {FEATURES.calendarIntegrations && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -201,6 +203,7 @@ function SettingsContent() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>

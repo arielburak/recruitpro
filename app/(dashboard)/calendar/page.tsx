@@ -30,6 +30,7 @@ import {
   Send,
 } from "lucide-react";
 import Link from "next/link";
+import { FEATURES } from "@/lib/feature-flags";
 
 // ─── Constants ───
 
@@ -59,13 +60,19 @@ const STATUS_LABELS: Record<string, string> = {
   NO_SHOW: "No Show",
 };
 
-const PLATFORM_OPTIONS = [
-  { value: "google_meet", label: "Google Meet", color: "text-green-600" },
-  { value: "teams", label: "Microsoft Teams", color: "text-blue-600" },
-  { value: "zoom", label: "Zoom", color: "text-blue-500" },
-  { value: "custom", label: "Custom Link", color: "text-gray-600" },
-  { value: "none", label: "No Video", color: "text-gray-400" },
+const ALL_PLATFORM_OPTIONS = [
+  { value: "google_meet", label: "Google Meet", color: "text-green-600", requiresIntegration: true },
+  { value: "teams", label: "Microsoft Teams", color: "text-blue-600", requiresIntegration: true },
+  { value: "zoom", label: "Zoom", color: "text-blue-500", requiresIntegration: false },
+  { value: "custom", label: "Custom Link", color: "text-gray-600", requiresIntegration: false },
+  { value: "none", label: "No Video", color: "text-gray-400", requiresIntegration: false },
 ];
+
+// When the calendar integration feature is off (e.g. while Google OAuth
+// verification is pending), hide options that require a native integration.
+const PLATFORM_OPTIONS = FEATURES.calendarIntegrations
+  ? ALL_PLATFORM_OPTIONS
+  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration);
 
 const TIMEZONE_OPTIONS = [
   // Americas
@@ -816,7 +823,9 @@ function CreateInterviewModal({
   const [endTime, setEndTime] = useState("09:30");
   const [duration, setDuration] = useState(30);
   const [type, setType] = useState("VIDEO");
-  const [platform, setPlatform] = useState("google_meet");
+  const [platform, setPlatform] = useState(
+    FEATURES.calendarIntegrations ? "google_meet" : "custom"
+  );
   const [meetingLink, setMeetingLink] = useState("");
   const [location, setLocation] = useState("");
   const [timezone, setTimezone] = useState("America/Argentina/Buenos_Aires");
@@ -852,13 +861,15 @@ function CreateInterviewModal({
       .then((r) => r.json())
       .then((data) => setTeamMembers(data.users || []))
       .catch(() => {});
-    fetch("/api/integrations/google/status")
-      .then((r) => r.json())
-      .then((data) => {
-        setGoogleConnected(data.connected || false);
-        setGoogleEmail(data.email || null);
-      })
-      .catch(() => {});
+    if (FEATURES.calendarIntegrations) {
+      fetch("/api/integrations/google/status")
+        .then((r) => r.json())
+        .then((data) => {
+          setGoogleConnected(data.connected || false);
+          setGoogleEmail(data.email || null);
+        })
+        .catch(() => {});
+    }
   }, []);
 
   // Close dropdown on outside click
