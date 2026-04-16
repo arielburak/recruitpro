@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
+import { sendInterviewInviteEmail } from "@/lib/email";
 
 export async function GET(
   _request: Request,
@@ -73,6 +74,20 @@ export async function PUT(
     const body = await request.json();
     const data = candidateSchema.parse(body);
 
+    // Snapshot the old candidate so we can detect email changes
+    const existing = await prisma.candidate.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { email: true, firstName: true, lastName: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const oldEmail = existing.email?.toLowerCase().trim() || "";
+    const newEmail = data.email?.toLowerCase().trim() || "";
+    const emailChanged = !!newEmail && newEmail !== oldEmail;
+
     const candidate = await prisma.candidate.updateMany({
       where: { id, organizationId: ctx.organizationId },
       data: {
@@ -94,7 +109,75 @@ export async function PUT(
       organizationId: ctx.organizationId,
     });
 
-    return NextResponse.json({ success: true });
+    // If the email changed, re-send future interview invites to the new address
+    // so scheduled meetings don't get lost in the void.
+    let resentCount = 0;
+    if (emailChanged) {
+      const now = new Date();
+      const upcomingInterviews = await prisma.interview.findMany({
+        where: {
+          candidateId: id,
+          organizationId: ctx.organizationId,
+          status: "SCHEDULED",
+          startTime: { gte: now },
+        },
+        include: {
+          job: { select: { title: true, client: { select: { name: true } } } },
+          creator: { select: { name: true } },
+        },
+      });
+
+      for (const iv of upcomingInterviews) {
+        const emailDateOpts = {
+          weekday: "long" as const, year: "numeric" as const,
+          month: "long" as const, day: "numeric" as const,
+          timeZone: iv.timezone,
+        };
+        const emailTimeOpts = {
+          hour: "numeric" as const, minute: "2-digit" as const,
+          hour12: true as const, timeZone: iv.timezone,
+        };
+        const formattedDate = iv.startTime.toLocaleDateString("en-US", emailDateOpts);
+        const formattedStart = iv.startTime.toLocaleTimeString("en-US", emailTimeOpts);
+        const formattedEnd = iv.endTime.toLocaleTimeString("en-US", emailTimeOpts);
+
+        try {
+          await sendInterviewInviteEmail({
+            to: newEmail,
+            candidateName: data.firstName,
+            jobTitle: iv.job.title,
+            clientName: iv.job.client?.name || "",
+            interviewDate: formattedDate,
+            interviewTime: formattedStart,
+            interviewEndTime: formattedEnd,
+            timezone: iv.timezone,
+            interviewType: iv.type,
+            meetingLink: iv.meetingLink || undefined,
+            location: iv.location || undefined,
+            notes: iv.notes || undefined,
+            recruiterName: iv.creator?.name || ctx.userName,
+          });
+          resentCount++;
+        } catch (emailErr) {
+          console.error(
+            `[candidate.update] Failed to re-send interview invite to ${newEmail}:`,
+            emailErr
+          );
+        }
+      }
+
+      if (resentCount > 0) {
+        await logActivity({
+          action: "candidate.email_changed",
+          description: `${ctx.userName} updated email for ${data.firstName} ${data.lastName} — resent ${resentCount} upcoming interview invite${resentCount === 1 ? "" : "s"} to ${newEmail}`,
+          userId: ctx.userId,
+          candidateId: id,
+          organizationId: ctx.organizationId,
+        });
+      }
+    }
+
+    return NextResponse.json({ success: true, resentInvites: resentCount });
   } catch (error: any) {
     if (error.name === "ZodError") {
       return NextResponse.json(
