@@ -4,28 +4,33 @@
       <stop offset="0%" stop-color="#6366F1"/>
       <stop offset="100%" stop-color="#7C3AED"/>
     </linearGradient>
-    <linearGradient id="briefcaseShineL" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.85"/>
-    </linearGradient>
   </defs>
 
   <!-- Mark -->
   <g transform="translate(20, 20)">
     <rect width="120" height="120" rx="26" ry="26" fill="url(#bgL)"/>
-    <g transform="translate(0,0) scale(0.234)">
-      <!-- Handle -->
-      <path d="M 200 152 H 312 A 16 16 0 0 1 328 168 V 200 H 296 V 184 H 216 V 200 H 184 V 168 A 16 16 0 0 1 200 152 Z"
-            fill="url(#briefcaseShineL)"/>
-      <!-- Body -->
-      <rect x="128" y="200" width="256" height="184" rx="20" ry="20" fill="url(#briefcaseShineL)"/>
-      <!-- Latch -->
-      <rect x="232" y="278" width="48" height="28" rx="6" ry="6" fill="#6366F1" opacity="0.85"/>
-      <!-- Belt -->
-      <rect x="128" y="276" width="256" height="3" fill="#6366F1" opacity="0.18"/>
+    <!-- "R" scaled to fit the 120x120 mark, drawn from the same path as icon.svg -->
+    <g transform="scale(0.234)">
+      <path d="
+        M 156 108
+        H 304
+        C 365 108 408 152 408 213
+        C 408 261 380 299 338 312
+        L 414 404
+        H 332
+        L 264 320
+        H 232
+        V 404
+        H 156
+        Z
+        M 232 174
+        V 256
+        H 296
+        C 322 256 336 240 336 215
+        C 336 190 322 174 296 174
+        Z
+      " fill="#FFFFFF" fill-rule="evenodd"/>
     </g>
-    <!-- Accent dot -->
-    <circle cx="93" cy="27" r="11" fill="#10B981" stroke="#FFFFFF" stroke-width="2.5"/>
   </g>
 
   <!-- Wordmark -->
