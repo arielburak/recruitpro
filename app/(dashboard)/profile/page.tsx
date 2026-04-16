@@ -13,13 +13,14 @@ import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Cal
 import { formatDate } from "@/lib/utils";
 
 export default function StaffingProfilePage() {
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
 
   // Profile form
   const [name, setName] = useState("");
+  const [role, setRole] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileStatus, setProfileStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -51,6 +52,7 @@ export default function StaffingProfilePage() {
         const data = await res.json();
         setProfile(data);
         setName(data.name || "");
+        setRole(data.role || "");
       }
     } catch {}
     setLoading(false);
@@ -74,11 +76,14 @@ export default function StaffingProfilePage() {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, role }),
       });
       if (res.ok) {
         const updated = await res.json();
         setProfile((prev: any) => ({ ...(prev || {}), ...updated }));
+        // Refresh the NextAuth session so sidebar and other consumers
+        // of session.user.name / session.user.role update immediately.
+        await updateSession({ name: updated.name, role: updated.role });
         setProfileStatus({ type: "success", message: "Profile updated" });
         setTimeout(() => setProfileStatus(null), 3000);
       } else {
@@ -91,7 +96,9 @@ export default function StaffingProfilePage() {
     setSavingProfile(false);
   }
 
-  const isDirty = profile && name.trim() !== (profile.name || "");
+  const isDirty =
+    profile &&
+    (name.trim() !== (profile.name || "") || role !== (profile.role || ""));
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -161,6 +168,19 @@ export default function StaffingProfilePage() {
                 <div className="space-y-2">
                   <Label>Full Name</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="ADMIN">Admin</option>
+                    <option value="PARTNER">Partner</option>
+                    <option value="RECRUITER">Recruiter</option>
+                  </select>
+                  <p className="text-xs text-gray-400">Admins can manage the team and billing</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>

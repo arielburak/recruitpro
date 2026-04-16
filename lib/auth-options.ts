@@ -127,12 +127,26 @@ export const authOptions: NextAuthOptions = {
 
       return true;
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
+      // Client-initiated session update (useSession().update({ name, role }))
+      // Merge any supplied fields into the token so the UI can pick them up
+      // without requiring a re-login.
+      if (trigger === "update" && session) {
+        if (typeof session.name === "string" && session.name.trim()) {
+          token.name = session.name;
+        }
+        if (typeof session.role === "string") {
+          token.role = session.role;
+        }
+        return token;
+      }
+
       if (user && (account?.provider === "credentials" || account?.provider === "client-credentials")) {
         // Fresh credentials sign-in: fully reset fields from the "other side"
         // to avoid leaking state from a previous session (staffing ↔ client)
         const isClient = (user as any).isClientUser || false;
         token.id = user.id;
+        token.name = user.name;
         token.isClientUser = isClient;
         if (isClient) {
           token.clientId = (user as any).clientId;

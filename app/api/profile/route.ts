@@ -83,11 +83,21 @@ export async function PATCH(request: Request) {
     }
 
     const avatar = typeof body.avatar === "string" ? body.avatar.trim() : undefined;
+    // TODO: Restrict role changes to ADMIN once team permissions stabilize.
+    // For now, users can change their own role freely.
+    const VALID_ROLES = ["ADMIN", "PARTNER", "RECRUITER"] as const;
+    type Role = (typeof VALID_ROLES)[number];
+    const role: Role | undefined =
+      typeof body.role === "string" && (VALID_ROLES as readonly string[]).includes(body.role)
+        ? (body.role as Role)
+        : undefined;
+
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
         ...(name !== undefined ? { name } : {}),
         ...(avatar !== undefined ? { avatar: avatar || null } : {}),
+        ...(role !== undefined ? { role } : {}),
       },
       select: { id: true, name: true, email: true, avatar: true, role: true },
     });
