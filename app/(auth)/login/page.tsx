@@ -36,6 +36,11 @@ function LoginContent() {
     try {
       const formData = new FormData(e.currentTarget);
 
+      // If a client session is active, transparently sign out first
+      if (hasClientSession) {
+        await signOut({ redirect: false });
+      }
+
       // Race signIn against a timeout
       const signInPromise = signIn("credentials", {
         email: formData.get("email") as string,
@@ -135,35 +140,14 @@ function LoginContent() {
           </div>
 
           {hasClientSession && (
-            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <p className="text-sm font-medium text-emerald-900 mb-1">
-                You&apos;re signed in as a client user
-              </p>
-              <p className="text-xs text-emerald-700 mb-3">
-                To sign in as a staffing firm, sign out of the client portal first.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs h-8 border-emerald-300 text-emerald-900 hover:bg-emerald-100"
-                  onClick={() => (window.location.href = "/client-portal/dashboard")}
-                >
-                  Go to Client Dashboard
-                </Button>
-                <Button
-                  size="sm"
-                  className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700"
-                  onClick={async () => {
-                    setClearingSession(true);
-                    await signOut({ redirect: false });
-                    setClearingSession(false);
-                  }}
-                  disabled={clearingSession}
-                >
-                  {clearingSession ? "Signing out..." : "Sign out & Continue"}
-                </Button>
-              </div>
+            <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className="flex-1 truncate">
+                Currently in client portal as <span className="font-medium text-gray-800">{(session?.user as any)?.email || session?.user?.name}</span>
+              </span>
+              <Link href="/client-portal/dashboard" className="text-indigo-600 hover:text-indigo-700 font-medium whitespace-nowrap">
+                Go there →
+              </Link>
             </div>
           )}
 

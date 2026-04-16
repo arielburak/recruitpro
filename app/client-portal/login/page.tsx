@@ -130,6 +130,11 @@ export default function ClientPortalLoginPage() {
 
     const fd = new FormData(e.currentTarget);
     try {
+      // If a staffing session is active, transparently sign out first
+      if (hasStaffingSession) {
+        await signOut({ redirect: false });
+      }
+
       const result = await signIn("client-credentials", {
         email: fd.get("email") as string,
         password: fd.get("password") as string,
@@ -208,6 +213,11 @@ export default function ClientPortalLoginPage() {
         return;
       }
 
+      // If a staffing session is active, transparently sign out first
+      if (hasStaffingSession) {
+        await signOut({ redirect: false });
+      }
+
       // Auto-login
       const result = await signIn("client-credentials", {
         email,
@@ -277,35 +287,14 @@ export default function ClientPortalLoginPage() {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
           {hasStaffingSession && (
-            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm font-medium text-amber-900 mb-1">
-                You&apos;re signed in as a staffing firm user
-              </p>
-              <p className="text-xs text-amber-700 mb-3">
-                {(session?.user as any)?.email || session?.user?.name} — To sign in as a client, sign out first.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs h-8 border-amber-300 text-amber-900 hover:bg-amber-100"
-                  onClick={() => (window.location.href = "/dashboard")}
-                >
-                  Go to Staffing Dashboard
-                </Button>
-                <Button
-                  size="sm"
-                  className="text-xs h-8 bg-amber-600 hover:bg-amber-700"
-                  onClick={async () => {
-                    setClearingSession(true);
-                    await signOut({ redirect: false });
-                    setClearingSession(false);
-                  }}
-                  disabled={clearingSession}
-                >
-                  {clearingSession ? "Signing out..." : "Sign out & Continue"}
-                </Button>
-              </div>
+            <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+              <span className="flex-1 truncate">
+                Currently in staffing as <span className="font-medium text-gray-800">{(session?.user as any)?.email || session?.user?.name}</span>
+              </span>
+              <Link href="/dashboard" className="text-emerald-600 hover:text-emerald-700 font-medium whitespace-nowrap">
+                Go there →
+              </Link>
             </div>
           )}
           {forgotMode ? (
