@@ -5,6 +5,14 @@ import { getToken } from "next-auth/jwt";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Static assets served from /public are reached at the URL root
+  // (e.g. /icon.svg, /logo.svg, /robots.txt). The matcher's "public"
+  // negative lookahead never fires because there is no /public prefix
+  // in the real URL — so we need an explicit early return here.
+  if (/\.(?:svg|png|jpe?g|gif|webp|ico|avif|bmp|tiff?|js|css|map|woff2?|ttf|eot|otf|json|xml|txt|pdf|mp4|webm|mp3|wav)$/i.test(pathname)) {
+    return NextResponse.next();
+  }
+
   // Public routes (landing page, auth, marketing)
   const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/client-portal/register"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
@@ -79,6 +87,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|public).*)",
+    // Skip Next.js internals and any URL ending in a static asset extension
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|avif|js|css|map|woff2?|ttf|eot|otf|json|xml|txt|pdf|mp4|webm|mp3|wav)).*)",
   ],
 };
