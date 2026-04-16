@@ -4,9 +4,6 @@
       <stop offset="0%" stop-color="#6366F1"/>
       <stop offset="100%" stop-color="#7C3AED"/>
     </linearGradient>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#1E1B4B" flood-opacity="0.30"/>
-    </filter>
   </defs>
 
   <!-- Rounded square background -->
@@ -15,26 +12,26 @@
   <!-- Subtle inner border for depth -->
   <rect x="2" y="2" width="508" height="508" rx="110" ry="110" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
 
-  <!-- "R" mark, drawn as path for consistent rendering everywhere -->
-  <g filter="url(#softShadow)" fill="#FFFFFF" fill-rule="evenodd">
-    <path d="
-      M 156 108
-      H 304
-      C 365 108 408 152 408 213
-      C 408 261 380 299 338 312
-      L 414 404
-      H 332
-      L 264 320
-      H 232
-      V 404
-      H 156
-      Z
-      M 232 174
-      V 256
-      H 296
-      C 322 256 336 240 336 215
-      C 336 190 322 174 296 174
-      Z
-    "/>
-  </g>
+  <!-- "R" mark, drawn as path for consistent rendering everywhere.
+       No SVG filter on purpose — many converters (CloudConvert, etc.)
+       drop the entire filtered group when feDropShadow is unsupported. -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="
+    M 156 108
+    H 304
+    C 365 108 408 152 408 213
+    C 408 261 380 299 338 312
+    L 414 404
+    H 332
+    L 264 320
+    H 232
+    V 404
+    H 156
+    Z
+    M 232 174
+    V 256
+    H 296
+    C 322 256 336 240 336 215
+    C 336 190 322 174 296 174
+    Z
+  "/>
 </svg>
