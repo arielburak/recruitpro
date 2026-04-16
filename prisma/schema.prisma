@@ -396,8 +396,9 @@ model Comment {
 }
 
 enum CommentType {
-  INTERNAL
-  CLIENT_VISIBLE
+  INTERNAL         // staffing-firm internal, not visible to client
+  CLIENT_VISIBLE   // shared between staffing + client
+  CLIENT_INTERNAL  // client-team internal, not visible to staffing firm
 }
 
 // ─── INTERVIEWS ───

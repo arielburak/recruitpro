@@ -99,15 +99,17 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    // Client-visible comments (feedback thread)
+    // Client-side comments: CLIENT_VISIBLE (shared) + CLIENT_INTERNAL (client-only)
     const comments = await prisma.comment.findMany({
       where: {
         submissionId,
-        type: "CLIENT_VISIBLE",
+        type: { in: ["CLIENT_VISIBLE", "CLIENT_INTERNAL"] },
       },
       select: {
         id: true,
         content: true,
+        type: true,
+        mentions: true,
         createdAt: true,
         clientUser: { select: { id: true, name: true, title: true } },
         user: { select: { id: true, name: true } },

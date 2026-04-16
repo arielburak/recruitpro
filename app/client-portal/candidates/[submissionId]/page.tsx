@@ -16,12 +16,12 @@ import {
   Building2,
   FileText,
   Download,
-  Send,
   User,
   Calendar,
 } from "lucide-react";
 import { RatingStars } from "@/components/client-portal/rating-stars";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+import { CandidateChat } from "@/components/client-portal/candidate-chat";
 
 type CandidateDetail = {
   submissionId: string;
@@ -66,6 +66,8 @@ type CandidateDetail = {
   comments: {
     id: string;
     content: string;
+    type?: "CLIENT_VISIBLE" | "CLIENT_INTERNAL" | string;
+    mentions?: string[];
     createdAt: string;
     clientUser: { id: string; name: string; title: string | null } | null;
     user: { id: string; name: string } | null;
@@ -115,10 +117,6 @@ export default function CandidateDetailPage({
   const [myFeedback, setMyFeedback] = useState("");
   const [savingRating, setSavingRating] = useState(false);
   const [ratingStatus, setRatingStatus] = useState<string | null>(null);
-
-  // Comment form
-  const [newComment, setNewComment] = useState("");
-  const [postingComment, setPostingComment] = useState(false);
 
   async function fetchDetail() {
     try {
@@ -191,25 +189,6 @@ export default function CandidateDetailPage({
     setSavingRating(false);
   }
 
-  async function postComment() {
-    if (!newComment.trim()) return;
-    setPostingComment(true);
-    try {
-      const res = await fetch(`/api/client-portal/candidates/${submissionId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comment: newComment.trim() }),
-      });
-      if (res.ok) {
-        setNewComment("");
-        fetchDetail();
-      }
-    } catch {
-      // silent
-    }
-    setPostingComment(false);
-  }
-
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
@@ -238,20 +217,6 @@ export default function CandidateDetailPage({
 
   const fullName = `${detail.candidate.firstName} ${detail.candidate.lastName}`.trim();
   const initials = (detail.candidate.firstName[0] || "") + (detail.candidate.lastName[0] || "");
-
-  // Parse comment content: recruiter comments or old-style rating JSON
-  function renderCommentContent(raw: string) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.text) return parsed.text;
-      if (parsed.clientName || parsed.rating) {
-        return parsed.text || "";
-      }
-    } catch {
-      // plain text
-    }
-    return raw;
-  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -398,88 +363,42 @@ export default function CandidateDetailPage({
             </CardContent>
           </Card>
 
-          {/* Feedback thread */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-500">Team Feedback</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Post comment */}
-              <div className="space-y-2">
-                <Textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Leave a comment for your team..."
-                  rows={3}
-                  className="text-sm"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                    onClick={postComment}
-                    disabled={postingComment || !newComment.trim()}
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    {postingComment ? "Posting..." : "Post Comment"}
-                  </Button>
-                </div>
-              </div>
+          {/* Chat: internal team + shared with recruiter */}
+          <CandidateChat
+            submissionId={detail.submissionId}
+            comments={detail.comments as any}
+            onCommentAdded={fetchDetail}
+          />
 
-              {/* Existing ratings + comments merged, sorted by date */}
-              {detail.comments.length === 0 && detail.allRatings.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No feedback yet.</p>
-              ) : (
+          {/* Ratings from the team (separate from chat) */}
+          {detail.allRatings.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-gray-500">Team Ratings</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-3">
-                  {[
-                    ...detail.allRatings.map((r) => ({
-                      kind: "rating" as const,
-                      id: `rating_${r.id}`,
-                      date: r.createdAt,
-                      author: r.clientUser.name,
-                      authorTitle: r.clientUser.title,
-                      score: r.score,
-                      feedback: r.feedback,
-                    })),
-                    ...detail.comments.map((c) => ({
-                      kind: "comment" as const,
-                      id: `comment_${c.id}`,
-                      date: c.createdAt,
-                      author: c.clientUser?.name || c.user?.name || "Someone",
-                      authorTitle: c.clientUser?.title || null,
-                      content: c.content,
-                    })),
-                  ]
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((item) => (
-                      <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{item.author}</p>
-                            {item.authorTitle && (
-                              <p className="text-[11px] text-gray-500">{item.authorTitle}</p>
-                            )}
-                          </div>
-                          <span className="text-[11px] text-gray-400 shrink-0">{formatDateTime(item.date)}</span>
+                  {detail.allRatings.map((r) => (
+                    <div key={r.id} className="p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{r.clientUser.name}</p>
+                          {r.clientUser.title && (
+                            <p className="text-[11px] text-gray-500">{r.clientUser.title}</p>
+                          )}
                         </div>
-                        {item.kind === "rating" ? (
-                          <>
-                            <RatingStars value={item.score} readonly size="sm" />
-                            {item.feedback && (
-                              <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap">{item.feedback}</p>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {renderCommentContent(item.content)}
-                          </p>
-                        )}
+                        <span className="text-[11px] text-gray-400 shrink-0">{formatDateTime(r.createdAt)}</span>
                       </div>
-                    ))}
+                      <RatingStars value={r.score} readonly size="sm" />
+                      {r.feedback && (
+                        <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap">{r.feedback}</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right column: context + rating form */}

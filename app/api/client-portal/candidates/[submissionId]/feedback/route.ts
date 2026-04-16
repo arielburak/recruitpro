@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { notifyOnNewComment } from "@/lib/chat-notifications";
 
 // Helper: verify the submission belongs to this client AND is shared
 async function verifyAccess(submissionId: string, clientId: string) {
@@ -16,6 +17,7 @@ async function verifyAccess(submissionId: string, clientId: string) {
 }
 
 // GET all feedback (ratings + comments) for this submission
+// Returns both CLIENT_VISIBLE (shared with staffing) and CLIENT_INTERNAL (client only)
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ submissionId: string }> }
@@ -40,10 +42,17 @@ export async function GET(
         orderBy: { createdAt: "desc" },
       }),
       prisma.comment.findMany({
-        where: { submissionId, type: "CLIENT_VISIBLE" },
+        where: {
+          submissionId,
+          // Client portal sees CLIENT_VISIBLE (shared) + CLIENT_INTERNAL (own team).
+          // Never INTERNAL (staffing-only).
+          type: { in: ["CLIENT_VISIBLE", "CLIENT_INTERNAL"] },
+        },
         select: {
           id: true,
           content: true,
+          type: true,
+          mentions: true,
           createdAt: true,
           clientUser: { select: { id: true, name: true, title: true } },
           user: { select: { id: true, name: true } },
@@ -58,7 +67,7 @@ export async function GET(
   }
 }
 
-// POST submit/update rating + comment
+// POST submit/update rating + comment (optionally with type and mentions)
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ submissionId: string }> }
@@ -74,12 +83,18 @@ export async function POST(
     const score = typeof body.score === "number" && body.score >= 1 && body.score <= 5 ? body.score : null;
     const feedback = typeof body.feedback === "string" ? body.feedback.trim() : "";
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
+    const requestedType: "CLIENT_VISIBLE" | "CLIENT_INTERNAL" =
+      body.type === "CLIENT_INTERNAL" ? "CLIENT_INTERNAL" : "CLIENT_VISIBLE";
+    const mentions: string[] = Array.isArray(body.mentions)
+      ? body.mentions.filter((m: unknown) => typeof m === "string")
+      : [];
 
     if (!score && !feedback && !comment) {
       return NextResponse.json({ error: "Provide at least a rating or a comment" }, { status: 400 });
     }
 
-    // Upsert rating if score provided
+    // Upsert rating if score provided (ratings are always visible — they're
+    // ratings, not comments. The sharing model for ratings is unchanged.)
     if (score) {
       await prisma.candidateRating.upsert({
         where: {
@@ -106,11 +121,23 @@ export async function POST(
       await prisma.comment.create({
         data: {
           content: comment,
-          type: "CLIENT_VISIBLE",
+          type: requestedType,
           submissionId,
           clientUserId: ctx.clientUserId,
+          mentions,
         },
       });
+
+      // Fire-and-forget notifications
+      notifyOnNewComment({
+        submissionId,
+        commentType: requestedType,
+        content: comment,
+        mentions,
+        authorKind: "client",
+        authorId: ctx.clientUserId,
+        authorName: ctx.userName || "A teammate",
+      }).catch((e) => console.error("[client feedback POST] notify failed:", e));
     }
 
     return NextResponse.json({ success: true });

@@ -27,10 +27,13 @@ export async function GET(
               select: { score: true, feedback: true, clientUser: { select: { name: true } } },
             },
             comments: {
+              // Staffing firm can only see INTERNAL + CLIENT_VISIBLE, never CLIENT_INTERNAL
+              where: { type: { in: ["INTERNAL", "CLIENT_VISIBLE"] } },
               select: {
                 id: true,
                 content: true,
                 type: true,
+                mentions: true,
                 createdAt: true,
                 userId: true,
                 user: { select: { id: true, name: true } },
@@ -41,6 +44,8 @@ export async function GET(
           },
         },
         comments: {
+          // Candidate-level comments: still filter CLIENT_INTERNAL out for safety
+          where: { type: { in: ["INTERNAL", "CLIENT_VISIBLE"] } },
           include: {
             user: { select: { id: true, name: true } },
             clientUser: { select: { id: true, name: true } },

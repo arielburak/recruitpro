@@ -273,7 +273,7 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
           }`}
         >
           <Globe className="h-3.5 w-3.5" />
-          Client Discussion
+          Shared with Client
           {clientCount > 0 && (
             <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
               activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"

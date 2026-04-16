@@ -363,6 +363,78 @@ export async function sendClientTeamInviteEmail({
   });
 }
 
+export async function sendNewMessageEmail({
+  to,
+  fromName,
+  fromRole,
+  candidateName,
+  jobTitle,
+  preview,
+  portalUrl,
+  isInternal,
+}: {
+  to: string;
+  fromName: string;
+  fromRole: "recruiter" | "client" | "team";
+  candidateName: string;
+  jobTitle: string;
+  preview: string;
+  portalUrl: string;
+  isInternal?: boolean;
+}) {
+  const roleLabel =
+    fromRole === "recruiter" ? "a recruiter" : fromRole === "client" ? "the client" : "your team";
+  const channelLabel = isInternal ? "your internal channel" : "the shared chat";
+
+  const trimmedPreview = preview.length > 240 ? `${preview.slice(0, 240)}…` : preview;
+
+  const html = wrapTemplate(
+    `New message about ${candidateName}`,
+    `<p>Hi,</p>
+     <p><strong>${fromName}</strong> (${roleLabel}) left a new message in ${channelLabel} for <strong>${candidateName}</strong> (<em>${jobTitle}</em>):</p>
+     <div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #6366f1; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedPreview}</div>`,
+    portalUrl,
+    "View Conversation"
+  );
+
+  return sendEmail({
+    to,
+    subject: `New message on ${candidateName} — ${jobTitle}`,
+    html,
+  });
+}
+
+export async function sendMentionEmail({
+  to,
+  mentionedBy,
+  candidateName,
+  jobTitle,
+  preview,
+  url,
+}: {
+  to: string;
+  mentionedBy: string;
+  candidateName: string;
+  jobTitle: string;
+  preview: string;
+  url: string;
+}) {
+  const trimmedPreview = preview.length > 240 ? `${preview.slice(0, 240)}…` : preview;
+  const html = wrapTemplate(
+    `${mentionedBy} mentioned you`,
+    `<p><strong>${mentionedBy}</strong> mentioned you in a message about <strong>${candidateName}</strong> (<em>${jobTitle}</em>):</p>
+     <div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #10b981; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedPreview}</div>`,
+    url,
+    "View Conversation"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${mentionedBy} mentioned you — ${candidateName}`,
+    html,
+  });
+}
+
 export async function sendCandidateSharedEmail({
   to,
   candidateName,
