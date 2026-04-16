@@ -12,21 +12,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Users, Search, Briefcase, Filter, Building2 } from "lucide-react";
+import { Users, Search, Briefcase, Filter } from "lucide-react";
 import {
   CandidateTableRow,
   type CandidateRow,
 } from "@/components/client-portal/candidate-row";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
+type Stage = { id: string; name: string; order: number; color: string; isTerminal: boolean; kind: string | null };
 type Filters = {
   jobs: { id: string; title: string }[];
   firms: { id: string; name: string }[];
-  stagesByJob: Record<string, { id: string; name: string; order: number; color: string }[]>;
+  stages: Stage[];
 };
 
 export default function ClientCandidatesPage() {
   const [rows, setRows] = useState<CandidateRow[]>([]);
-  const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stagesByJob: {} });
+  const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -48,7 +50,7 @@ export default function ClientCandidatesPage() {
     params.set("flat", "true");
     if (search.trim().length >= 2) params.set("search", search.trim());
     if (jobFilter !== "all") params.set("jobId", jobFilter);
-    if (stageFilter !== "all") params.set("stageId", stageFilter);
+    if (stageFilter !== "all") params.set("clientStageId", stageFilter);
     if (firmFilter !== "all") params.set("firmId", firmFilter);
 
     setLoading(true);
@@ -65,29 +67,25 @@ export default function ClientCandidatesPage() {
     return () => clearTimeout(t);
   }, [search, jobFilter, stageFilter, firmFilter]);
 
-  // Stages available given selected job
-  const availableStages = useMemo(() => {
-    if (jobFilter === "all") {
-      // Aggregate all stages, dedupe by name
-      const seen = new Map<string, { id: string; name: string; order: number; color: string }>();
-      Object.values(filters.stagesByJob).forEach((arr) => {
-        arr.forEach((s) => {
-          // Use name as de-dupe key across jobs
-          if (!seen.has(s.name)) seen.set(s.name, s);
-        });
-      });
-      return Array.from(seen.values()).sort((a, b) => a.order - b.order);
-    }
-    return filters.stagesByJob[jobFilter] || [];
-  }, [filters.stagesByJob, jobFilter]);
+  const jobOptions: SearchableSelectOption[] = useMemo(
+    () => filters.jobs.map((j) => ({ value: j.id, label: j.title })),
+    [filters.jobs]
+  );
 
-  // Reset stage filter if current selection is not available for the new job
-  useEffect(() => {
-    if (stageFilter === "all") return;
-    if (!availableStages.some((s) => s.id === stageFilter)) {
-      setStageFilter("all");
-    }
-  }, [availableStages, stageFilter]);
+  const stageOptions: SearchableSelectOption[] = useMemo(
+    () =>
+      filters.stages.map((s) => ({
+        value: s.id,
+        label: s.name,
+        color: s.color,
+      })),
+    [filters.stages]
+  );
+
+  const firmOptions: SearchableSelectOption[] = useMemo(
+    () => filters.firms.map((f) => ({ value: f.id, label: f.name })),
+    [filters.firms]
+  );
 
   const activeFilterCount =
     (jobFilter !== "all" ? 1 : 0) +
@@ -102,12 +100,11 @@ export default function ClientCandidatesPage() {
   }
 
   const refetch = () => {
-    // Re-run effect by touching a filter value (no-op but triggers). Simpler: re-fetch inline.
     const params = new URLSearchParams();
     params.set("flat", "true");
     if (search.trim().length >= 2) params.set("search", search.trim());
     if (jobFilter !== "all") params.set("jobId", jobFilter);
-    if (stageFilter !== "all") params.set("stageId", stageFilter);
+    if (stageFilter !== "all") params.set("clientStageId", stageFilter);
     if (firmFilter !== "all") params.set("firmId", firmFilter);
     fetch(`/api/client-portal/candidates?${params.toString()}`)
       .then((r) => r.json())
@@ -146,39 +143,35 @@ export default function ClientCandidatesPage() {
           />
         </div>
 
-        <select
+        <SearchableSelect
           value={jobFilter}
-          onChange={(e) => setJobFilter(e.target.value)}
-          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm min-w-[160px]"
-        >
-          <option value="all">All Jobs</option>
-          {filters.jobs.map((j) => (
-            <option key={j.id} value={j.id}>{j.title}</option>
-          ))}
-        </select>
+          onChange={setJobFilter}
+          options={jobOptions}
+          allLabel="All Jobs"
+          searchPlaceholder="Search jobs..."
+          placeholder="Jobs"
+        />
 
-        <select
+        <SearchableSelect
           value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
-          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm min-w-[140px]"
-        >
-          <option value="all">All Stages</option>
-          {availableStages.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+          onChange={setStageFilter}
+          options={stageOptions}
+          allLabel="All Stages"
+          searchPlaceholder="Search stages..."
+          placeholder="Stages"
+          minWidth={140}
+        />
 
         {filters.firms.length > 1 && (
-          <select
+          <SearchableSelect
             value={firmFilter}
-            onChange={(e) => setFirmFilter(e.target.value)}
-            className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm min-w-[140px]"
-          >
-            <option value="all">All Firms</option>
-            {filters.firms.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
+            onChange={setFirmFilter}
+            options={firmOptions}
+            allLabel="All Firms"
+            searchPlaceholder="Search firms..."
+            placeholder="Firms"
+            minWidth={140}
+          />
         )}
 
         {activeFilterCount > 0 && (
@@ -256,9 +249,8 @@ export default function ClientCandidatesPage() {
         <div className="text-xs text-gray-400 flex flex-wrap items-center gap-4 px-1">
           <span className="flex items-center gap-1.5">
             <Badge className="bg-emerald-100 text-emerald-700 text-[9px]">Stage</Badge>
-            Your recruiter&apos;s pipeline stage for this candidate
+            Your hiring pipeline stage for this candidate (editable in each candidate&apos;s detail)
           </span>
-          <span>Click a candidate to view full profile, rate, and leave feedback.</span>
         </div>
       )}
     </div>

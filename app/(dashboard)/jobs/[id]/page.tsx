@@ -127,6 +127,13 @@ export default function JobDetailPage() {
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
 
+  // Refresh when share dialog completes
+  useEffect(() => {
+    function handleRefresh() { fetchJob(); }
+    window.addEventListener("kanban:refresh", handleRefresh);
+    return () => window.removeEventListener("kanban:refresh", handleRefresh);
+  }, [fetchJob]);
+
   async function searchCandidates(query: string) {
     setCandidateSearch(query);
     if (query.length < 2) { setSearchResults([]); return; }
@@ -467,6 +474,8 @@ export default function JobDetailPage() {
             onMove={moveSubmission}
             onToggleShare={toggleShare}
             onRemove={removeSubmission}
+            clientName={job.client?.name}
+            jobTitle={job.title}
           />
         </TabsContent>
 

@@ -6,7 +6,7 @@ import { getClientContext } from "@/lib/tenant";
 //
 // Two modes:
 // - Default (grouped): one entry per candidate with submissions[] — used by calendar picker
-// - flat=true: one entry per submission with stage info — used by candidates list page
+// - flat=true: one entry per submission with clientStage info — used by candidates list page
 export async function GET(request: NextRequest) {
   try {
     const ctx = await getClientContext();
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const search = params.get("search") || "";
     const firmId = params.get("firmId") || "";
     const jobId = params.get("jobId") || "";
-    const stageId = params.get("stageId") || "";
+    const clientStageId = params.get("clientStageId") || params.get("stageId") || "";
     const flat = params.get("flat") === "true";
 
     const where: any = {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (jobId) where.jobId = jobId;
-    if (stageId) where.stageId = stageId;
+    if (clientStageId) where.clientStageId = clientStageId;
     if (firmId) where.job.organizationId = firmId;
 
     const submissions = await prisma.candidateSubmission.findMany({
@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
         id: true,
         createdAt: true,
         updatedAt: true,
+        sharedAt: true,
         candidate: {
           select: {
             id: true,
@@ -65,6 +66,9 @@ export async function GET(request: NextRequest) {
         stage: {
           select: { id: true, name: true, order: true, color: true },
         },
+        clientStage: {
+          select: { id: true, name: true, order: true, color: true, isTerminal: true, kind: true },
+        },
         submitter: {
           select: { id: true, name: true },
         },
@@ -72,12 +76,11 @@ export async function GET(request: NextRequest) {
           select: { clientUserId: true, score: true },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ sharedAt: "desc" }, { createdAt: "desc" }],
       take: flat ? 200 : 50,
     });
 
     if (flat) {
-      // Flat-by-submission: one row per submission with stage + rating info
       const result = submissions.map((sub) => {
         const myRating = sub.ratings.find((r) => r.clientUserId === ctx.clientUserId);
         const scores = sub.ratings.map((r) => r.score).filter((s): s is number => typeof s === "number" && s > 0);
@@ -100,16 +103,28 @@ export async function GET(request: NextRequest) {
             id: sub.job.organization.id,
             name: sub.job.organization.name,
           },
-          stage: sub.stage
+          // Client-facing stage (what the client owns). Fallback to recruiter stage if null.
+          stage: sub.clientStage
             ? {
-                id: sub.stage.id,
-                name: sub.stage.name,
-                order: sub.stage.order,
-                color: sub.stage.color,
+                id: sub.clientStage.id,
+                name: sub.clientStage.name,
+                order: sub.clientStage.order,
+                color: sub.clientStage.color,
               }
+            : sub.stage
+              ? {
+                  id: sub.stage.id,
+                  name: sub.stage.name,
+                  order: sub.stage.order,
+                  color: sub.stage.color,
+                }
+              : null,
+          clientStage: sub.clientStage,
+          recruiterStage: sub.stage
+            ? { id: sub.stage.id, name: sub.stage.name, color: sub.stage.color }
             : null,
           sharedBy: sub.submitter?.name || null,
-          sharedAt: sub.createdAt.toISOString(),
+          sharedAt: (sub.sharedAt || sub.createdAt).toISOString(),
           updatedAt: sub.updatedAt.toISOString(),
           myRating: myRating?.score ?? null,
           avgRating,
@@ -119,7 +134,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // Grouped by candidate (backward compat for calendar picker)
     const candidateMap = new Map<
       string,
       {
@@ -152,7 +166,7 @@ export async function GET(request: NextRequest) {
         jobTitle: sub.job.title,
         firmId: sub.job.organization.id,
         firmName: sub.job.organization.name,
-        sharedAt: sub.createdAt.toISOString(),
+        sharedAt: (sub.sharedAt || sub.createdAt).toISOString(),
       });
     }
 

@@ -363,6 +363,51 @@ export async function sendClientTeamInviteEmail({
   });
 }
 
+export async function sendCandidateSharedEmail({
+  to,
+  candidateName,
+  jobTitle,
+  recruiterName,
+  firmName,
+  clientName,
+  portalUrl,
+  note,
+}: {
+  to: string;
+  candidateName: string;
+  jobTitle: string;
+  recruiterName: string;
+  firmName: string;
+  clientName: string;
+  portalUrl: string;
+  note?: string;
+}) {
+  const noteBlock = note
+    ? `<div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #10b981; border-radius: 4px;">
+         <p style="margin: 0 0 4px 0; font-size: 12px; color: #6b7280; font-weight: 600;">Note from ${recruiterName}:</p>
+         <p style="margin: 0; font-size: 14px; color: #374151; white-space: pre-wrap;">${note}</p>
+       </div>`
+    : "";
+
+  const html = wrapTemplate(
+    `New candidate for ${jobTitle}`,
+    `<p>Hi,</p>
+     <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> just shared a new candidate with <strong>${clientName}</strong>:</p>
+     <p style="font-size: 17px; font-weight: 600; color: #111827; margin: 16px 0 4px 0;">${candidateName}</p>
+     <p style="color: #6b7280; margin: 0;">for <strong>${jobTitle}</strong></p>
+     ${noteBlock}
+     <p style="margin-top: 20px;">Sign in to the client portal to view the full profile, download their resume, and leave feedback.</p>`,
+    portalUrl,
+    "View Candidate"
+  );
+
+  return sendEmail({
+    to,
+    subject: `New candidate shared: ${candidateName} for ${jobTitle}`,
+    html,
+  });
+}
+
 export async function sendClientSetPasswordEmail({
   to,
   setPasswordUrl,

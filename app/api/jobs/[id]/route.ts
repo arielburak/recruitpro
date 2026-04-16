@@ -27,6 +27,9 @@ export async function GET(
               },
             },
             stage: true,
+            clientStage: {
+              select: { id: true, name: true, color: true, order: true },
+            },
             _count: { select: { comments: true, ratings: true } },
           },
         },

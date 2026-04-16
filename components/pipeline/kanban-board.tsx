@@ -20,9 +20,11 @@ interface KanbanBoardProps {
   onMove: (submissionId: string, stageId: string) => Promise<void>;
   onToggleShare: (submissionId: string, shared: boolean) => Promise<void>;
   onRemove?: (submissionId: string) => Promise<void>;
+  clientName?: string;
+  jobTitle?: string;
 }
 
-export function KanbanBoard({ stages, submissions, onMove, onToggleShare, onRemove }: KanbanBoardProps) {
+export function KanbanBoard({ stages, submissions, onMove, onToggleShare, onRemove, clientName, jobTitle }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -73,6 +75,8 @@ export function KanbanBoard({ stages, submissions, onMove, onToggleShare, onRemo
               submissions={stageSubmissions}
               onToggleShare={onToggleShare}
               onRemove={onRemove}
+              clientName={clientName}
+              jobTitle={jobTitle}
             />
           );
         })}
@@ -84,6 +88,8 @@ export function KanbanBoard({ stages, submissions, onMove, onToggleShare, onRemo
             submission={activeSubmission}
             onToggleShare={onToggleShare}
             isDragging
+            clientName={clientName}
+            jobTitle={jobTitle}
           />
         ) : null}
       </DragOverlay>

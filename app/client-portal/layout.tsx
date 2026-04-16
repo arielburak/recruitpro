@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List, User, Users } from "lucide-react";
+import { NotificationBell } from "@/components/client-portal/notification-bell";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -76,6 +77,7 @@ export default function ClientPortalLayout({
           <div className="flex items-center gap-2">
             {showNav ? (
               <>
+                <NotificationBell />
                 <Link
                   href="/client-portal/settings"
                   className={`flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 rounded-lg ${

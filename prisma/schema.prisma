@@ -109,6 +109,8 @@ model Client {
   placements   Placement[]
   portalTokens ClientPortalToken[]
   clientJobs   ClientJob[]
+  pipelineStages ClientPipelineStage[]
+  notifications  ClientNotification[]
 
   @@index([organizationId])
 }
@@ -288,20 +290,63 @@ model PipelineStage {
   @@index([jobId])
 }
 
+// Client-owned pipeline stages — independent from recruiter's PipelineStage.
+// One set per Client (company-wide, not per-job). Default stages created on
+// client creation: Under Review, Interviewing, Offered, Placed, Lost, Rejected.
+model ClientPipelineStage {
+  id         String   @id @default(cuid())
+  name       String
+  order      Int
+  color      String   @default("#f59e0b")
+  isTerminal Boolean  @default(false)
+  kind       String?  // Optional semantic: "positive" | "negative" | null
+  clientId   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client      Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  submissions CandidateSubmission[]
+
+  @@unique([clientId, order])
+  @@index([clientId])
+}
+
+// In-app notifications for the client portal. One row per event per client
+// (not per user) — visible to all client users of that company.
+model ClientNotification {
+  id           String    @id @default(cuid())
+  clientId     String
+  type         String    // "candidate_shared" | "candidate_stage_changed" | ...
+  title        String
+  body         String?
+  link         String?
+  submissionId String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+  @@index([clientId, readAt])
+}
+
 model CandidateSubmission {
   id                 String   @id @default(cuid())
   candidateId        String
   jobId              String
   stageId            String
+  clientStageId      String?
   submittedBy        String
   notes              String?
   isSharedWithClient Boolean  @default(false)
+  sharedAt           DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   candidate Candidate       @relation(fields: [candidateId], references: [id])
   job       Job             @relation(fields: [jobId], references: [id])
   stage     PipelineStage   @relation(fields: [stageId], references: [id])
+  clientStage ClientPipelineStage? @relation(fields: [clientStageId], references: [id])
   submitter  User            @relation("SubmittedBy", fields: [submittedBy], references: [id])
   comments   Comment[]       @relation("SubmissionComments")
   ratings    CandidateRating[]
@@ -310,6 +355,7 @@ model CandidateSubmission {
 
   @@unique([candidateId, jobId])
   @@index([jobId, stageId])
+  @@index([clientStageId])
 }
 
 model CandidateRating {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { PipelineStagesManager } from "@/components/client-portal/pipeline-stages-manager";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -360,6 +361,9 @@ export default function ClientPortalSettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Candidate Pipeline */}
+          <PipelineStagesManager isAdmin={isAdmin} />
 
           {/* Team Members */}
           <Card>

@@ -22,6 +22,7 @@ export async function GET(
         id: true,
         createdAt: true,
         updatedAt: true,
+        sharedAt: true,
         candidate: {
           select: {
             id: true,
@@ -46,6 +47,9 @@ export async function GET(
         },
         stage: {
           select: { id: true, name: true, order: true, color: true },
+        },
+        clientStage: {
+          select: { id: true, name: true, order: true, color: true, isTerminal: true, kind: true },
         },
         submitter: {
           select: { id: true, name: true, email: true },
@@ -125,10 +129,13 @@ export async function GET(
         id: submission.job.organization.id,
         name: submission.job.organization.name,
       },
-      stage: submission.stage,
+      // Client-facing stage (owned by client). Fallback to recruiter stage if null.
+      stage: submission.clientStage || submission.stage,
+      clientStage: submission.clientStage,
+      recruiterStage: submission.stage,
       sharedBy: submission.submitter?.name || null,
       sharedByEmail: submission.submitter?.email || null,
-      sharedAt: submission.createdAt.toISOString(),
+      sharedAt: (submission.sharedAt || submission.createdAt).toISOString(),
       updatedAt: submission.updatedAt.toISOString(),
       documents,
       myRating,

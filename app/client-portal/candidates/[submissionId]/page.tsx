@@ -21,6 +21,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { RatingStars } from "@/components/client-portal/rating-stars";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
 type CandidateDetail = {
   submissionId: string;
@@ -40,6 +41,8 @@ type CandidateDetail = {
   job: { id: string; title: string };
   firm: { id: string; name: string };
   stage: { id: string; name: string; order: number; color: string } | null;
+  clientStage: { id: string; name: string; order: number; color: string; isTerminal: boolean; kind: string | null } | null;
+  recruiterStage: { id: string; name: string; color: string } | null;
   sharedBy: string | null;
   sharedAt: string;
   documents: {
@@ -103,6 +106,10 @@ export default function CandidateDetailPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  // Pipeline stages
+  const [availableStages, setAvailableStages] = useState<{ id: string; name: string; color: string; isTerminal: boolean; kind: string | null }[]>([]);
+  const [changingStage, setChangingStage] = useState(false);
+
   // Rating form
   const [myScore, setMyScore] = useState<number>(0);
   const [myFeedback, setMyFeedback] = useState("");
@@ -135,7 +142,31 @@ export default function CandidateDetailPage({
 
   useEffect(() => {
     fetchDetail();
+    // Fetch available client stages for the dropdown
+    fetch("/api/client-portal/pipeline-stages")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setAvailableStages(data);
+      })
+      .catch(() => {});
   }, [submissionId]);
+
+  async function changeStage(newStageId: string) {
+    if (!detail) return;
+    if (newStageId === "all") return;
+    setChangingStage(true);
+    try {
+      const res = await fetch(`/api/client-portal/candidates/${submissionId}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientStageId: newStageId }),
+      });
+      if (res.ok) {
+        fetchDetail();
+      }
+    } catch {}
+    setChangingStage(false);
+  }
 
   async function saveRating() {
     if (!myScore) return;
@@ -276,16 +307,24 @@ export default function CandidateDetailPage({
           </div>
         </div>
 
-        {detail.stage && (
-          <Badge
-            className="text-xs border-0 shrink-0"
-            style={{
-              backgroundColor: `${detail.stage.color}22`,
-              color: detail.stage.color,
-            }}
-          >
-            {detail.stage.name}
-          </Badge>
+        {availableStages.length > 0 && (
+          <div className="shrink-0 flex flex-col items-end gap-1">
+            <SearchableSelect
+              value={detail.clientStage?.id || "all"}
+              onChange={changeStage}
+              options={availableStages.map<SearchableSelectOption>((s) => ({
+                value: s.id,
+                label: s.name,
+                color: s.color,
+              }))}
+              allLabel="— Select stage —"
+              searchPlaceholder="Search stages..."
+              placeholder="Stage"
+              minWidth={180}
+              disabled={changingStage}
+            />
+            <p className="text-[10px] text-gray-400">Your pipeline stage</p>
+          </div>
         )}
       </div>
 
