@@ -61,6 +61,12 @@ export async function POST(request: Request) {
         });
       }
 
+      // Check if this is the first user of this client — they become ADMIN
+      const existingUsersForClient = await tx.clientUser.count({
+        where: { clientId: client.id },
+      });
+      const isFirstUser = existingUsersForClient === 0;
+
       const clientUser = await tx.clientUser.create({
         data: {
           email,
@@ -68,6 +74,7 @@ export async function POST(request: Request) {
           title: title || null,
           passwordHash,
           clientId: client.id,
+          role: isFirstUser ? "ADMIN" : "USER",
         },
       });
 

@@ -12,13 +12,23 @@ export async function GET() {
     if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     if (user.isClientUser) {
-      const cu = await prisma.clientUser.findUnique({
+      // Look up by id first, then fall back to email (same as getClientContext)
+      let cu = await prisma.clientUser.findUnique({
         where: { id: user.id },
         select: {
-          id: true, name: true, email: true, title: true, isActive: true, createdAt: true,
+          id: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
           client: { select: { name: true, industry: true } },
         },
       });
+      if (!cu && user.email) {
+        cu = await prisma.clientUser.findFirst({
+          where: { email: user.email, isActive: true },
+          select: {
+            id: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
+            client: { select: { name: true, industry: true } },
+          },
+        });
+      }
       if (!cu) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({
         type: "client" as const,
@@ -26,6 +36,7 @@ export async function GET() {
         name: cu.name,
         email: cu.email,
         title: cu.title,
+        role: cu.role,
         companyName: cu.client.name,
         industry: cu.client.industry,
         createdAt: cu.createdAt,
@@ -71,33 +82,33 @@ export async function PATCH(request: Request) {
 
     if (user.isClientUser) {
       const title = typeof body.title === "string" ? body.title.trim() : undefined;
+
+      // Find the ClientUser (id fallback to email)
+      let target = await prisma.clientUser.findUnique({ where: { id: user.id }, select: { id: true } });
+      if (!target && user.email) {
+        target = await prisma.clientUser.findFirst({ where: { email: user.email, isActive: true }, select: { id: true } });
+      }
+      if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
       const updated = await prisma.clientUser.update({
-        where: { id: user.id },
+        where: { id: target.id },
         data: {
           ...(name !== undefined ? { name } : {}),
           ...(title !== undefined ? { title: title || null } : {}),
         },
-        select: { id: true, name: true, email: true, title: true },
+        select: { id: true, name: true, email: true, title: true, role: true },
       });
       return NextResponse.json(updated);
     }
 
     const avatar = typeof body.avatar === "string" ? body.avatar.trim() : undefined;
-    // TODO: Restrict role changes to ADMIN once team permissions stabilize.
-    // For now, users can change their own role freely.
-    const VALID_ROLES = ["ADMIN", "PARTNER", "RECRUITER"] as const;
-    type Role = (typeof VALID_ROLES)[number];
-    const role: Role | undefined =
-      typeof body.role === "string" && (VALID_ROLES as readonly string[]).includes(body.role)
-        ? (body.role as Role)
-        : undefined;
-
+    // Role is NOT editable via the profile endpoint. Only admins can change
+    // roles via the /api/admin/users (staffing) or /api/client-portal/team (client) endpoints.
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
         ...(name !== undefined ? { name } : {}),
         ...(avatar !== undefined ? { avatar: avatar || null } : {}),
-        ...(role !== undefined ? { role } : {}),
       },
       select: { id: true, name: true, email: true, avatar: true, role: true },
     });

@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         email,
         name,
         passwordHash,
-        role: role || "RECRUITER",
+        role: role === "ADMIN" ? "ADMIN" : "USER",
         organizationId: ctx.organizationId,
       },
     });
@@ -79,9 +79,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
 
-    // Prevent self-deactivation
+    // Prevent self-deactivation/demotion
     if (userId === ctx.userId && isActive === false) {
       return NextResponse.json({ error: "You cannot deactivate yourself" }, { status: 400 });
+    }
+    if (userId === ctx.userId && role === "USER") {
+      return NextResponse.json({ error: "You cannot demote yourself" }, { status: 400 });
     }
 
     // Verify user belongs to same org
@@ -92,9 +95,21 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // If demoting an admin or deactivating an admin, ensure at least one admin remains
+    if ((role === "USER" && user.role === "ADMIN") || (isActive === false && user.role === "ADMIN")) {
+      const adminCount = await prisma.user.count({
+        where: { organizationId: ctx.organizationId, role: "ADMIN", isActive: true },
+      });
+      if (adminCount <= 1) {
+        return NextResponse.json({ error: "There must be at least one admin" }, { status: 400 });
+      }
+    }
+
+    const normalizedRole = role === "ADMIN" ? "ADMIN" : role === "USER" ? "USER" : undefined;
+
     const updateData: any = {};
     if (typeof isActive === "boolean") updateData.isActive = isActive;
-    if (role) updateData.role = role;
+    if (normalizedRole) updateData.role = normalizedRole;
 
     const updated = await prisma.user.update({
       where: { id: userId },
@@ -133,6 +148,16 @@ export async function DELETE(request: Request) {
     });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Don't allow removing the last admin
+    if (user.role === "ADMIN") {
+      const adminCount = await prisma.user.count({
+        where: { organizationId: ctx.organizationId, role: "ADMIN", isActive: true },
+      });
+      if (adminCount <= 1) {
+        return NextResponse.json({ error: "Cannot remove the last admin" }, { status: 400 });
+      }
     }
 
     await prisma.user.delete({ where: { id: userId } });

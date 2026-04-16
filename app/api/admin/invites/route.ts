@@ -14,7 +14,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const email = body.email;
-    const role = body.role || "RECRUITER";
+    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
     const name = typeof body.name === "string" ? body.name.trim() : null;
 
     if (!email) {

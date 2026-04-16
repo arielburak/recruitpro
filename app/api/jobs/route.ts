@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Recruiters only see jobs they're assigned to
-    if (ctx.role === "RECRUITER") {
+    // Non-admin users only see jobs they're assigned to
+    if (ctx.role !== "ADMIN") {
       where.assignments = { some: { userId: ctx.userId } };
     }
 

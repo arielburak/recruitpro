@@ -16,6 +16,7 @@ export async function GET() {
         name: true,
         email: true,
         title: true,
+        role: true,
         isActive: true,
         createdAt: true,
       },
@@ -28,10 +29,15 @@ export async function GET() {
   }
 }
 
-// Invite a new team member
+// Invite a new team member (admin only)
 export async function POST(request: Request) {
   try {
     const ctx = await getClientContext();
+
+    if (ctx.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only admins can invite team members" }, { status: 403 });
+    }
+
     const body = await request.json();
 
     if (!body.email || !body.name) {
@@ -41,6 +47,7 @@ export async function POST(request: Request) {
     const email = body.email.trim().toLowerCase();
     const name = body.name.trim();
     const title = body.title?.trim() || null;
+    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({
@@ -53,14 +60,14 @@ export async function POST(request: Request) {
       }
       await prisma.clientUser.update({
         where: { id: existing.id },
-        data: { isActive: true, name, title },
+        data: { isActive: true, name, title, role },
       });
       return NextResponse.json({ id: existing.id, reactivated: true }, { status: 200 });
     }
 
     // Create the user (no password yet — they'll set it via token)
     const clientUser = await prisma.clientUser.create({
-      data: { email, name, title, clientId: ctx.clientId },
+      data: { email, name, title, role, clientId: ctx.clientId },
     });
 
     // Create a token so the new user can set their password

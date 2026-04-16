@@ -101,6 +101,23 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function changeUserRole(userId: string, newRole: "ADMIN" | "USER") {
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: newRole }),
+    });
+    if (res.ok) {
+      setSuccess(newRole === "ADMIN" ? "User promoted to admin" : "Admin demoted to user");
+      setTimeout(() => setSuccess(""), 3000);
+      fetchData();
+    } else {
+      const body = await res.json();
+      setError(body.error || "Failed to change role");
+      setTimeout(() => setError(""), 3000);
+    }
+  }
+
   async function removeUser(userId: string, userName: string) {
     if (
       !confirm(
@@ -214,9 +231,9 @@ export default function AdminUsersPage() {
                 <select
                   name="role"
                   className="w-full border rounded-md px-3 py-2 text-sm h-9"
-                  defaultValue="RECRUITER"
+                  defaultValue="USER"
                 >
-                  <option value="RECRUITER">Recruiter</option>
+                  <option value="USER">User</option>
                   <option value="ADMIN">Admin</option>
                 </select>
               </div>
@@ -287,7 +304,7 @@ export default function AdminUsersPage() {
                         u.role === "ADMIN" ? "default" : "secondary"
                       }
                     >
-                      {u.role}
+                      {u.role === "ADMIN" ? "Admin" : "User"}
                     </Badge>
                     <span className="text-xs text-gray-400">
                       {u._count.candidates} candidates
@@ -303,6 +320,21 @@ export default function AdminUsersPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {u.role === "USER" ? (
+                          <DropdownMenuItem
+                            onClick={() => changeUserRole(u.id, "ADMIN")}
+                          >
+                            <Shield className="mr-2 h-4 w-4" />
+                            Promote to Admin
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => changeUserRole(u.id, "USER")}
+                          >
+                            <User className="mr-2 h-4 w-4" />
+                            Demote to User
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() =>
                             toggleUserActive(u.id, u.isActive)
@@ -358,7 +390,7 @@ export default function AdminUsersPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{inv.role}</Badge>
+                        <Badge variant="outline">{inv.role === "ADMIN" ? "Admin" : "User"}</Badge>
                         <Button
                           variant="ghost"
                           size="sm"

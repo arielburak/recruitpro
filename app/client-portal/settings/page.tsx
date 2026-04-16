@@ -23,6 +23,9 @@ import {
   MoreHorizontal,
   CheckCircle,
   UserX,
+  Shield,
+  ShieldOff,
+  Lock,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -59,6 +62,7 @@ export default function ClientPortalSettingsPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteTitle, setInviteTitle] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"USER" | "ADMIN">("USER");
   const [inviting, setInviting] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -161,6 +165,7 @@ export default function ClientPortalSettingsPage() {
           name: inviteName.trim(),
           email: inviteEmail.trim(),
           title: inviteTitle.trim() || undefined,
+          role: inviteRole,
         }),
       });
       const data = await res.json();
@@ -175,6 +180,7 @@ export default function ClientPortalSettingsPage() {
         setInviteName("");
         setInviteTitle("");
         setInviteEmail("");
+        setInviteRole("USER");
         fetchTeam();
       }
     } catch {
@@ -195,10 +201,30 @@ export default function ClientPortalSettingsPage() {
 
   async function removeMember(memberId: string) {
     if (!confirm("Remove this team member? This cannot be undone.")) return;
-    await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
+    const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Failed to remove");
+    }
     setMemberMenu(null);
     fetchTeam();
   }
+
+  async function changeMemberRole(memberId: string, newRole: "ADMIN" | "USER") {
+    const res = await fetch(`/api/client-portal/team/${memberId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Failed to change role");
+    }
+    setMemberMenu(null);
+    fetchTeam();
+  }
+
+  const isAdmin = profile?.role === "ADMIN";
 
   if (loading) {
     return (
@@ -242,6 +268,24 @@ export default function ClientPortalSettingsPage() {
                 <div className="space-y-2">
                   <Label>Job Title</Label>
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. VP of Engineering" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Permission</Label>
+                  <div className="flex items-center gap-2 h-9 px-3 rounded-md border bg-gray-50">
+                    {profile?.role === "ADMIN" ? (
+                      <>
+                        <Shield className="h-3.5 w-3.5 text-emerald-600" />
+                        <span className="text-sm font-medium text-gray-700">Admin</span>
+                        <span className="text-xs text-gray-400">· Can manage team</span>
+                      </>
+                    ) : (
+                      <>
+                        <User className="h-3.5 w-3.5 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-700">User</span>
+                        <span className="text-xs text-gray-400">· Contact an admin to change</span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
@@ -324,18 +368,25 @@ export default function ClientPortalSettingsPage() {
                 <Users className="h-4 w-4 text-emerald-500" />
                 Team Members
               </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={() => { setShowInvite(!showInvite); setInviteResult(null); }}
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Add Member
-              </Button>
+              {isAdmin ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => { setShowInvite(!showInvite); setInviteResult(null); }}
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Add Member
+                </Button>
+              ) : (
+                <Badge variant="secondary" className="text-[10px] gap-1 bg-gray-100 text-gray-500">
+                  <Lock className="h-3 w-3" />
+                  Admin only
+                </Badge>
+              )}
             </CardHeader>
             <CardContent>
-              {showInvite && (
+              {isAdmin && showInvite && (
                 <div className="mb-4 p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
                   <form onSubmit={inviteMember} className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
@@ -348,9 +399,22 @@ export default function ClientPortalSettingsPage() {
                         <Input value={inviteTitle} onChange={(e) => setInviteTitle(e.target.value)} placeholder="Hiring Manager" className="text-sm" />
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Email *</Label>
-                      <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="john@company.com" className="text-sm" required />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Email *</Label>
+                        <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="john@company.com" className="text-sm" required />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Permission</Label>
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value as "USER" | "ADMIN")}
+                          className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm"
+                        >
+                          <option value="USER">User</option>
+                          <option value="ADMIN">Admin</option>
+                        </select>
+                      </div>
                     </div>
                     <Button type="submit" size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5" disabled={inviting}>
                       <Mail className="h-3.5 w-3.5" />
@@ -383,7 +447,9 @@ export default function ClientPortalSettingsPage() {
 
               {team.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-6">
-                  No team members yet. Click &quot;Add Member&quot; to invite colleagues.
+                  {isAdmin
+                    ? "No team members yet. Click \"Add Member\" to invite colleagues."
+                    : "No team members yet. Contact your admin to invite colleagues."}
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -397,37 +463,62 @@ export default function ClientPortalSettingsPage() {
                         {member.title && <p className="text-[11px] text-gray-500 truncate">{member.title}</p>}
                         <p className="text-xs text-gray-400 truncate">{member.email}</p>
                       </div>
-                      {!member.isActive && <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Inactive</Badge>}
-                      <div className="relative">
-                        <button
-                          onClick={() => setMemberMenu(memberMenu === member.id ? null : member.id)}
-                          className="p-1 rounded hover:bg-gray-200"
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge
+                          variant={member.role === "ADMIN" ? "default" : "secondary"}
+                          className="text-[10px]"
                         >
-                          <MoreHorizontal className="h-4 w-4 text-gray-400" />
-                        </button>
-                        {memberMenu === member.id && (
-                          <div className="absolute right-0 top-8 z-10 bg-white border rounded-lg shadow-lg py-1 w-40">
-                            {member.isActive ? (
-                              <button
-                                onClick={() => toggleMember(member.id, false)}
-                                className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <UserX className="h-3.5 w-3.5" /> Deactivate
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => toggleMember(member.id, true)}
-                                className="w-full text-left px-3 py-1.5 text-sm text-emerald-600 hover:bg-gray-50 flex items-center gap-2"
-                              >
-                                <CheckCircle className="h-3.5 w-3.5" /> Reactivate
-                              </button>
-                            )}
+                          {member.role === "ADMIN" ? "Admin" : "User"}
+                        </Badge>
+                        {!member.isActive && <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Inactive</Badge>}
+                        {isAdmin && (
+                          <div className="relative">
                             <button
-                              onClick={() => removeMember(member.id)}
-                              className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              onClick={() => setMemberMenu(memberMenu === member.id ? null : member.id)}
+                              className="p-1 rounded hover:bg-gray-200"
                             >
-                              <X className="h-3.5 w-3.5" /> Remove
+                              <MoreHorizontal className="h-4 w-4 text-gray-400" />
                             </button>
+                            {memberMenu === member.id && (
+                              <div className="absolute right-0 top-8 z-10 bg-white border rounded-lg shadow-lg py-1 w-44">
+                                {member.role === "USER" ? (
+                                  <button
+                                    onClick={() => changeMemberRole(member.id, "ADMIN")}
+                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <Shield className="h-3.5 w-3.5" /> Promote to Admin
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => changeMemberRole(member.id, "USER")}
+                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <ShieldOff className="h-3.5 w-3.5" /> Demote to User
+                                  </button>
+                                )}
+                                {member.isActive ? (
+                                  <button
+                                    onClick={() => toggleMember(member.id, false)}
+                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <UserX className="h-3.5 w-3.5" /> Deactivate
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => toggleMember(member.id, true)}
+                                    className="w-full text-left px-3 py-1.5 text-sm text-emerald-600 hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <CheckCircle className="h-3.5 w-3.5" /> Reactivate
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => removeMember(member.id)}
+                                  className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                >
+                                  <X className="h-3.5 w-3.5" /> Remove
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -463,6 +554,14 @@ export default function ClientPortalSettingsPage() {
                       </div>
                     </div>
                     <div className="space-y-2 text-xs">
+                      {profile?.role && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Shield className="h-3.5 w-3.5 text-gray-400" />
+                          <Badge variant={profile.role === "ADMIN" ? "default" : "secondary"} className="text-[10px]">
+                            {profile.role === "ADMIN" ? "Admin" : "User"}
+                          </Badge>
+                        </div>
+                      )}
                       {displayCompany && (
                         <div className="flex items-center gap-2 text-gray-600">
                           <Building2 className="h-3.5 w-3.5 text-gray-400" />

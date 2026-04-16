@@ -114,7 +114,7 @@ export async function POST(
           email: invite.email,
           name,
           passwordHash,
-          role: invite.role,
+          role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
         },
       }),

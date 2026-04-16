@@ -36,10 +36,8 @@ export async function POST(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Only ADMIN and PARTNER can assign recruiters
-    if (ctx.role === "RECRUITER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    // Any authenticated org user can assign recruiters to jobs
+    // (role-based restriction removed; simplified to Admin/User model)
 
     const { userId } = await request.json();
     if (!userId) {
@@ -83,10 +81,8 @@ export async function DELETE(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Only ADMIN and PARTNER can remove assignments
-    if (ctx.role === "RECRUITER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    // Any authenticated org user can remove assignments
+    // (role-based restriction removed; simplified to Admin/User model)
 
     const { userId } = await request.json();
     if (!userId) {

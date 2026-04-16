@@ -58,8 +58,8 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Recruiters can only view jobs they're assigned to
-    if (ctx.role === "RECRUITER") {
+    // Non-admin users can only view jobs they're assigned to
+    if (ctx.role !== "ADMIN") {
       const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
       if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
