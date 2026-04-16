@@ -1116,10 +1116,12 @@ function Footer() {
           <span className="font-bold text-gray-900">Recruiting ATS</span>
         </div>
         <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} Recruiting ATS. All rights reserved.</p>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 flex-wrap justify-center">
           <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
           <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
           <Link href="/client-portal/login" className="text-sm text-gray-500 hover:text-gray-700">Client Portal</Link>
+          <Link href="/privacy" className="text-sm text-gray-500 hover:text-gray-700">Privacy</Link>
+          <Link href="/terms" className="text-sm text-gray-500 hover:text-gray-700">Terms</Link>
         </div>
       </div>
     </footer>
