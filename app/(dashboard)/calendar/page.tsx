@@ -1277,11 +1277,26 @@ function CreateInterviewModal({
               </select>
 
               {platform === "google_meet" && googleConnected && (
-                <div className="flex items-center gap-2 bg-green-50 p-2.5 rounded-lg text-sm">
-                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-                  <div>
+                <div className="flex items-start gap-2 bg-green-50 p-2.5 rounded-lg text-sm">
+                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
                     <p className="text-green-800 font-medium text-xs">Google Meet link will be auto-generated</p>
-                    <p className="text-green-600 text-xs">Connected as {googleEmail}. A calendar event with Meet link will be created and sent to all participants.</p>
+                    <p className="text-green-600 text-xs">
+                      Connected as <strong>{googleEmail}</strong>. A calendar event with Meet link will be created and sent to all participants.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Disconnect ${googleEmail} and connect a different Google account?`)) return;
+                        try {
+                          await fetch("/api/integrations/google/status", { method: "DELETE" });
+                        } catch {}
+                        window.location.href = "/api/integrations/google/connect";
+                      }}
+                      className="text-indigo-600 hover:text-indigo-800 text-xs font-medium mt-1 underline underline-offset-2"
+                    >
+                      Switch Google account
+                    </button>
                   </div>
                 </div>
               )}

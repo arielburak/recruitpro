@@ -19,7 +19,10 @@ export function getGoogleCalendarAuthUrl(redirectUri: string, state: string) {
     response_type: "code",
     scope: SCOPES,
     access_type: "offline",
-    prompt: "consent",
+    // "select_account" forces the Google account picker even if the user
+    // is already signed into Google, so switching accounts per-user works
+    // correctly. "consent" ensures we always get a refresh_token back.
+    prompt: "select_account consent",
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
