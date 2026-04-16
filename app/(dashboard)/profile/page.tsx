@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Cal
 import { formatDate } from "@/lib/utils";
 
 export default function StaffingProfilePage() {
+  const { data: session } = useSession();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -22,11 +24,20 @@ export default function StaffingProfilePage() {
   const [profileStatus, setProfileStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Password form
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  function cancelPasswordChange() {
+    setShowPasswordForm(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordStatus(null);
+  }
 
   useEffect(() => {
     fetchProfile();
@@ -97,6 +108,7 @@ export default function StaffingProfilePage() {
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
+        setTimeout(() => setShowPasswordForm(false), 1500);
       } else {
         const data = await res.json();
         setPasswordStatus({ type: "error", message: data.error || "Failed to change password" });
@@ -148,7 +160,7 @@ export default function StaffingProfilePage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input value={profile?.email || ""} disabled className="bg-gray-50" />
+                  <Input value={profile?.email || (session?.user as any)?.email || ""} disabled className="bg-gray-50" />
                   <p className="text-xs text-gray-400">Contact your admin to change your email</p>
                 </div>
                 <div className="flex items-center justify-between pt-2">
@@ -168,40 +180,56 @@ export default function StaffingProfilePage() {
 
           {/* Change Password */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <KeyRound className="h-4 w-4 text-indigo-500" />
-                Change Password
+                Password
               </CardTitle>
+              {!showPasswordForm && (
+                <Button variant="outline" size="sm" onClick={() => setShowPasswordForm(true)}>
+                  Change Password
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              <form onSubmit={changePassword} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Current Password</Label>
-                  <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+              {!showPasswordForm ? (
+                <p className="text-sm text-gray-500">
+                  Keep your account secure. Change your password regularly.
+                </p>
+              ) : (
+                <form onSubmit={changePassword} className="space-y-4">
                   <div className="space-y-2">
-                    <Label>New Password</Label>
-                    <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required />
+                    <Label>Current Password</Label>
+                    <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoFocus />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Confirm New</Label>
-                    <PasswordInput value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} required />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>New Password</Label>
+                      <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Confirm New</Label>
+                      <PasswordInput value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} required />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between pt-2">
-                  {passwordStatus && (
-                    <p className={`text-xs flex items-center gap-1 ${passwordStatus.type === "success" ? "text-green-600" : "text-red-600"}`}>
-                      {passwordStatus.type === "success" ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
-                      {passwordStatus.message}
-                    </p>
-                  )}
-                  <Button type="submit" disabled={savingPassword} className="ml-auto">
-                    {savingPassword ? "Changing..." : "Change Password"}
-                  </Button>
-                </div>
-              </form>
+                  <div className="flex items-center justify-between pt-2 gap-2">
+                    {passwordStatus && (
+                      <p className={`text-xs flex items-center gap-1 ${passwordStatus.type === "success" ? "text-green-600" : "text-red-600"}`}>
+                        {passwordStatus.type === "success" ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                        {passwordStatus.message}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 ml-auto">
+                      <Button type="button" variant="ghost" onClick={cancelPasswordChange} disabled={savingPassword}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={savingPassword}>
+                        {savingPassword ? "Changing..." : "Save New Password"}
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -211,29 +239,44 @@ export default function StaffingProfilePage() {
           {/* Account Info */}
           <Card>
             <CardContent className="p-4 space-y-3">
-              <div className="flex items-center gap-3 pb-3 border-b">
-                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center font-bold">
-                  {profile?.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{profile?.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{profile?.email}</p>
-                </div>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Shield className="h-3.5 w-3.5 text-gray-400" />
-                  <span>Role: <Badge variant="secondary" className="text-[10px]">{profile?.role}</Badge></span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Building2 className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="truncate">{profile?.organizationName}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="h-3.5 w-3.5 text-gray-400" />
-                  <span>Joined {profile?.createdAt ? formatDate(profile.createdAt) : "—"}</span>
-                </div>
-              </div>
+              {(() => {
+                const displayName = profile?.name || session?.user?.name || "";
+                const displayEmail = profile?.email || (session?.user as any)?.email || "";
+                const displayRole = profile?.role || (session?.user as any)?.role;
+                const displayOrg = profile?.organizationName || (session?.user as any)?.organizationName || "";
+                const initials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
+                return (
+                  <>
+                    <div className="flex items-center gap-3 pb-3 border-b">
+                      <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center font-bold">
+                        {initials || "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{displayName || "—"}</p>
+                        <p className="text-xs text-gray-500 truncate">{displayEmail}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      {displayRole && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Shield className="h-3.5 w-3.5 text-gray-400" />
+                          <span>Role: <Badge variant="secondary" className="text-[10px]">{displayRole}</Badge></span>
+                        </div>
+                      )}
+                      {displayOrg && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Building2 className="h-3.5 w-3.5 text-gray-400" />
+                          <span className="truncate">{displayOrg}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                        <span>Joined {profile?.createdAt ? formatDate(profile.createdAt) : "—"}</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
 
