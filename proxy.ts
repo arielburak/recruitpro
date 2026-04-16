@@ -39,14 +39,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(loginUrl, request.url));
   }
 
-  // Client users can only access client portal
-  if (token.isClientUser && !pathname.startsWith("/client-portal") && !pathname.startsWith("/api/client-portal")) {
+  // Shared API routes accessible to both staffing and client users
+  const sharedApiRoutes = ["/api/profile"];
+  const isSharedApi = sharedApiRoutes.some((p) => pathname.startsWith(p));
+
+  // Client users can only access client portal (plus shared APIs)
+  if (
+    token.isClientUser &&
+    !pathname.startsWith("/client-portal") &&
+    !pathname.startsWith("/api/client-portal") &&
+    !isSharedApi
+  ) {
     return NextResponse.redirect(new URL("/client-portal/dashboard", request.url));
   }
 
   // Staffing firm users accessing client portal → redirect to client login
   // (they need to sign out of staffing and sign in as client)
-  if (!token.isClientUser && (pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal"))) {
+  // But allow shared APIs like /api/profile
+  if (
+    !token.isClientUser &&
+    (pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal")) &&
+    !isSharedApi
+  ) {
     // For pages, redirect to client login
     if (pathname.startsWith("/client-portal")) {
       return NextResponse.redirect(new URL("/client-portal/login", request.url));

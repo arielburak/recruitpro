@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
-    const { companyName, name, email, password, industry, website } = await request.json();
+    const { companyName, name, title, email, password, industry, website } = await request.json();
 
     if (!email || !password || !name) {
       return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       // User(s) exist without password (invited by recruiter) — set password on ALL of them
       await prisma.clientUser.updateMany({
         where: { email, passwordHash: null },
-        data: { passwordHash, name },
+        data: { passwordHash, name, ...(title ? { title } : {}) },
       });
 
       return NextResponse.json(
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
         data: {
           email,
           name,
+          title: title || null,
           passwordHash,
           clientId: client.id,
         },

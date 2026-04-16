@@ -200,6 +200,7 @@ export default function ClientPortalLoginPage() {
         body: JSON.stringify({
           companyName: fd.get("companyName") as string,
           name: fd.get("name") as string,
+          title: fd.get("title") as string,
           email,
           password,
           industry: fd.get("industry") as string,
@@ -417,9 +418,15 @@ export default function ClientPortalLoginPage() {
                     </div>
                   </>
                 )}
-                <div className="space-y-2">
-                  <Label htmlFor="name">Your Name</Label>
-                  <Input id="name" name="name" placeholder="Jane Smith" required />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Your Name</Label>
+                    <Input id="name" name="name" placeholder="Jane Smith" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Job Title</Label>
+                    <Input id="title" name="title" placeholder="e.g. Hiring Manager" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-password">Password</Label>

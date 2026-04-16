@@ -115,12 +115,8 @@ export default function ClientPortalSettingsPage() {
     setSavingProfile(false);
   }
 
-  // Dirty state detection
-  const isDirty =
-    profile && (
-      name.trim() !== (profile.name || "") ||
-      (title || "").trim() !== (profile.title || "")
-    );
+  // Enable save when name is present (title is optional)
+  const canSave = name.trim().length > 0 && !savingProfile;
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -258,7 +254,7 @@ export default function ClientPortalSettingsPage() {
                       {profileStatus.message}
                     </p>
                   )}
-                  <Button type="submit" disabled={savingProfile || !isDirty} className="ml-auto bg-emerald-600 hover:bg-emerald-700">
+                  <Button type="submit" disabled={!canSave} className="ml-auto bg-emerald-600 hover:bg-emerald-700">
                     {savingProfile ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
