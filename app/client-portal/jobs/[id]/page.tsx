@@ -710,17 +710,17 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
                     return (
                       <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
                               <Building2 className="h-4 w-4 text-indigo-600" />
                             </div>
-                            <div>
-                              <p className="text-sm font-medium">{eng.organization.name}</p>
-                              <p className="text-[10px] text-gray-400">Invited {formatDate(eng.invitedAt)}</p>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{eng.organization.name}</p>
+                              <p className="text-[10px] text-gray-400 truncate">Invited {formatDate(eng.invitedAt)}</p>
                             </div>
                           </div>
-                          <Badge className={`text-[10px] ${statusColor[eng.status]}`}>
+                          <Badge className={`text-[10px] shrink-0 ${statusColor[eng.status]}`}>
                             {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
                             {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
                             {eng.status === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
@@ -728,15 +728,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           </Badge>
                         </div>
                         {eng.status === "ACCEPTED" && (
-                          <div className="flex items-center gap-3 ml-10 mt-1">
+                          <div className="ml-10 mt-1 space-y-0.5">
                             <span className="text-xs text-gray-500 flex items-center gap-1">
-                              <Users className="h-3 w-3" />
+                              <Users className="h-3 w-3 shrink-0" />
                               {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
                             </span>
                             {eng.message && (
-                              <span className="text-[10px] text-gray-400 truncate max-w-[120px]" title={eng.message}>
+                              <p className="text-[10px] text-gray-400 italic truncate" title={eng.message}>
                                 &quot;{eng.message}&quot;
-                              </span>
+                              </p>
                             )}
                           </div>
                         )}
