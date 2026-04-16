@@ -21,6 +21,7 @@ export default function StaffingProfilePage() {
 
   // Profile form
   const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
   const [role, setRole] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileStatus, setProfileStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -75,6 +76,7 @@ export default function StaffingProfilePage() {
         const data = await res.json();
         setProfile(data);
         setName(data.name || "");
+        setTitle(data.title || "");
         setRole(data.role || "");
       }
     } catch {}
@@ -99,7 +101,7 @@ export default function StaffingProfilePage() {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, title }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -191,14 +193,21 @@ export default function StaffingProfilePage() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Role</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={role === "ADMIN" ? "Admin" : "User"}
-                      disabled
-                      className="bg-gray-50"
-                    />
-                  </div>
+                  <Label>Job Title</Label>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Senior Recruiter"
+                  />
+                  <p className="text-xs text-gray-400">Your role at the company (displayed under your name)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Permission</Label>
+                  <Input
+                    value={role === "ADMIN" ? "Admin" : "User"}
+                    disabled
+                    className="bg-gray-50"
+                  />
                   <p className="text-xs text-gray-400">
                     {role === "ADMIN"
                       ? "You can manage the team and billing. Only other admins can change your role."
@@ -394,6 +403,7 @@ export default function StaffingProfilePage() {
               {(() => {
                 const displayName = profile?.name || session?.user?.name || "";
                 const displayEmail = profile?.email || (session?.user as any)?.email || "";
+                const displayTitle = profile?.title;
                 const displayRole = profile?.role || (session?.user as any)?.role;
                 const displayOrg = profile?.organizationName || (session?.user as any)?.organizationName || "";
                 const initials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -405,7 +415,8 @@ export default function StaffingProfilePage() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900 truncate">{displayName || "—"}</p>
-                        <p className="text-xs text-gray-500 truncate">{displayEmail}</p>
+                        {displayTitle && <p className="text-[11px] text-gray-500 truncate">{displayTitle}</p>}
+                        <p className="text-xs text-gray-400 truncate">{displayEmail}</p>
                       </div>
                     </div>
                     <div className="space-y-2 text-xs">
@@ -457,9 +468,14 @@ export default function StaffingProfilePage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-gray-900 truncate">{m.name}</p>
+                        {m.title && <p className="text-[10px] text-gray-500 truncate">{m.title}</p>}
                         <p className="text-[10px] text-gray-400 truncate">{m.email}</p>
                       </div>
-                      {m.role && <Badge variant="secondary" className="text-[9px] shrink-0">{m.role}</Badge>}
+                      {m.role && (
+                        <Badge variant={m.role === "ADMIN" ? "default" : "secondary"} className="text-[9px] shrink-0">
+                          {m.role === "ADMIN" ? "Admin" : "User"}
+                        </Badge>
+                      )}
                     </div>
                   ))}
                   {teamMembers.length > 6 && (

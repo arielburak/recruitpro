@@ -45,6 +45,7 @@ export default function InvitePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.get("name") as string,
+          title: formData.get("title") as string,
           password: formData.get("password") as string,
         }),
       });
@@ -142,6 +143,15 @@ export default function InvitePage({
                 placeholder="John Smith"
                 defaultValue={invite?.name || ""}
                 required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="title">Job Title</Label>
+              <Input
+                id="title"
+                name="title"
+                placeholder="e.g. Senior Recruiter"
               />
             </div>
 

@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail } from "@/lib/email";
+import { addAttendeeToGoogleEvent, getValidAccessToken } from "@/lib/google-calendar";
 
 export async function GET(
   _request: Request,
@@ -109,9 +110,13 @@ export async function PUT(
       organizationId: ctx.organizationId,
     });
 
-    // If the email changed, re-send future interview invites to the new address
-    // so scheduled meetings don't get lost in the void.
-    let resentCount = 0;
+    // If the email changed, propagate to future interview invites so the
+    // candidate doesn't lose the meeting. Preferred path: add the new email
+    // as an attendee on the existing Google Calendar event (keeps the same
+    // event/Meet link, keeps the old attendee in place). Fallback: re-send
+    // the invite email only.
+    let gcalUpdatedCount = 0;
+    let emailResentCount = 0;
     if (emailChanged) {
       const now = new Date();
       const upcomingInterviews = await prisma.interview.findMany({
@@ -127,49 +132,93 @@ export async function PUT(
         },
       });
 
-      for (const iv of upcomingInterviews) {
-        const emailDateOpts = {
-          weekday: "long" as const, year: "numeric" as const,
-          month: "long" as const, day: "numeric" as const,
-          timeZone: iv.timezone,
-        };
-        const emailTimeOpts = {
-          hour: "numeric" as const, minute: "2-digit" as const,
-          hour12: true as const, timeZone: iv.timezone,
-        };
-        const formattedDate = iv.startTime.toLocaleDateString("en-US", emailDateOpts);
-        const formattedStart = iv.startTime.toLocaleTimeString("en-US", emailTimeOpts);
-        const formattedEnd = iv.endTime.toLocaleTimeString("en-US", emailTimeOpts);
+      // Cache access tokens per owner so we don't hit the DB N times
+      const tokenCache = new Map<string, string | null>();
 
-        try {
-          await sendInterviewInviteEmail({
-            to: newEmail,
-            candidateName: data.firstName,
-            jobTitle: iv.job.title,
-            clientName: iv.job.client?.name || "",
-            interviewDate: formattedDate,
-            interviewTime: formattedStart,
-            interviewEndTime: formattedEnd,
-            timezone: iv.timezone,
-            interviewType: iv.type,
-            meetingLink: iv.meetingLink || undefined,
-            location: iv.location || undefined,
-            notes: iv.notes || undefined,
-            recruiterName: iv.creator?.name || ctx.userName,
-          });
-          resentCount++;
-        } catch (emailErr) {
-          console.error(
-            `[candidate.update] Failed to re-send interview invite to ${newEmail}:`,
-            emailErr
-          );
+      for (const iv of upcomingInterviews) {
+        let gcalAdded = false;
+
+        // 1) Try to add the new email to the existing Google Calendar event
+        if (iv.googleEventId && iv.googleCalendarOwnerId) {
+          if (!tokenCache.has(iv.googleCalendarOwnerId)) {
+            tokenCache.set(
+              iv.googleCalendarOwnerId,
+              await getValidAccessToken(iv.googleCalendarOwnerId)
+            );
+          }
+          const accessToken = tokenCache.get(iv.googleCalendarOwnerId);
+          if (accessToken) {
+            gcalAdded = await addAttendeeToGoogleEvent({
+              accessToken,
+              eventId: iv.googleEventId,
+              newAttendee: {
+                email: newEmail,
+                displayName: `${data.firstName} ${data.lastName}`,
+              },
+            });
+            if (gcalAdded) gcalUpdatedCount++;
+          }
+        }
+
+        // 2) If we couldn't update Google Calendar (no event, no token, or
+        //    the API call failed), fall back to a fresh invite email so the
+        //    candidate still gets notified at the new address.
+        if (!gcalAdded) {
+          const emailDateOpts = {
+            weekday: "long" as const, year: "numeric" as const,
+            month: "long" as const, day: "numeric" as const,
+            timeZone: iv.timezone,
+          };
+          const emailTimeOpts = {
+            hour: "numeric" as const, minute: "2-digit" as const,
+            hour12: true as const, timeZone: iv.timezone,
+          };
+          const formattedDate = iv.startTime.toLocaleDateString("en-US", emailDateOpts);
+          const formattedStart = iv.startTime.toLocaleTimeString("en-US", emailTimeOpts);
+          const formattedEnd = iv.endTime.toLocaleTimeString("en-US", emailTimeOpts);
+
+          try {
+            await sendInterviewInviteEmail({
+              to: newEmail,
+              candidateName: data.firstName,
+              jobTitle: iv.job.title,
+              clientName: iv.job.client?.name || "",
+              interviewDate: formattedDate,
+              interviewTime: formattedStart,
+              interviewEndTime: formattedEnd,
+              timezone: iv.timezone,
+              interviewType: iv.type,
+              meetingLink: iv.meetingLink || undefined,
+              location: iv.location || undefined,
+              notes: iv.notes || undefined,
+              recruiterName: iv.creator?.name || ctx.userName,
+            });
+            emailResentCount++;
+          } catch (emailErr) {
+            console.error(
+              `[candidate.update] Failed to re-send interview invite to ${newEmail}:`,
+              emailErr
+            );
+          }
         }
       }
 
-      if (resentCount > 0) {
+      const totalPropagated = gcalUpdatedCount + emailResentCount;
+      if (totalPropagated > 0) {
+        const bits: string[] = [];
+        if (gcalUpdatedCount > 0) {
+          bits.push(
+            `added to ${gcalUpdatedCount} Google Calendar event${gcalUpdatedCount === 1 ? "" : "s"}`
+          );
+        }
+        if (emailResentCount > 0) {
+          bits.push(
+            `resent ${emailResentCount} invite email${emailResentCount === 1 ? "" : "s"}`
+          );
+        }
         await logActivity({
           action: "candidate.email_changed",
-          description: `${ctx.userName} updated email for ${data.firstName} ${data.lastName} — resent ${resentCount} upcoming interview invite${resentCount === 1 ? "" : "s"} to ${newEmail}`,
+          description: `${ctx.userName} updated email for ${data.firstName} ${data.lastName} — ${bits.join(", ")} (→ ${newEmail})`,
           userId: ctx.userId,
           candidateId: id,
           organizationId: ctx.organizationId,
@@ -177,7 +226,11 @@ export async function PUT(
       }
     }
 
-    return NextResponse.json({ success: true, resentInvites: resentCount });
+    return NextResponse.json({
+      success: true,
+      gcalUpdated: gcalUpdatedCount,
+      resentInvites: emailResentCount,
+    });
   } catch (error: any) {
     if (error.name === "ZodError") {
       return NextResponse.json(

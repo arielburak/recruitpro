@@ -46,7 +46,7 @@ export async function GET() {
     const u = await prisma.user.findUnique({
       where: { id: user.id },
       select: {
-        id: true, name: true, email: true, role: true, avatar: true, isActive: true, createdAt: true,
+        id: true, name: true, email: true, title: true, role: true, avatar: true, isActive: true, createdAt: true,
         organization: { select: { name: true } },
       },
     });
@@ -56,6 +56,7 @@ export async function GET() {
       id: u.id,
       name: u.name,
       email: u.email,
+      title: u.title,
       role: u.role,
       avatar: u.avatar,
       organizationName: u.organization.name,
@@ -102,15 +103,17 @@ export async function PATCH(request: Request) {
     }
 
     const avatar = typeof body.avatar === "string" ? body.avatar.trim() : undefined;
+    const title = typeof body.title === "string" ? body.title.trim() : undefined;
     // Role is NOT editable via the profile endpoint. Only admins can change
     // roles via the /api/admin/users (staffing) or /api/client-portal/team (client) endpoints.
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
         ...(name !== undefined ? { name } : {}),
+        ...(title !== undefined ? { title: title || null } : {}),
         ...(avatar !== undefined ? { avatar: avatar || null } : {}),
       },
-      select: { id: true, name: true, email: true, avatar: true, role: true },
+      select: { id: true, name: true, email: true, title: true, avatar: true, role: true },
     });
     return NextResponse.json(updated);
   } catch (error: any) {

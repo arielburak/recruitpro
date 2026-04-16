@@ -295,6 +295,7 @@ export default function AdminUsersPage() {
                           </span>
                         )}
                       </p>
+                      {u.title && <p className="text-xs text-gray-500">{u.title}</p>}
                       <p className="text-sm text-gray-500">{u.email}</p>
                     </div>
                   </div>

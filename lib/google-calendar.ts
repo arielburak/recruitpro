@@ -219,3 +219,77 @@ export async function createGoogleCalendarEvent({
     htmlLink: data.htmlLink,
   };
 }
+
+/**
+ * Add an attendee to an existing Google Calendar event. Keeps all
+ * existing attendees in place so we don't accidentally remove the old
+ * email — we let Google's sendUpdates=all handle notifying the new one.
+ *
+ * Returns true on success, false if the event/owner isn't reachable.
+ */
+export async function addAttendeeToGoogleEvent({
+  accessToken,
+  eventId,
+  newAttendee,
+}: {
+  accessToken: string;
+  eventId: string;
+  newAttendee: { email: string; displayName?: string };
+}): Promise<boolean> {
+  try {
+    // Fetch existing attendees first so we don't overwrite them
+    const getRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!getRes.ok) {
+      console.error(
+        "[google-calendar] Failed to fetch event",
+        eventId,
+        "status",
+        getRes.status
+      );
+      return false;
+    }
+
+    const event = await getRes.json();
+    const existing: { email: string; displayName?: string }[] = Array.isArray(event.attendees)
+      ? event.attendees
+      : [];
+
+    // Avoid duplicates (case-insensitive)
+    const lower = newAttendee.email.toLowerCase();
+    if (existing.some((a) => a.email?.toLowerCase() === lower)) {
+      return true;
+    }
+
+    const updatedAttendees = [
+      ...existing.map((a) => ({ email: a.email, displayName: a.displayName })),
+      { email: newAttendee.email, displayName: newAttendee.displayName },
+    ];
+
+    const patchRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ attendees: updatedAttendees }),
+      }
+    );
+
+    if (!patchRes.ok) {
+      const errText = await patchRes.text();
+      console.error("[google-calendar] PATCH attendees failed:", errText);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[google-calendar] addAttendeeToGoogleEvent error:", err);
+    return false;
+  }
+}

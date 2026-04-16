@@ -85,6 +85,7 @@ function NavLink({
 }
 
 function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] }) {
+  const [title, setTitle] = useState<string | null>(null);
   const initials =
     session?.user?.name
       ?.split(" ")
@@ -92,6 +93,23 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
       .join("")
       .toUpperCase()
       .slice(0, 2) || "?";
+
+  useEffect(() => {
+    if (!session?.user) return;
+    let cancelled = false;
+    fetch("/api/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.title) setTitle(data.title);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user]);
+
+  const role = session?.user?.role;
+  const subtitle = title || (role === "ADMIN" ? "Admin" : role === "USER" ? "User" : "Member");
 
   return (
     <div className="flex items-center gap-3">
@@ -108,7 +126,7 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
             {session?.user?.name || "User"}
           </p>
           <p className="truncate text-xs text-gray-500">
-            {session?.user?.role || "Member"}
+            {subtitle}
           </p>
         </div>
       </Link>

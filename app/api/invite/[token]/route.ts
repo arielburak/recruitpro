@@ -59,7 +59,10 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
-    const { name, password } = await request.json();
+    const body = await request.json();
+    const name = body.name;
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const password = body.password;
 
     if (!name || !password) {
       return NextResponse.json(
@@ -113,6 +116,7 @@ export async function POST(
         data: {
           email: invite.email,
           name,
+          title: title || null,
           passwordHash,
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,

@@ -26,6 +26,7 @@ export default function RegisterPage() {
     const data = {
       orgName: formData.get("orgName") as string,
       name: formData.get("name") as string,
+      title: formData.get("title") as string,
       email,
       password,
     };
@@ -191,15 +192,26 @@ export default function RegisterPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="name">Your Name</Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="John Smith"
-                className="focus-visible:ring-indigo-500"
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="name">Your Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  placeholder="John Smith"
+                  className="focus-visible:ring-indigo-500"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="title">Job Title</Label>
+                <Input
+                  id="title"
+                  name="title"
+                  placeholder="e.g. Senior Recruiter"
+                  className="focus-visible:ring-indigo-500"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

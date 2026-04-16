@@ -94,6 +94,7 @@ export async function POST(request: Request) {
     // Auto-generate Google Meet link if platform is google_meet and user has integration
     let meetingLink = manualMeetingLink || "";
     let googleEventId: string | null = null;
+    let googleCalendarOwnerId: string | null = null;
 
     if (platform === "google_meet" && !manualMeetingLink) {
       try {
@@ -153,6 +154,7 @@ export async function POST(request: Request) {
 
           meetingLink = calEvent.meetLink;
           googleEventId = calEvent.eventId;
+          googleCalendarOwnerId = ctx.userId;
         }
       } catch (calErr) {
         console.error("[interview] Failed to create Google Calendar event:", calErr);
@@ -175,6 +177,8 @@ export async function POST(request: Request) {
         candidateId,
         organizationId: ctx.organizationId,
         createdBy: ctx.userId,
+        googleEventId,
+        googleCalendarOwnerId,
         interviewers: interviewerIds?.length
           ? {
               create: interviewerIds.map((userId: string) => ({ userId })),

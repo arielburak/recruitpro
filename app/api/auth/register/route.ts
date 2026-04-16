@@ -46,6 +46,7 @@ export async function POST(request: Request) {
         data: {
           email: data.email,
           name: data.name,
+          title: data.title || null,
           passwordHash,
           role: "ADMIN",
           organizationId: org.id,
