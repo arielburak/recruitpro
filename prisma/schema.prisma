@@ -444,24 +444,27 @@ enum InterviewStatus {
 // ─── DOCUMENTS ───
 
 model Document {
-  id          String   @id @default(cuid())
-  name        String
-  url         String
-  type        String
-  size        Int
-  category    String?
-  candidateId String?
-  jobId       String?
-  dealId      String?
-  uploadedBy  String
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  name         String
+  url          String
+  type         String
+  size         Int
+  category     String?
+  candidateId  String?
+  jobId        String?
+  clientJobId  String?
+  dealId       String?
+  uploadedBy   String
+  createdAt    DateTime @default(now())
 
   candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   deal      Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
+  @@index([clientJobId])
   @@index([dealId])
 }
 
@@ -575,6 +578,7 @@ model ClientJob {
   postedBy           ClientUser          @relation(fields: [postedById], references: [id])
   engagements        FirmEngagement[]
   pendingFirmInvites PendingFirmInvite[]
+  documents          Document[]
 
   @@index([clientId])
   @@index([status])

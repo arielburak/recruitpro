@@ -80,6 +80,23 @@ export default function PostJobPage() {
       }
 
       const job = await res.json();
+
+      // Upload JD file if one was selected (attach to job as document)
+      if (jdFile) {
+        try {
+          const docForm = new FormData();
+          docForm.append("file", jdFile);
+          docForm.append("category", "JOB_DESCRIPTION");
+          await fetch(`/api/client-portal/jobs/${job.id}/documents`, {
+            method: "POST",
+            body: docForm,
+          });
+        } catch (e) {
+          console.error("JD upload failed:", e);
+          // Don't block navigation — job was created successfully
+        }
+      }
+
       router.push(`/client-portal/jobs/${job.id}`);
     } catch {
       setError("Something went wrong");

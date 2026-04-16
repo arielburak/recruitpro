@@ -25,6 +25,11 @@ import {
   Check,
   Pencil,
   Save,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/utils";
@@ -50,6 +55,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [addingMember, setAddingMember] = useState(false);
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Documents state
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [uploadingJD, setUploadingJD] = useState(false);
+  const [uploadingAdditional, setUploadingAdditional] = useState(false);
 
   // Edit mode state
   const [editing, setEditing] = useState(false);
@@ -98,7 +108,47 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   useEffect(() => {
     fetchJob();
     fetchTeam();
+    fetchDocuments();
   }, [id]);
+
+  async function fetchDocuments() {
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/documents`);
+      if (res.ok) setDocuments(await res.json());
+    } catch {}
+  }
+
+  async function uploadDocument(file: File, category: "JOB_DESCRIPTION" | "ADDITIONAL") {
+    const setUploading = category === "JOB_DESCRIPTION" ? setUploadingJD : setUploadingAdditional;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+      const res = await fetch(`/api/client-portal/jobs/${id}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Upload failed");
+      } else {
+        fetchDocuments();
+      }
+    } catch {
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDocument(docId: string) {
+    if (!confirm("Delete this document?")) return;
+    await fetch(`/api/client-portal/jobs/${id}/documents?documentId=${docId}`, {
+      method: "DELETE",
+    });
+    fetchDocuments();
+  }
 
   async function fetchJob() {
     try {
@@ -348,6 +398,119 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   </CardContent>
                 </Card>
               )}
+
+              {/* Documents */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Job Description File
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
+                    if (jdDoc) {
+                      return (
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{jdDoc.name}</p>
+                              <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <a href={jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                            </a>
+                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
+                        {uploadingJD ? (
+                          <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
+                        ) : (
+                          <Upload className="h-5 w-5 text-gray-400 mb-2" />
+                        )}
+                        <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
+                        <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,.txt"
+                          disabled={uploadingJD}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) uploadDocument(file, "JOB_DESCRIPTION");
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              {/* Additional Documents */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Additional Documents
+                  </CardTitle>
+                  <label className="cursor-pointer">
+                    <Button variant="outline" size="sm" className="gap-1 text-xs pointer-events-none">
+                      {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      {uploadingAdditional ? "Uploading..." : "Add"}
+                    </Button>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                      disabled={uploadingAdditional}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadDocument(file, "ADDITIONAL");
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </CardHeader>
+                <CardContent>
+                  {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText className="h-4 w-4 text-gray-500 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{doc.name}</p>
+                              <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" download>
+                              <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
+                            </a>
+                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {!job.description && !job.requirements && !job.salaryRange && (
                 <Card>
                   <CardContent className="p-8 text-center">
