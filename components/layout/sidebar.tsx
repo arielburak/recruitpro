@@ -23,6 +23,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { StaffingNotificationBell } from "./staffing-notification-bell";
 
 const mainNavItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -132,6 +133,7 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
           </p>
         </div>
       </Link>
+      <StaffingNotificationBell />
       <button
         onClick={() => signOut()}
         className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"

@@ -16,15 +16,13 @@ type NotifyArgs = {
 //
 // Behavior matrix:
 //   INTERNAL (staffing posted, for staffing only)
-//     → email mentioned staffing users (User)
+//     → email + UserNotification to mentioned staffing users
 //     → NO client-side notification
 //   CLIENT_VISIBLE (posted by either side, seen by both)
-//     → email the OTHER side's relevant people
-//     → in-app ClientNotification for the client (regardless of who posted)
-//     → mention emails
-//   CLIENT_INTERNAL (client posted, for client only)
-//     → in-app ClientNotification for mentioned client users
-//     → mention emails
+//     → email + in-app notification to the OTHER side's relevant people
+//     → mention emails + in-app notifications
+//   CLIENT_INTERNAL (client posted, for client team only)
+//     → in-app ClientNotification + email for mentioned client users
 //     → NO staffing-side notification
 export async function notifyOnNewComment(args: NotifyArgs) {
   const { submissionId, commentType, content, mentions, authorKind, authorId, authorName } = args;
@@ -42,7 +40,9 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           title: true,
           clientId: true,
           organizationId: true,
-          assignments: { select: { userId: true, user: { select: { email: true, name: true } } } },
+          assignments: {
+            select: { userId: true, user: { select: { id: true, email: true, name: true } } },
+          },
         },
       },
     },
@@ -57,8 +57,9 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   const clientUrl = `${baseUrl}/client-portal/candidates/${submissionId}`;
 
   const preview = stripMarkup(content);
+  const alertTitle = `New comment on ${candidateName} — ${jobTitle}`;
 
-  // --- Mention emails (always, regardless of comment type) ---
+  // --- Mentions ---
   if (mentions.length > 0) {
     try {
       const [mentionedUsers, mentionedClientUsers] = await Promise.all([
@@ -72,12 +73,26 @@ export async function notifyOnNewComment(args: NotifyArgs) {
         }),
       ]);
 
-      // Email mentioned staffing users — only when they're allowed to see this comment
       const staffingCanSee = commentType === "INTERNAL" || commentType === "CLIENT_VISIBLE";
       if (staffingCanSee) {
         for (const u of mentionedUsers) {
-          // Don't email the author
           if (authorKind === "staffing" && u.id === authorId) continue;
+          // In-app notification
+          try {
+            await prisma.userNotification.create({
+              data: {
+                userId: u.id,
+                type: "mention",
+                title: `${authorName} mentioned you`,
+                body: truncate(preview, 140),
+                link: `/candidates/${submission.candidateId}?submissionId=${submissionId}`,
+                submissionId,
+              },
+            });
+          } catch (e) {
+            console.error("[chat-notify] staffing mention in-app failed:", e);
+          }
+          // Email
           try {
             await sendMentionEmail({
               to: u.email,
@@ -93,11 +108,24 @@ export async function notifyOnNewComment(args: NotifyArgs) {
         }
       }
 
-      // Email mentioned client users — only when they can see this comment
       const clientCanSee = commentType === "CLIENT_VISIBLE" || commentType === "CLIENT_INTERNAL";
-      if (clientCanSee) {
+      if (clientCanSee && submission.job.clientId) {
         for (const cu of mentionedClientUsers) {
           if (authorKind === "client" && cu.id === authorId) continue;
+          try {
+            await prisma.clientNotification.create({
+              data: {
+                clientId: submission.job.clientId,
+                type: "mention",
+                title: `${authorName} mentioned you`,
+                body: truncate(preview, 140),
+                link: `/client-portal/candidates/${submissionId}`,
+                submissionId,
+              },
+            });
+          } catch (e) {
+            console.error("[chat-notify] client mention in-app failed:", e);
+          }
           try {
             await sendMentionEmail({
               to: cu.email,
@@ -107,19 +135,6 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               preview,
               url: clientUrl,
             });
-            // Also create in-app notification for client-side mention
-            if (submission.job.clientId) {
-              await prisma.clientNotification.create({
-                data: {
-                  clientId: submission.job.clientId,
-                  type: "mention",
-                  title: `${authorName} mentioned you`,
-                  body: truncate(preview, 140),
-                  link: `/client-portal/candidates/${submissionId}`,
-                  submissionId,
-                },
-              });
-            }
           } catch (e) {
             console.error("[chat-notify] mention email (client) failed:", e);
           }
@@ -132,16 +147,15 @@ export async function notifyOnNewComment(args: NotifyArgs) {
 
   // --- Audience notifications ---
   if (commentType === "CLIENT_VISIBLE") {
-    // Notify the OTHER side + create ClientNotification for client
     try {
       if (authorKind === "staffing") {
-        // Notify client admins + hiring manager via email + in-app
+        // Staffing → Client: ClientNotification + emails to client side
         if (submission.job.clientId) {
           await prisma.clientNotification.create({
             data: {
               clientId: submission.job.clientId,
               type: "comment_posted",
-              title: `New message on ${candidateName}`,
+              title: alertTitle,
               body: `${authorName} (recruiter): ${truncate(preview, 120)}`,
               link: `/client-portal/candidates/${submissionId}`,
               submissionId,
@@ -162,10 +176,7 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           const recipients = new Set<string>();
           if (client?.contactEmail) recipients.add(client.contactEmail.toLowerCase());
           for (const a of clientAdmins) recipients.add(a.email.toLowerCase());
-          // Don't duplicate-email mentioned users (they got the mention email)
-          const alreadyEmailed = new Set(mentions);
           for (const to of recipients) {
-            // Skip if they happen to be in the mentions list by email (best-effort dedup)
             try {
               await sendNewMessageEmail({
                 to,
@@ -180,14 +191,35 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               console.error("[chat-notify] CLIENT_VISIBLE staffing->client email failed:", e);
             }
           }
-          void alreadyEmailed;
         }
       } else {
-        // Client posted — notify staffing team assigned to the job
+        // Client → Staffing: UserNotification for each assigned recruiter + emails
         const recipients = new Set<string>();
+        const userIds = new Set<string>();
         for (const a of submission.job.assignments) {
+          if (a.user?.id) userIds.add(a.user.id);
           if (a.user?.email) recipients.add(a.user.email.toLowerCase());
         }
+
+        // In-app notifications
+        for (const uid of userIds) {
+          try {
+            await prisma.userNotification.create({
+              data: {
+                userId: uid,
+                type: "comment_posted",
+                title: alertTitle,
+                body: `${authorName} (client): ${truncate(preview, 120)}`,
+                link: `/candidates/${submission.candidateId}?submissionId=${submissionId}`,
+                submissionId,
+              },
+            });
+          } catch (e) {
+            console.error("[chat-notify] client->staffing in-app notification failed:", e);
+          }
+        }
+
+        // Emails
         for (const to of recipients) {
           try {
             await sendNewMessageEmail({
@@ -213,7 +245,6 @@ export async function notifyOnNewComment(args: NotifyArgs) {
 }
 
 function stripMarkup(s: string): string {
-  // Our comments are plain text + @mentions which we keep as-is. Just normalize whitespace.
   return s.replace(/\s+/g, " ").trim();
 }
 
