@@ -16,6 +16,7 @@ import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARR
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -30,6 +31,8 @@ export default function JobDetailPage() {
 
   // "Add Candidate" dialog — inline create mode
   const [addMode, setAddMode] = useState<"search" | "create">("search");
+  const [companySuggestions, setCompanySuggestions] = useState<string[]>([]);
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
   const emptyNewCandidate = {
     firstName: "",
     lastName: "",
@@ -171,6 +174,18 @@ export default function JobDetailPage() {
     const data = await res.json();
     setSearchResults(data.candidates || []);
     setSearching(false);
+  }
+
+  async function fetchCompanySuggestions(query: string) {
+    try {
+      const url = query.trim()
+        ? `/api/candidates/suggest-companies?q=${encodeURIComponent(query)}`
+        : `/api/candidates/suggest-companies`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCompanySuggestions(data.suggestions || []);
+    } catch {}
   }
 
   async function parseInlineResume() {
@@ -683,9 +698,9 @@ export default function JobDetailPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Phone</Label>
-                      <Input
+                      <PhoneInput
                         value={newCandidate.phone}
-                        onChange={(e) => setNewCandidate({ ...newCandidate, phone: e.target.value })}
+                        onChange={(val) => setNewCandidate({ ...newCandidate, phone: val })}
                       />
                     </div>
                   </div>
@@ -704,12 +719,42 @@ export default function JobDetailPage() {
                         onChange={(e) => setNewCandidate({ ...newCandidate, currentTitle: e.target.value })}
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 relative">
                       <Label className="text-xs">Current company</Label>
                       <Input
                         value={newCandidate.currentCompany}
-                        onChange={(e) => setNewCandidate({ ...newCandidate, currentCompany: e.target.value })}
+                        onChange={(e) => {
+                          setNewCandidate({ ...newCandidate, currentCompany: e.target.value });
+                          fetchCompanySuggestions(e.target.value);
+                          setShowCompanySuggestions(true);
+                        }}
+                        onFocus={() => {
+                          fetchCompanySuggestions(newCandidate.currentCompany);
+                          setShowCompanySuggestions(true);
+                        }}
+                        onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 150)}
+                        autoComplete="off"
                       />
+                      {showCompanySuggestions && companySuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-44 overflow-y-auto">
+                          {companySuggestions
+                            .filter((s) => s.toLowerCase() !== newCandidate.currentCompany.toLowerCase())
+                            .map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setNewCandidate((prev) => ({ ...prev, currentCompany: s }));
+                                  setShowCompanySuggestions(false);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50"
+                              >
+                                {s}
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
