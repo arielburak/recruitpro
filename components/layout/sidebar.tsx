@@ -118,20 +118,34 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
 
   return (
     <div className="space-y-3">
-      {/* Company logo row (shown only when uploaded) */}
-      {orgLogo && session?.user?.organizationName && (
-        <div className="flex items-center gap-2 rounded-md px-1 py-1.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={orgLogo}
-            alt={session.user.organizationName}
-            className="h-6 w-6 rounded object-contain bg-white/95 p-0.5 shrink-0"
-          />
-          <span className="text-[11px] font-medium text-gray-300 truncate">
+      {/* Company workspace indicator (logo + name) */}
+      {session?.user?.organizationName && (
+        <div className="flex items-center gap-2.5 px-1">
+          {orgLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={orgLogo}
+              alt={session.user.organizationName}
+              className="h-8 w-8 rounded-md object-contain bg-white p-1 shrink-0 ring-1 ring-white/10"
+            />
+          ) : (
+            <div className="h-8 w-8 rounded-md bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400 shrink-0 ring-1 ring-white/10">
+              {session.user.organizationName
+                .split(" ")
+                .map((w) => w[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+          )}
+          <span className="text-sm font-semibold text-gray-200 truncate">
             {session.user.organizationName}
           </span>
         </div>
       )}
+
+      {/* Separator */}
+      <div className="border-t border-white/[0.06]" />
 
       {/* User row */}
       <div className="flex items-center gap-3">
@@ -208,11 +222,6 @@ export function Sidebar() {
             <span className="text-lg font-semibold tracking-tight text-white leading-tight block truncate">
               Recruiting ATS
             </span>
-            {session?.user?.organizationName && (
-              <span className="text-[11px] text-gray-400 leading-tight block truncate">
-                {session.user.organizationName}
-              </span>
-            )}
           </div>
         </Link>
         <div className="shrink-0">

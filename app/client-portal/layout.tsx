@@ -50,23 +50,18 @@ export default function ClientPortalLayout({
             {/* Company logo badge (client workspace, admin-uploaded) */}
             {showNav && clientLogo && (
               <div
-                className="hidden lg:flex items-center gap-2 pl-4 border-l border-gray-200"
+                className="hidden lg:flex items-center gap-2.5 pl-4 border-l border-gray-200"
                 title={(session?.user as any)?.clientName || ""}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={clientLogo}
                   alt={(session?.user as any)?.clientName || ""}
-                  className="h-10 w-10 rounded-lg object-contain bg-white p-1 border border-gray-200"
+                  className="h-9 w-9 rounded-lg object-contain bg-white p-1 border border-gray-200"
                 />
-                <div className="min-w-0 max-w-[180px]">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 leading-tight">
-                    Workspace
-                  </p>
-                  <p className="text-sm font-semibold text-gray-900 leading-tight truncate">
-                    {(session?.user as any)?.clientName}
-                  </p>
-                </div>
+                <span className="text-sm font-semibold text-gray-900 truncate max-w-[180px]">
+                  {(session?.user as any)?.clientName}
+                </span>
               </div>
             )}
 
