@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Briefcase, Upload, FileText, X, Loader2 } from "lucide-react";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 
 const JOB_TYPES = ["Full-time", "Part-time", "Contract", "Temporary", "Internship"];
 
@@ -16,6 +17,7 @@ export default function PostJobPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("USD");
 
   // File upload & parsing state
   const [jdFile, setJdFile] = useState<File | null>(null);
@@ -67,6 +69,7 @@ export default function PostJobPage() {
           requirements: fd.get("requirements"),
           location: fd.get("location"),
           salaryRange: fd.get("salaryRange"),
+          salaryCurrency,
           jobType: fd.get("jobType"),
           workMode: fd.get("workMode"),
         }),
@@ -213,9 +216,14 @@ export default function PostJobPage() {
                 <Input id="location" name="location" placeholder="e.g. New York, NY" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="salaryRange">Salary Range</Label>
-                <Input id="salaryRange" name="salaryRange" placeholder="e.g. $150K - $200K" />
+                <Label>Currency</Label>
+                <CurrencyPicker value={salaryCurrency} onChange={setSalaryCurrency} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="salaryRange">Salary Range</Label>
+              <Input id="salaryRange" name="salaryRange" placeholder="e.g. 150K - 200K" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

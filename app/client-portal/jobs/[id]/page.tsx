@@ -32,6 +32,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import {
   Table,
   TableBody,
@@ -82,6 +83,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     requirements: "",
     location: "",
     salaryRange: "",
+    salaryCurrency: "USD",
     jobType: "Full-time",
     workMode: "ON_SITE",
     status: "OPEN",
@@ -94,6 +96,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       requirements: job.requirements || "",
       location: job.location || "",
       salaryRange: job.salaryRange || "",
+      salaryCurrency: job.salaryCurrency || "USD",
       jobType: job.jobType || "Full-time",
       workMode: job.isRemote ? "REMOTE" : "ON_SITE",
       status: job.status || "OPEN",
@@ -367,9 +370,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     <Input value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Salary Range</Label>
-                    <Input value={editForm.salaryRange} onChange={(e) => setEditForm({ ...editForm, salaryRange: e.target.value })} />
+                    <Label>Currency</Label>
+                    <CurrencyPicker
+                      compact
+                      value={editForm.salaryCurrency}
+                      onChange={(c) => setEditForm({ ...editForm, salaryCurrency: c })}
+                    />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Salary Range ({getCurrency(editForm.salaryCurrency).symbol})</Label>
+                  <Input value={editForm.salaryRange} onChange={(e) => setEditForm({ ...editForm, salaryRange: e.target.value })} placeholder="e.g. 150K - 200K" />
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
@@ -422,6 +434,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   <CardContent className="p-4">
                     <span className="text-sm text-gray-500">Salary Range: </span>
                     <span className="font-medium">{job.salaryRange}</span>
+                    <span className="ml-2 text-xs text-gray-500">
+                      {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
+                    </span>
                   </CardContent>
                 </Card>
               )}

@@ -28,6 +28,7 @@ export async function PUT(
         requirements: body.requirements ?? existing.requirements,
         location: body.location ?? existing.location,
         salaryRange: body.salaryRange ?? existing.salaryRange,
+        salaryCurrency: body.salaryCurrency ?? existing.salaryCurrency,
         jobType: body.jobType ?? existing.jobType,
         isRemote: body.workMode ? body.workMode !== "ON_SITE" : existing.isRemote,
         status: body.status ?? existing.status,

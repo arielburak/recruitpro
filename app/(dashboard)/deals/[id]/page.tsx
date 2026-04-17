@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Building2, User, Pencil, Trash2, Upload, FileText, Download } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 
 const STAGE_OPTIONS = [
   { value: "LEAD", label: "Lead" },
@@ -72,6 +73,7 @@ export default function DealDetailPage() {
       clientId: deal.clientId,
       contactId: deal.contactId || "",
       value: deal.value ? Number(deal.value) : "",
+      currency: deal.currency || "USD",
       probability: deal.probability ?? 50,
       stage: deal.stage,
       expectedClose: deal.expectedClose
@@ -104,6 +106,7 @@ export default function DealDetailPage() {
           clientId: editForm.clientId,
           contactId: editForm.contactId || null,
           value: editForm.value ? Number(editForm.value) : null,
+          currency: editForm.currency || "USD",
           probability: editForm.probability != null ? Number(editForm.probability) : null,
           stage: editForm.stage,
           expectedClose: editForm.expectedClose || null,
@@ -263,9 +266,16 @@ export default function DealDetailPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label>Value ($)</Label>
+                <Label>Currency</Label>
+                <CurrencyPicker
+                  value={editForm.currency || "USD"}
+                  onChange={(c) => setEditForm({ ...editForm, currency: c })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Value ({getCurrency(editForm.currency).symbol})</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -342,7 +352,7 @@ export default function DealDetailPage() {
               <div>
                 <p className="text-xs text-gray-400 uppercase">Value</p>
                 <p className="text-lg font-semibold text-indigo-600">
-                  {deal.value ? formatCurrency(Number(deal.value)) : "Not set"}
+                  {deal.value ? formatCurrency(Number(deal.value), deal.currency || "USD") : "Not set"}
                 </p>
               </div>
               <div>

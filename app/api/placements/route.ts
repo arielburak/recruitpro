@@ -10,7 +10,7 @@ export async function GET() {
     const placements = await prisma.placement.findMany({
       where: { organizationId: ctx.organizationId },
       include: {
-        job: { select: { id: true, title: true } },
+        job: { select: { id: true, title: true, currency: true } },
         client: { select: { id: true, name: true } },
         submission: {
           select: {

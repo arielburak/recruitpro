@@ -109,6 +109,7 @@ export async function POST(request: Request) {
         requirements: body.requirements || null,
         location: body.location || null,
         salaryRange: body.salaryRange || null,
+        salaryCurrency: body.salaryCurrency || "USD",
         jobType: body.jobType || "Full-time",
         isRemote: body.workMode ? body.workMode !== "ON_SITE" : (body.isRemote || false),
         clientId: ctx.clientId,

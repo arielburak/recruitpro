@@ -175,7 +175,7 @@ export default function DealsPage() {
                       <p className="text-xs text-gray-500">{deal.client?.name}</p>
                       {deal.value && (
                         <p className="text-sm font-semibold text-indigo-600">
-                          {formatCurrency(Number(deal.value))}
+                          {formatCurrency(Number(deal.value), deal.currency || "USD")}
                         </p>
                       )}
                       {deal.probability != null && (
@@ -219,7 +219,7 @@ export default function DealsPage() {
                     <TableCell className="font-medium">{deal.title}</TableCell>
                     <TableCell>{deal.client?.name || "-"}</TableCell>
                     <TableCell>
-                      {deal.value ? formatCurrency(Number(deal.value)) : "-"}
+                      {deal.value ? formatCurrency(Number(deal.value), deal.currency || "USD") : "-"}
                     </TableCell>
                     <TableCell>
                       {deal.probability != null ? `${deal.probability}%` : "-"}

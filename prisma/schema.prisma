@@ -573,6 +573,7 @@ model Deal {
   id             String     @id @default(cuid())
   title          String
   value          Decimal?
+  currency       String     @default("USD")
   probability    Int?       @default(50)
   stage          DealStage  @default(LEAD)
   expectedClose  DateTime?
@@ -639,13 +640,14 @@ enum InvoiceStatus {
 // ─── CLIENT JOBS (posted by clients directly) ───
 
 model ClientJob {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  requirements String?
-  location     String?
-  salaryRange  String?
-  jobType      String   @default("Full-time")
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  requirements   String?
+  location       String?
+  salaryRange    String?
+  salaryCurrency String   @default("USD")
+  jobType        String   @default("Full-time")
   isRemote     Boolean  @default(false)
   status       String   @default("OPEN")
   clientId     String

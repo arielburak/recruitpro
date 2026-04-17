@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 const STAGE_OPTIONS = [
@@ -26,6 +27,7 @@ export default function NewDealPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState("");
+  const [currency, setCurrency] = useState("USD");
 
   useEffect(() => {
     fetch("/api/clients")
@@ -59,6 +61,7 @@ export default function NewDealPage() {
         clientId: fd.get("clientId"),
         contactId: fd.get("contactId") || undefined,
         value: fd.get("value") ? Number(fd.get("value")) : undefined,
+        currency,
         probability: fd.get("probability") ? Number(fd.get("probability")) : undefined,
         stage: fd.get("stage"),
         expectedClose: fd.get("expectedClose") || undefined,
@@ -136,9 +139,13 @@ export default function NewDealPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label>Value ($)</Label>
+                <Label>Currency</Label>
+                <CurrencyPicker value={currency} onChange={setCurrency} />
+              </div>
+              <div className="space-y-2">
+                <Label>Value ({getCurrency(currency).symbol})</Label>
                 <Input name="value" type="number" step="0.01" min="0" placeholder="0.00" />
               </div>
               <div className="space-y-2">
