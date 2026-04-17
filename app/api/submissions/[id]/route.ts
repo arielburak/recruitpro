@@ -92,17 +92,26 @@ export async function PATCH(
         });
       }
 
-      // In-app notification (one per client)
-      await prisma.clientNotification.create({
-        data: {
-          clientId: submission.job.clientId,
-          type: "candidate_shared",
-          title: `New candidate for ${submission.job.title}`,
-          body: `${candidateName} was shared by ${ctx.userName}${shareNote ? ". Note attached." : ""}`,
-          link: `/client-portal/candidates/${id}`,
-          submissionId: id,
-        },
-      });
+      // In-app notification: one per active client user (personal inbox)
+      try {
+        const activeClientUsers = await prisma.clientUser.findMany({
+          where: { clientId: submission.job.clientId, isActive: true },
+          select: { id: true },
+        });
+        await prisma.clientNotification.createMany({
+          data: activeClientUsers.map((cu) => ({
+            clientId: submission.job.clientId!,
+            clientUserId: cu.id,
+            type: "candidate_shared",
+            title: `New candidate for ${submission.job.title}`,
+            body: `${candidateName} was shared by ${ctx.userName}${shareNote ? ". Note attached." : ""}`,
+            link: `/client-portal/candidates/${id}`,
+            submissionId: id,
+          })),
+        });
+      } catch (err) {
+        console.error("[share] failed to create ClientNotifications:", err);
+      }
 
       // Email notifications (fire-and-forget; don't fail request)
       if (notifyViaEmail) {

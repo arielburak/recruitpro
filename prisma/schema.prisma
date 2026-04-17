@@ -178,6 +178,7 @@ model ClientUser {
   comments   Comment[]
   ratings    CandidateRating[]
   clientJobs ClientJob[]
+  notifications ClientNotification[]
 
   @@unique([email, clientId])
   @@index([clientId])
@@ -331,12 +332,14 @@ model ClientPipelineStage {
   @@index([clientId])
 }
 
-// In-app notifications for the client portal. One row per event per client
-// (not per user) — visible to all client users of that company.
+// In-app notifications for the client portal.
+// When `clientUserId` is set → visible to that specific user only.
+// When `clientUserId` is null → visible to ALL client users of the company (company-wide notice).
 model ClientNotification {
   id           String    @id @default(cuid())
   clientId     String
-  type         String    // "candidate_shared" | "candidate_stage_changed" | ...
+  clientUserId String?   // target user (null = company-wide)
+  type         String    // "candidate_shared" | "candidate_stage_changed" | "comment_posted" | "mention" | ...
   title        String
   body         String?
   link         String?
@@ -344,10 +347,12 @@ model ClientNotification {
   readAt       DateTime?
   createdAt    DateTime  @default(now())
 
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientUser ClientUser? @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
 
   @@index([clientId, createdAt])
   @@index([clientId, readAt])
+  @@index([clientUserId, readAt])
 }
 
 model CandidateSubmission {

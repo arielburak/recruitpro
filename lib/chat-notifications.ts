@@ -113,9 +113,11 @@ export async function notifyOnNewComment(args: NotifyArgs) {
         for (const cu of mentionedClientUsers) {
           if (authorKind === "client" && cu.id === authorId) continue;
           try {
+            // Target this specific user (clientUserId set → only they see it)
             await prisma.clientNotification.create({
               data: {
                 clientId: submission.job.clientId,
+                clientUserId: cu.id,
                 type: "mention",
                 title: `${authorName} mentioned you`,
                 body: truncate(preview, 140),
@@ -149,33 +151,44 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   if (commentType === "CLIENT_VISIBLE") {
     try {
       if (authorKind === "staffing") {
-        // Staffing → Client: ClientNotification + emails to client side
+        // Staffing → Client: per-user ClientNotification for all active client users + emails
         if (submission.job.clientId) {
-          await prisma.clientNotification.create({
-            data: {
-              clientId: submission.job.clientId,
-              type: "comment_posted",
-              title: alertTitle,
-              body: `${authorName} (recruiter): ${truncate(preview, 120)}`,
-              link: `/client-portal/candidates/${submissionId}`,
-              submissionId,
-            },
+          const activeClientUsers = await prisma.clientUser.findMany({
+            where: { clientId: submission.job.clientId, isActive: true },
+            select: { id: true, email: true, role: true },
           });
 
-          const [client, clientAdmins] = await Promise.all([
-            prisma.client.findUnique({
-              where: { id: submission.job.clientId },
-              select: { contactEmail: true },
-            }),
-            prisma.clientUser.findMany({
-              where: { clientId: submission.job.clientId, isActive: true, role: "ADMIN" },
-              select: { email: true },
-            }),
-          ]);
+          const mentionSet = new Set(mentions); // Skip users already notified via mention
 
+          for (const cu of activeClientUsers) {
+            if (mentionSet.has(cu.id)) continue; // already got mention notification
+            try {
+              await prisma.clientNotification.create({
+                data: {
+                  clientId: submission.job.clientId,
+                  clientUserId: cu.id,
+                  type: "comment_posted",
+                  title: alertTitle,
+                  body: `${authorName} (recruiter): ${truncate(preview, 120)}`,
+                  link: `/client-portal/candidates/${submissionId}`,
+                  submissionId,
+                },
+              });
+            } catch (e) {
+              console.error("[chat-notify] CLIENT_VISIBLE staffing->client in-app failed:", e);
+            }
+          }
+
+          // Emails: hiring manager + admins (not regular users to avoid noise)
+          const client = await prisma.client.findUnique({
+            where: { id: submission.job.clientId },
+            select: { contactEmail: true },
+          });
           const recipients = new Set<string>();
           if (client?.contactEmail) recipients.add(client.contactEmail.toLowerCase());
-          for (const a of clientAdmins) recipients.add(a.email.toLowerCase());
+          for (const cu of activeClientUsers) {
+            if (cu.role === "ADMIN") recipients.add(cu.email.toLowerCase());
+          }
           for (const to of recipients) {
             try {
               await sendNewMessageEmail({

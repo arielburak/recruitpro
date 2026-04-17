@@ -279,11 +279,20 @@ export default function AdminUsersPage() {
               >
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                      {u.role === "ADMIN" ? (
-                        <Shield className="h-5 w-5 text-indigo-600" />
-                      ) : (
-                        <User className="h-5 w-5 text-indigo-600" />
+                    <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      {u.name
+                        ?.split(" ")
+                        .map((w: string) => w[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase() || "?"}
+                      {u.role === "ADMIN" && (
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white flex items-center justify-center ring-2 ring-white"
+                          title="Admin"
+                        >
+                          <Shield className="h-2.5 w-2.5 text-indigo-600" />
+                        </span>
                       )}
                     </div>
                     <div>

@@ -133,7 +133,6 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
           </p>
         </div>
       </Link>
-      <StaffingNotificationBell />
       <button
         onClick={() => signOut()}
         className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"
@@ -170,22 +169,25 @@ export function Sidebar() {
 
   const sidebarContent = (
     <>
-      {/* Logo */}
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-5 py-5 hover:opacity-90 transition-opacity">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-          <Briefcase size={16} className="text-white" />
-        </div>
-        <div>
-          <span className="text-lg font-semibold tracking-tight text-white leading-tight block">
-            Recruiting ATS
-          </span>
-          {session?.user?.organizationName && (
-            <span className="text-[11px] text-gray-400 leading-tight block">
-              {session.user.organizationName}
+      {/* Logo + Notification bell */}
+      <div className="flex items-center justify-between px-5 py-5">
+        <Link href="/dashboard" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity min-w-0">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600">
+            <Briefcase size={16} className="text-white" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-lg font-semibold tracking-tight text-white leading-tight block truncate">
+              Recruiting ATS
             </span>
-          )}
-        </div>
-      </Link>
+            {session?.user?.organizationName && (
+              <span className="text-[11px] text-gray-400 leading-tight block truncate">
+                {session.user.organizationName}
+              </span>
+            )}
+          </div>
+        </Link>
+        <StaffingNotificationBell />
+      </div>
 
       {/* Separator */}
       <div className="mx-4 border-t border-white/[0.06]" />
