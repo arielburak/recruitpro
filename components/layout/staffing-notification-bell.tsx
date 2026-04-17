@@ -105,7 +105,7 @@ export function StaffingNotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-9 z-50 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden text-gray-900">
+        <div className="absolute left-full top-0 ml-2 z-50 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden text-gray-900">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <p className="text-sm font-semibold">Notifications</p>
             {unreadCount > 0 && (
