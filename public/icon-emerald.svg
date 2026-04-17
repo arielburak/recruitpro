@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Recruiting ATS">
+  <defs>
+    <linearGradient id="bgE" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#bgE)"/>
+
+  <!-- Subtle inner border for depth -->
+  <rect x="2" y="2" width="508" height="508" rx="110" ry="110" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
+
+  <!-- "R" mark, single-line path -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M156 108H304C365 108 408 152 408 213C408 261 380 299 338 312L414 404H332L264 320H232V404H156ZM232 174V256H296C322 256 336 240 336 215C336 190 322 174 296 174Z"/>
+</svg>
