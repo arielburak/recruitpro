@@ -170,8 +170,12 @@ export function Sidebar() {
   const sidebarContent = (
     <>
       {/* Logo + Notification bell */}
-      <div className="flex items-center justify-between px-5 py-5">
-        <Link href="/dashboard" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity min-w-0">
+      <div className="flex items-center justify-between gap-2 px-5 py-5">
+        <Link
+          href="/dashboard"
+          onClick={() => setMobileOpen(false)}
+          className="flex items-center gap-2.5 hover:opacity-90 transition-opacity min-w-0 flex-1"
+        >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600">
             <Briefcase size={16} className="text-white" />
           </div>
@@ -186,7 +190,9 @@ export function Sidebar() {
             )}
           </div>
         </Link>
-        <StaffingNotificationBell />
+        <div className="shrink-0">
+          <StaffingNotificationBell />
+        </div>
       </div>
 
       {/* Separator */}
