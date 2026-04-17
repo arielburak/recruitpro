@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put, del, getDownloadUrl } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 
@@ -49,15 +49,14 @@ export async function POST(request: Request) {
       contentType: file.type,
     });
 
-    await prisma.client.update({
+    const updated = await prisma.client.update({
       where: { id: ctx.clientId },
       data: { logo: blob.url },
+      select: { updatedAt: true },
     });
 
-    let displayUrl = blob.url;
-    try { displayUrl = getDownloadUrl(blob.url); } catch {}
-
-    return NextResponse.json({ url: displayUrl });
+    const v = new Date(updated.updatedAt).getTime();
+    return NextResponse.json({ url: `/api/client-portal/logo/image?v=${v}` });
   } catch (error: any) {
     console.error("[client logo upload] error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
@@ -90,25 +89,21 @@ export async function DELETE() {
   }
 }
 
-// GET: return current logo url (any active client user).
-// Since blobs are private, we return a signed download URL for rendering.
+// GET: returns whether the client has a logo uploaded.
+// The actual image bytes are served by /api/client-portal/logo/image.
 export async function GET() {
   try {
     const ctx = await getClientContext();
     const client = await prisma.client.findUnique({
       where: { id: ctx.clientId },
-      select: { logo: true, name: true },
+      select: { logo: true, name: true, updatedAt: true },
     });
-    let displayUrl: string | null = null;
-    if (client?.logo) {
-      try {
-        displayUrl = getDownloadUrl(client.logo);
-      } catch (e) {
-        console.error("[client logo] getDownloadUrl failed:", e);
-        displayUrl = client.logo;
-      }
-    }
-    return NextResponse.json({ logo: displayUrl, name: client?.name || null });
+
+    const hasLogo = !!client?.logo;
+    const v = client?.updatedAt ? new Date(client.updatedAt).getTime() : 0;
+    const imageUrl = hasLogo ? `/api/client-portal/logo/image?v=${v}` : null;
+
+    return NextResponse.json({ logo: imageUrl, name: client?.name || null });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

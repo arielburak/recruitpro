@@ -90,6 +90,7 @@ function NavLink({
 
 function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] }) {
   const [title, setTitle] = useState<string | null>(null);
+  const orgLogo = useLogoUrl("/api/organization/logo");
   const initials =
     session?.user?.name
       ?.split(" ")
@@ -116,31 +117,49 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
   const subtitle = title || (role === "ADMIN" ? "Admin" : role === "USER" ? "User" : "Member");
 
   return (
-    <div className="flex items-center gap-3">
-      <Link
-        href="/profile"
-        className="flex items-center gap-3 flex-1 min-w-0 rounded-md -mx-1 px-1 py-1 transition-colors hover:bg-white/5 group"
-        title="View profile"
-      >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
-          {initials}
+    <div className="space-y-3">
+      {/* Company logo row (shown only when uploaded) */}
+      {orgLogo && session?.user?.organizationName && (
+        <div className="flex items-center gap-2 rounded-md px-1 py-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={orgLogo}
+            alt={session.user.organizationName}
+            className="h-6 w-6 rounded object-contain bg-white/95 p-0.5 shrink-0"
+          />
+          <span className="text-[11px] font-medium text-gray-300 truncate">
+            {session.user.organizationName}
+          </span>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="truncate text-sm font-medium text-gray-200 group-hover:text-white">
-            {session?.user?.name || "User"}
-          </p>
-          <p className="truncate text-xs text-gray-500">
-            {subtitle}
-          </p>
-        </div>
-      </Link>
-      <button
-        onClick={() => signOut()}
-        className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"
-        title="Sign out"
-      >
-        <LogOut size={16} />
-      </button>
+      )}
+
+      {/* User row */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/profile"
+          className="flex items-center gap-3 flex-1 min-w-0 rounded-md -mx-1 px-1 py-1 transition-colors hover:bg-white/5 group"
+          title="View profile"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-medium text-gray-200 group-hover:text-white">
+              {session?.user?.name || "User"}
+            </p>
+            <p className="truncate text-xs text-gray-500">
+              {subtitle}
+            </p>
+          </div>
+        </Link>
+        <button
+          onClick={() => signOut()}
+          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"
+          title="Sign out"
+        >
+          <LogOut size={16} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -150,7 +169,6 @@ export function Sidebar() {
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isAdmin = session?.user?.role === "ADMIN";
-  const orgLogo = useLogoUrl("/api/organization/logo");
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -191,16 +209,8 @@ export function Sidebar() {
               Recruiting ATS
             </span>
             {session?.user?.organizationName && (
-              <span className="text-[11px] text-gray-400 leading-tight flex items-center gap-1.5 truncate">
-                {orgLogo && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={orgLogo}
-                    alt=""
-                    className="h-3.5 w-3.5 rounded-sm object-contain bg-white/80 p-0.5"
-                  />
-                )}
-                <span className="truncate">{session.user.organizationName}</span>
+              <span className="text-[11px] text-gray-400 leading-tight block truncate">
+                {session.user.organizationName}
               </span>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put, del, getDownloadUrl } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 
@@ -50,16 +50,14 @@ export async function POST(request: Request) {
       contentType: file.type,
     });
 
-    await prisma.organization.update({
+    const updated = await prisma.organization.update({
       where: { id: ctx.organizationId },
       data: { logo: blob.url },
+      select: { updatedAt: true },
     });
 
-    // Return a signed display URL so the browser can render immediately
-    let displayUrl = blob.url;
-    try { displayUrl = getDownloadUrl(blob.url); } catch {}
-
-    return NextResponse.json({ url: displayUrl });
+    const v = new Date(updated.updatedAt).getTime();
+    return NextResponse.json({ url: `/api/organization/logo/image?v=${v}` });
   } catch (error: any) {
     console.error("[org logo upload] error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
@@ -92,25 +90,23 @@ export async function DELETE() {
   }
 }
 
-// GET: return current logo url (anyone in the org).
-// Since blobs are private, we return a signed download URL that the browser can render.
+// GET: returns whether the organization has a logo uploaded.
+// The actual image bytes are served by /api/organization/logo/image.
+// We append a cache-busting version query param so the browser refreshes
+// when the logo is replaced.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
     const org = await prisma.organization.findUnique({
       where: { id: ctx.organizationId },
-      select: { logo: true, name: true },
+      select: { logo: true, name: true, updatedAt: true },
     });
-    let displayUrl: string | null = null;
-    if (org?.logo) {
-      try {
-        displayUrl = getDownloadUrl(org.logo);
-      } catch (e) {
-        console.error("[org logo] getDownloadUrl failed:", e);
-        displayUrl = org.logo;
-      }
-    }
-    return NextResponse.json({ logo: displayUrl, name: org?.name || null });
+
+    const hasLogo = !!org?.logo;
+    const v = org?.updatedAt ? new Date(org.updatedAt).getTime() : 0;
+    const imageUrl = hasLogo ? `/api/organization/logo/image?v=${v}` : null;
+
+    return NextResponse.json({ logo: imageUrl, name: org?.name || null });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

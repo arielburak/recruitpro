@@ -36,16 +36,8 @@ export default function ClientPortalLayout({
                   Client Portal
                 </h1>
                 {(session?.user as any)?.clientName ? (
-                  <p className="text-[11px] text-gray-400 leading-tight flex items-center gap-1.5">
-                    {clientLogo && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={clientLogo}
-                        alt=""
-                        className="h-3.5 w-3.5 rounded-sm object-contain bg-gray-50 p-0.5"
-                      />
-                    )}
-                    <span>{(session?.user as any)?.clientName}</span>
+                  <p className="text-[11px] text-gray-400 leading-tight">
+                    {(session?.user as any)?.clientName}
                   </p>
                 ) : (
                   <p className="text-xs text-gray-500 leading-tight">
@@ -87,6 +79,19 @@ export default function ClientPortalLayout({
           <div className="flex items-center gap-2">
             {showNav ? (
               <>
+                {clientLogo && (
+                  <div
+                    className="hidden md:flex items-center gap-1.5 pr-2 border-r border-gray-200 mr-1"
+                    title={(session?.user as any)?.clientName || ""}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={clientLogo}
+                      alt={(session?.user as any)?.clientName || ""}
+                      className="h-7 w-7 rounded-md object-contain bg-gray-50 p-0.5 border border-gray-100"
+                    />
+                  </div>
+                )}
                 <NotificationBell />
                 <Link
                   href="/client-portal/settings"
