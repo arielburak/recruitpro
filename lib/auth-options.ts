@@ -3,7 +3,19 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import bcrypt from "bcryptjs";
+import { cookies } from "next/headers";
 import { prisma } from "./prisma";
+
+// Helper — reads the per-portal OAuth hint cookie set by the UI before
+// calling signIn("google" | "azure-ad"). Cookie is short-lived (60s).
+async function getOAuthPortal(): Promise<"client" | "staffing"> {
+  try {
+    const c = await cookies();
+    return c.get("oauth-portal")?.value === "client" ? "client" : "staffing";
+  } catch {
+    return "staffing";
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -102,6 +114,21 @@ export const authOptions: NextAuthOptions = {
       // OAuth flow - find or create user
       if (!user.email) return false;
 
+      const portal = await getOAuthPortal();
+
+      // === Client portal OAuth flow ===
+      // Only existing ClientUsers can sign in this way; we don't auto-create
+      // Client organisations from OAuth to avoid ghost client accounts.
+      if (portal === "client") {
+        const existing = await prisma.clientUser.findFirst({
+          where: { email: user.email, isActive: true },
+        });
+        if (existing) return true;
+        // Bounce back to client login with an explanatory error.
+        return "/client-portal/login?error=no-client-account";
+      }
+
+      // === Staffing portal OAuth flow (default) ===
       const existingUser = await prisma.user.findUnique({
         where: { email: user.email },
       });
@@ -164,20 +191,40 @@ export const authOptions: NextAuthOptions = {
           token.clientName = undefined;
         }
       } else if (user && account?.provider && account.provider !== "credentials") {
-        // OAuth flow - look up the DB user (always staffing side)
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email! },
-          include: { organization: true },
-        });
-        if (dbUser) {
-          token.id = dbUser.id;
-          token.role = dbUser.role;
-          token.organizationId = dbUser.organizationId;
-          token.organizationName = dbUser.organization.name;
-          token.isClientUser = false;
-          // Clear any client fields
-          token.clientId = undefined;
-          token.clientName = undefined;
+        // OAuth flow — route based on the portal cookie set before signIn.
+        const portal = await getOAuthPortal();
+
+        if (portal === "client") {
+          const dbClient = await prisma.clientUser.findFirst({
+            where: { email: user.email!, isActive: true },
+            include: { client: true },
+          });
+          if (dbClient) {
+            token.id = dbClient.id;
+            token.name = dbClient.name;
+            token.isClientUser = true;
+            token.clientId = dbClient.clientId;
+            token.clientName = dbClient.client.name;
+            // Clear staffing fields
+            token.role = undefined;
+            token.organizationId = undefined;
+            token.organizationName = undefined;
+          }
+        } else {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: user.email! },
+            include: { organization: true },
+          });
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.role = dbUser.role;
+            token.organizationId = dbUser.organizationId;
+            token.organizationName = dbUser.organization.name;
+            token.isClientUser = false;
+            // Clear any client fields
+            token.clientId = undefined;
+            token.clientName = undefined;
+          }
         }
       }
       return token;
