@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Briefcase, CheckCircle2, XCircle } from "lucide-react";
 
@@ -44,6 +45,7 @@ export default function InvitePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.get("name") as string,
+          title: formData.get("title") as string,
           password: formData.get("password") as string,
         }),
       });
@@ -139,16 +141,25 @@ export default function InvitePage({
                 id="name"
                 name="name"
                 placeholder="John Smith"
+                defaultValue={invite?.name || ""}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Create Password</Label>
+              <Label htmlFor="title">Job Title</Label>
               <Input
+                id="title"
+                name="title"
+                placeholder="e.g. Senior Recruiter"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Create Password</Label>
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 placeholder="Min. 8 characters"
                 minLength={8}
                 required

@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, X } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 export default function EditCandidatePage() {
@@ -19,6 +21,8 @@ export default function EditCandidatePage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [candidate, setCandidate] = useState<any>(null);
+  const [phone, setPhone] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("USD");
 
   useEffect(() => {
     fetch(`/api/candidates/${params.id}`)
@@ -26,6 +30,8 @@ export default function EditCandidatePage() {
       .then((data) => {
         setCandidate(data);
         setSkills(data.skills || []);
+        setPhone(data.phone || "");
+        setSalaryCurrency(data.salaryCurrency || "USD");
         setFetching(false);
       });
   }, [params.id]);
@@ -48,7 +54,7 @@ export default function EditCandidatePage() {
       firstName: fd.get("firstName") as string,
       lastName: fd.get("lastName") as string,
       email: fd.get("email") as string,
-      phone: fd.get("phone") as string,
+      phone,
       linkedIn: fd.get("linkedIn") as string,
       location: fd.get("location") as string,
       currentTitle: fd.get("currentTitle") as string,
@@ -59,6 +65,7 @@ export default function EditCandidatePage() {
       desiredSalary: fd.get("desiredSalary")
         ? Number(fd.get("desiredSalary"))
         : null,
+      salaryCurrency,
       source: fd.get("source") as string,
       summary: fd.get("summary") as string,
       skills,
@@ -120,7 +127,7 @@ export default function EditCandidatePage() {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input name="phone" defaultValue={candidate.phone || ""} />
+                <PhoneInput value={phone} onChange={setPhone} />
               </div>
             </div>
             <div className="space-y-2">
@@ -141,13 +148,21 @@ export default function EditCandidatePage() {
                 <Input name="currentCompany" defaultValue={candidate.currentCompany || ""} />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <CurrencyPicker
+                name="salaryCurrency"
+                value={salaryCurrency}
+                onChange={setSalaryCurrency}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Current Salary ($)</Label>
+                <Label>Current Salary ({getCurrency(salaryCurrency).symbol})</Label>
                 <Input name="currentSalary" type="number" defaultValue={candidate.currentSalary || ""} />
               </div>
               <div className="space-y-2">
-                <Label>Desired Salary ($)</Label>
+                <Label>Desired Salary ({getCurrency(salaryCurrency).symbol})</Label>
                 <Input name="desiredSalary" type="number" defaultValue={candidate.desiredSalary || ""} />
               </div>
             </div>

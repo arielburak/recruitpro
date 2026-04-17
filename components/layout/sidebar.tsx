@@ -18,16 +18,23 @@ import {
   LogOut,
   Upload,
   Inbox,
+  Calendar,
+  User,
+  UserRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { StaffingNotificationBell } from "./staffing-notification-bell";
+import { useLogoUrl } from "@/components/logo-uploader";
 
 const mainNavItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Candidates", href: "/candidates", icon: Users },
   { label: "Jobs", href: "/jobs", icon: Briefcase },
   { label: "Clients", href: "/clients", icon: Building2 },
+  { label: "Contacts", href: "/contacts", icon: UserRound },
   { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
+  { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Import", href: "/import", icon: Upload },
   { label: "Engagements", href: "/engagements", icon: Inbox },
 ];
@@ -35,6 +42,10 @@ const mainNavItems = [
 const adminNavItems = [
   { label: "Team", href: "/admin/users", icon: UserPlus },
   { label: "Settings", href: "/admin/settings", icon: Settings },
+];
+
+const accountNavItems = [
+  { label: "Profile", href: "/profile", icon: User },
 ];
 
 function NavLink({
@@ -78,6 +89,8 @@ function NavLink({
 }
 
 function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] }) {
+  const [title, setTitle] = useState<string | null>(null);
+  const orgLogo = useLogoUrl("/api/organization/logo");
   const initials =
     session?.user?.name
       ?.split(" ")
@@ -86,26 +99,81 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
       .toUpperCase()
       .slice(0, 2) || "?";
 
+  useEffect(() => {
+    if (!session?.user) return;
+    let cancelled = false;
+    fetch("/api/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.title) setTitle(data.title);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user]);
+
+  const role = session?.user?.role;
+  const subtitle = title || (role === "ADMIN" ? "Admin" : role === "USER" ? "User" : "Member");
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
-        {initials}
+    <div className="space-y-3">
+      {/* Company workspace indicator (logo + name) */}
+      {session?.user?.organizationName && (
+        <div className="flex items-center gap-2.5 px-1">
+          {orgLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={orgLogo}
+              alt={session.user.organizationName}
+              className="h-8 w-8 rounded-md object-contain bg-white p-1 shrink-0 ring-1 ring-white/10"
+            />
+          ) : (
+            <div className="h-8 w-8 rounded-md bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400 shrink-0 ring-1 ring-white/10">
+              {session.user.organizationName
+                .split(" ")
+                .map((w) => w[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+          )}
+          <span className="text-sm font-semibold text-gray-200 truncate">
+            {session.user.organizationName}
+          </span>
+        </div>
+      )}
+
+      {/* Separator */}
+      <div className="border-t border-white/[0.06]" />
+
+      {/* User row */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/profile"
+          className="flex items-center gap-3 flex-1 min-w-0 rounded-md -mx-1 px-1 py-1 transition-colors hover:bg-white/5 group"
+          title="View profile"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600/80 text-xs font-bold text-white">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-medium text-gray-200 group-hover:text-white">
+              {session?.user?.name || "User"}
+            </p>
+            <p className="truncate text-xs text-gray-500">
+              {subtitle}
+            </p>
+          </div>
+        </Link>
+        <button
+          onClick={() => signOut()}
+          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300 shrink-0"
+          title="Sign out"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="truncate text-sm font-medium text-gray-200">
-          {session?.user?.name || "User"}
-        </p>
-        <p className="truncate text-xs text-gray-500">
-          {session?.user?.role || "Member"}
-        </p>
-      </div>
-      <button
-        onClick={() => signOut()}
-        className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300"
-        title="Sign out"
-      >
-        <LogOut size={16} />
-      </button>
     </div>
   );
 }
@@ -135,14 +203,30 @@ export function Sidebar() {
 
   const sidebarContent = (
     <>
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-          <Briefcase size={16} className="text-white" />
+      {/* Logo + Notification bell */}
+      <div className="flex items-center justify-between gap-2 px-5 py-5">
+        <Link
+          href="/dashboard"
+          onClick={() => setMobileOpen(false)}
+          className="flex items-center gap-2.5 hover:opacity-90 transition-opacity min-w-0 flex-1"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon.svg"
+            alt="Recruiting ATS"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 rounded-lg"
+          />
+          <div className="min-w-0">
+            <span className="text-lg font-semibold tracking-tight text-white leading-tight block truncate">
+              Recruiting ATS
+            </span>
+          </div>
+        </Link>
+        <div className="shrink-0">
+          <StaffingNotificationBell />
         </div>
-        <span className="text-lg font-semibold tracking-tight text-white">
-          Recruiting ATS
-        </span>
       </div>
 
       {/* Separator */}
@@ -179,6 +263,20 @@ export function Sidebar() {
             ))}
           </>
         )}
+
+        {/* Account section (for everyone) */}
+        <div className="!my-4 mx-0 border-t border-white/[0.06]" />
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+          Account
+        </p>
+        {accountNavItems.map((item) => (
+          <NavLink
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            onClick={() => setMobileOpen(false)}
+          />
+        ))}
       </nav>
 
       {/* Separator */}
@@ -201,14 +299,20 @@ export function Sidebar() {
         >
           <Menu size={22} />
         </button>
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600">
-            <Briefcase size={13} className="text-white" />
+        <Link href="/dashboard" className="flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon.svg" alt="Recruiting ATS" width={28} height={28} className="h-7 w-7 rounded-lg" />
+          <div>
+            <span className="text-base font-semibold text-gray-900 leading-tight block">
+              Recruiting ATS
+            </span>
+            {session?.user?.organizationName && (
+              <span className="text-[10px] text-gray-400 leading-tight block">
+                {session.user.organizationName}
+              </span>
+            )}
           </div>
-          <span className="text-base font-semibold text-gray-900">
-            Recruiting ATS
-          </span>
-        </div>
+        </Link>
       </div>
 
       {/* Mobile overlay */}

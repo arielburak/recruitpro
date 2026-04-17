@@ -29,34 +29,76 @@ model Organization {
   subscription Subscription?
   activities   Activity[]
   engagements  FirmEngagement[]
+  interviews   Interview[]
 }
 
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
   name           String
+  title          String?
   passwordHash   String
-  role           UserRole @default(RECRUITER)
+  role           UserRole @default(USER)
   avatar         String?
   isActive       Boolean  @default(true)
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization   Organization          @relation(fields: [organizationId], references: [id])
-  candidates     Candidate[]
-  submissions    CandidateSubmission[] @relation("SubmittedBy")
-  comments       Comment[]
-  activities     Activity[]
-  jobAssignments JobAssignment[]
+  organization          Organization          @relation(fields: [organizationId], references: [id])
+  candidates            Candidate[]
+  submissions           CandidateSubmission[] @relation("SubmittedBy")
+  comments              Comment[]
+  activities            Activity[]
+  jobAssignments        JobAssignment[]
+  createdInterviews     Interview[]           @relation("InterviewCreator")
+  interviewAssignments  InterviewAssignment[]
+  interviewFeedback     InterviewFeedback[]
+  integrations          UserIntegration[]
+  notifications         UserNotification[]
 
   @@index([organizationId])
 }
 
+// In-app notifications for staffing users (one per user, personal inbox).
+// Mirrors ClientNotification on the client side.
+model UserNotification {
+  id           String    @id @default(cuid())
+  userId       String
+  type         String    // "comment_posted" | "mention" | "candidate_shared" | ...
+  title        String
+  body         String?
+  link         String?
+  submissionId String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+model UserIntegration {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // "google_calendar" | "microsoft_teams"
+  accessToken  String   @db.Text
+  refreshToken String?  @db.Text
+  expiresAt    DateTime?
+  email        String?  // connected account email
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
 enum UserRole {
   ADMIN
-  PARTNER
-  RECRUITER
+  USER
 }
 
 // ─── CLIENTS (Hiring Companies) ───
@@ -66,10 +108,14 @@ model Client {
   name           String
   industry       String?
   website        String?
+  logo           String?
   contactName    String?
   contactEmail   String?
   contactPhone   String?
   notes          String?
+  defaultCurrency  String?  @default("USD")
+  defaultFeeType   String?  @default("PERCENTAGE")
+  defaultFeeAmount Decimal?
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
   organizationId String?
@@ -84,6 +130,8 @@ model Client {
   placements   Placement[]
   portalTokens ClientPortalToken[]
   clientJobs   ClientJob[]
+  pipelineStages ClientPipelineStage[]
+  notifications  ClientNotification[]
 
   @@index([organizationId])
 }
@@ -109,6 +157,7 @@ model Contact {
   organization Organization @relation(fields: [organizationId], references: [id])
   jobs         Job[]        @relation("HiringManager")
   deals        Deal[]
+  interviews   InterviewClientContact[]
 
   @@index([clientId])
   @@index([organizationId])
@@ -118,7 +167,9 @@ model ClientUser {
   id           String   @id @default(cuid())
   email        String
   name         String
+  title        String?
   passwordHash String?
+  role         UserRole @default(USER)
   clientId     String
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -128,6 +179,7 @@ model ClientUser {
   comments   Comment[]
   ratings    CandidateRating[]
   clientJobs ClientJob[]
+  notifications ClientNotification[]
 
   @@unique([email, clientId])
   @@index([clientId])
@@ -162,6 +214,7 @@ model Candidate {
   currentCompany String?
   currentSalary  Decimal?
   desiredSalary  Decimal?
+  salaryCurrency String   @default("USD")
   skills         String[] @default([])
   summary        String?
   source         String?
@@ -178,6 +231,7 @@ model Candidate {
   documents    Document[]
   comments     Comment[]             @relation("CandidateComments")
   activities   Activity[]            @relation("CandidateActivities")
+  interviews   Interview[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -191,10 +245,12 @@ model Job {
   title          String
   description    String?
   status         JobStatus @default(OPEN)
+  currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
   salary         String?
   location       String?
+  workMode       String    @default("ON_SITE")
   clientId         String
   hiringManagerId  String?
   organizationId   String
@@ -208,6 +264,8 @@ model Job {
   submissions    CandidateSubmission[]
   assignments    JobAssignment[]
   placements     Placement[]
+  documents      Document[]
+  interviews     Interview[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -254,27 +312,76 @@ model PipelineStage {
   @@index([jobId])
 }
 
+// Client-owned pipeline stages — independent from recruiter's PipelineStage.
+// One set per Client (company-wide, not per-job). Default stages created on
+// client creation: Under Review, Interviewing, Offered, Placed, Lost, Rejected.
+model ClientPipelineStage {
+  id         String   @id @default(cuid())
+  name       String
+  order      Int
+  color      String   @default("#f59e0b")
+  isTerminal Boolean  @default(false)
+  kind       String?  // Optional semantic: "positive" | "negative" | null
+  clientId   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client      Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  submissions CandidateSubmission[]
+
+  @@unique([clientId, order])
+  @@index([clientId])
+}
+
+// In-app notifications for the client portal.
+// When `clientUserId` is set → visible to that specific user only.
+// When `clientUserId` is null → visible to ALL client users of the company (company-wide notice).
+model ClientNotification {
+  id           String    @id @default(cuid())
+  clientId     String
+  clientUserId String?   // target user (null = company-wide)
+  type         String    // "candidate_shared" | "candidate_stage_changed" | "comment_posted" | "mention" | ...
+  title        String
+  body         String?
+  link         String?
+  submissionId String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientUser ClientUser? @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+  @@index([clientId, readAt])
+  @@index([clientUserId, readAt])
+}
+
 model CandidateSubmission {
   id                 String   @id @default(cuid())
   candidateId        String
   jobId              String
   stageId            String
+  clientStageId      String?
   submittedBy        String
   notes              String?
   isSharedWithClient Boolean  @default(false)
+  sharedAt           DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   candidate Candidate       @relation(fields: [candidateId], references: [id])
   job       Job             @relation(fields: [jobId], references: [id])
   stage     PipelineStage   @relation(fields: [stageId], references: [id])
+  clientStage ClientPipelineStage? @relation(fields: [clientStageId], references: [id])
   submitter  User            @relation("SubmittedBy", fields: [submittedBy], references: [id])
   comments   Comment[]       @relation("SubmissionComments")
   ratings    CandidateRating[]
   placement  Placement?
+  interviews Interview[]
 
   @@unique([candidateId, jobId])
   @@index([jobId, stageId])
+  @@index([clientStageId])
 }
 
 model CandidateRating {
@@ -315,25 +422,129 @@ model Comment {
 }
 
 enum CommentType {
-  INTERNAL
-  CLIENT_VISIBLE
+  INTERNAL         // staffing-firm internal, not visible to client
+  CLIENT_VISIBLE   // shared between staffing + client
+  CLIENT_INTERNAL  // client-team internal, not visible to staffing firm
+}
+
+// ─── INTERVIEWS ───
+
+model Interview {
+  id             String          @id @default(cuid())
+  title          String
+  startTime      DateTime
+  endTime        DateTime
+  type           InterviewType   @default(VIDEO)
+  status         InterviewStatus @default(SCHEDULED)
+  notes          String?
+  meetingLink    String?
+  location       String?
+  timezone       String          @default("America/Argentina/Buenos_Aires")
+  submissionId   String
+  jobId          String
+  candidateId    String
+  organizationId String
+  createdBy      String
+  // Google Calendar integration — populated when the interview is
+  // created with a Google Meet link. Used to PATCH the event later
+  // (e.g. to add a new attendee if the candidate email changes).
+  googleEventId          String?
+  googleCalendarOwnerId  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  submission   CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  job          Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate    Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  creator      User                @relation("InterviewCreator", fields: [createdBy], references: [id])
+  interviewers    InterviewAssignment[]
+  clientContacts  InterviewClientContact[]
+  feedback        InterviewFeedback[]
+
+  @@index([organizationId, startTime])
+  @@index([candidateId])
+  @@index([jobId])
+  @@index([submissionId])
+}
+
+model InterviewAssignment {
+  id          String @id @default(cuid())
+  interviewId String
+  userId      String
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, userId])
+}
+
+model InterviewClientContact {
+  id          String @id @default(cuid())
+  interviewId String
+  contactId   String
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, contactId])
+}
+
+model InterviewFeedback {
+  id           String   @id @default(cuid())
+  interviewId  String
+  type         String   @default("INTERNAL") // INTERNAL | CLIENT
+  rating       Int?     // 1-5 star rating
+  comment      String   @db.Text
+  authorName   String   // For client feedback (no user account needed)
+  userId       String?  // Null for client feedback
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([interviewId])
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  IN_PERSON
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 // ─── DOCUMENTS ───
 
 model Document {
-  id          String   @id @default(cuid())
-  name        String
-  url         String
-  type        String
-  size        Int
-  candidateId String
-  uploadedBy  String
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  name         String
+  url          String
+  type         String
+  size         Int
+  category     String?
+  candidateId  String?
+  jobId        String?
+  clientJobId  String?
+  dealId       String?
+  uploadedBy   String
+  createdAt    DateTime @default(now())
 
-  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+  deal      Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
+  @@index([jobId])
+  @@index([clientJobId])
+  @@index([dealId])
 }
 
 // ─── ACTIVITIES ───
@@ -362,6 +573,7 @@ model Deal {
   id             String     @id @default(cuid())
   title          String
   value          Decimal?
+  currency       String     @default("USD")
   probability    Int?       @default(50)
   stage          DealStage  @default(LEAD)
   expectedClose  DateTime?
@@ -376,6 +588,7 @@ model Deal {
   client       Client       @relation(fields: [clientId], references: [id])
   contact      Contact?     @relation(fields: [contactId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])
+  documents    Document[]
 
   @@index([organizationId])
   @@index([organizationId, stage])
@@ -427,13 +640,14 @@ enum InvoiceStatus {
 // ─── CLIENT JOBS (posted by clients directly) ───
 
 model ClientJob {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  requirements String?
-  location     String?
-  salaryRange  String?
-  jobType      String   @default("Full-time")
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  requirements   String?
+  location       String?
+  salaryRange    String?
+  salaryCurrency String   @default("USD")
+  jobType        String   @default("Full-time")
   isRemote     Boolean  @default(false)
   status       String   @default("OPEN")
   clientId     String
@@ -441,9 +655,11 @@ model ClientJob {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  client      Client           @relation(fields: [clientId], references: [id])
-  postedBy    ClientUser       @relation(fields: [postedById], references: [id])
-  engagements FirmEngagement[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  postedBy           ClientUser          @relation(fields: [postedById], references: [id])
+  engagements        FirmEngagement[]
+  pendingFirmInvites PendingFirmInvite[]
+  documents          Document[]
 
   @@index([clientId])
   @@index([status])
@@ -467,6 +683,22 @@ model FirmEngagement {
   @@unique([clientJobId, organizationId])
   @@index([organizationId])
   @@index([organizationId, status])
+}
+
+// ─── PENDING FIRM INVITES (email invites before firm registers) ───
+
+model PendingFirmInvite {
+  id          String   @id @default(cuid())
+  email       String
+  clientJobId String
+  message     String?
+  clientId    String
+  createdAt   DateTime @default(now())
+
+  clientJob ClientJob @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@unique([email, clientJobId])
 }
 
 // ─── BILLING ───
@@ -516,8 +748,9 @@ model PasswordResetToken {
 model UserInvite {
   id             String   @id @default(cuid())
   email          String
+  name           String?
   token          String   @unique @default(cuid())
-  role           UserRole @default(RECRUITER)
+  role           UserRole @default(USER)
   organizationId String
   expiresAt      DateTime
   usedAt         DateTime?

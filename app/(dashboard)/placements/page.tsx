@@ -178,7 +178,7 @@ export default function PlacementsPage() {
                         {p.startDate ? formatDate(p.startDate) : "-"}
                       </TableCell>
                       <TableCell>
-                        {p.feeAmount ? formatCurrency(Number(p.feeAmount)) : "-"}
+                        {p.feeAmount ? formatCurrency(Number(p.feeAmount), p.job?.currency || "USD") : "-"}
                       </TableCell>
                       <TableCell>
                         <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>

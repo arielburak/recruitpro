@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     const ctx = await getOrgContext();
     const body = await request.json();
 
-    const { title, value, probability, stage, expectedClose, notes, clientId, contactId, ownerId } = body;
+    const { title, value, currency, probability, stage, expectedClose, notes, clientId, contactId, ownerId } = body;
 
     if (!title || !clientId) {
       return NextResponse.json(
@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       data: {
         title,
         value,
+        currency: currency || "USD",
         probability,
         stage,
         expectedClose: expectedClose ? new Date(expectedClose) : undefined,

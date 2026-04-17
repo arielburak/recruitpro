@@ -8,6 +8,9 @@ export const clientSchema = z.object({
   contactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   contactPhone: z.string().optional(),
   notes: z.string().optional(),
+  defaultCurrency: z.string().optional(),
+  defaultFeeType: z.string().optional(),
+  defaultFeeAmount: z.number().optional().nullable(),
 });
 
 export type ClientFormData = z.infer<typeof clientSchema>;

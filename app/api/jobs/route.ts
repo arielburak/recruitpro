@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Recruiters only see jobs they're assigned to
-    if (ctx.role === "RECRUITER") {
+    // Non-admin users only see jobs they're assigned to
+    if (ctx.role !== "ADMIN") {
       where.assignments = { some: { userId: ctx.userId } };
     }
 
@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
     }
 
     const jobInclude = {
-      client: { select: { name: true } },
+      client: { select: { id: true, name: true } },
       _count: { select: { submissions: true } },
-      assignments: { include: { user: { select: { name: true } } } },
+      assignments: { include: { user: { select: { id: true, name: true } } } },
     };
 
     if (!paginated) {

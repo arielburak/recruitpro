@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Briefcase, CheckCircle2, ShieldCheck, Lock } from "lucide-react";
 
@@ -147,10 +148,9 @@ function ResetPasswordContent() {
 
                 <div className="space-y-2">
                   <Label htmlFor="password">New password</Label>
-                  <Input
+                  <PasswordInput
                     id="password"
                     name="password"
-                    type="password"
                     className="focus-visible:ring-indigo-500"
                     minLength={8}
                     required
@@ -159,10 +159,9 @@ function ResetPasswordContent() {
 
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm password</Label>
-                  <Input
+                  <PasswordInput
                     id="confirmPassword"
                     name="confirmPassword"
-                    type="password"
                     className="focus-visible:ring-indigo-500"
                     minLength={8}
                     required

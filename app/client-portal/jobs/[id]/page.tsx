@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,27 @@ import {
   Phone,
   Plus,
   X,
+  UserPlus,
+  Copy,
+  Check,
+  Pencil,
+  Save,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { formatDate } from "@/lib/utils";
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -35,9 +55,130 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
 
+  // Team member management state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [memberName, setMemberName] = useState("");
+  const [memberTitle, setMemberTitle] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
+  const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Candidates for this job
+  const [jobCandidates, setJobCandidates] = useState<any[]>([]);
+
+  // Documents state
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [uploadingJD, setUploadingJD] = useState(false);
+  const [uploadingAdditional, setUploadingAdditional] = useState(false);
+  const additionalFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    requirements: "",
+    location: "",
+    salaryRange: "",
+    salaryCurrency: "USD",
+    jobType: "Full-time",
+    workMode: "ON_SITE",
+    status: "OPEN",
+  });
+
+  function startEditing() {
+    setEditForm({
+      title: job.title || "",
+      description: job.description || "",
+      requirements: job.requirements || "",
+      location: job.location || "",
+      salaryRange: job.salaryRange || "",
+      salaryCurrency: job.salaryCurrency || "USD",
+      jobType: job.jobType || "Full-time",
+      workMode: job.isRemote ? "REMOTE" : "ON_SITE",
+      status: job.status || "OPEN",
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        setEditing(false);
+        fetchJob();
+      }
+    } catch {}
+    setSaving(false);
+  }
+
   useEffect(() => {
     fetchJob();
+    fetchTeam();
+    fetchDocuments();
+    fetchJobCandidates();
   }, [id]);
+
+  async function fetchJobCandidates() {
+    try {
+      const res = await fetch(`/api/client-portal/candidates?flat=true&jobId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJobCandidates(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  }
+
+  async function fetchDocuments() {
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/documents`);
+      if (res.ok) setDocuments(await res.json());
+    } catch {}
+  }
+
+  async function uploadDocument(file: File, category: "JOB_DESCRIPTION" | "ADDITIONAL") {
+    const setUploading = category === "JOB_DESCRIPTION" ? setUploadingJD : setUploadingAdditional;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+      const res = await fetch(`/api/client-portal/jobs/${id}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Upload failed");
+      } else {
+        fetchDocuments();
+        // If it was a JD, refresh the job to get the newly parsed description
+        if (category === "JOB_DESCRIPTION") {
+          fetchJob();
+        }
+      }
+    } catch {
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteDocument(docId: string) {
+    if (!confirm("Delete this document?")) return;
+    await fetch(`/api/client-portal/jobs/${id}/documents?documentId=${docId}`, {
+      method: "DELETE",
+    });
+    fetchDocuments();
+  }
 
   async function fetchJob() {
     try {
@@ -49,6 +190,44 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       }
     } catch {}
     setLoading(false);
+  }
+
+  async function fetchTeam() {
+    try {
+      const res = await fetch("/api/client-portal/team");
+      if (res.ok) setTeamMembers(await res.json());
+    } catch {}
+  }
+
+  async function addMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!memberName.trim() || !memberEmail.trim()) return;
+    setAddingMember(true);
+    setMemberResult(null);
+    try {
+      const res = await fetch("/api/client-portal/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim(), title: memberTitle.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMemberResult({ type: "error", message: data.error || "Failed to add" });
+      } else {
+        setMemberResult({
+          type: "success",
+          message: data.reactivated ? "Team member reactivated!" : "Member invited!",
+          link: data.inviteLink,
+        });
+        setMemberName("");
+        setMemberTitle("");
+        setMemberEmail("");
+        fetchTeam();
+      }
+    } catch {
+      setMemberResult({ type: "error", message: "Something went wrong" });
+    }
+    setAddingMember(false);
   }
 
   async function searchFirms(query: string) {
@@ -138,56 +317,426 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             <span>· Posted {formatDate(job.createdAt)}</span>
           </div>
         </div>
-        <Badge className={`text-sm ${job.status === "OPEN" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-          {job.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {!editing && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+              <Pencil className="h-3 w-3" />
+              Edit
+            </Button>
+          )}
+          <Badge className={`text-sm ${job.status === "OPEN" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+            {job.status}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Job Details */}
         <div className="lg:col-span-2 space-y-4">
-          {job.description && (
+          {editing ? (
             <Card>
-              <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
-            </Card>
-          )}
-          {job.requirements && (
-            <Card>
-              <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
-              <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
-            </Card>
-          )}
-          {job.salaryRange && (
-            <Card>
-              <CardContent className="p-4">
-                <span className="text-sm text-gray-500">Salary Range: </span>
-                <span className="font-medium">{job.salaryRange}</span>
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Edit Job</h3>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="text-xs" onClick={() => setEditing(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 gap-1 text-xs" onClick={saveEdit} disabled={saving}>
+                      <Save className="h-3 w-3" />
+                      {saving ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Job Title *</Label>
+                  <Input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea rows={10} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Requirements</Label>
+                  <Textarea rows={5} value={editForm.requirements} onChange={(e) => setEditForm({ ...editForm, requirements: e.target.value })} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Location</Label>
+                    <Input value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <CurrencyPicker
+                      compact
+                      value={editForm.salaryCurrency}
+                      onChange={(c) => setEditForm({ ...editForm, salaryCurrency: c })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Salary Range ({getCurrency(editForm.salaryCurrency).symbol})</Label>
+                  <Input value={editForm.salaryRange} onChange={(e) => setEditForm({ ...editForm, salaryRange: e.target.value })} placeholder="e.g. 150K - 200K" />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Job Type</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.jobType} onChange={(e) => setEditForm({ ...editForm, jobType: e.target.value })}>
+                      {["Full-time", "Part-time", "Contract", "Temporary", "Internship"].map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Work Arrangement</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.workMode} onChange={(e) => setEditForm({ ...editForm, workMode: e.target.value })}>
+                      <option value="ON_SITE">On-site</option>
+                      <option value="REMOTE">Remote</option>
+                      <option value="HYBRID">Hybrid</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <select className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm"
+                      value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                      <option value="OPEN">Open</option>
+                      <option value="FILLED">Filled</option>
+                      <option value="CLOSED">Closed</option>
+                    </select>
+                  </div>
+                </div>
               </CardContent>
             </Card>
+          ) : (
+            <>
+              {job.description && (
+                <Card>
+                  <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
+                </Card>
+              )}
+              {job.requirements && (
+                <Card>
+                  <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
+                </Card>
+              )}
+              {job.salaryRange && (
+                <Card>
+                  <CardContent className="p-4">
+                    <span className="text-sm text-gray-500">Salary Range: </span>
+                    <span className="font-medium">{job.salaryRange}</span>
+                    <span className="ml-2 text-xs text-gray-500">
+                      {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
+                    </span>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Candidates shared for this job */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
+                  </CardTitle>
+                  {jobCandidates.length > 0 && (
+                    <Link href={`/client-portal/candidates?jobId=${id}`} className="text-xs text-emerald-600 hover:underline">
+                      View all →
+                    </Link>
+                  )}
+                </CardHeader>
+                <CardContent className="p-0">
+                  {jobCandidates.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No candidates shared yet.</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Your recruiting firms will share candidates here as they find them.
+                      </p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Candidate</TableHead>
+                          <TableHead>Stage</TableHead>
+                          <TableHead>Firm</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Rating</TableHead>
+                          <TableHead>Shared</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {jobCandidates.map((row) => (
+                          <CandidateTableRow
+                            key={row.submissionId}
+                            row={row}
+                            showJob={false}
+                            onRated={fetchJobCandidates}
+                          />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Documents */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Job Description File
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
+                    if (jdDoc) {
+                      return (
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{jdDoc.name}</p>
+                              <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <a href={jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                            </a>
+                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
+                        {uploadingJD ? (
+                          <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
+                        ) : (
+                          <Upload className="h-5 w-5 text-gray-400 mb-2" />
+                        )}
+                        <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
+                        <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,.txt"
+                          disabled={uploadingJD}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) uploadDocument(file, "JOB_DESCRIPTION");
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              {/* Additional Documents */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Additional Documents
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    disabled={uploadingAdditional}
+                    onClick={() => additionalFileInputRef.current?.click()}
+                  >
+                    {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    {uploadingAdditional ? "Uploading..." : "Add"}
+                  </Button>
+                  <input
+                    ref={additionalFileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                    disabled={uploadingAdditional}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadDocument(file, "ADDITIONAL");
+                      e.target.value = "";
+                    }}
+                  />
+                </CardHeader>
+                <CardContent>
+                  {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText className="h-4 w-4 text-gray-500 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{doc.name}</p>
+                              <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" download>
+                              <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
+                            </a>
+                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {!job.description && !job.requirements && !job.salaryRange && (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-sm text-gray-400 mb-2">No description added yet</p>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+                      <Pencil className="h-3 w-3" />
+                      Add Details
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
 
         {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Your Recruiting Team */}
+          {/* Your Internal Team */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4 text-emerald-600" />
+                Your Team
+              </CardTitle>
+              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => { setShowAddMember(!showAddMember); setMemberResult(null); }}>
+                <UserPlus className="h-3 w-3" />
+                Add
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {showAddMember && (
+                <form onSubmit={addMember} className="mb-3 p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Name *</Label>
+                    <Input
+                      value={memberName}
+                      onChange={(e) => setMemberName(e.target.value)}
+                      placeholder="Jane Smith"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Job Title</Label>
+                    <Input
+                      value={memberTitle}
+                      onChange={(e) => setMemberTitle(e.target.value)}
+                      placeholder="e.g. Hiring Manager"
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email *</Label>
+                    <Input
+                      type="email"
+                      value={memberEmail}
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      placeholder="jane@company.com"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <Button type="submit" size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs" disabled={addingMember}>
+                    <Mail className="h-3 w-3" />
+                    {addingMember ? "Adding..." : "Send Invite"}
+                  </Button>
+                  {memberResult && (
+                    <div className={`text-xs p-2 rounded ${memberResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                      <p>{memberResult.message}</p>
+                      {memberResult.link && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <input readOnly value={memberResult.link} className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(memberResult.link!);
+                              setCopiedLink(true);
+                              setTimeout(() => setCopiedLink(false), 2000);
+                            }}
+                            className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                          >
+                            {copiedLink ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3 text-gray-400" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </form>
+              )}
+              {teamMembers.filter(m => m.isActive).length === 0 ? (
+                <p className="text-sm text-gray-400 py-3 text-center">
+                  No team members yet. Add colleagues to collaborate.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {teamMembers.filter(m => m.isActive).map((member: any) => (
+                    <div key={member.id} className="flex items-center gap-2.5 p-2 bg-gray-50 rounded-lg">
+                      <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">{member.name}</p>
+                        {member.title && <p className="text-[10px] text-gray-500 truncate">{member.title}</p>}
+                        <a href={`mailto:${member.email}`} className="text-[11px] text-emerald-600 hover:underline truncate block">{member.email}</a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Assigned Recruiters (from staffing firms) */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-600" />
-                Your Recruiting Team
+                <Users className="h-4 w-4 text-indigo-600" />
+                Assigned Recruiters
               </CardTitle>
             </CardHeader>
             <CardContent>
               {!job.teamMembers || job.teamMembers.length === 0 ? (
                 <p className="text-sm text-gray-400 py-3 text-center">
-                  No team members assigned yet.
+                  No recruiters assigned yet.
                 </p>
               ) : (
                 <div className="space-y-3">
                   {job.teamMembers.map((member: any) => (
                     <div key={member.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg">
-                      <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                      <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
                         {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -196,7 +745,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         <div className="mt-1.5 space-y-0.5">
                           <a
                             href={`mailto:${member.email}`}
-                            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:underline"
+                            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:underline"
                           >
                             <Mail className="h-3 w-3" />
                             {member.email}
@@ -213,37 +762,88 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           {/* Recruiting Firms */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recruiting Firms</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-indigo-600" />
+                Assigned Firms
+              </CardTitle>
               <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowInvite(!showInvite)}>
                 <Plus className="h-3 w-3" />
                 Invite
               </Button>
             </CardHeader>
             <CardContent>
+              {/* Summary Stats */}
+              {job.engagements?.length > 0 && (
+                <div className="flex gap-3 mb-3">
+                  <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-green-700">
+                      {job.engagements.filter((e: any) => e.status === "ACCEPTED").length}
+                    </p>
+                    <p className="text-[10px] text-green-600">Active</p>
+                  </div>
+                  <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-amber-700">
+                      {job.engagements.filter((e: any) => e.status === "PENDING").length}
+                    </p>
+                    <p className="text-[10px] text-amber-600">Pending</p>
+                  </div>
+                  <div className="flex-1 bg-blue-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-blue-700">
+                      {Object.values(job.firmCandidateCounts || {}).reduce((a: number, b: any) => a + (b as number), 0) as number}
+                    </p>
+                    <p className="text-[10px] text-blue-600">Candidates</p>
+                  </div>
+                </div>
+              )}
+
               {job.engagements?.length === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
                   No firms invited yet. Click Invite to get started.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {job.engagements?.map((eng: any) => (
-                    <div key={eng.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                          <Building2 className="h-4 w-4 text-indigo-600" />
+                  {job.engagements?.map((eng: any) => {
+                    const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
+                    return (
+                      <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                              <Building2 className="h-4 w-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{eng.organization.name}</p>
+                              <p className="text-[10px] text-gray-400 truncate">Invited {formatDate(eng.invitedAt)}</p>
+                            </div>
+                          </div>
+                          <Badge className={`text-[10px] shrink-0 ${statusColor[eng.status]}`}>
+                            {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
+                            {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {eng.status === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
+                            {eng.status.toLowerCase()}
+                          </Badge>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium">{eng.organization.name}</p>
-                          <p className="text-xs text-gray-400">{formatDate(eng.invitedAt)}</p>
-                        </div>
+                        {eng.status === "ACCEPTED" && (
+                          <div className="ml-10 mt-1 space-y-0.5">
+                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                              <Users className="h-3 w-3 shrink-0" />
+                              {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
+                            </span>
+                            {eng.message && (
+                              <p className="text-[10px] text-gray-400 italic truncate" title={eng.message}>
+                                &quot;{eng.message}&quot;
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {eng.status === "PENDING" && (
+                          <p className="text-[10px] text-amber-600 ml-10 mt-1">
+                            Waiting for response...
+                          </p>
+                        )}
                       </div>
-                      <Badge className={`text-xs ${statusColor[eng.status]}`}>
-                        {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
-                        {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
-                        {eng.status.toLowerCase()}
-                      </Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

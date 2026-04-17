@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Briefcase,
@@ -99,6 +100,7 @@ function ForgotPasswordSection({
 
 export default function ClientPortalLoginPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -108,6 +110,18 @@ export default function ClientPortalLoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [isInvitedUser, setIsInvitedUser] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [clearingSession, setClearingSession] = useState(false);
+
+  // If there's a client session already, go straight to dashboard
+  // If there's a staffing session, don't touch it — just warn the user
+  // that they need to sign out of staffing first to log in as client
+  useEffect(() => {
+    if (session?.user && (session.user as any).isClientUser) {
+      router.replace("/client-portal/dashboard");
+    }
+  }, [session, router]);
+
+  const hasStaffingSession = !!(session?.user && !(session.user as any).isClientUser);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -116,6 +130,11 @@ export default function ClientPortalLoginPage() {
 
     const fd = new FormData(e.currentTarget);
     try {
+      // If a staffing session is active, transparently sign out first
+      if (hasStaffingSession) {
+        await signOut({ redirect: false });
+      }
+
       const result = await signIn("client-credentials", {
         email: fd.get("email") as string,
         password: fd.get("password") as string,
@@ -181,6 +200,7 @@ export default function ClientPortalLoginPage() {
         body: JSON.stringify({
           companyName: fd.get("companyName") as string,
           name: fd.get("name") as string,
+          title: fd.get("title") as string,
           email,
           password,
           industry: fd.get("industry") as string,
@@ -192,6 +212,11 @@ export default function ClientPortalLoginPage() {
         setError(data.error || "Registration failed");
         setLoading(false);
         return;
+      }
+
+      // If a staffing session is active, transparently sign out first
+      if (hasStaffingSession) {
+        await signOut({ redirect: false });
       }
 
       // Auto-login
@@ -262,6 +287,17 @@ export default function ClientPortalLoginPage() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
+          {hasStaffingSession && (
+            <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+              <span className="flex-1 truncate">
+                Currently in staffing as <span className="font-medium text-gray-800">{(session?.user as any)?.email || session?.user?.name}</span>
+              </span>
+              <Link href="/dashboard" className="text-emerald-600 hover:text-emerald-700 font-medium whitespace-nowrap">
+                Go there →
+              </Link>
+            </div>
+          )}
           {forgotMode ? (
             <ForgotPasswordSection
               forgotSent={forgotSent}
@@ -338,7 +374,7 @@ export default function ClientPortalLoginPage() {
                       Forgot password?
                     </button>
                   </div>
-                  <Input id="password" name="password" type="password" required />
+                  <PasswordInput id="password" name="password" required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
                   {loading ? "Signing in..." : "Sign In"}
@@ -382,13 +418,19 @@ export default function ClientPortalLoginPage() {
                     </div>
                   </>
                 )}
-                <div className="space-y-2">
-                  <Label htmlFor="name">Your Name</Label>
-                  <Input id="name" name="name" placeholder="Jane Smith" required />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Your Name</Label>
+                    <Input id="name" name="name" placeholder="Jane Smith" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Job Title</Label>
+                    <Input id="title" name="title" placeholder="e.g. Hiring Manager" />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-password">Password</Label>
-                  <Input id="reg-password" name="password" type="password" placeholder="Min. 8 characters" minLength={8} required />
+                  <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
                   {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}

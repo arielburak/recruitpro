@@ -14,7 +14,7 @@ export async function GET(
     const placement = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
       include: {
-        job: { select: { id: true, title: true } },
+        job: { select: { id: true, title: true, currency: true } },
         client: { select: { id: true, name: true } },
         submission: {
           select: {

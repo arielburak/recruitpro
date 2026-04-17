@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
-    const { companyName, name, email, password, industry, website } = await request.json();
+    const { companyName, name, title, email, password, industry, website } = await request.json();
 
     if (!email || !password || !name) {
       return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       // User(s) exist without password (invited by recruiter) — set password on ALL of them
       await prisma.clientUser.updateMany({
         where: { email, passwordHash: null },
-        data: { passwordHash, name },
+        data: { passwordHash, name, ...(title ? { title } : {}) },
       });
 
       return NextResponse.json(
@@ -59,14 +59,33 @@ export async function POST(request: Request) {
             website: website || null,
           },
         });
+        // Seed default pipeline stages for this new client
+        await tx.clientPipelineStage.createMany({
+          data: [
+            { name: "Under Review", order: 0, color: "#f59e0b", isTerminal: false, clientId: client.id },
+            { name: "Interviewing", order: 1, color: "#3b82f6", isTerminal: false, clientId: client.id },
+            { name: "Offered", order: 2, color: "#8b5cf6", isTerminal: false, clientId: client.id },
+            { name: "Placed", order: 3, color: "#10b981", isTerminal: true, kind: "positive", clientId: client.id },
+            { name: "Lost", order: 4, color: "#ef4444", isTerminal: true, kind: "negative", clientId: client.id },
+            { name: "Rejected", order: 5, color: "#6b7280", isTerminal: true, kind: "negative", clientId: client.id },
+          ],
+        });
       }
+
+      // Check if this is the first user of this client — they become ADMIN
+      const existingUsersForClient = await tx.clientUser.count({
+        where: { clientId: client.id },
+      });
+      const isFirstUser = existingUsersForClient === 0;
 
       const clientUser = await tx.clientUser.create({
         data: {
           email,
           name,
+          title: title || null,
           passwordHash,
           clientId: client.id,
+          role: isFirstUser ? "ADMIN" : "USER",
         },
       });
 

@@ -16,6 +16,7 @@ export async function GET(
       include: {
         client: { select: { id: true, name: true } },
         contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+        documents: { orderBy: { createdAt: "desc" } },
       },
     });
 
@@ -35,7 +36,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const { title, value, probability, stage, expectedClose, notes, clientId, contactId, ownerId } = body;
+    const { title, value, currency, probability, stage, expectedClose, notes, clientId, contactId, ownerId } = body;
 
     // Validate clientId if being changed
     if (clientId) {
@@ -62,6 +63,7 @@ export async function PUT(
       data: {
         ...(title !== undefined && { title }),
         ...(value !== undefined && { value }),
+        ...(currency !== undefined && { currency }),
         ...(probability !== undefined && { probability }),
         ...(stage !== undefined && { stage }),
         ...(expectedClose !== undefined && { expectedClose: expectedClose ? new Date(expectedClose) : null }),

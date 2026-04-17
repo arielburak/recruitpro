@@ -12,7 +12,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
 
-    const { email, role = "RECRUITER" } = await request.json();
+    const body = await request.json();
+    const email = body.email;
+    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+    const name = typeof body.name === "string" ? body.name.trim() : null;
 
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -50,6 +53,7 @@ export async function POST(request: Request) {
       data: {
         email,
         role,
+        name: name || null,
         organizationId: ctx.organizationId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },

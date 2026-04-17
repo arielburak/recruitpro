@@ -11,7 +11,7 @@ export async function GET(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    const job = await prisma.job.findFirst({
+    let job = await prisma.job.findFirst({
       where: { id, organizationId: ctx.organizationId },
       include: {
         client: true,
@@ -26,16 +26,42 @@ export async function GET(
               },
             },
             stage: true,
+            clientStage: {
+              select: { id: true, name: true, color: true, order: true },
+            },
             _count: { select: { comments: true, ratings: true } },
           },
         },
       },
     });
 
-    if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // If not found, check if the ID is a ClientJob ID with an engagement for this firm
+    if (!job) {
+      const engagement = await prisma.firmEngagement.findFirst({
+        where: { clientJobId: id, organizationId: ctx.organizationId },
+        select: { id: true, status: true, jobId: true },
+      });
 
-    // Recruiters can only view jobs they're assigned to
-    if (ctx.role === "RECRUITER") {
+      if (engagement) {
+        if (engagement.status === "ACCEPTED" && engagement.jobId) {
+          return NextResponse.json(
+            { redirect: `/jobs/${engagement.jobId}` },
+            { status: 307 }
+          );
+        }
+        if (engagement.status === "PENDING") {
+          return NextResponse.json(
+            { error: "pending_engagement", engagementId: engagement.id },
+            { status: 404 }
+          );
+        }
+      }
+
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Non-admin users can only view jobs they're assigned to
+    if (ctx.role !== "ADMIN") {
       const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
       if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

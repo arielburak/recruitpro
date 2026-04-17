@@ -66,6 +66,7 @@ export default function AdminUsersPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        name: fd.get("name"),
         email: fd.get("email"),
         role: fd.get("role"),
       }),
@@ -96,6 +97,23 @@ export default function AdminUsersPage() {
     } else {
       const body = await res.json();
       setError(body.error || "Failed to update user");
+      setTimeout(() => setError(""), 3000);
+    }
+  }
+
+  async function changeUserRole(userId: string, newRole: "ADMIN" | "USER") {
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: newRole }),
+    });
+    if (res.ok) {
+      setSuccess(newRole === "ADMIN" ? "User promoted to admin" : "Admin demoted to user");
+      setTimeout(() => setSuccess(""), 3000);
+      fetchData();
+    } else {
+      const body = await res.json();
+      setError(body.error || "Failed to change role");
       setTimeout(() => setError(""), 3000);
     }
   }
@@ -135,7 +153,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function resendInvite(email: string, role: string, inviteId: string) {
+  async function resendInvite(email: string, role: string, inviteId: string, name?: string) {
     // Cancel old invite and send a new one
     await fetch("/api/admin/invites", {
       method: "DELETE",
@@ -146,7 +164,7 @@ export default function AdminUsersPage() {
     const res = await fetch("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role }),
+      body: JSON.stringify({ email, role, name }),
     });
 
     if (res.ok) {
@@ -198,6 +216,28 @@ export default function AdminUsersPage() {
               An email invitation will be sent. They can create their own
               account using the link.
             </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  name="name"
+                  type="text"
+                  placeholder="John Smith"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <select
+                  name="role"
+                  className="w-full border rounded-md px-3 py-2 text-sm h-9"
+                  defaultValue="USER"
+                >
+                  <option value="USER">User</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input
@@ -206,16 +246,6 @@ export default function AdminUsersPage() {
                 placeholder="colleague@company.com"
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <select
-                name="role"
-                className="w-full border rounded-md px-3 py-2 text-sm"
-              >
-                <option value="RECRUITER">Recruiter</option>
-                <option value="ADMIN">Admin</option>
-              </select>
             </div>
             <Button
               type="submit"
@@ -249,11 +279,20 @@ export default function AdminUsersPage() {
               >
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                      {u.role === "ADMIN" ? (
-                        <Shield className="h-5 w-5 text-indigo-600" />
-                      ) : (
-                        <User className="h-5 w-5 text-indigo-600" />
+                    <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      {u.name
+                        ?.split(" ")
+                        .map((w: string) => w[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase() || "?"}
+                      {u.role === "ADMIN" && (
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white flex items-center justify-center ring-2 ring-white"
+                          title="Admin"
+                        >
+                          <Shield className="h-2.5 w-2.5 text-indigo-600" />
+                        </span>
                       )}
                     </div>
                     <div>
@@ -265,6 +304,7 @@ export default function AdminUsersPage() {
                           </span>
                         )}
                       </p>
+                      {u.title && <p className="text-xs text-gray-500">{u.title}</p>}
                       <p className="text-sm text-gray-500">{u.email}</p>
                     </div>
                   </div>
@@ -274,7 +314,7 @@ export default function AdminUsersPage() {
                         u.role === "ADMIN" ? "default" : "secondary"
                       }
                     >
-                      {u.role}
+                      {u.role === "ADMIN" ? "Admin" : "User"}
                     </Badge>
                     <span className="text-xs text-gray-400">
                       {u._count.candidates} candidates
@@ -290,6 +330,21 @@ export default function AdminUsersPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {u.role === "USER" ? (
+                          <DropdownMenuItem
+                            onClick={() => changeUserRole(u.id, "ADMIN")}
+                          >
+                            <Shield className="mr-2 h-4 w-4" />
+                            Promote to Admin
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => changeUserRole(u.id, "USER")}
+                          >
+                            <User className="mr-2 h-4 w-4" />
+                            Demote to User
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() =>
                             toggleUserActive(u.id, u.isActive)
@@ -328,10 +383,15 @@ export default function AdminUsersPage() {
                           <Mail className="h-5 w-5 text-amber-500" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-600">
-                            {inv.email}
-                          </p>
-                          <p className="text-xs text-gray-400">
+                          {inv.name ? (
+                            <>
+                              <p className="font-medium text-gray-700">{inv.name}</p>
+                              <p className="text-xs text-gray-500">{inv.email}</p>
+                            </>
+                          ) : (
+                            <p className="font-medium text-gray-600">{inv.email}</p>
+                          )}
+                          <p className="text-[11px] text-gray-400 mt-0.5">
                             Invited{" "}
                             {new Date(inv.createdAt).toLocaleDateString()}{" "}
                             &middot; Expires{" "}
@@ -340,12 +400,12 @@ export default function AdminUsersPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{inv.role}</Badge>
+                        <Badge variant="outline">{inv.role === "ADMIN" ? "Admin" : "User"}</Badge>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() =>
-                            resendInvite(inv.email, inv.role, inv.id)
+                            resendInvite(inv.email, inv.role, inv.id, inv.name)
                           }
                           title="Resend invite"
                         >

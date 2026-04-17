@@ -16,17 +16,24 @@ export async function POST(request: Request) {
     let text: string;
 
     if (fileName.endsWith(".pdf")) {
-      const pdfParse = require("pdf-parse");
+      // Use lib/pdf-parse directly to avoid test-file loading bug in serverless
+      const pdfParse = require("pdf-parse/lib/pdf-parse.js");
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const pdfData = await pdfParse(buffer);
       text = pdfData.text;
+    } else if (fileName.endsWith(".docx")) {
+      const mammoth = require("mammoth");
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const docResult = await mammoth.extractRawText({ buffer });
+      text = docResult.value;
     } else {
-      // .txt, .docx, or other text-based formats
+      // .txt or other text-based formats
       text = await file.text();
     }
 
-    const parsed = parseResumeText(text);
+    const parsed = parseResumeText(text, file.name);
 
     return NextResponse.json(parsed);
   } catch (error: any) {
@@ -34,10 +41,19 @@ export async function POST(request: Request) {
   }
 }
 
-// Section heading patterns used to avoid misidentifying headings as names
-const SECTION_HEADINGS = /^(experience|education|skills|summary|objective|profile|about|qualifications|certifications?|awards?|publications?|references?|interests?|activities|projects?|work\s*history|professional|bar\s*admissions?|practice\s*areas?|specialties|biography)\b/i;
+// Section heading patterns — used to skip these lines when looking for names
+const SECTION_HEADINGS = /^(experience|education|skills|summary|objective|profile|about|qualifications|certifications?|certificationes|awards?|publications?|references?|interests?|activities|projects?|work\s*history|professional|bar\s*admissions?|practice\s*areas?|specialties|biography|knowledge|languages?|idiomas|educaci[oó]n|experiencia|conocimientos|habilidades|contacto|contact)\b/i;
 
-function parseResumeText(text: string): Record<string, any> {
+// Known abbreviations / tech terms / locations that are NOT names
+const NOT_A_NAME = /^(CABA|UTN|UBA|UNLP|UADE|ITBA|MIT|UCLA|IBM|AWS|GCP|CRM|SQL|DNS|VPN|DHCP|USA|NYC|LLC|LLP|LTD|INC|CEO|CTO|CFO|COO|CIO|VP|SVP|EVP|HR|IT|QA|PM|BA|SA|SR|JR|NA|TBD|ETC|PDF|CV|MBA|PHD|MD|JD|ESQ|RN|PE|PMP|LEED|CISSP|CCNA|CCNP)\b/i;
+
+// Date/year patterns
+const HAS_DATE = /\b\d{4}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|present|presente|actual|pausa)\b/i;
+
+// Tech/tool words that should never be in a name
+const TECH_WORDS = /\b(vmware|nutanix|windows|server|linux|docker|kubernetes|azure|cisco|fortinet|active\s*directory|office|admin|firewall|switch|router|backup|terraform|python|java|react|angular|node|sql|html|css|excel|powerpoint|scrum|agile|servicenow|jira|git|github|senior|junior|semi-senior|medium|basic|advanced|intermediate|avanzado|intermedio|b[12]|c[12]|a[12]|native|nativo)\b/i;
+
+function parseResumeText(text: string, fileName?: string): Record<string, any> {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   const result: Record<string, any> = {
@@ -59,76 +75,31 @@ function parseResumeText(text: string): Record<string, any> {
   if (emailMatch) result.email = emailMatch[0];
 
   // --- Phone ---
-  // Handles: (786) 307-5853, 213 533 5941, 213-533-5941, +1 213.533.5941, etc.
   const phoneMatch = text.match(
-    /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\s*\d{3}[-.\s]?\s*\d{4}/
+    /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\s*\d{3,4}[-.\s]?\s*\d{4}/
   );
   if (phoneMatch) result.phone = phoneMatch[0].trim();
 
   // --- LinkedIn ---
+  let linkedInSlug = "";
   const linkedInMatch = text.match(
-    /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w-]+/i
+    /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/([\w-]+)/i
   );
   if (linkedInMatch) {
     result.linkedIn = linkedInMatch[0].startsWith("http")
       ? linkedInMatch[0]
       : `https://${linkedInMatch[0]}`;
+    linkedInSlug = linkedInMatch[1]; // e.g. "gabriel-fernandez-saiz"
   }
 
-  // --- Name ---
-  // Look at the first several lines for something that looks like a person's name
-  for (const line of lines.slice(0, 8)) {
-    // Skip lines with emails, phone numbers, URLs, or section headings
-    if (line.includes("@")) continue;
-    if (/\d{3}.*\d{3}.*\d{4}/.test(line)) continue;
-    if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
-    if (SECTION_HEADINGS.test(line)) continue;
-    // Skip lines that look like addresses (contain zip codes or street indicators)
-    if (/\b\d{5}\b/.test(line) && /\b(st|ave|blvd|rd|dr|apt|apartment|suite)\b/i.test(line)) continue;
-
-    // Strip common suffixes like class year markers ('11, '15) or trailing punctuation
-    const cleaned = line.replace(/['']\d{2}\b/g, "").replace(/[,|•·\-–—]+$/, "").trim();
-
-    // A name is typically 2-4 capitalized words, possibly with a middle initial (single letter + period)
-    const nameParts = cleaned.split(/\s+/);
-    if (
-      nameParts.length >= 2 &&
-      nameParts.length <= 4 &&
-      nameParts.every((p) => /^[A-Z][a-zA-Z.''-]*\.?$/.test(p))
-    ) {
-      result.firstName = nameParts[0];
-      result.lastName = nameParts.slice(1).join(" ");
-      break;
-    }
-  }
+  // --- Name Detection (multi-strategy) ---
+  extractName(lines, result, fileName, linkedInSlug);
 
   // --- Location ---
-  // Search line-by-line for location patterns to avoid cross-line matches
-  for (const line of lines) {
-    // Try full address line first (e.g., "34 Morton St, Apartment 3A, New York, NY 10014")
-    const fullAddressMatch = line.match(
-      /\d+\s+[\w\s]+(?:St|Ave|Blvd|Rd|Dr|Lane|Way|Ct|Pl|Circle|Drive|Street|Avenue|Boulevard|Road|Apartment|Apt\.?)[^•]*,\s*([A-Z][a-zA-Z\s]+),\s*([A-Z]{2})\s*\d{5}/i
-    );
-    if (fullAddressMatch) {
-      result.location = `${fullAddressMatch[1].trim()}, ${fullAddressMatch[2]}`;
-      break;
-    }
-    // Try "City, State" or "City, ST" patterns on the same line
-    const locationMatch = line.match(
-      /([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*),\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)*|[A-Z]{2})\b/
-    );
-    if (locationMatch) {
-      const candidate = locationMatch[0];
-      if (!SECTION_HEADINGS.test(candidate) && !/\b(LLP|LLC|LTD|Inc|Corp)\b/i.test(line)) {
-        result.location = candidate;
-        break;
-      }
-    }
-  }
+  extractLocation(lines, result);
 
   // --- Current Title & Company ---
-  // Find the Experience section and extract the first job entry
-  const expSectionIndex = findSectionIndex(lines, /^experience\b/i);
+  const expSectionIndex = findSectionIndex(lines, /^(experience|professional\s*experience|experiencia\s*profesional|experiencia)\b/i);
   if (expSectionIndex >= 0) {
     const afterExp = lines.slice(expSectionIndex + 1);
     extractCurrentRole(afterExp, result);
@@ -142,6 +113,9 @@ function parseResumeText(text: string): Record<string, any> {
     "AWS", "Azure", "GCP", "Docker", "Kubernetes", "CI/CD", "Git",
     "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "GraphQL", "REST",
     "Machine Learning", "AI", "Data Science", "Deep Learning",
+    // Infrastructure
+    "VMware", "Nutanix", "Active Directory", "Terraform", "Linux",
+    "Veeam", "Fortinet", "Cisco",
     // Legal
     "Real Estate", "M&A", "Mergers and Acquisitions", "Corporate Law", "Corporate Governance",
     "Due Diligence", "Litigation", "Leasing", "Commercial Leasing", "Securities",
@@ -191,34 +165,284 @@ function parseResumeText(text: string): Record<string, any> {
   }
 
   // --- Education ---
-  const eduIndex = findSectionIndex(lines, /^education\b/i);
+  const eduIndex = findSectionIndex(lines, /^(education|educaci[oó]n)\b/i);
   if (eduIndex >= 0) {
     const schools: string[] = [];
     for (let i = eduIndex + 1; i < lines.length; i++) {
-      if (SECTION_HEADINGS.test(lines[i]) && !/^education/i.test(lines[i])) break;
-      // School names often contain "University", "College", "School", "Institute"
-      if (/university|college|school|institute/i.test(lines[i])) {
+      if (SECTION_HEADINGS.test(lines[i]) && !/^(education|educaci[oó]n)/i.test(lines[i])) break;
+      if (/university|college|school|institute|universidad|facultad|utn|uba|uade|itba/i.test(lines[i])) {
         schools.push(lines[i]);
       }
     }
     result.education = schools;
   }
 
-  // Also check for "Law School" / "Undergraduate" labeled lines (LinkedIn resume format)
+  // Also check for "Law School" / "Undergraduate" labeled lines
   if (result.education.length === 0) {
     const lawSchoolIdx = findSectionIndex(lines, /^law\s*school\b/i);
     const undergradIdx = findSectionIndex(lines, /^undergraduate\b/i);
     const schools: string[] = [];
-    if (lawSchoolIdx >= 0 && lines[lawSchoolIdx + 1]) {
-      schools.push(lines[lawSchoolIdx + 1]);
-    }
-    if (undergradIdx >= 0 && lines[undergradIdx + 1]) {
-      schools.push(lines[undergradIdx + 1]);
-    }
+    if (lawSchoolIdx >= 0 && lines[lawSchoolIdx + 1]) schools.push(lines[lawSchoolIdx + 1]);
+    if (undergradIdx >= 0 && lines[undergradIdx + 1]) schools.push(lines[undergradIdx + 1]);
     if (schools.length > 0) result.education = schools;
   }
 
   return result;
+}
+
+/**
+ * Multi-strategy name extraction:
+ * 1. Try filename (e.g. "CV - Gabriel Fernandez Saiz.pdf")
+ * 2. Try LinkedIn slug (e.g. "gabriel-fernandez-saiz")
+ * 3. Scan ALL lines for name-like patterns, with strict filtering
+ * 4. Use email as validation hint
+ */
+function extractName(lines: string[], result: Record<string, any>, fileName?: string, linkedInSlug?: string) {
+  // Helper: validate a name candidate against email if available
+  const email = result.email?.toLowerCase() || "";
+  function nameMatchesEmail(first: string, last: string): boolean {
+    if (!email) return true; // No email to validate against
+    const f = first.toLowerCase();
+    const l = last.toLowerCase().replace(/\s+/g, "");
+    // Check if email contains parts of the name
+    const emailLocal = email.split("@")[0].replace(/[._-]/g, "");
+    return emailLocal.includes(f.slice(0, 3)) || emailLocal.includes(l.slice(0, 4));
+  }
+
+  // Strategy 1: Extract from filename
+  // Patterns: "CV - Name.pdf", "Resume Name.pdf", "CV_Name_Lastname.pdf"
+  if (fileName) {
+    const baseName = fileName.replace(/\.[^.]+$/, ""); // remove extension
+    // Try "CV - Gabriel Fernandez Saiz" or "Resume - John Doe"
+    const cvMatch = baseName.match(/(?:cv|resume|curriculum)\s*[-–—_]\s*(.+)/i);
+    if (cvMatch) {
+      const namePart = cvMatch[1].trim().replace(/[_-]/g, " ");
+      const parts = namePart.split(/\s+/).filter((p) => p.length > 1);
+      if (parts.length >= 2 && parts.every((p) => /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*$/u.test(p))) {
+        result.firstName = parts[0];
+        result.lastName = parts.slice(1).join(" ");
+        if (nameMatchesEmail(result.firstName, result.lastName)) return;
+      }
+    }
+  }
+
+  // Strategy 2: LinkedIn slug → name
+  // "gabriel-fernandez-saiz" → Gabriel Fernandez Saiz
+  if (linkedInSlug) {
+    const parts = linkedInSlug.split("-").filter((p) => p.length > 1);
+    if (parts.length >= 2) {
+      const capitalized = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
+      const candidateFirst = capitalized[0];
+      const candidateLast = capitalized.slice(1).join(" ");
+      if (nameMatchesEmail(candidateFirst, candidateLast)) {
+        result.firstName = candidateFirst;
+        result.lastName = candidateLast;
+        return;
+      }
+    }
+  }
+
+  // Strategy 3: Scan text lines for name patterns
+  // Collect all candidates, then pick the best one
+  const candidates: { firstName: string; lastName: string; score: number; line: string }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip lines that are clearly not names
+    if (line.includes("@")) continue;
+    if (/\d{3}.*\d{3}/.test(line)) continue; // phone numbers
+    if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
+    if (SECTION_HEADINGS.test(line)) continue;
+    if (HAS_DATE.test(line)) continue;
+    if (TECH_WORDS.test(line)) continue;
+    if (NOT_A_NAME.test(line.replace(/\s+/g, " "))) continue;
+    // Skip lines that are all uppercase abbreviations (e.g. "CABA UTN")
+    if (/^[A-Z]{2,}\s+[A-Z]{2,}/.test(line) && line.length < 15) continue;
+    // Skip lines with numbers (dates, addresses, etc.)
+    if (/\d/.test(line)) continue;
+    // Skip lines with special characters that aren't in names
+    if (/[°#@&%$!?;:(){}[\]\/\\|<>=+*~^]/.test(line)) continue;
+
+    // Clean the line
+    const cleaned = line.replace(/['']\d{2}\b/g, "").replace(/[,|•·\-–—]+$/, "").trim();
+    if (!cleaned || cleaned.length < 3) continue;
+
+    const nameParts = cleaned.split(/\s+/);
+    if (nameParts.length < 1 || nameParts.length > 5) continue;
+
+    // Each part must look like a proper name word (starts uppercase, mixed case, allows accents)
+    const allNameLike = nameParts.every((p) =>
+      /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*\.?$/u.test(p) && p.length >= 2
+    );
+    if (!allNameLike) continue;
+
+    // Build candidate
+    let firstName: string, lastName: string;
+    if (nameParts.length === 1) continue; // Single word is not enough
+
+    firstName = nameParts[0];
+    lastName = nameParts.slice(1).join(" ");
+
+    // Score the candidate
+    let score = 0;
+    // Bonus: matches email
+    if (nameMatchesEmail(firstName, lastName)) score += 10;
+    // Bonus: 2-3 word names are more likely
+    if (nameParts.length >= 2 && nameParts.length <= 3) score += 3;
+    // Bonus: appears early in the document
+    if (i < 15) score += 2;
+    // Bonus: not all uppercase (ALL CAPS lines are usually headings)
+    if (cleaned !== cleaned.toUpperCase()) score += 2;
+    // Bonus: words are 3+ chars each (short abbreviations less likely to be names)
+    if (nameParts.every((p) => p.length >= 3)) score += 2;
+    // Penalty: line is suspiciously short and ALL CAPS
+    if (cleaned === cleaned.toUpperCase() && cleaned.length < 10) score -= 5;
+
+    candidates.push({ firstName, lastName, score, line: cleaned });
+  }
+
+  // Also check for two consecutive single-name lines (e.g. "Fernandez Saiz" then "Gabriel Alejandro")
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line1 = lines[i].trim();
+    const line2 = lines[i + 1].trim();
+
+    // Both should be name-like, no numbers, no headings
+    if (HAS_DATE.test(line1) || HAS_DATE.test(line2)) continue;
+    if (SECTION_HEADINGS.test(line1) || SECTION_HEADINGS.test(line2)) continue;
+    if (TECH_WORDS.test(line1) || TECH_WORDS.test(line2)) continue;
+    if (/\d/.test(line1) || /\d/.test(line2)) continue;
+    if (NOT_A_NAME.test(line1) || NOT_A_NAME.test(line2)) continue;
+
+    const parts1 = line1.split(/\s+/);
+    const parts2 = line2.split(/\s+/);
+    if (parts1.length < 1 || parts1.length > 3 || parts2.length < 1 || parts2.length > 3) continue;
+
+    const allParts = [...parts1, ...parts2];
+    const allNameLike = allParts.every((p) =>
+      /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*$/u.test(p) && p.length >= 2
+    );
+    if (!allNameLike) continue;
+
+    // Determine which is first name vs last name
+    // Common pattern: "LastName" on line 1, "FirstName" on line 2
+    // Or "FirstName" on line 1, "LastName" on line 2
+    // Use email to figure out which order
+    let firstName = parts2[0]; // Assume line2 = first name (common in LatAm CVs)
+    let lastName = parts1.join(" ");
+
+    let score = 5; // Two-line name pattern gets a base bonus
+    if (nameMatchesEmail(firstName, lastName)) score += 10;
+    // Try the other order
+    if (!nameMatchesEmail(firstName, lastName)) {
+      firstName = parts1[0];
+      lastName = parts2.join(" ");
+      if (nameMatchesEmail(firstName, lastName)) score += 10;
+    }
+    if (allParts.every((p) => p.length >= 3)) score += 2;
+
+    candidates.push({ firstName, lastName, score, line: `${line1} | ${line2}` });
+  }
+
+  // Pick the best candidate
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.score - a.score);
+    result.firstName = candidates[0].firstName;
+    result.lastName = candidates[0].lastName;
+  }
+}
+
+/**
+ * Known cities / regions / countries for location detection
+ */
+const KNOWN_LOCATIONS = /\b(Buenos Aires|CABA|Capital Federal|C\.A\.B\.A|Córdoba|Rosario|Mendoza|Mar del Plata|La Plata|Tucumán|Santa Fe|Salta|San Juan|Neuquén|Bahía Blanca|Resistencia|Corrientes|Posadas|San Luis|Santiago del Estero|Formosa|Catamarca|La Rioja|Jujuy|Río Gallegos|Ushuaia|Rawson|Viedma|New York|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Austin|Jacksonville|San Francisco|Columbus|Indianapolis|Fort Worth|Charlotte|Seattle|Denver|Washington|Nashville|Oklahoma City|El Paso|Boston|Portland|Las Vegas|Memphis|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Mesa|Kansas City|Atlanta|Omaha|Colorado Springs|Raleigh|Long Beach|Virginia Beach|Miami|Oakland|Minneapolis|Tampa|Tulsa|Arlington|New Orleans|London|Paris|Madrid|Barcelona|Berlin|Munich|Amsterdam|Dublin|São Paulo|Rio de Janeiro|Santiago|Lima|Bogotá|México|Guadalajara|Monterrey|Toronto|Vancouver|Montreal|Sydney|Melbourne|Singapore|Hong Kong|Tokyo|Shanghai|Beijing|Dubai|Mumbai|Bangalore|Argentina|United States|USA|UK|United Kingdom|Spain|Germany|France|Brazil|Chile|Colombia|Peru|Mexico|Canada|Australia|Remote|Remoto)\b/i;
+
+const US_STATES = /\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
+
+const AR_PROVINCES = /\b(Buenos Aires|CABA|Capital Federal|Córdoba|Santa Fe|Mendoza|Tucumán|Entre Ríos|Salta|Misiones|Chaco|Corrientes|Santiago del Estero|San Juan|Jujuy|Río Negro|Neuquén|Formosa|Chubut|San Luis|Catamarca|La Rioja|La Pampa|Santa Cruz|Tierra del Fuego)\b/i;
+
+/**
+ * Extract location with multiple strategies, prioritizing the header area.
+ * Skips lines that belong to experience/education sections.
+ */
+function extractLocation(lines: string[], result: Record<string, any>) {
+  // Strategy 1: Look for explicit location labels in the header (first ~20 lines)
+  const headerLines = lines.slice(0, 20);
+
+  for (const line of headerLines) {
+    // Explicit labels: "Location: Buenos Aires", "📍 New York, NY", "Ubicación: CABA"
+    const labelMatch = line.match(/(?:location|ubicaci[oó]n|📍|domicilio|direcci[oó]n|residencia)\s*[:]\s*(.+)/i);
+    if (labelMatch) {
+      result.location = labelMatch[1].trim().replace(/[|•·,]+$/, "").trim();
+      return;
+    }
+  }
+
+  // Strategy 2: Look for known city/country names in the header area
+  // Only consider lines before any section heading (experience, education, etc.)
+  let headerEnd = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (SECTION_HEADINGS.test(lines[i])) {
+      headerEnd = i;
+      break;
+    }
+  }
+
+  const resumeHeader = lines.slice(0, Math.min(headerEnd, 20));
+
+  for (const line of resumeHeader) {
+    // Skip lines that look like email, phone, URLs, or names
+    if (line.includes("@")) continue;
+    if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
+    if (TECH_WORDS.test(line)) continue;
+    if (/\b(LLP|LLC|LTD|Inc|Corp|University|Instituto|Facultad|Estudio)\b/i.test(line)) continue;
+
+    // Check if line contains a known location
+    const knownMatch = line.match(KNOWN_LOCATIONS);
+    if (knownMatch) {
+      // Try to get a more complete location string like "Buenos Aires, Argentina" or "New York, NY"
+      // Look for "KnownCity, State/Country" pattern
+      const fullPattern = new RegExp(
+        `(${knownMatch[0]}(?:\\s*,\\s*(?:${US_STATES.source}|${AR_PROVINCES.source}|[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*))?)`
+      );
+      const fullMatch = line.match(fullPattern);
+      result.location = fullMatch ? fullMatch[1].trim() : knownMatch[0];
+      return;
+    }
+
+    // Try "City, State/Province" pattern but ONLY in the header
+    const cityStateMatch = line.match(
+      /([A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*)\s*,\s*([A-ZÀ-Ú][a-zA-ZÀ-ÿ]+(?:\s[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)*|[A-Z]{2})\b/
+    );
+    if (cityStateMatch) {
+      const word1 = cityStateMatch[1];
+      const word2 = cityStateMatch[2];
+      // Must not be tech terms, company names, or person names
+      if (
+        !TECH_WORDS.test(word1) && !TECH_WORDS.test(word2) &&
+        !NOT_A_NAME.test(word1) && !NOT_A_NAME.test(word2) &&
+        !/\b(LLP|LLC|LTD|Inc|Corp|Esq)\b/i.test(line) &&
+        // At least one part should look like a location (state abbreviation or known name)
+        (US_STATES.test(word2) || AR_PROVINCES.test(word1) || AR_PROVINCES.test(word2) || KNOWN_LOCATIONS.test(word1) || KNOWN_LOCATIONS.test(word2))
+      ) {
+        result.location = cityStateMatch[0];
+        return;
+      }
+    }
+  }
+
+  // Strategy 3: Check if there's a standalone known location anywhere in header
+  for (const line of resumeHeader) {
+    const trimmed = line.trim();
+    // Very short lines that are just a location name
+    if (trimmed.length < 40 && KNOWN_LOCATIONS.test(trimmed) && !TECH_WORDS.test(trimmed)) {
+      // Make sure it's not a person's name or company
+      if (!/\b(LLP|LLC|LTD|Inc|Corp)\b/i.test(trimmed)) {
+        result.location = trimmed;
+        return;
+      }
+    }
+  }
 }
 
 /**

@@ -106,6 +106,12 @@ function Navbar() {
               {item}
             </a>
           ))}
+          <Link href="/privacy" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
+            Terms
+          </Link>
         </div>
 
         <div className="hidden md:flex items-center gap-3">
@@ -132,6 +138,12 @@ function Navbar() {
               {item}
             </a>
           ))}
+          <Link href="/privacy" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-gray-700 hover:text-indigo-600">
+            Privacy
+          </Link>
+          <Link href="/terms" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-gray-700 hover:text-indigo-600">
+            Terms
+          </Link>
           <div className="flex flex-col gap-3 pt-2">
             <Link href="/login" className="text-center text-sm font-medium text-gray-700 px-4 py-2.5 rounded-lg border border-gray-200">Sign In</Link>
             <Link href="/register" className="text-center text-sm font-semibold bg-indigo-600 text-white px-4 py-2.5 rounded-lg">Start Free Trial</Link>
@@ -1116,10 +1128,12 @@ function Footer() {
           <span className="font-bold text-gray-900">Recruiting ATS</span>
         </div>
         <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} Recruiting ATS. All rights reserved.</p>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 flex-wrap justify-center">
           <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
           <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
           <Link href="/client-portal/login" className="text-sm text-gray-500 hover:text-gray-700">Client Portal</Link>
+          <Link href="/privacy" className="text-sm text-gray-500 hover:text-gray-700">Privacy</Link>
+          <Link href="/terms" className="text-sm text-gray-500 hover:text-gray-700">Terms</Link>
         </div>
       </div>
     </footer>

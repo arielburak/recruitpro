@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
 import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
+import { processPendingInvites } from "@/lib/process-pending-invites";
 
 export async function POST(request: Request) {
   try {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
         data: {
           email: data.email,
           name: data.name,
+          title: data.title || null,
           passwordHash,
           role: "ADMIN",
           organizationId: org.id,
@@ -66,6 +68,9 @@ export async function POST(request: Request) {
 
       return { org, user };
     });
+
+    // Process any pending firm invites for this email
+    await processPendingInvites(data.email, result.org.id).catch(() => {});
 
     return NextResponse.json(
       { message: "Organization created", orgId: result.org.id },

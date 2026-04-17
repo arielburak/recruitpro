@@ -13,6 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ArrowLeft, X, Upload, FileText, Sparkles } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -51,6 +53,7 @@ function NewCandidatePage() {
     currentCompany: "",
     currentSalary: "",
     desiredSalary: "",
+    salaryCurrency: "USD",
     source: "",
     summary: "",
   });
@@ -174,6 +177,7 @@ function NewCandidatePage() {
       desiredSalary: formValues.desiredSalary
         ? Number(formValues.desiredSalary)
         : null,
+      salaryCurrency: formValues.salaryCurrency,
       source: formValues.source,
       summary: formValues.summary,
       skills,
@@ -306,11 +310,10 @@ function NewCandidatePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  name="phone"
+                <PhoneInput
                   value={formValues.phone}
-                  onChange={(e) => updateField("phone", e.target.value)}
+                  onChange={(val) => updateField("phone", val)}
+                  name="phone"
                 />
               </div>
             </div>
@@ -357,9 +360,16 @@ function NewCandidatePage() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <CurrencyPicker
+                value={formValues.salaryCurrency}
+                onChange={(c) => updateField("salaryCurrency", c)}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="currentSalary">Current Salary ($)</Label>
+                <Label htmlFor="currentSalary">Current Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
                 <Input
                   id="currentSalary"
                   name="currentSalary"
@@ -369,7 +379,7 @@ function NewCandidatePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="desiredSalary">Desired Salary ($)</Label>
+                <Label htmlFor="desiredSalary">Desired Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
                 <Input
                   id="desiredSalary"
                   name="desiredSalary"

@@ -251,13 +251,13 @@ export default function CandidateDetailPage() {
                 {candidate.currentSalary && (
                   <div className="text-sm">
                     <span className="text-gray-500">Current Salary:</span>{" "}
-                    {formatCurrency(Number(candidate.currentSalary))}
+                    {formatCurrency(Number(candidate.currentSalary), candidate.salaryCurrency || "USD")}
                   </div>
                 )}
                 {candidate.desiredSalary && (
                   <div className="text-sm">
                     <span className="text-gray-500">Desired Salary:</span>{" "}
-                    {formatCurrency(Number(candidate.desiredSalary))}
+                    {formatCurrency(Number(candidate.desiredSalary), candidate.salaryCurrency || "USD")}
                   </div>
                 )}
                 {candidate.source && (
@@ -395,8 +395,7 @@ export default function CandidateDetailPage() {
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <a
                       href={`/api/documents/${doc.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      download
                       className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
                       title="Download"
                     >

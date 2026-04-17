@@ -1,20 +1,32 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { useState, Suspense, useEffect } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Briefcase, CheckCircle2 } from "lucide-react";
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [clearingSession, setClearingSession] = useState(false);
   const registered = searchParams.get("registered");
+
+  // If a staffing user is already signed in, go to dashboard
+  useEffect(() => {
+    if (session?.user && !(session.user as any).isClientUser) {
+      router.replace("/dashboard");
+    }
+  }, [session, router]);
+
+  const hasClientSession = !!(session?.user && (session.user as any).isClientUser);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -23,6 +35,11 @@ function LoginContent() {
 
     try {
       const formData = new FormData(e.currentTarget);
+
+      // If a client session is active, transparently sign out first
+      if (hasClientSession) {
+        await signOut({ redirect: false });
+      }
 
       // Race signIn against a timeout
       const signInPromise = signIn("credentials", {
@@ -122,6 +139,18 @@ function LoginContent() {
             <p className="text-gray-500 mt-1">Sign in to your account to continue.</p>
           </div>
 
+          {hasClientSession && (
+            <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className="flex-1 truncate">
+                Currently in client portal as <span className="font-medium text-gray-800">{(session?.user as any)?.email || session?.user?.name}</span>
+              </span>
+              <Link href="/client-portal/dashboard" className="text-indigo-600 hover:text-indigo-700 font-medium whitespace-nowrap">
+                Go there →
+              </Link>
+            </div>
+          )}
+
           <form onSubmit={onSubmit} className="space-y-5">
             {registered && (
               <div className="bg-green-50 text-green-600 text-sm p-3 rounded-lg">
@@ -194,10 +223,9 @@ function LoginContent() {
                   Forgot your password?
                 </Link>
               </div>
-              <Input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 className="focus-visible:ring-indigo-500"
                 required
               />

@@ -62,9 +62,27 @@ export async function GET() {
           }
         }
 
+        // Count shared candidates per firm (organization)
+        const firmCandidateCounts: Record<string, number> = {};
+        for (const eng of job.engagements) {
+          if (eng.status === "ACCEPTED") {
+            const count = await prisma.candidateSubmission.count({
+              where: {
+                isSharedWithClient: true,
+                job: {
+                  clientId: ctx.clientId,
+                  organizationId: eng.organization.id,
+                },
+              },
+            });
+            firmCandidateCounts[eng.organization.id] = count;
+          }
+        }
+
         return {
           ...job,
           teamMembers: Array.from(teamMap.values()),
+          firmCandidateCounts,
         };
       })
     );
@@ -91,8 +109,9 @@ export async function POST(request: Request) {
         requirements: body.requirements || null,
         location: body.location || null,
         salaryRange: body.salaryRange || null,
+        salaryCurrency: body.salaryCurrency || "USD",
         jobType: body.jobType || "Full-time",
-        isRemote: body.isRemote || false,
+        isRemote: body.workMode ? body.workMode !== "ON_SITE" : (body.isRemote || false),
         clientId: ctx.clientId,
         postedById: ctx.clientUserId,
       },

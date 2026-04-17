@@ -1,0 +1,258 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Users, Search, Briefcase, Filter } from "lucide-react";
+import {
+  CandidateTableRow,
+  type CandidateRow,
+} from "@/components/client-portal/candidate-row";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+
+type Stage = { id: string; name: string; order: number; color: string; isTerminal: boolean; kind: string | null };
+type Filters = {
+  jobs: { id: string; title: string }[];
+  firms: { id: string; name: string }[];
+  stages: Stage[];
+};
+
+export default function ClientCandidatesPage() {
+  const [rows, setRows] = useState<CandidateRow[]>([]);
+  const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
+  const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState("");
+  const [jobFilter, setJobFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [firmFilter, setFirmFilter] = useState<string>("all");
+
+  useEffect(() => {
+    fetch("/api/client-portal/candidates/filters")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && !data.error) setFilters(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("flat", "true");
+    if (search.trim().length >= 2) params.set("search", search.trim());
+    if (jobFilter !== "all") params.set("jobId", jobFilter);
+    if (stageFilter !== "all") params.set("clientStageId", stageFilter);
+    if (firmFilter !== "all") params.set("firmId", firmFilter);
+
+    setLoading(true);
+    const t = setTimeout(() => {
+      fetch(`/api/client-portal/candidates?${params.toString()}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) setRows(data);
+          else setRows([]);
+        })
+        .catch(() => setRows([]))
+        .finally(() => setLoading(false));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [search, jobFilter, stageFilter, firmFilter]);
+
+  const jobOptions: SearchableSelectOption[] = useMemo(
+    () => filters.jobs.map((j) => ({ value: j.id, label: j.title })),
+    [filters.jobs]
+  );
+
+  const stageOptions: SearchableSelectOption[] = useMemo(
+    () =>
+      filters.stages.map((s) => ({
+        value: s.id,
+        label: s.name,
+        color: s.color,
+      })),
+    [filters.stages]
+  );
+
+  const firmOptions: SearchableSelectOption[] = useMemo(
+    () => filters.firms.map((f) => ({ value: f.id, label: f.name })),
+    [filters.firms]
+  );
+
+  const activeFilterCount =
+    (jobFilter !== "all" ? 1 : 0) +
+    (stageFilter !== "all" ? 1 : 0) +
+    (firmFilter !== "all" ? 1 : 0);
+
+  function clearFilters() {
+    setJobFilter("all");
+    setStageFilter("all");
+    setFirmFilter("all");
+    setSearch("");
+  }
+
+  const refetch = () => {
+    const params = new URLSearchParams();
+    params.set("flat", "true");
+    if (search.trim().length >= 2) params.set("search", search.trim());
+    if (jobFilter !== "all") params.set("jobId", jobFilter);
+    if (stageFilter !== "all") params.set("clientStageId", stageFilter);
+    if (firmFilter !== "all") params.set("firmId", firmFilter);
+    fetch(`/api/client-portal/candidates?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setRows(data);
+      })
+      .catch(() => {});
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+            <Users className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Candidates</h1>
+            <p className="text-gray-500 text-sm">
+              {loading ? "Loading..." : `${rows.length} candidate${rows.length === 1 ? "" : "s"} shared with you`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, title, company..."
+            className="pl-9"
+          />
+        </div>
+
+        <SearchableSelect
+          value={jobFilter}
+          onChange={setJobFilter}
+          options={jobOptions}
+          allLabel="All Jobs"
+          searchPlaceholder="Search jobs..."
+          placeholder="Jobs"
+        />
+
+        <SearchableSelect
+          value={stageFilter}
+          onChange={setStageFilter}
+          options={stageOptions}
+          allLabel="All Stages"
+          searchPlaceholder="Search stages..."
+          placeholder="Stages"
+          minWidth={140}
+        />
+
+        {filters.firms.length > 1 && (
+          <SearchableSelect
+            value={firmFilter}
+            onChange={setFirmFilter}
+            options={firmOptions}
+            allLabel="All Firms"
+            searchPlaceholder="Search firms..."
+            placeholder="Firms"
+            minWidth={140}
+          />
+        )}
+
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearFilters}
+            className="text-xs text-gray-500 hover:text-gray-900 inline-flex items-center gap-1 h-9 px-2"
+          >
+            <Filter className="h-3 w-3" /> Clear ({activeFilterCount})
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      {loading && rows.length === 0 ? (
+        <div className="space-y-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-14 bg-gray-100 rounded-md animate-pulse" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            {filters.jobs.length === 0 ? (
+              <>
+                <p className="text-sm text-gray-500 mb-2">No candidates shared with you yet.</p>
+                <p className="text-xs text-gray-400 mb-4">
+                  Your recruiting firms will share candidates here as they find them. You&apos;ll be able to review, rate and give feedback.
+                </p>
+                <Link href="/client-portal/jobs" className="text-sm text-emerald-600 hover:underline inline-flex items-center gap-1">
+                  <Briefcase className="h-3.5 w-3.5" /> View your jobs
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-400">No candidates match your filters.</p>
+                <button onClick={clearFilters} className="text-xs text-emerald-600 hover:underline mt-2">
+                  Clear filters
+                </button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Candidate</TableHead>
+                  <TableHead>Job</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Firm</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Shared</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <CandidateTableRow
+                    key={row.submissionId}
+                    row={row}
+                    onRated={refetch}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Legend */}
+      {!loading && rows.length > 0 && (
+        <div className="text-xs text-gray-400 flex flex-wrap items-center gap-4 px-1">
+          <span className="flex items-center gap-1.5">
+            <Badge className="bg-emerald-100 text-emerald-700 text-[9px]">Stage</Badge>
+            Your hiring pipeline stage for this candidate (editable in each candidate&apos;s detail)
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}

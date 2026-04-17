@@ -10,10 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil } from "lucide-react";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -40,13 +42,98 @@ export default function JobDetailPage() {
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignSearching, setAssignSearching] = useState(false);
 
+  // Document upload state
+  const [uploadingJD, setUploadingJD] = useState(false);
+  const [uploadingAdditional, setUploadingAdditional] = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    status: "OPEN",
+    location: "",
+    workMode: "ON_SITE",
+    salary: "",
+    currency: "USD",
+    feeType: "PERCENTAGE",
+    feeAmount: "" as string | number,
+    clientId: "",
+  });
+  const [clients, setClients] = useState<any[]>([]);
+
+  function startEditing() {
+    setEditForm({
+      title: job.title || "",
+      description: job.description || "",
+      status: job.status || "OPEN",
+      location: job.location || "",
+      workMode: job.workMode || "ON_SITE",
+      salary: job.salary || "",
+      currency: job.currency || "USD",
+      feeType: job.feeType || "PERCENTAGE",
+      feeAmount: job.feeAmount ?? "",
+      clientId: job.clientId || "",
+    });
+    // Fetch clients for the dropdown
+    fetch("/api/clients").then((r) => r.json()).then(setClients);
+    setEditing(true);
+  }
+
+  async function saveEditing() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/jobs/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...editForm,
+          feeAmount: editForm.feeAmount !== "" ? Number(editForm.feeAmount) : null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to save");
+      } else {
+        setEditing(false);
+        fetchJob();
+      }
+    } catch {
+      alert("Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${params.id}`);
-    if (res.ok) setJob(await res.json());
+    if (res.ok) {
+      setJob(await res.json());
+    } else {
+      const data = await res.json().catch(() => ({}));
+      // If this is a ClientJob ID with an accepted engagement, redirect to the real job
+      if (res.status === 307 && data.redirect) {
+        router.replace(data.redirect);
+        return;
+      }
+      // If this is a ClientJob with a pending engagement, redirect to engagements
+      if (data.error === "pending_engagement") {
+        router.replace("/engagements");
+        return;
+      }
+    }
     setLoading(false);
-  }, [params.id]);
+  }, [params.id, router]);
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
+
+  // Refresh when share dialog completes
+  useEffect(() => {
+    function handleRefresh() { fetchJob(); }
+    window.addEventListener("kanban:refresh", handleRefresh);
+    return () => window.removeEventListener("kanban:refresh", handleRefresh);
+  }, [fetchJob]);
 
   async function searchCandidates(query: string) {
     setCandidateSearch(query);
@@ -173,6 +260,66 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
+  async function uploadJobDocument(file: File, category: "JOB_DESCRIPTION" | "ADDITIONAL") {
+    const setUploading = category === "JOB_DESCRIPTION" ? setUploadingJD : setUploadingAdditional;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+      const res = await fetch(`/api/jobs/${params.id}/documents`, { method: "POST", body: formData });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Upload failed");
+      } else {
+        const data = await res.json();
+        if (category === "JOB_DESCRIPTION") {
+          if (data.parsed) {
+            // Text was extracted successfully
+          } else if (data.parseError) {
+            alert(`Document uploaded but text extraction failed: ${data.parseError}`);
+          } else {
+            alert("Document uploaded but no text could be extracted from the file.");
+          }
+        }
+        fetchJob();
+      }
+    } catch {
+      alert("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteJobDocument(docId: string, isJD?: boolean) {
+    if (!confirm("Delete this document?")) return;
+    await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    if (isJD) {
+      await fetch(`/api/jobs/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: job.title,
+          description: "",
+          status: job.status,
+          currency: job.currency || "USD",
+          feeType: job.feeType,
+          feeAmount: job.feeAmount ? Number(job.feeAmount) : null,
+          salary: job.salary || "",
+          location: job.location || "",
+          clientId: job.clientId,
+        }),
+      });
+    }
+    fetchJob();
+  }
+
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
   if (loading) return <div className="h-96 bg-gray-100 rounded-lg animate-pulse" />;
   if (!job) return <p className="text-gray-500">Job not found.</p>;
 
@@ -190,8 +337,8 @@ export default function JobDetailPage() {
             </div>
             <p className="text-gray-500">
               {job.client.name}
-              {job.location && ` - ${job.location}`}
-              {job.salary && ` - ${job.salary}`}
+              {job.location && ` · ${job.location}`}
+              {job.salary && ` · ${job.salary} (${job.currency || "USD"})`}
             </p>
           </div>
         </div>
@@ -328,50 +475,290 @@ export default function JobDetailPage() {
             onMove={moveSubmission}
             onToggleShare={toggleShare}
             onRemove={removeSubmission}
+            clientName={job.client?.name}
+            jobTitle={job.title}
           />
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
-          <Card>
-            <CardContent className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Client</p>
-                  <p className="font-medium">{job.client.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Status</p>
-                  <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
-                </div>
-                {job.location && (
-                  <div>
-                    <p className="text-sm text-gray-500">Location</p>
-                    <p>{job.location}</p>
+          <div className="border rounded-xl bg-white p-5 space-y-5">
+              {!editing ? (
+                <>
+                  {/* Header row: edit button */}
+                  <div className="flex items-center justify-end">
+                    <Button variant="outline" size="sm" onClick={startEditing} className="h-8">
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+                    </Button>
                   </div>
-                )}
-                {job.salary && (
-                  <div>
-                    <p className="text-sm text-gray-500">Salary</p>
-                    <p>{job.salary}</p>
+
+                  {/* Key info — compact 2-column layout */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Client</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.client.name}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Status</p>
+                      <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Location</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.location || "—"}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Work Arrangement</p>
+                      <Badge className={WORK_ARRANGEMENT_COLORS[job.workMode] || "bg-gray-100 text-gray-800"}>
+                        {WORK_ARRANGEMENT_LABELS[job.workMode] || "On-site"}
+                      </Badge>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Salary</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {job.salary ? (
+                          <>{job.salary} <span className="text-xs font-normal text-gray-500">{job.currency || "USD"}</span></>
+                        ) : "—"}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Fee</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {job.feeAmount ? (
+                          job.feeType === "PERCENTAGE"
+                            ? `${job.feeAmount}%`
+                            : `$${Number(job.feeAmount).toLocaleString()} ${job.currency || "USD"}`
+                        ) : "—"}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 col-span-2">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
+                      <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
+                    </div>
                   </div>
-                )}
-                {job.feeAmount && (
-                  <div>
-                    <p className="text-sm text-gray-500">Fee</p>
-                    <p>{job.feeType === "PERCENTAGE" ? `${job.feeAmount}%` : `$${job.feeAmount}`}</p>
+
+                  {/* Description — with proper paragraph spacing */}
+                  {job.description && (
+                    <div>
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">Description</p>
+                      <div className="bg-gray-50 rounded-lg p-5 max-h-[500px] overflow-y-auto">
+                        <div className="text-sm text-gray-800 leading-relaxed space-y-3">
+                          {job.description.split(/\n\s*\n/).map((paragraph: string, i: number) => (
+                            <div key={i}>
+                              {paragraph.split("\n").map((line: string, j: number) => (
+                                <p key={j} className={line.trim() === line.trim().toUpperCase() && line.trim().length > 3 ? "font-semibold text-gray-900 mt-3 first:mt-0" : ""}>
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <p className="font-semibold text-lg">Edit Job Details</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" onClick={saveEditing} disabled={saving}>
+                        {saving ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
                   </div>
-                )}
-                <div>
-                  <p className="text-sm text-gray-500">Assigned</p>
-                  <p>{job.assignments?.map((a: any) => a.user.name).join(", ") || "None"}</p>
-                </div>
-              </div>
-              {job.description && (
-                <div>
-                  <p className="text-sm text-gray-500">Description</p>
-                  <p className="whitespace-pre-wrap mt-1">{job.description}</p>
-                </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Job Title *</Label>
+                      <Input
+                        value={editForm.title}
+                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Client *</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.clientId}
+                          onChange={(e) => setEditForm({ ...editForm, clientId: e.target.value })}
+                        >
+                          <option value={job.clientId}>{job.client.name}</option>
+                          {clients.filter((c) => c.id !== job.clientId).map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Status</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.status}
+                          onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                        >
+                          {Object.entries(JOB_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>Location</Label>
+                        <Input
+                          value={editForm.location}
+                          onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                          placeholder="New York, NY"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Work Arrangement</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.workMode}
+                          onChange={(e) => setEditForm({ ...editForm, workMode: e.target.value })}
+                        >
+                          <option value="ON_SITE">On-site</option>
+                          <option value="REMOTE">Remote</option>
+                          <option value="HYBRID">Hybrid</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Salary Range</Label>
+                        <Input
+                          value={editForm.salary}
+                          onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
+                          placeholder="$150K - $180K"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <CurrencyPicker
+                          value={editForm.currency}
+                          onChange={(c) => setEditForm({ ...editForm, currency: c })}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Fee Type</Label>
+                        <select
+                          className="w-full border rounded-md px-3 py-2 text-sm"
+                          value={editForm.feeType}
+                          onChange={(e) => setEditForm({ ...editForm, feeType: e.target.value })}
+                        >
+                          <option value="PERCENTAGE">Percentage</option>
+                          <option value="FLAT">Flat Fee</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Fee Amount</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={editForm.feeAmount}
+                          onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
+                          placeholder="25"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea
+                        rows={6}
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        placeholder="Job description, requirements..."
+                      />
+                    </div>
+                  </div>
+                </>
               )}
+          </div>
+
+          {/* Job Description Document */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm text-gray-500">Job Description</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const jdDoc = job.documents?.find((d: any) => d.category === "JOB_DESCRIPTION");
+                if (jdDoc) {
+                  return (
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-indigo-500" />
+                        <div>
+                          <p className="text-sm font-medium truncate max-w-xs">{jdDoc.name}</p>
+                          <p className="text-xs text-gray-400">{formatBytes(jdDoc.size)} · {formatDate(jdDoc.createdAt)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <a href={`/api/documents/${jdDoc.id}`} download>
+                          <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                        </a>
+                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              <label className={`mt-3 flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${uploadingJD ? "opacity-50 pointer-events-none" : "hover:border-indigo-300 hover:bg-indigo-50/50"}`}>
+                <Upload className="h-6 w-6 text-gray-400 mb-2" />
+                <span className="text-sm text-gray-500">
+                  {uploadingJD ? "Uploading & parsing..." : (job.documents?.find((d: any) => d.category === "JOB_DESCRIPTION") ? "Replace Job Description" : "Upload Job Description")}
+                </span>
+                <span className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, TXT (max 10MB) — text will be extracted automatically</span>
+                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadJobDocument(file, "JOB_DESCRIPTION");
+                  e.target.value = "";
+                }} />
+              </label>
+            </CardContent>
+          </Card>
+
+          {/* Additional Documents */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm text-gray-500">Additional Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {job.documents?.filter((d: any) => d.category === "ADDITIONAL").map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
+                      <p className="text-xs text-gray-400">{formatBytes(doc.size)} · {formatDate(doc.createdAt)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <a href={`/api/documents/${doc.id}`} download>
+                      <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                    </a>
+                    <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${uploadingAdditional ? "opacity-50 pointer-events-none" : "hover:border-indigo-300 hover:bg-indigo-50/50"}`}>
+                <Upload className="h-6 w-6 text-gray-400 mb-2" />
+                <span className="text-sm text-gray-500">{uploadingAdditional ? "Uploading..." : "Upload Document"}</span>
+                <span className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, TXT, PNG, JPG (max 10MB)</span>
+                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadJobDocument(file, "ADDITIONAL");
+                  e.target.value = "";
+                }} />
+              </label>
             </CardContent>
           </Card>
         </TabsContent>
