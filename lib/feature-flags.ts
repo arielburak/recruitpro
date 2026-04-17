@@ -13,9 +13,11 @@
 export const FEATURES = {
   /**
    * Calendar + meeting integrations (Google Calendar/Meet, Microsoft Teams).
-   * Hidden by default while Google OAuth verification is pending, because the
-   * "Google hasn't verified this app" warning creates friction for end users.
+   * Enabled by default — needed for the OAuth verification demo video. If
+   * you ever need to hide the UI again (e.g. if Google rejects verification
+   * and you want to hide the friction until you resubmit), set the env var
+   * NEXT_PUBLIC_ENABLE_CALENDAR_INTEGRATIONS to "false" in Vercel.
    */
   calendarIntegrations:
-    process.env.NEXT_PUBLIC_ENABLE_CALENDAR_INTEGRATIONS === "true",
+    process.env.NEXT_PUBLIC_ENABLE_CALENDAR_INTEGRATIONS !== "false",
 } as const;
