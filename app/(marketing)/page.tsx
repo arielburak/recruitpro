@@ -106,6 +106,12 @@ function Navbar() {
               {item}
             </a>
           ))}
+          <Link href="/privacy" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
+            Terms
+          </Link>
         </div>
 
         <div className="hidden md:flex items-center gap-3">
@@ -132,6 +138,12 @@ function Navbar() {
               {item}
             </a>
           ))}
+          <Link href="/privacy" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-gray-700 hover:text-indigo-600">
+            Privacy
+          </Link>
+          <Link href="/terms" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-gray-700 hover:text-indigo-600">
+            Terms
+          </Link>
           <div className="flex flex-col gap-3 pt-2">
             <Link href="/login" className="text-center text-sm font-medium text-gray-700 px-4 py-2.5 rounded-lg border border-gray-200">Sign In</Link>
             <Link href="/register" className="text-center text-sm font-semibold bg-indigo-600 text-white px-4 py-2.5 rounded-lg">Start Free Trial</Link>
