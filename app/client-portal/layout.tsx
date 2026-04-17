@@ -61,7 +61,7 @@ export default function ClientPortalLayout({
                   <img
                     src={clientLogo}
                     alt={(session?.user as any)?.clientName || ""}
-                    className="h-14 w-auto max-w-[140px] object-contain"
+                    className="h-16 w-auto max-w-[180px] object-contain"
                   />
                 ) : (
                   <span className="text-sm font-semibold text-gray-900 truncate max-w-[220px]">
