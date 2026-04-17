@@ -108,6 +108,7 @@ model Client {
   name           String
   industry       String?
   website        String?
+  logo           String?
   contactName    String?
   contactEmail   String?
   contactPhone   String?

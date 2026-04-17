@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { PipelineStagesManager } from "@/components/client-portal/pipeline-stages-manager";
+import { LogoUploader } from "@/components/logo-uploader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -363,6 +364,15 @@ export default function ClientPortalSettingsPage() {
           </Card>
 
           {/* Candidate Pipeline */}
+          {/* Company Logo (optional) */}
+          <LogoUploader
+            endpoint="/api/client-portal/logo"
+            isAdmin={isAdmin}
+            label="Company Logo"
+            helperText="Optional. Shown next to your company name in the portal header. PNG, JPG, WEBP or SVG, max 2 MB."
+            accentColor="emerald"
+          />
+
           <PipelineStagesManager isAdmin={isAdmin} />
 
           {/* Team Members */}

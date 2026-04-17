@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { StaffingNotificationBell } from "./staffing-notification-bell";
+import { useLogoUrl } from "@/components/logo-uploader";
 
 const mainNavItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -149,6 +150,7 @@ export function Sidebar() {
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isAdmin = session?.user?.role === "ADMIN";
+  const orgLogo = useLogoUrl("/api/organization/logo");
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -176,16 +178,29 @@ export function Sidebar() {
           onClick={() => setMobileOpen(false)}
           className="flex items-center gap-2.5 hover:opacity-90 transition-opacity min-w-0 flex-1"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600">
-            <Briefcase size={16} className="text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon.svg"
+            alt="Recruiting ATS"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0 rounded-lg"
+          />
           <div className="min-w-0">
             <span className="text-lg font-semibold tracking-tight text-white leading-tight block truncate">
               Recruiting ATS
             </span>
             {session?.user?.organizationName && (
-              <span className="text-[11px] text-gray-400 leading-tight block truncate">
-                {session.user.organizationName}
+              <span className="text-[11px] text-gray-400 leading-tight flex items-center gap-1.5 truncate">
+                {orgLogo && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={orgLogo}
+                    alt=""
+                    className="h-3.5 w-3.5 rounded-sm object-contain bg-white/80 p-0.5"
+                  />
+                )}
+                <span className="truncate">{session.user.organizationName}</span>
               </span>
             )}
           </div>
@@ -266,9 +281,8 @@ export function Sidebar() {
           <Menu size={22} />
         </button>
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600">
-            <Briefcase size={13} className="text-white" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon.svg" alt="Recruiting ATS" width={28} height={28} className="h-7 w-7 rounded-lg" />
           <div>
             <span className="text-base font-semibold text-gray-900 leading-tight block">
               Recruiting ATS

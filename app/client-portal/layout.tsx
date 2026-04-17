@@ -5,6 +5,7 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List, User, Users } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
+import { useLogoUrl } from "@/components/logo-uploader";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -17,6 +18,8 @@ export default function ClientPortalLayout({
   const { data: session } = useSession();
   const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|calendar|settings|candidates)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
+  // Only fetch the logo when the user is authenticated as a client user (avoids 401 on public pages)
+  const clientLogo = useLogoUrl(showNav ? "/api/client-portal/logo" : "");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -26,16 +29,23 @@ export default function ClientPortalLayout({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <Link href="/client-portal/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-              <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-600 text-white">
-                <Briefcase className="h-5 w-5" />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icon.svg" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg" />
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">
                   Client Portal
                 </h1>
                 {(session?.user as any)?.clientName ? (
-                  <p className="text-[11px] text-gray-400 leading-tight">
-                    {(session?.user as any)?.clientName}
+                  <p className="text-[11px] text-gray-400 leading-tight flex items-center gap-1.5">
+                    {clientLogo && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={clientLogo}
+                        alt=""
+                        className="h-3.5 w-3.5 rounded-sm object-contain bg-gray-50 p-0.5"
+                      />
+                    )}
+                    <span>{(session?.user as any)?.clientName}</span>
                   </p>
                 ) : (
                   <p className="text-xs text-gray-500 leading-tight">

@@ -10,6 +10,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Video, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { FEATURES } from "@/lib/feature-flags";
+import { LogoUploader } from "@/components/logo-uploader";
 
 export default function AdminSettingsPage() {
   return (
@@ -98,6 +99,15 @@ function SettingsContent() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Logo (optional, admin only) */}
+      <LogoUploader
+        endpoint="/api/organization/logo"
+        isAdmin={session?.user?.role === "ADMIN"}
+        label="Organization Logo"
+        helperText="Optional. Shown next to your firm's name in the sidebar. PNG, JPG, WEBP or SVG, max 2 MB."
+        accentColor="indigo"
+      />
 
       {/* Calendar Integrations — hidden while Google OAuth verification is pending */}
       {FEATURES.calendarIntegrations && (
