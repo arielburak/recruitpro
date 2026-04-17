@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
+import { extractJobFields } from "@/lib/extract-job-fields";
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +18,8 @@ export async function POST(request: Request) {
 
     try {
       const formatted = await parseDocumentBuffer(buffer, file.name);
-      return NextResponse.json({ text: formatted });
+      const fields = extractJobFields(formatted);
+      return NextResponse.json({ text: formatted, fields });
     } catch (err: any) {
       return NextResponse.json({
         text: "",

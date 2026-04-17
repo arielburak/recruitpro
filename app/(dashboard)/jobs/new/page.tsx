@@ -22,6 +22,9 @@ function NewJobContent() {
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
+  const [title, setTitle] = useState("");
+  const [location, setLocation] = useState("");
+  const [workMode, setWorkMode] = useState("ON_SITE");
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Fee terms state (auto-filled from client defaults)
@@ -102,6 +105,13 @@ function NewJobContent() {
 
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
+        // Always overwrite structured fields with the parsed JD — the document
+        // is the source of truth, regardless of whatever the user typed before.
+        if (data.fields) {
+          if (data.fields.title) setTitle(data.fields.title);
+          if (data.fields.location) setLocation(data.fields.location);
+          if (data.fields.workMode) setWorkMode(data.fields.workMode);
+        }
         setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
       } else if (data.error) {
         setParseStatus(`Could not extract text: ${data.error}`);
@@ -125,11 +135,11 @@ function NewJobContent() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: fd.get("title"),
+        title,
         description: description || fd.get("description"),
         clientId: selectedClientId,
-        location: fd.get("location"),
-        workMode: fd.get("workMode"),
+        location,
+        workMode,
         currency,
         salary: fd.get("salary"),
         feeType,
@@ -215,8 +225,14 @@ function NewJobContent() {
             </div>
 
             <div className="space-y-2">
-              <Label>Job Title *</Label>
-              <Input name="title" placeholder="Senior Software Engineer" required />
+              <Label>Job Title * {title && description && <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span>}</Label>
+              <Input
+                name="title"
+                placeholder="Senior Software Engineer"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label>Client *</Label>
@@ -276,11 +292,21 @@ function NewJobContent() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>Location</Label>
-                <Input name="location" placeholder="New York, NY" />
+                <Input
+                  name="location"
+                  placeholder="New York, NY"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Work Arrangement</Label>
-                <select name="workMode" className="w-full border rounded-md px-3 py-2 text-sm" defaultValue="ON_SITE">
+                <select
+                  name="workMode"
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value)}
+                >
                   <option value="ON_SITE">On-site</option>
                   <option value="REMOTE">Remote</option>
                   <option value="HYBRID">Hybrid</option>
