@@ -47,20 +47,27 @@ export default function ClientPortalLayout({
               </div>
             </Link>
 
-            {/* Company logo badge (client workspace, admin-uploaded).
-                Just the logo — the client name already appears under
-                "Client Portal" and in the dashboard. */}
-            {showNav && clientLogo && (
+            {/* Company workspace badge.
+                - If the client uploaded a logo → show just the logo (clean).
+                - If no logo yet → show the company name as a fallback so
+                  the workspace is still identified. */}
+            {showNav && (session?.user as any)?.clientName && (
               <div
-                className="hidden lg:flex items-center pl-4 border-l border-gray-200"
+                className="hidden lg:flex items-center gap-2.5 pl-4 border-l border-gray-200"
                 title={(session?.user as any)?.clientName || ""}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={clientLogo}
-                  alt={(session?.user as any)?.clientName || ""}
-                  className="h-9 w-9 rounded-lg object-contain bg-white p-1 border border-gray-200"
-                />
+                {clientLogo ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={clientLogo}
+                    alt={(session?.user as any)?.clientName || ""}
+                    className="h-9 w-9 rounded-lg object-contain bg-white p-1 border border-gray-200"
+                  />
+                ) : (
+                  <span className="text-sm font-semibold text-gray-900 truncate max-w-[220px]">
+                    {(session?.user as any)?.clientName}
+                  </span>
+                )}
               </div>
             )}
 
