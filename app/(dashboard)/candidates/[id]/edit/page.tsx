@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, X } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 export default function EditCandidatePage() {
@@ -149,22 +150,19 @@ export default function EditCandidatePage() {
             </div>
             <div className="space-y-2">
               <Label>Currency</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <CurrencyPicker
+                name="salaryCurrency"
                 value={salaryCurrency}
-                onChange={(e) => setSalaryCurrency(e.target.value)}
-              >
-                <option value="USD">USD – US Dollar</option>
-                <option value="ARS">ARS – Peso Argentino</option>
-              </select>
+                onChange={setSalaryCurrency}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Current Salary ({salaryCurrency === "ARS" ? "$" : "US$"})</Label>
+                <Label>Current Salary ({getCurrency(salaryCurrency).symbol})</Label>
                 <Input name="currentSalary" type="number" defaultValue={candidate.currentSalary || ""} />
               </div>
               <div className="space-y-2">
-                <Label>Desired Salary ({salaryCurrency === "ARS" ? "$" : "US$"})</Label>
+                <Label>Desired Salary ({getCurrency(salaryCurrency).symbol})</Label>
                 <Input name="desiredSalary" type="number" defaultValue={candidate.desiredSalary || ""} />
               </div>
             </div>

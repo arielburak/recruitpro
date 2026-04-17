@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 export default function NewClientPage() {
@@ -98,10 +99,7 @@ export default function NewClientPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Currency</Label>
-                  <select name="defaultCurrency" className="w-full border rounded-md px-3 py-2 text-sm">
-                    <option value="USD">USD</option>
-                    <option value="ARS">ARS</option>
-                  </select>
+                  <CurrencyPicker name="defaultCurrency" defaultValue="USD" />
                 </div>
                 <div className="space-y-2">
                   <Label>Fee Type</Label>

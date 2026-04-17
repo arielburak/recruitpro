@@ -15,6 +15,7 @@ import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, F
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -634,14 +635,10 @@ export default function JobDetailPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Currency</Label>
-                        <select
-                          className="w-full border rounded-md px-3 py-2 text-sm"
+                        <CurrencyPicker
                           value={editForm.currency}
-                          onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
-                        >
-                          <option value="USD">USD</option>
-                          <option value="ARS">ARS</option>
-                        </select>
+                          onChange={(c) => setEditForm({ ...editForm, currency: c })}
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">

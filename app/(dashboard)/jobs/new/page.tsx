@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check } from "lucide-react";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
 function NewJobContent() {
@@ -291,10 +292,7 @@ function NewJobContent() {
               </div>
               <div className="space-y-2">
                 <Label>Currency {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
-                <select className="w-full border rounded-md px-3 py-2 text-sm" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  <option value="USD">USD</option>
-                  <option value="ARS">ARS</option>
-                </select>
+                <CurrencyPicker value={currency} onChange={setCurrency} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

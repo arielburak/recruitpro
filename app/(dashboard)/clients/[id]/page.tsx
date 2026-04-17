@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, X } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 
 export default function ClientDetailPage() {
@@ -356,14 +357,11 @@ export default function ClientDetailPage() {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Currency</Label>
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      <CurrencyPicker
+                        compact
                         value={clientForm.defaultCurrency}
-                        onChange={(e) => setClientForm({ ...clientForm, defaultCurrency: e.target.value })}
-                      >
-                        <option value="USD">USD</option>
-                        <option value="ARS">ARS</option>
-                      </select>
+                        onChange={(c) => setClientForm({ ...clientForm, defaultCurrency: c })}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Fee Type</Label>
