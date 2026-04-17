@@ -118,29 +118,28 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
 
   return (
     <div className="space-y-3">
-      {/* Company workspace indicator (logo + name) */}
+      {/* Company workspace indicator.
+          Same logic as the client portal header:
+          - If org has uploaded a logo → show just the logo (no duplicate text).
+          - If no logo yet → show the organization name as plain text so
+            the workspace is still identified. */}
       {session?.user?.organizationName && (
-        <div className="flex items-center gap-2.5 px-1">
+        <div
+          className="flex items-center px-1"
+          title={session.user.organizationName}
+        >
           {orgLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={orgLogo}
               alt={session.user.organizationName}
-              className="h-8 w-8 rounded-md object-contain bg-white p-1 shrink-0 ring-1 ring-white/10"
+              className="h-10 w-auto max-w-[180px] object-contain"
             />
           ) : (
-            <div className="h-8 w-8 rounded-md bg-white/5 flex items-center justify-center text-[10px] font-bold text-gray-400 shrink-0 ring-1 ring-white/10">
-              {session.user.organizationName
-                .split(" ")
-                .map((w) => w[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
-            </div>
+            <span className="text-sm font-semibold text-gray-200 truncate">
+              {session.user.organizationName}
+            </span>
           )}
-          <span className="text-sm font-semibold text-gray-200 truncate">
-            {session.user.organizationName}
-          </span>
         </div>
       )}
 
