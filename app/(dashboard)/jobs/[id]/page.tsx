@@ -655,13 +655,19 @@ export default function JobDetailPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Fee Amount</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={editForm.feeAmount}
-                          onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
-                          placeholder="25"
-                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                            {editForm.feeType === "PERCENTAGE" ? "%" : "$"}
+                          </span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="pl-7"
+                            value={editForm.feeAmount}
+                            onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
+                            placeholder="25"
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2">
