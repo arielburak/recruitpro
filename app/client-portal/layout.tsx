@@ -30,7 +30,7 @@ export default function ClientPortalLayout({
           <div className="flex items-center gap-6">
             <Link href="/client-portal/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icon-emerald.svg?v=2" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg" />
+              <img src="/icon-emerald.svg?v=2" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg shrink-0" />
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">
                   Client Portal
@@ -46,6 +46,29 @@ export default function ClientPortalLayout({
                 )}
               </div>
             </Link>
+
+            {/* Company logo badge (client workspace, admin-uploaded) */}
+            {showNav && clientLogo && (
+              <div
+                className="hidden lg:flex items-center gap-2 pl-4 border-l border-gray-200"
+                title={(session?.user as any)?.clientName || ""}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={clientLogo}
+                  alt={(session?.user as any)?.clientName || ""}
+                  className="h-10 w-10 rounded-lg object-contain bg-white p-1 border border-gray-200"
+                />
+                <div className="min-w-0 max-w-[180px]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 leading-tight">
+                    Workspace
+                  </p>
+                  <p className="text-sm font-semibold text-gray-900 leading-tight truncate">
+                    {(session?.user as any)?.clientName}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {showNav && (
               <nav className="hidden sm:flex items-center gap-1 ml-4">
@@ -79,19 +102,6 @@ export default function ClientPortalLayout({
           <div className="flex items-center gap-2">
             {showNav ? (
               <>
-                {clientLogo && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 pr-2 border-r border-gray-200 mr-1"
-                    title={(session?.user as any)?.clientName || ""}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={clientLogo}
-                      alt={(session?.user as any)?.clientName || ""}
-                      className="h-7 w-7 rounded-md object-contain bg-gray-50 p-0.5 border border-gray-100"
-                    />
-                  </div>
-                )}
                 <NotificationBell />
                 <Link
                   href="/client-portal/settings"
