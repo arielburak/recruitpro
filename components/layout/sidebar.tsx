@@ -204,7 +204,7 @@ export function Sidebar() {
   const sidebarContent = (
     <>
       {/* Logo + Notification bell */}
-      <div className="flex items-center justify-between gap-2 px-5 py-5">
+      <div className="flex items-center justify-between gap-2 px-5 py-5 shrink-0">
         <Link
           href="/dashboard"
           onClick={() => setMobileOpen(false)}
@@ -233,7 +233,7 @@ export function Sidebar() {
       <div className="mx-4 border-t border-white/[0.06]" />
 
       {/* Main nav */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 min-h-0 space-y-1 px-3 py-4 overflow-y-auto">
         <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
           Main
         </p>
@@ -280,10 +280,10 @@ export function Sidebar() {
       </nav>
 
       {/* Separator */}
-      <div className="mx-4 border-t border-white/[0.06]" />
+      <div className="mx-4 border-t border-white/[0.06] shrink-0" />
 
-      {/* User section */}
-      <div className="px-4 py-4">
+      {/* User section — pinned to the bottom, never clipped */}
+      <div className="px-4 py-4 shrink-0">
         <UserInfo session={session} />
       </div>
     </>
