@@ -7,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreditCard, Users, Calendar, CheckCircle } from "lucide-react";
+import {
+  monthlyTotalCents,
+  perSeatCents,
+  SOLO_PRICE_PER_SEAT_CENTS,
+  TEAM_MAX_SEATS,
+  TEAM_PRICE_PER_SEAT_CENTS,
+  tierForSeats,
+} from "@/lib/constants";
+
+const dollars = (cents: number) => (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 function BillingContent() {
   const { data: session } = useSession();
@@ -34,6 +44,10 @@ function BillingContent() {
     const data = await res.json();
     if (data.url) window.location.href = data.url;
   }
+
+  const seats = subscription?.seats || 1;
+  const tier = tierForSeats(seats);
+  const tierLabel = tier === "SOLO" ? "Solo" : "Team";
 
   const statusColors: Record<string, string> = {
     TRIALING: "bg-blue-100 text-blue-800",
@@ -73,11 +87,17 @@ function BillingContent() {
                 <span className="text-gray-500 flex items-center gap-2">
                   <Users className="h-4 w-4" /> Seats
                 </span>
-                <span className="font-semibold">{subscription?.seats || 1}</span>
+                <span className="font-semibold">{seats}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Plan</span>
+                <span className="font-semibold">
+                  {tierLabel} &middot; ${dollars(perSeatCents(seats))}/seat/mo
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Monthly Cost</span>
-                <span className="font-semibold">${(subscription?.seats || 1) * 10}/mo</span>
+                <span className="font-semibold">${dollars(monthlyTotalCents(seats))}/mo</span>
               </div>
               {subscription?.trialEndsAt && subscription.status === "TRIALING" && (
                 <div className="flex items-center justify-between">
@@ -117,8 +137,10 @@ function BillingContent() {
             <CardContent className="p-6">
               <h3 className="font-semibold mb-2">Pricing</h3>
               <p className="text-gray-600 text-sm">
-                $10 per user per month. 7-day free trial included.
-                Add or remove seats any time from the Team page.
+                Solo: ${dollars(SOLO_PRICE_PER_SEAT_CENTS)}/seat/month (1 seat).{" "}
+                Team: ${dollars(TEAM_PRICE_PER_SEAT_CENTS)}/seat/month ({`2–${TEAM_MAX_SEATS}`} seats).{" "}
+                7-day free trial included. Add or remove seats any time from the Team page —
+                crossing from 1 to 2 seats moves you to the Team plan automatically.
               </p>
             </CardContent>
           </Card>
