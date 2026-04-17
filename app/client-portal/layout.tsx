@@ -30,7 +30,7 @@ export default function ClientPortalLayout({
           <div className="flex items-center gap-6">
             <Link href="/client-portal/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icon-emerald.svg" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg" />
+              <img src="/icon-emerald.svg?v=2" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg" />
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">
                   Client Portal
