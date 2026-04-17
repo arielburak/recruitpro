@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put, del } from "@vercel/blob";
+import { put, del, getDownloadUrl } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const ext = file.type === "image/svg+xml" ? "svg" : file.type.split("/")[1] || "png";
     const blobPath = `client-${ctx.clientId}/logo-${Date.now()}.${ext}`;
     const blob = await put(blobPath, buffer, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       contentType: file.type,
     });
@@ -54,7 +54,10 @@ export async function POST(request: Request) {
       data: { logo: blob.url },
     });
 
-    return NextResponse.json({ url: blob.url });
+    let displayUrl = blob.url;
+    try { displayUrl = getDownloadUrl(blob.url); } catch {}
+
+    return NextResponse.json({ url: displayUrl });
   } catch (error: any) {
     console.error("[client logo upload] error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
@@ -87,7 +90,8 @@ export async function DELETE() {
   }
 }
 
-// GET: return current logo url (any active client user)
+// GET: return current logo url (any active client user).
+// Since blobs are private, we return a signed download URL for rendering.
 export async function GET() {
   try {
     const ctx = await getClientContext();
@@ -95,7 +99,16 @@ export async function GET() {
       where: { id: ctx.clientId },
       select: { logo: true, name: true },
     });
-    return NextResponse.json({ logo: client?.logo || null, name: client?.name || null });
+    let displayUrl: string | null = null;
+    if (client?.logo) {
+      try {
+        displayUrl = getDownloadUrl(client.logo);
+      } catch (e) {
+        console.error("[client logo] getDownloadUrl failed:", e);
+        displayUrl = client.logo;
+      }
+    }
+    return NextResponse.json({ logo: displayUrl, name: client?.name || null });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

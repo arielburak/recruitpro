@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put, del } from "@vercel/blob";
+import { put, del, getDownloadUrl } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const ext = file.type === "image/svg+xml" ? "svg" : file.type.split("/")[1] || "png";
     const blobPath = `org-${ctx.organizationId}/logo-${Date.now()}.${ext}`;
     const blob = await put(blobPath, buffer, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       contentType: file.type,
     });
@@ -55,7 +55,11 @@ export async function POST(request: Request) {
       data: { logo: blob.url },
     });
 
-    return NextResponse.json({ url: blob.url });
+    // Return a signed display URL so the browser can render immediately
+    let displayUrl = blob.url;
+    try { displayUrl = getDownloadUrl(blob.url); } catch {}
+
+    return NextResponse.json({ url: displayUrl });
   } catch (error: any) {
     console.error("[org logo upload] error:", error);
     return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
@@ -88,7 +92,8 @@ export async function DELETE() {
   }
 }
 
-// GET: return current logo url (anyone in the org)
+// GET: return current logo url (anyone in the org).
+// Since blobs are private, we return a signed download URL that the browser can render.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -96,7 +101,16 @@ export async function GET() {
       where: { id: ctx.organizationId },
       select: { logo: true, name: true },
     });
-    return NextResponse.json({ logo: org?.logo || null, name: org?.name || null });
+    let displayUrl: string | null = null;
+    if (org?.logo) {
+      try {
+        displayUrl = getDownloadUrl(org.logo);
+      } catch (e) {
+        console.error("[org logo] getDownloadUrl failed:", e);
+        displayUrl = org.logo;
+      }
+    }
+    return NextResponse.json({ logo: displayUrl, name: org?.name || null });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
