@@ -1,6 +1,36 @@
 export const TRIAL_DAYS = 7;
-export const PRICE_PER_SEAT_CENTS = 1000; // $10.00
-export const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || "";
+
+// Tiered per-seat pricing (monthly, in cents).
+// Solo covers the independent recruiter; Team kicks in at the second seat.
+export const SOLO_PRICE_PER_SEAT_CENTS = 1500; // $15
+export const TEAM_PRICE_PER_SEAT_CENTS = 1900; // $19
+
+export const SOLO_MAX_SEATS = 1;
+export const TEAM_MIN_SEATS = 2;
+export const TEAM_MAX_SEATS = 10;
+
+export const STRIPE_PRICE_ID_SOLO = process.env.STRIPE_PRICE_ID_SOLO || "";
+export const STRIPE_PRICE_ID_TEAM = process.env.STRIPE_PRICE_ID_TEAM || "";
+
+export type PricingTier = "SOLO" | "TEAM";
+
+export function tierForSeats(seats: number): PricingTier {
+  return seats <= SOLO_MAX_SEATS ? "SOLO" : "TEAM";
+}
+
+export function stripePriceIdForSeats(seats: number): string {
+  return tierForSeats(seats) === "SOLO" ? STRIPE_PRICE_ID_SOLO : STRIPE_PRICE_ID_TEAM;
+}
+
+export function perSeatCents(seats: number): number {
+  return tierForSeats(seats) === "SOLO"
+    ? SOLO_PRICE_PER_SEAT_CENTS
+    : TEAM_PRICE_PER_SEAT_CENTS;
+}
+
+export function monthlyTotalCents(seats: number): number {
+  return perSeatCents(seats) * seats;
+}
 
 export const DEFAULT_PIPELINE_STAGES = [
   { name: "Sourced", color: "#94a3b8" },
