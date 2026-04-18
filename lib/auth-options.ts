@@ -53,6 +53,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           organizationId: user.organizationId,
           organizationName: user.organization.name,
+          needsOnboarding: user.organization.needsOnboarding,
         };
       },
     }),
@@ -108,12 +109,15 @@ export const authOptions: NextAuthOptions = {
 
       if (existingUser) return true;
 
-      // Auto-create org + user for new OAuth sign-ups
+      // Auto-create org + user for new OAuth sign-ups.
+      // Org name is a placeholder — user is forced through /onboarding
+      // to set the real company name before accessing the app.
       const slug = user.email.split("@")[0] + "-" + Date.now().toString(36);
       await prisma.organization.create({
         data: {
-          name: user.name ? `${user.name}'s Firm` : "My Firm",
+          name: "",
           slug,
+          needsOnboarding: true,
           users: {
             create: {
               email: user.email,
@@ -138,6 +142,12 @@ export const authOptions: NextAuthOptions = {
         if (typeof session.role === "string") {
           token.role = session.role;
         }
+        if (typeof session.organizationName === "string" && session.organizationName.trim()) {
+          token.organizationName = session.organizationName;
+        }
+        if (typeof session.needsOnboarding === "boolean") {
+          token.needsOnboarding = session.needsOnboarding;
+        }
         return token;
       }
 
@@ -155,10 +165,12 @@ export const authOptions: NextAuthOptions = {
           token.role = undefined;
           token.organizationId = undefined;
           token.organizationName = undefined;
+          token.needsOnboarding = undefined;
         } else {
           token.role = (user as any).role;
           token.organizationId = (user as any).organizationId;
           token.organizationName = (user as any).organizationName;
+          token.needsOnboarding = (user as any).needsOnboarding || false;
           // Clear client fields
           token.clientId = undefined;
           token.clientName = undefined;
@@ -174,6 +186,7 @@ export const authOptions: NextAuthOptions = {
           token.role = dbUser.role;
           token.organizationId = dbUser.organizationId;
           token.organizationName = dbUser.organization.name;
+          token.needsOnboarding = dbUser.organization.needsOnboarding;
           token.isClientUser = false;
           // Clear any client fields
           token.clientId = undefined;
@@ -188,6 +201,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).organizationId = token.organizationId;
         (session.user as any).organizationName = token.organizationName;
+        (session.user as any).needsOnboarding = token.needsOnboarding;
         (session.user as any).clientId = token.clientId;
         (session.user as any).clientName = token.clientName;
         (session.user as any).isClientUser = token.isClientUser;
