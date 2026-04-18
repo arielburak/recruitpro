@@ -1,4 +1,4 @@
-export const TRIAL_DAYS = 7;
+export const TRIAL_DAYS = 5;
 
 // Tiered per-seat pricing (monthly, in cents).
 // Solo covers the independent recruiter; Team kicks in at the second seat.
