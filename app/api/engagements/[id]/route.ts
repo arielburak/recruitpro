@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireActiveSubscription, SubscriptionError } from "@/lib/subscription-guard";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function PUT(
   request: Request,
@@ -44,12 +45,6 @@ export async function PUT(
         throw e;
       }
 
-      // Get org default stages
-      const org = await prisma.organization.findUnique({
-        where: { id: ctx.organizationId },
-        select: { defaultStages: true },
-      });
-
       // Ensure the client exists in the recruiter's org
       let client = await prisma.client.findFirst({
         where: { name: engagement.clientJob.client.name, organizationId: ctx.organizationId },
@@ -77,13 +72,17 @@ export async function PUT(
         },
       });
 
-      // Create default pipeline stages
-      const stages = org?.defaultStages || ["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"];
-      for (let i = 0; i < stages.length; i++) {
-        await prisma.pipelineStage.create({
-          data: { name: stages[i], order: i, jobId: job.id },
-        });
-      }
+      // Create the canonical 9 pipeline stages
+      await prisma.pipelineStage.createMany({
+        data: DEFAULT_STAGES.map((s, i) => ({
+          name: s.name,
+          color: s.color,
+          isTerminal: s.isTerminal,
+          kind: s.kind,
+          order: i,
+          jobId: job.id,
+        })),
+      });
 
       // Update engagement
       await prisma.firmEngagement.update({

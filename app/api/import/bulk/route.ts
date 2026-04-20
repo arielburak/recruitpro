@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function POST(request: Request) {
   try {
@@ -116,11 +117,6 @@ export async function POST(request: Request) {
             clientId = newClient.id;
           }
 
-          const org = await prisma.organization.findUnique({
-            where: { id: ctx.organizationId },
-            select: { defaultStages: true },
-          });
-
           const job = await prisma.job.create({
             data: {
               title,
@@ -133,13 +129,17 @@ export async function POST(request: Request) {
             },
           });
 
-          // Create default pipeline stages
-          const stages = org?.defaultStages || ["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"];
-          for (let i = 0; i < stages.length; i++) {
-            await prisma.pipelineStage.create({
-              data: { name: stages[i], order: i, jobId: job.id },
-            });
-          }
+          // Create the canonical 9 pipeline stages
+          await prisma.pipelineStage.createMany({
+            data: DEFAULT_STAGES.map((s, i) => ({
+              name: s.name,
+              color: s.color,
+              isTerminal: s.isTerminal,
+              kind: s.kind,
+              order: i,
+              jobId: job.id,
+            })),
+          });
 
           imported++;
         } catch (e: any) {

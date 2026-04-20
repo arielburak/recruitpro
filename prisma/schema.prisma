@@ -14,10 +14,9 @@ model Organization {
   name      String
   slug      String   @unique
   logo      String?
+  needsOnboarding Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  defaultStages String[] @default(["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"])
 
   users        User[]
   clients      Client[]
@@ -299,11 +298,13 @@ model JobAssignment {
 // ─── PIPELINE ───
 
 model PipelineStage {
-  id    String @id @default(cuid())
-  name  String
-  order Int
-  color String @default("#6366f1")
-  jobId String
+  id         String  @id @default(cuid())
+  name       String
+  order      Int
+  color      String  @default("#6366f1")
+  isTerminal Boolean @default(false)
+  kind       String? // "positive" | "negative" | null
+  jobId      String
 
   job         Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   submissions CandidateSubmission[]

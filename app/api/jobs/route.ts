@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { logActivity } from "@/lib/activity";
-import { DEFAULT_PIPELINE_STAGES } from "@/lib/constants";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function GET(request: NextRequest) {
   try {
@@ -86,11 +86,13 @@ export async function POST(request: Request) {
         },
       });
 
-      // Create pipeline stages from defaults
+      // Create the canonical 9 pipeline stages
       await tx.pipelineStage.createMany({
-        data: DEFAULT_PIPELINE_STAGES.map((s, i) => ({
+        data: DEFAULT_STAGES.map((s, i) => ({
           name: s.name,
           color: s.color,
+          isTerminal: s.isTerminal,
+          kind: s.kind,
           order: i,
           jobId: j.id,
         })),
