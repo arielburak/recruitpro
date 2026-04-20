@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get("location");
     const jobId = searchParams.get("jobId");
     const clientId = searchParams.get("clientId");
+    const stage = searchParams.get("stage");
 
     if (ownerId) {
       const ownerIds = ownerId.split(",");
@@ -63,6 +64,19 @@ export async function GET(request: NextRequest) {
           ...where.submissions?.some,
           job: {
             clientId: clientIds.length === 1 ? clientIds[0] : { in: clientIds },
+          },
+        },
+      };
+    }
+
+    if (stage) {
+      const stageNames = stage.split(",");
+      where.submissions = {
+        ...where.submissions,
+        some: {
+          ...where.submissions?.some,
+          stage: {
+            name: stageNames.length === 1 ? stageNames[0] : { in: stageNames },
           },
         },
       };
