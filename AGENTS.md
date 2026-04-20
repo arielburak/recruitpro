@@ -6,4 +6,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Git workflow
 
-All work ships through `staging` first. When a task is done, open the PR (or merge) against `staging` — never `main`/production — unless the user explicitly says "push to main", "promote to production", or similar. `staging` is the safety buffer; `main` only receives changes after the user decides to promote.
+All work ships through `staging` first. When a task is done, open the PR against `staging` automatically as part of finishing — don't ask first. The user has already decided; re-asking is noise. Only target `main`/production if the user explicitly says "push to main", "promote to production", or similar.
