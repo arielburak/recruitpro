@@ -78,10 +78,10 @@ export default function RegisterPage() {
           </div>
 
           <h1 className="text-4xl font-bold leading-tight mb-4">
-            Join 500+ recruiting<br />firms worldwide
+            A modern ATS<br />for boutique firms
           </h1>
           <p className="text-indigo-100 text-lg mb-10">
-            Everything you need to run a modern recruiting operation.
+            Everything you need to run a recruiting operation — without the enterprise bloat.
           </p>
 
           <div className="space-y-5">
@@ -102,19 +102,10 @@ export default function RegisterPage() {
         </div>
 
         <div className="border-t border-white/20 pt-8">
-          <blockquote className="text-indigo-100 italic text-sm leading-relaxed">
-            &ldquo;We onboarded our entire team in under an hour. The candidate management
-            is leagues ahead of what we had before.&rdquo;
-          </blockquote>
-          <div className="mt-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-              JR
-            </div>
-            <div>
-              <p className="text-sm font-medium">James Rivera</p>
-              <p className="text-xs text-indigo-200">Founder, TalentBridge Partners</p>
-            </div>
-          </div>
+          <p className="text-indigo-100 text-sm leading-relaxed">
+            You&apos;re joining early. That means direct access to the team, weekly shipping,
+            and early-adopter pricing that stays grandfathered.
+          </p>
         </div>
       </div>
 

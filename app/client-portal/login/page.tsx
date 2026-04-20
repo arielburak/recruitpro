@@ -446,7 +446,7 @@ function ClientPortalLoginInner() {
                 <p className="text-gray-500 mt-1">
                   {isInvitedUser
                     ? "A recruiter invited you. Set a password to get started."
-                    : "Free forever for hiring companies."}
+                    : "Free during early access for hiring companies."}
                 </p>
               </div>
               <form onSubmit={handleRegister} className="space-y-4">
