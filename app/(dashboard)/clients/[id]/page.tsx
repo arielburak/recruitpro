@@ -376,14 +376,19 @@ export default function ClientDetailPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Fee Amount</Label>
-                      <Input
-                        className="h-9"
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 15"
-                        value={clientForm.defaultFeeAmount}
-                        onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
-                      />
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                          {clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
+                        </span>
+                        <Input
+                          className="h-9 pl-7"
+                          type="number"
+                          step="0.01"
+                          placeholder="e.g. 15"
+                          value={clientForm.defaultFeeAmount}
+                          onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

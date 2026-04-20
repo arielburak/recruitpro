@@ -16,6 +16,7 @@ import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARR
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -27,6 +28,36 @@ export default function JobDetailPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // "Add Candidate" dialog — inline create mode
+  const [addMode, setAddMode] = useState<"search" | "create">("search");
+  const [companySuggestions, setCompanySuggestions] = useState<string[]>([]);
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+  const emptyNewCandidate = {
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    linkedIn: "",
+    currentTitle: "",
+    currentCompany: "",
+  };
+  const [newCandidate, setNewCandidate] = useState(emptyNewCandidate);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [inlineResume, setInlineResume] = useState<File | null>(null);
+  const [inlineParsing, setInlineParsing] = useState(false);
+  const [inlineParseMessage, setInlineParseMessage] = useState("");
+
+  function resetAddCandidateDialog() {
+    setAddMode("search");
+    setCandidateSearch("");
+    setSearchResults([]);
+    setNewCandidate(emptyNewCandidate);
+    setCreateError("");
+    setInlineResume(null);
+    setInlineParseMessage("");
+  }
 
   // Share dialog state
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -145,6 +176,101 @@ export default function JobDetailPage() {
     setSearching(false);
   }
 
+  async function fetchCompanySuggestions(query: string) {
+    try {
+      const url = query.trim()
+        ? `/api/candidates/suggest-companies?q=${encodeURIComponent(query)}`
+        : `/api/candidates/suggest-companies`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCompanySuggestions(data.suggestions || []);
+    } catch {}
+  }
+
+  async function parseInlineResume() {
+    if (!inlineResume) return;
+    setInlineParsing(true);
+    setInlineParseMessage("");
+    try {
+      const fd = new FormData();
+      fd.append("file", inlineResume);
+      const res = await fetch("/api/parse-resume", { method: "POST", body: fd });
+      if (!res.ok) {
+        const body = await res.json();
+        setInlineParseMessage(body.error || "Failed to parse resume");
+        setInlineParsing(false);
+        return;
+      }
+      const parsed = await res.json();
+      setNewCandidate((prev) => ({
+        ...prev,
+        firstName: parsed.firstName || prev.firstName,
+        lastName: parsed.lastName || prev.lastName,
+        email: parsed.email || prev.email,
+        phone: parsed.phone || prev.phone,
+        linkedIn: parsed.linkedIn || prev.linkedIn,
+        currentTitle: parsed.currentTitle || prev.currentTitle,
+        currentCompany: parsed.currentCompany || prev.currentCompany,
+      }));
+      setInlineParseMessage("Resume parsed — review the fields below.");
+    } catch {
+      setInlineParseMessage("Failed to parse resume. Try a .txt file for best results.");
+    }
+    setInlineParsing(false);
+  }
+
+  async function createAndAddCandidate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!newCandidate.firstName.trim() || !newCandidate.lastName.trim()) {
+      setCreateError("First and last name are required.");
+      return;
+    }
+    setCreating(true);
+    setCreateError("");
+    try {
+      // 1) Create the candidate — shares the same /api/candidates endpoint so
+      //    it persists in the Candidates section just like a normal add.
+      const res = await fetch("/api/candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCandidate),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        setCreateError(body.error || "Failed to create candidate");
+        setCreating(false);
+        return;
+      }
+      const candidate = await res.json();
+
+      // 2) If the user uploaded a resume, attach it as a document.
+      if (inlineResume) {
+        try {
+          const fd = new FormData();
+          fd.append("file", inlineResume);
+          fd.append("candidateId", candidate.id);
+          await fetch("/api/documents", { method: "POST", body: fd });
+        } catch {}
+      }
+
+      // 3) Add to this job's pipeline.
+      await fetch(`/api/jobs/${params.id}/submissions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateId: candidate.id }),
+      });
+
+      setShowAddCandidate(false);
+      resetAddCandidateDialog();
+      fetchJob();
+    } catch {
+      setCreateError("Something went wrong");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function addCandidateToJob(candidateId: string) {
     await fetch(`/api/jobs/${params.id}/submissions`, {
       method: "POST",
@@ -152,8 +278,7 @@ export default function JobDetailPage() {
       body: JSON.stringify({ candidateId }),
     });
     setShowAddCandidate(false);
-    setCandidateSearch("");
-    setSearchResults([]);
+    resetAddCandidateDialog();
     fetchJob();
   }
 
@@ -427,36 +552,222 @@ export default function JobDetailPage() {
           </Dialog>
 
           {/* Add Candidate Dialog */}
-          <Dialog open={showAddCandidate} onOpenChange={setShowAddCandidate}>
+          <Dialog
+            open={showAddCandidate}
+            onOpenChange={(open) => {
+              setShowAddCandidate(open);
+              if (!open) resetAddCandidateDialog();
+            }}
+          >
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add Candidate to Pipeline</DialogTitle>
               </DialogHeader>
-              <Input
-                placeholder="Search candidates by name..."
-                value={candidateSearch}
-                onChange={(e) => searchCandidates(e.target.value)}
-              />
-              <div className="max-h-64 overflow-y-auto space-y-1">
-                {searching && <p className="text-sm text-gray-400 p-2">Searching...</p>}
-                {searchResults.map((c) => {
-                  const alreadyAdded = job.submissions.some((s: any) => s.candidateId === c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => !alreadyAdded && addCandidateToJob(c.id)}
-                      disabled={alreadyAdded}
-                      className="w-full text-left p-3 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <p className="font-medium">{c.firstName} {c.lastName}</p>
-                      <p className="text-sm text-gray-500">
-                        {[c.currentTitle, c.currentCompany].filter(Boolean).join(" at ")}
-                      </p>
-                      {alreadyAdded && <p className="text-xs text-gray-400">Already in pipeline</p>}
-                    </button>
-                  );
-                })}
+
+              {/* Tabs: Search existing / Create new */}
+              <div className="flex bg-gray-100 rounded-lg p-1 mb-3 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setAddMode("search")}
+                  className={`flex-1 py-1.5 rounded-md font-medium transition ${
+                    addMode === "search" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Search existing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMode("create")}
+                  className={`flex-1 py-1.5 rounded-md font-medium transition ${
+                    addMode === "create" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Create new
+                </button>
               </div>
+
+              {addMode === "search" ? (
+                <>
+                  <Input
+                    placeholder="Search candidates by name..."
+                    value={candidateSearch}
+                    onChange={(e) => searchCandidates(e.target.value)}
+                  />
+                  <div className="max-h-64 overflow-y-auto space-y-1">
+                    {searching && <p className="text-sm text-gray-400 p-2">Searching...</p>}
+                    {!searching && candidateSearch.length >= 2 && searchResults.length === 0 && (
+                      <div className="p-3 text-sm text-gray-500 bg-gray-50 rounded-md flex items-center justify-between">
+                        <span>No matches for &ldquo;{candidateSearch}&rdquo;.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Pre-fill the create form with the typed query as the name.
+                            const parts = candidateSearch.trim().split(/\s+/);
+                            setNewCandidate({
+                              ...emptyNewCandidate,
+                              firstName: parts[0] || "",
+                              lastName: parts.slice(1).join(" ") || "",
+                            });
+                            setAddMode("create");
+                          }}
+                          className="text-indigo-600 font-medium hover:underline"
+                        >
+                          Create new →
+                        </button>
+                      </div>
+                    )}
+                    {searchResults.map((c) => {
+                      const alreadyAdded = job.submissions.some((s: any) => s.candidateId === c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => !alreadyAdded && addCandidateToJob(c.id)}
+                          disabled={alreadyAdded}
+                          className="w-full text-left p-3 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <p className="font-medium">{c.firstName} {c.lastName}</p>
+                          <p className="text-sm text-gray-500">
+                            {[c.currentTitle, c.currentCompany].filter(Boolean).join(" at ")}
+                          </p>
+                          {alreadyAdded && <p className="text-xs text-gray-400">Already in pipeline</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <form onSubmit={createAndAddCandidate} className="space-y-3">
+                  {/* Resume quick-parse */}
+                  <div className="border border-dashed border-indigo-200 bg-indigo-50/30 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 flex items-center gap-2 cursor-pointer text-sm text-indigo-700 hover:underline">
+                        <Upload className="h-4 w-4" />
+                        {inlineResume ? inlineResume.name : "Upload resume to auto-fill"}
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,.txt"
+                          onChange={(e) => setInlineResume(e.target.files?.[0] || null)}
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!inlineResume || inlineParsing}
+                        onClick={parseInlineResume}
+                      >
+                        {inlineParsing ? "Parsing..." : "Parse"}
+                      </Button>
+                    </div>
+                    {inlineParseMessage && (
+                      <p className="text-xs text-indigo-600">{inlineParseMessage}</p>
+                    )}
+                  </div>
+
+                  {createError && (
+                    <div className="bg-red-50 text-red-600 text-sm p-2 rounded-md">{createError}</div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">First name *</Label>
+                      <Input
+                        value={newCandidate.firstName}
+                        onChange={(e) => setNewCandidate({ ...newCandidate, firstName: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Last name *</Label>
+                      <Input
+                        value={newCandidate.lastName}
+                        onChange={(e) => setNewCandidate({ ...newCandidate, lastName: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email</Label>
+                      <Input
+                        type="email"
+                        value={newCandidate.email}
+                        onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Phone</Label>
+                      <PhoneInput
+                        value={newCandidate.phone}
+                        onChange={(val) => setNewCandidate({ ...newCandidate, phone: val })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">LinkedIn URL</Label>
+                    <Input
+                      value={newCandidate.linkedIn}
+                      onChange={(e) => setNewCandidate({ ...newCandidate, linkedIn: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Current title</Label>
+                      <Input
+                        value={newCandidate.currentTitle}
+                        onChange={(e) => setNewCandidate({ ...newCandidate, currentTitle: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1 relative">
+                      <Label className="text-xs">Current company</Label>
+                      <Input
+                        value={newCandidate.currentCompany}
+                        onChange={(e) => {
+                          setNewCandidate({ ...newCandidate, currentCompany: e.target.value });
+                          fetchCompanySuggestions(e.target.value);
+                          setShowCompanySuggestions(true);
+                        }}
+                        onFocus={() => {
+                          fetchCompanySuggestions(newCandidate.currentCompany);
+                          setShowCompanySuggestions(true);
+                        }}
+                        onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 150)}
+                        autoComplete="off"
+                      />
+                      {showCompanySuggestions && companySuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-44 overflow-y-auto">
+                          {companySuggestions
+                            .filter((s) => s.toLowerCase() !== newCandidate.currentCompany.toLowerCase())
+                            .map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setNewCandidate((prev) => ({ ...prev, currentCompany: s }));
+                                  setShowCompanySuggestions(false);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50"
+                              >
+                                {s}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-xs text-gray-400">
+                      The candidate will also appear in your Candidates list.
+                    </p>
+                    <Button type="submit" disabled={creating}>
+                      {creating ? "Adding..." : "Create & Add"}
+                    </Button>
+                  </div>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>
@@ -655,13 +966,19 @@ export default function JobDetailPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Fee Amount</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={editForm.feeAmount}
-                          onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
-                          placeholder="25"
-                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                            {editForm.feeType === "PERCENTAGE" ? "%" : "$"}
+                          </span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="pl-7"
+                            value={editForm.feeAmount}
+                            onChange={(e) => setEditForm({ ...editForm, feeAmount: e.target.value })}
+                            placeholder="25"
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2">

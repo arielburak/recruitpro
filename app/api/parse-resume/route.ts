@@ -99,10 +99,20 @@ function parseResumeText(text: string, fileName?: string): Record<string, any> {
   extractLocation(lines, result);
 
   // --- Current Title & Company ---
-  const expSectionIndex = findSectionIndex(lines, /^(experience|professional\s*experience|experiencia\s*profesional|experiencia)\b/i);
+  // Broadened heading patterns — covers the typical variants in EN + ES.
+  const expSectionIndex = findSectionIndex(
+    lines,
+    /^(experience|professional\s*experience|work\s*experience|employment\s*history|employment|career\s*experience|professional\s*background|work\s*history|experiencia|experiencia\s*profesional|experiencia\s*laboral|trayectoria\s*profesional|historia\s*laboral)\b/i
+  );
   if (expSectionIndex >= 0) {
     const afterExp = lines.slice(expSectionIndex + 1);
     extractCurrentRole(afterExp, result);
+  }
+
+  // Headline fallback — many CVs put "<Title> at <Company>" in the header
+  // (LinkedIn-style), which we miss if there's no formal Experience heading.
+  if (!result.currentTitle || !result.currentCompany) {
+    extractHeadlineRole(lines, result);
   }
 
   // --- Skills ---
@@ -538,6 +548,44 @@ function extractCurrentRole(lines: string[], result: Record<string, any>) {
       result.currentTitle = line.trim();
       return;
     }
+  }
+}
+
+/**
+ * Headline-style role extractor — scans the first ~12 lines of the CV for
+ * LinkedIn-style headlines like "System Administrator at Qservices" or
+ * "Senior Backend Engineer en Mercado Libre" and fills in currentTitle /
+ * currentCompany when we couldn't find them in a proper Experience section.
+ */
+function extractHeadlineRole(lines: string[], result: Record<string, any>) {
+  const headlineRegex = /^(.+?)\s+(?:at|en|@|\-)\s+(.+?)\s*$/i;
+
+  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (line.includes("@")) continue; // likely email
+    if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
+    if (SECTION_HEADINGS.test(line)) continue;
+    if (HAS_DATE.test(line)) continue;
+    if (line.length < 8 || line.length > 110) continue;
+    // Skip if the whole line is the candidate name we already captured.
+    const fullName = `${result.firstName} ${result.lastName}`.trim().toLowerCase();
+    if (fullName && line.toLowerCase() === fullName) continue;
+
+    const m = line.match(headlineRegex);
+    if (!m) continue;
+    const titlePart = m[1].trim().replace(/[,•|·]+$/, "").trim();
+    const companyPart = m[2].trim().replace(/[,•|·].*$/, "").trim();
+
+    // Sanity: both sides non-trivial, title looks like a role (not a sentence),
+    // company has letters.
+    if (titlePart.length < 3 || titlePart.length > 70) continue;
+    if (companyPart.length < 2 || companyPart.length > 70) continue;
+    if (!/[a-zA-ZÀ-ÿ]/.test(companyPart)) continue;
+
+    if (!result.currentTitle) result.currentTitle = titlePart;
+    if (!result.currentCompany) result.currentCompany = cleanCompanyName(companyPart);
+    return;
   }
 }
 

@@ -331,7 +331,19 @@ function NewJobContent() {
               </div>
               <div className="space-y-2">
                 <Label>Fee Amount {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
-                <Input type="number" step="0.01" placeholder="25" value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                    {feeType === "FLAT" ? "$" : "%"}
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="25"
+                    className="pl-7"
+                    value={feeAmount}
+                    onChange={(e) => setFeeAmount(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
             <div className="space-y-2">

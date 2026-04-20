@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,12 +98,23 @@ function ForgotPasswordSection({
   );
 }
 
-export default function ClientPortalLoginPage() {
+// Sets a short-lived cookie so the NextAuth server callbacks know the
+// user kicked off OAuth from the client portal (not the staffing side).
+function markClientOAuth() {
+  document.cookie = "oauth-portal=client; path=/; max-age=120; SameSite=Lax";
+}
+
+function ClientPortalLoginInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    searchParams.get("error") === "no-client-account"
+      ? "That email isn't registered as a client user. Ask your recruiter to invite you, or create an account below."
+      : ""
+  );
   const [success, setSuccess] = useState("");
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
@@ -276,12 +287,6 @@ export default function ClientPortalLoginPage() {
           </div>
         </div>
 
-        <div className="border-t border-white/20 pt-8">
-          <p className="text-emerald-100 text-sm">
-            <span className="font-semibold text-white">100% free</span> for hiring companies.
-            No credit card required. No hidden fees.
-          </p>
-        </div>
       </div>
 
       {/* Right Panel */}
@@ -356,6 +361,51 @@ export default function ClientPortalLoginPage() {
                 <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
                 <p className="text-gray-500 mt-1">Sign in to your client portal.</p>
               </div>
+
+              <div className="space-y-3 mb-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    markClientOAuth();
+                    signIn("google", { callbackUrl: "/client-portal/dashboard" });
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Continue with Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    markClientOAuth();
+                    signIn("azure-ad", { callbackUrl: "/client-portal/dashboard" });
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 23 23">
+                    <path fill="#f35325" d="M1 1h10v10H1z" />
+                    <path fill="#81bc06" d="M12 1h10v10H12z" />
+                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                    <path fill="#ffba08" d="M12 12h10v10H12z" />
+                  </svg>
+                  Continue with Microsoft
+                </button>
+              </div>
+
+              <div className="relative my-5">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="px-2 bg-gray-50 text-gray-500">or sign in with email</span>
+                </div>
+              </div>
+
               <form onSubmit={handleLogin} className="space-y-4">
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
                 {success && <div className="bg-green-50 text-green-600 text-sm p-3 rounded-lg">{success}</div>}
@@ -390,7 +440,7 @@ export default function ClientPortalLoginPage() {
                 <p className="text-gray-500 mt-1">
                   {isInvitedUser
                     ? "A recruiter invited you. Set a password to get started."
-                    : "Free forever for hiring companies."}
+                    : "Post jobs, invite recruiting firms, and hire great people."}
                 </p>
               </div>
               <form onSubmit={handleRegister} className="space-y-4">
@@ -433,13 +483,9 @@ export default function ClientPortalLoginPage() {
                   <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}
+                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Account")}
                 </Button>
               </form>
-              <div className="mt-4 flex items-center gap-2 justify-center text-xs text-gray-400">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                No credit card required
-              </div>
             </>
           )}
 
@@ -457,5 +503,13 @@ export default function ClientPortalLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ClientPortalLoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 animate-pulse" />}>
+      <ClientPortalLoginInner />
+    </Suspense>
   );
 }

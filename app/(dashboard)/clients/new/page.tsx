@@ -16,6 +16,7 @@ export default function NewClientPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [defaultFeeType, setDefaultFeeType] = useState("PERCENTAGE");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -103,14 +104,30 @@ export default function NewClientPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Fee Type</Label>
-                  <select name="defaultFeeType" className="w-full border rounded-md px-3 py-2 text-sm">
+                  <select
+                    name="defaultFeeType"
+                    value={defaultFeeType}
+                    onChange={(e) => setDefaultFeeType(e.target.value)}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
                     <option value="PERCENTAGE">Percentage</option>
                     <option value="FLAT">Flat Fee</option>
                   </select>
                 </div>
                 <div className="space-y-2">
                   <Label>Fee Amount</Label>
-                  <Input name="defaultFeeAmount" type="number" step="0.01" placeholder="e.g. 15" />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                      {defaultFeeType === "FLAT" ? "$" : "%"}
+                    </span>
+                    <Input
+                      name="defaultFeeAmount"
+                      type="number"
+                      step="0.01"
+                      placeholder="e.g. 15"
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
