@@ -4,9 +4,10 @@
 
 **Convenciones**
 - `- [ ]` pendiente · `- [x]` hecho
-- Si algo se hizo, dejar fecha y commit/nota al lado: `- [x] ~~texto~~ · ✅ 2026-04-17 — chat bidireccional`
+- Solo se tilda cuando el usuario da el OK que funciona. Sin notas extra, solo el tick.
 - Prioridades: **P0** = pre-launch · **P1** = primer dólar · **P2** = retención · 🧹 = housekeeping
 - Si una decisión de producto falta tomarse, vive en **Decisiones pendientes** al final
+- Acceso rápido: `/roadmap` desde Claude Code
 
 **Última actualización**: 2026-04-17
 
