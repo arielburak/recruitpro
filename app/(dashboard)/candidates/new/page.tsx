@@ -399,13 +399,14 @@ function NewCandidatePage() {
               </div>
             </div>
 
-            <p className="text-xs text-gray-400 -mb-1">
-              Add at least one way to contact this candidate — email, phone or LinkedIn.
-            </p>
-
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="flex items-center justify-between gap-2">
+                  <span>Email</span>
+                  <span className="text-[10.5px] font-normal text-gray-400 normal-case">
+                    email, phone or LinkedIn required
+                  </span>
+                </Label>
                 <Input
                   id="email"
                   name="email"
