@@ -91,6 +91,15 @@ function formatPhoneNumber(value: string, prefix: string): string {
 }
 
 /**
+ * Build an example placeholder for a given prefix by running the
+ * formatter on a canned digit sequence. Keeps the hint in sync with the
+ * format automatically whenever PHONE_FORMATS grows.
+ */
+function examplePlaceholder(prefix: string): string {
+  return formatPhoneNumber("1234567890123456", prefix);
+}
+
+/**
  * Parse existing phone value into prefix + number.
  * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678"
  */
@@ -131,7 +140,7 @@ export function PhoneInput({
   onChange,
   name,
   className = "",
-  placeholder = "11 1234-5678",
+  placeholder,
   compact = false,
 }: PhoneInputProps) {
   const initial = parsePhone(value || defaultValue || "");
@@ -243,7 +252,7 @@ export function PhoneInput({
       <input
         type="tel"
         className={`flex ${height} w-full rounded-r-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-        placeholder={placeholder}
+        placeholder={placeholder ?? examplePlaceholder(prefix)}
         value={number}
         onChange={(e) => handleNumberChange(e.target.value)}
       />
