@@ -451,9 +451,11 @@ function NewJobContent() {
               </div>
             </div>
             {termsAutoFilled && (
-              <div className="inline-flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2.5 py-1.5 w-fit">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Fee terms pre-filled from client defaults — edit any to override
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                <span>
+                  Fee terms pre-filled from client defaults — edit any to override
+                </span>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
