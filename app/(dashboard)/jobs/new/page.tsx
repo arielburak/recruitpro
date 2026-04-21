@@ -446,20 +446,26 @@ function NewJobContent() {
                 <Input name="salary" placeholder="$150K - $180K" />
               </div>
               <div className="space-y-2">
-                <Label>Currency {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <Label>Currency</Label>
                 <CurrencyPicker value={currency} onChange={setCurrency} />
               </div>
             </div>
+            {termsAutoFilled && (
+              <p className="flex items-center gap-1.5 text-[11px] text-gray-400 -mb-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Fee terms pre-filled from client defaults — edit any to override
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Fee Type {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <Label>Fee Type</Label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm" value={feeType} onChange={(e) => setFeeType(e.target.value)}>
                   <option value="PERCENTAGE">Percentage</option>
                   <option value="FLAT">Flat Fee</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Fee Amount {termsAutoFilled && <span className="text-xs text-green-600 font-normal">· from client</span>}</Label>
+                <Label>Fee Amount</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
                     {feeType === "FLAT" ? "$" : "%"}
