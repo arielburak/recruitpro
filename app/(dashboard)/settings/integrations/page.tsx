@@ -23,17 +23,23 @@ export default function IntegrationsPage() {
 function IntegrationsContent() {
   const searchParams = useSearchParams();
   const googleParam = searchParams.get("google");
+  const msParam = searchParams.get("microsoft");
 
-  const [googleStatus, setGoogleStatus] = useState<{
+  type IntegrationStatus = {
     connected: boolean;
     email: string | null;
     connectedAt: string | null;
-  } | null>(null);
+  };
+
+  const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
+  const [msStatus, setMsStatus] = useState<IntegrationStatus | null>(null);
   const [loadingGoogle, setLoadingGoogle] = useState(true);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const [loadingMs, setLoadingMs] = useState(true);
+  const [disconnecting, setDisconnecting] = useState<"google" | "microsoft" | null>(null);
 
   useEffect(() => {
     fetchGoogleStatus();
+    fetchMsStatus();
   }, []);
 
   async function fetchGoogleStatus() {
@@ -45,13 +51,31 @@ function IntegrationsContent() {
     setLoadingGoogle(false);
   }
 
+  async function fetchMsStatus() {
+    setLoadingMs(true);
+    try {
+      const res = await fetch("/api/integrations/microsoft/status");
+      if (res.ok) setMsStatus(await res.json());
+    } catch { /* silent */ }
+    setLoadingMs(false);
+  }
+
   async function disconnectGoogle() {
-    setDisconnecting(true);
+    setDisconnecting("google");
     try {
       await fetch("/api/integrations/google/status", { method: "DELETE" });
       setGoogleStatus({ connected: false, email: null, connectedAt: null });
     } catch { /* silent */ }
-    setDisconnecting(false);
+    setDisconnecting(null);
+  }
+
+  async function disconnectMicrosoft() {
+    setDisconnecting("microsoft");
+    try {
+      await fetch("/api/integrations/microsoft/status", { method: "DELETE" });
+      setMsStatus({ connected: false, email: null, connectedAt: null });
+    } catch { /* silent */ }
+    setDisconnecting(null);
   }
 
   return (
@@ -73,6 +97,24 @@ function IntegrationsContent() {
         <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-lg text-sm">
           <XCircle className="h-4 w-4" />
           Failed to connect Google Calendar.
+        </div>
+      )}
+      {msParam === "connected" && (
+        <div className="flex items-center gap-2 bg-green-50 text-green-700 p-3 rounded-lg text-sm">
+          <CheckCircle className="h-4 w-4" />
+          Microsoft Teams connected. Interviews will auto-generate Teams meetings.
+        </div>
+      )}
+      {msParam === "denied" && (
+        <div className="flex items-center gap-2 bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm">
+          <AlertCircle className="h-4 w-4" />
+          Microsoft connection cancelled. You can try again anytime.
+        </div>
+      )}
+      {msParam === "error" && (
+        <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+          <XCircle className="h-4 w-4" />
+          Failed to connect Microsoft Teams.
         </div>
       )}
 
@@ -135,9 +177,9 @@ function IntegrationsContent() {
                     size="sm"
                     className="text-red-500 hover:text-red-700"
                     onClick={disconnectGoogle}
-                    disabled={disconnecting}
+                    disabled={disconnecting === "google"}
                   >
-                    {disconnecting ? "Disconnecting..." : "Disconnect"}
+                    {disconnecting === "google" ? "Disconnecting..." : "Disconnect"}
                   </Button>
                 </div>
               ) : (
@@ -165,8 +207,8 @@ function IntegrationsContent() {
               )}
             </div>
 
-            {/* Microsoft Teams (future) */}
-            <div className="border rounded-lg p-4 space-y-3 opacity-60">
+            {/* Microsoft Teams / Outlook */}
+            <div className="border rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center">
@@ -181,8 +223,58 @@ function IntegrationsContent() {
                     </p>
                   </div>
                 </div>
-                <Badge variant="secondary">Coming soon</Badge>
+                {loadingMs ? (
+                  <div className="h-8 w-20 bg-gray-100 rounded animate-pulse" />
+                ) : msStatus?.connected ? (
+                  <Badge className="bg-green-100 text-green-700">Connected</Badge>
+                ) : (
+                  <Badge variant="secondary">Not connected</Badge>
+                )}
               </div>
+
+              {msStatus?.connected ? (
+                <div className="bg-green-50/50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-green-800">
+                      Connected as <strong>{msStatus.email}</strong>
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    When you schedule an interview with Teams, a calendar event
+                    is created on your Outlook Calendar with a Teams join link
+                    and invites go to all participants.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700"
+                    onClick={disconnectMicrosoft}
+                    disabled={disconnecting === "microsoft"}
+                  >
+                    {disconnecting === "microsoft" ? "Disconnecting..." : "Disconnect"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500">
+                    Connect your Microsoft account so interview scheduling pushes
+                    to your Outlook calendar with a Teams link attached.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      window.location.href = "/api/integrations/microsoft/connect";
+                    }}
+                    className="bg-[#464EB8] hover:bg-[#3d44a0]"
+                    size="sm"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 mr-2" fill="white">
+                      <path d="M20.625 7.875h-3.75V5.25a1.875 1.875 0 00-1.875-1.875h-6a1.875 1.875 0 00-1.875 1.875v2.625h-3.75A1.875 1.875 0 001.5 9.75v6a1.875 1.875 0 001.875 1.875h3.75v2.625A1.875 1.875 0 009 22.125h6a1.875 1.875 0 001.875-1.875v-2.625h3.75A1.875 1.875 0 0022.5 15.75v-6a1.875 1.875 0 00-1.875-1.875z"/>
+                    </svg>
+                    Connect Microsoft Teams
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -451,6 +451,10 @@ model Interview {
   // (e.g. to add a new attendee if the candidate email changes).
   googleEventId          String?
   googleCalendarOwnerId  String?
+  // Microsoft (Outlook + Teams) integration — same idea for Teams
+  // meetings.
+  microsoftEventId          String?
+  microsoftCalendarOwnerId  String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
