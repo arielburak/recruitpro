@@ -84,7 +84,7 @@
 - [ ] **Chrome extension para LinkedIn** (1-click add candidate) — killer feature vs Bullhorn/Loxo
 - [ ] Import desde LinkedIn, Indeed, otros portales
 - [ ] Gmail / Outlook sync real de threads con candidates
-- [ ] **Microsoft Teams integration** — código shipped (connect/disconnect + auto-create meeting en calendar). Bloqueado esperando tenant Microsoft propio (applied al M365 Dev Program, esperando aprobación). Cuando llegue tenant → 10 min de config en Azure + env vars en Vercel.
+- [ ] **Microsoft Teams integration** — ⏸️ ON HOLD. Código shipped (connect/disconnect + auto-create meeting en calendar). Bloqueado esperando tenant Microsoft propio. Plan acordado: arrancar M365 Business Basic trial ($0 por 30 días, cancelar auto-renewal apenas entres al admin center), verificar `recruitingats.com` en el tenant (con TXT en GoDaddy), App Registration + 4 redirect URIs + secret + Graph permissions, pegar env vars en Vercel. ~30 min de trabajo. Company name del tenant = "Alphabridge Partners", subdomain = `recruitingats.onmicrosoft.com`.
 - [ ] Tracking específico para Outsourcing / Staff Aug (métricas propias del modelo)
 - [ ] Copilot alerts: "Búsqueda X sin candidatos hace Y días", ambos lados
 - [ ] Referral scheme (ambos lados: recruiter→recruiter, cliente→cliente)
