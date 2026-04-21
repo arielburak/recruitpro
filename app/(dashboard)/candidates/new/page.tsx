@@ -270,6 +270,20 @@ function NewCandidatePage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
+    // Require at least one way to contact the candidate. We don't force
+    // all three, so recruiters sourcing from LinkedIn-only (or a networking
+    // event with just an email) aren't forced to fabricate values — but we
+    // do guarantee every candidate is reachable and dedupe-able.
+    const hasContact =
+      formValues.email.trim() ||
+      formValues.phone.trim() ||
+      formValues.linkedIn.trim();
+    if (!hasContact) {
+      setError("Add at least one way to contact this candidate — email, phone or LinkedIn URL.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     // Re-check duplicates at submit time in case user typed past the email
     // field without blurring (e.g., submitted via Enter). If any match, open
     // the confirm dialog instead of creating immediately.
@@ -369,6 +383,10 @@ function NewCandidatePage() {
                 />
               </div>
             </div>
+
+            <p className="text-xs text-gray-400 -mb-1">
+              Add at least one way to contact this candidate — email, phone or LinkedIn.
+            </p>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
