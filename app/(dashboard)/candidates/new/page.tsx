@@ -65,17 +65,30 @@ function NewCandidatePage() {
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
 
-  async function checkEmailDuplicate(email: string): Promise<DuplicateMatch[]> {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) {
+  /**
+   * Check for duplicates across all three identifiers the form captures.
+   * The backend dedupes by candidate id, so a single person matching on
+   * more than one channel still appears once.
+   */
+  async function checkDuplicates(override?: {
+    email?: string;
+    phone?: string;
+    linkedIn?: string;
+  }): Promise<DuplicateMatch[]> {
+    const email = (override?.email ?? formValues.email).trim();
+    const phone = (override?.phone ?? formValues.phone).trim();
+    const linkedIn = (override?.linkedIn ?? formValues.linkedIn).trim();
+    if (!email && !phone && !linkedIn) {
       setDuplicateMatches([]);
       return [];
     }
     setCheckingDuplicate(true);
     try {
-      const res = await fetch(
-        `/api/candidates/check-duplicate?email=${encodeURIComponent(normalized)}`
-      );
+      const qs = new URLSearchParams();
+      if (email) qs.set("email", email);
+      if (phone) qs.set("phone", phone);
+      if (linkedIn) qs.set("linkedIn", linkedIn);
+      const res = await fetch(`/api/candidates/check-duplicate?${qs.toString()}`);
       if (!res.ok) {
         setDuplicateMatches([]);
         return [];
@@ -180,10 +193,14 @@ function NewCandidatePage() {
       ).length;
       setParseMessage(`Parsed successfully - filled ${fieldCount} fields from resume.`);
 
-      // If the parser extracted an email, check for duplicates right away
-      // so the recruiter sees the warning without having to blur the field.
-      if (parsed.email) {
-        void checkEmailDuplicate(parsed.email);
+      // If the parser pulled any identifier, check for duplicates right
+      // away so the recruiter sees the warning without having to blur.
+      if (parsed.email || parsed.phone || parsed.linkedIn) {
+        void checkDuplicates({
+          email: parsed.email,
+          phone: parsed.phone,
+          linkedIn: parsed.linkedIn,
+        });
       }
     } catch {
       setParseMessage("Failed to parse resume. Try a .txt file for best results.");
@@ -284,15 +301,13 @@ function NewCandidatePage() {
       return;
     }
 
-    // Re-check duplicates at submit time in case user typed past the email
-    // field without blurring (e.g., submitted via Enter). If any match, open
-    // the confirm dialog instead of creating immediately.
-    if (formValues.email?.trim()) {
-      const matches = await checkEmailDuplicate(formValues.email);
-      if (matches.length > 0) {
-        setShowDuplicateDialog(true);
-        return;
-      }
+    // Re-check duplicates across all three channels at submit time in
+    // case the user typed past a field without blurring (e.g. submitted
+    // via Enter). If any match, open the confirm dialog.
+    const matches = await checkDuplicates();
+    if (matches.length > 0) {
+      setShowDuplicateDialog(true);
+      return;
     }
 
     await actuallyCreate();
@@ -403,7 +418,7 @@ function NewCandidatePage() {
                     if (duplicateMatches.length > 0) setDuplicateMatches([]);
                   }}
                   onBlur={(e) => {
-                    void checkEmailDuplicate(e.target.value);
+                    void checkDuplicates({ email: e.target.value });
                   }}
                 />
                 {checkingDuplicate && (
@@ -440,11 +455,24 @@ function NewCandidatePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <PhoneInput
-                  value={formValues.phone}
-                  onChange={(val) => updateField("phone", val)}
-                  name="phone"
-                />
+                <div
+                  onBlur={(e) => {
+                    // Only check when focus leaves the phone input group
+                    // entirely (prefix dropdown + number field).
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      void checkDuplicates({ phone: formValues.phone });
+                    }
+                  }}
+                >
+                  <PhoneInput
+                    value={formValues.phone}
+                    onChange={(val) => {
+                      updateField("phone", val);
+                      if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                    }}
+                    name="phone"
+                  />
+                </div>
               </div>
             </div>
 
@@ -454,7 +482,13 @@ function NewCandidatePage() {
                 id="linkedIn"
                 name="linkedIn"
                 value={formValues.linkedIn}
-                onChange={(e) => updateField("linkedIn", e.target.value)}
+                onChange={(e) => {
+                  updateField("linkedIn", e.target.value);
+                  if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                }}
+                onBlur={(e) => {
+                  void checkDuplicates({ linkedIn: e.target.value });
+                }}
               />
             </div>
 
