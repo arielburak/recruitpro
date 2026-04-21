@@ -473,11 +473,6 @@ function NewCandidatePage() {
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
                 <div
-                  className={
-                    flaggedFields.has("phone")
-                      ? "rounded-md ring-2 ring-indigo-100 [&_input]:border-indigo-400 [&>div>button]:border-indigo-400"
-                      : ""
-                  }
                   onBlur={(e) => {
                     // Only check when focus leaves the phone input group
                     // entirely (prefix dropdown + number field).
@@ -493,6 +488,7 @@ function NewCandidatePage() {
                       if (duplicateMatches.length > 0) setDuplicateMatches([]);
                     }}
                     name="phone"
+                    highlighted={flaggedFields.has("phone")}
                   />
                 </div>
               </div>

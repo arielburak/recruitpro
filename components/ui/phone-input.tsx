@@ -132,6 +132,7 @@ interface PhoneInputProps {
   className?: string;
   placeholder?: string;
   compact?: boolean; // For inline table editing
+  highlighted?: boolean; // Draws attention (e.g. duplicate match detected)
 }
 
 export function PhoneInput({
@@ -142,6 +143,7 @@ export function PhoneInput({
   className = "",
   placeholder,
   compact = false,
+  highlighted = false,
 }: PhoneInputProps) {
   const initial = parsePhone(value || defaultValue || "");
   const [prefix, setPrefix] = useState(initial.prefix);
@@ -204,15 +206,19 @@ export function PhoneInput({
   }
 
   const height = compact ? "h-8" : "h-10";
+  const borderColor = highlighted ? "border-indigo-400" : "border-input";
+  const wrapperHighlight = highlighted
+    ? "rounded-md ring-2 ring-indigo-100"
+    : "";
 
   return (
-    <div className={`flex ${className}`}>
+    <div className={`flex ${wrapperHighlight} ${className}`}>
       {name && <input type="hidden" name={name} value={fullValue} />}
       <div ref={dropdownRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className={`flex items-center gap-1 ${height} px-2 border border-r-0 rounded-l-md bg-gray-50 hover:bg-gray-100 text-sm transition-colors whitespace-nowrap`}
+          className={`flex items-center gap-1 ${height} px-2 border ${borderColor} border-r-0 rounded-l-md bg-gray-50 hover:bg-gray-100 text-sm transition-colors whitespace-nowrap`}
         >
           <span>{selectedCountry.flag}</span>
           <span className="text-gray-600 text-xs">{prefix}</span>
@@ -251,7 +257,7 @@ export function PhoneInput({
       </div>
       <input
         type="tel"
-        className={`flex ${height} w-full rounded-r-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        className={`flex ${height} w-full rounded-r-md border ${borderColor} bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
         placeholder={placeholder ?? examplePlaceholder(prefix)}
         value={number}
         onChange={(e) => handleNumberChange(e.target.value)}
