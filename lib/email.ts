@@ -512,6 +512,68 @@ export async function sendClientSetPasswordEmail({
   });
 }
 
+export async function sendCandidateFeedbackEmail({
+  to,
+  recruiterName,
+  candidateName,
+  jobTitle,
+  clientCompanyName,
+  reviewerName,
+  rating,
+  comment,
+  candidateUrl,
+}: {
+  to: string;
+  recruiterName?: string;
+  candidateName: string;
+  jobTitle: string;
+  clientCompanyName: string;
+  reviewerName: string;
+  rating?: number | null;
+  comment?: string | null;
+  candidateUrl: string;
+}) {
+  const ratingBlock =
+    rating && rating >= 1 && rating <= 5
+      ? `<div style="margin: 12px 0;">
+           <span style="font-size: 13px; color: #6b7280;">Rating:</span>
+           <span style="margin-left: 8px; font-size: 16px; letter-spacing: 2px;">${"★".repeat(rating)}<span style="color: #e5e7eb;">${"★".repeat(5 - rating)}</span></span>
+           <span style="margin-left: 8px; font-size: 13px; color: #6b7280;">(${rating}/5)</span>
+         </div>`
+      : "";
+
+  const trimmedComment = comment?.trim();
+  const commentBlock = trimmedComment
+    ? `<div style="margin: 12px 0 0 0; padding: 12px; background: #f9fafb; border-left: 3px solid #6366f1; border-radius: 4px;">
+         <p style="margin: 0; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedComment}</p>
+       </div>`
+    : "";
+
+  const subjectFragment =
+    rating && rating >= 1 && rating <= 5
+      ? `${rating}★ feedback`
+      : trimmedComment
+      ? "new feedback"
+      : "viewed";
+
+  const html = wrapTemplate(
+    `New feedback on ${candidateName}`,
+    `<p>Hi${recruiterName ? ` ${recruiterName.split(" ")[0]}` : ""},</p>
+     <p><strong>${reviewerName}</strong> at <strong>${clientCompanyName}</strong> just left feedback on <strong>${candidateName}</strong> for <em>${jobTitle}</em>.</p>
+     ${ratingBlock}
+     ${commentBlock}
+     ${!ratingBlock && !commentBlock ? `<p style="color: #6b7280;">They opened the profile but didn&apos;t leave a comment or rating yet.</p>` : ""}`,
+    candidateUrl,
+    "View Candidate"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${reviewerName} left ${subjectFragment} on ${candidateName}`,
+    html,
+  });
+}
+
 export async function sendWelcomeEmail({
   to,
   recipientName,
