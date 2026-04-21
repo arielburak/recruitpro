@@ -61,8 +61,9 @@ export function SourceInput({
     ? options.filter((o) => o.toLowerCase().includes(q))
     : options;
 
-  const showCustomHint =
-    value.trim() && !options.some((o) => o.toLowerCase() === q);
+  const showCustomHint = Boolean(
+    value.trim() && !options.some((o) => o.toLowerCase() === q)
+  );
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
