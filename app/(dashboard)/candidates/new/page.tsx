@@ -12,9 +12,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, X, Upload, FileText, Sparkles } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, X, Upload, FileText, Sparkles, AlertCircle, ExternalLink } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import { SourceInput } from "@/components/ui/source-input";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -40,6 +49,48 @@ function NewCandidatePage() {
 
   // Attachments state
   const [attachments, setAttachments] = useState<File[]>([]);
+
+  // Duplicate candidate detection (by email, within the firm)
+  type DuplicateMatch = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    currentTitle: string | null;
+    currentCompany: string | null;
+    createdAt: string;
+    owner: { id: string; name: string } | null;
+  };
+  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+
+  async function checkEmailDuplicate(email: string): Promise<DuplicateMatch[]> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setDuplicateMatches([]);
+      return [];
+    }
+    setCheckingDuplicate(true);
+    try {
+      const res = await fetch(
+        `/api/candidates/check-duplicate?email=${encodeURIComponent(normalized)}`
+      );
+      if (!res.ok) {
+        setDuplicateMatches([]);
+        return [];
+      }
+      const data = await res.json();
+      const matches: DuplicateMatch[] = data.matches || [];
+      setDuplicateMatches(matches);
+      return matches;
+    } catch {
+      setDuplicateMatches([]);
+      return [];
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }
 
   // Form field state for pre-filling
   const [formValues, setFormValues] = useState({
@@ -128,6 +179,12 @@ function NewCandidatePage() {
         (v) => v && (typeof v === "string" ? v.length > 0 : Array.isArray(v) && v.length > 0)
       ).length;
       setParseMessage(`Parsed successfully - filled ${fieldCount} fields from resume.`);
+
+      // If the parser extracted an email, check for duplicates right away
+      // so the recruiter sees the warning without having to blur the field.
+      if (parsed.email) {
+        void checkEmailDuplicate(parsed.email);
+      }
     } catch {
       setParseMessage("Failed to parse resume. Try a .txt file for best results.");
     }
@@ -157,8 +214,7 @@ function NewCandidatePage() {
     }
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function actuallyCreate() {
     setLoading(true);
     setError("");
 
@@ -209,6 +265,23 @@ function NewCandidatePage() {
       setError("Something went wrong");
       setLoading(false);
     }
+  }
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    // Re-check duplicates at submit time in case user typed past the email
+    // field without blurring (e.g., submitted via Enter). If any match, open
+    // the confirm dialog instead of creating immediately.
+    if (formValues.email?.trim()) {
+      const matches = await checkEmailDuplicate(formValues.email);
+      if (matches.length > 0) {
+        setShowDuplicateDialog(true);
+        return;
+      }
+    }
+
+    await actuallyCreate();
   }
 
   return (
@@ -305,8 +378,49 @@ function NewCandidatePage() {
                   name="email"
                   type="email"
                   value={formValues.email}
-                  onChange={(e) => updateField("email", e.target.value)}
+                  onChange={(e) => {
+                    updateField("email", e.target.value);
+                    // Clear any stale warning so the user can keep editing
+                    // without seeing an outdated dupe match.
+                    if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                  }}
+                  onBlur={(e) => {
+                    void checkEmailDuplicate(e.target.value);
+                  }}
                 />
+                {checkingDuplicate && (
+                  <p className="text-xs text-gray-400">Checking for duplicates…</p>
+                )}
+                {duplicateMatches.length > 0 && (
+                  <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-xs space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-indigo-900">
+                          Heads up — this email is already in your database
+                        </p>
+                        <ul className="mt-1.5 space-y-1">
+                          {duplicateMatches.map((m) => (
+                            <li key={m.id} className="flex items-center justify-between gap-2">
+                              <span className="truncate text-indigo-800">
+                                {m.firstName} {m.lastName}
+                                {m.currentCompany ? ` · ${m.currentCompany}` : ""}
+                                {m.owner?.name ? ` · added by ${m.owner.name}` : ""}
+                              </span>
+                              <Link
+                                href={`/candidates/${m.id}`}
+                                target="_blank"
+                                className="inline-flex items-center gap-1 text-indigo-700 hover:text-indigo-900 font-medium shrink-0"
+                              >
+                                View <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
@@ -392,12 +506,11 @@ function NewCandidatePage() {
 
             <div className="space-y-2">
               <Label htmlFor="source">Source</Label>
-              <Input
+              <SourceInput
                 id="source"
                 name="source"
-                placeholder="LinkedIn, Referral, etc."
                 value={formValues.source}
-                onChange={(e) => updateField("source", e.target.value)}
+                onChange={(v) => updateField("source", v)}
               />
             </div>
 
@@ -509,6 +622,64 @@ function NewCandidatePage() {
           </CardContent>
         </Card>
       </form>
+
+      <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-indigo-600" />
+              Candidate already exists
+            </DialogTitle>
+            <DialogDescription>
+              The email you entered matches a candidate already in your database. You can open the existing record or create a new one anyway.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {duplicateMatches.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">
+                    {m.firstName} {m.lastName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {m.email}
+                    {m.currentTitle ? ` · ${m.currentTitle}` : ""}
+                    {m.currentCompany ? ` @ ${m.currentCompany}` : ""}
+                  </p>
+                </div>
+                <Link
+                  href={`/candidates/${m.id}`}
+                  target="_blank"
+                  className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 text-xs font-medium shrink-0"
+                >
+                  Open <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDuplicateDialog(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setShowDuplicateDialog(false);
+                await actuallyCreate();
+              }}
+              disabled={loading}
+            >
+              {loading ? "Creating..." : "Create anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

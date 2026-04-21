@@ -33,6 +33,64 @@ const COUNTRY_CODES = [
 ];
 
 /**
+ * Best-effort display formats per country. `#` = digit placeholder,
+ * any other character is a literal separator. These cover the common
+ * national formats; edge cases (e.g. Brazilian 8-digit numbers) still
+ * render readably because extra digits spill past the template.
+ */
+const PHONE_FORMATS: Record<string, string> = {
+  "+54": "## ####-####",     // AR
+  "+1": "(###) ###-####",    // US / CA
+  "+55": "## #####-####",    // BR
+  "+56": "# #### ####",      // CL
+  "+57": "### ### ####",     // CO
+  "+52": "## #### ####",     // MX
+  "+51": "### ### ###",      // PE
+  "+598": "#### ####",       // UY
+  "+595": "### ### ###",     // PY
+  "+591": "#### ####",       // BO
+  "+593": "## ### ####",     // EC
+  "+58": "###-#######",      // VE
+  "+44": "#### ######",      // GB
+  "+34": "### ### ###",      // ES
+  "+33": "# ## ## ## ##",    // FR
+  "+49": "### #######",      // DE
+  "+39": "### ### ####",     // IT
+  "+351": "### ### ###",     // PT
+  "+31": "## ### ####",      // NL
+  "+41": "## ### ## ##",     // CH
+  "+61": "### ### ###",      // AU
+  "+81": "### #### ####",    // JP
+  "+86": "### #### ####",    // CN
+  "+91": "##### #####",      // IN
+  "+972": "## ### ####",     // IL
+  "+971": "## ### ####",     // AE
+};
+
+function formatPhoneNumber(value: string, prefix: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const template = PHONE_FORMATS[prefix];
+  if (!template) return digits;
+
+  let out = "";
+  let i = 0;
+  for (const char of template) {
+    if (i >= digits.length) break;
+    if (char === "#") {
+      out += digits[i];
+      i++;
+    } else {
+      out += char;
+    }
+  }
+  // Any digits beyond the template length spill over without separators
+  // rather than being truncated — better UX for numbers longer than we expected.
+  if (i < digits.length) out += digits.slice(i);
+  return out;
+}
+
+/**
  * Parse existing phone value into prefix + number.
  * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678"
  */
@@ -78,7 +136,7 @@ export function PhoneInput({
 }: PhoneInputProps) {
   const initial = parsePhone(value || defaultValue || "");
   const [prefix, setPrefix] = useState(initial.prefix);
-  const [number, setNumber] = useState(initial.number);
+  const [number, setNumber] = useState(formatPhoneNumber(initial.number, initial.prefix));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -88,7 +146,7 @@ export function PhoneInput({
     if (value !== undefined) {
       const parsed = parsePhone(value);
       setPrefix(parsed.prefix);
-      setNumber(parsed.number);
+      setNumber(formatPhoneNumber(parsed.number, parsed.prefix));
     }
   }, [value]);
 
@@ -119,15 +177,20 @@ export function PhoneInput({
     setPrefix(code);
     setOpen(false);
     setSearch("");
+    // Re-format the existing digits with the new country's template so the
+    // UI stays consistent when a recruiter switches countries mid-edit.
+    const reformatted = formatPhoneNumber(number, code);
+    setNumber(reformatted);
     if (onChange) {
-      onChange(number ? `${code} ${number}` : "");
+      onChange(reformatted ? `${code} ${reformatted}` : "");
     }
   }
 
   function handleNumberChange(val: string) {
-    setNumber(val);
+    const formatted = formatPhoneNumber(val, prefix);
+    setNumber(formatted);
     if (onChange) {
-      onChange(val ? `${prefix} ${val}` : "");
+      onChange(formatted ? `${prefix} ${formatted}` : "");
     }
   }
 
