@@ -23,6 +23,7 @@ import {
 import { ArrowLeft, X, Upload, FileText, Sparkles, AlertCircle, ExternalLink } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import { SourceInput } from "@/components/ui/source-input";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -505,12 +506,11 @@ function NewCandidatePage() {
 
             <div className="space-y-2">
               <Label htmlFor="source">Source</Label>
-              <Input
+              <SourceInput
                 id="source"
                 name="source"
-                placeholder="LinkedIn, Referral, etc."
                 value={formValues.source}
-                onChange={(e) => updateField("source", e.target.value)}
+                onChange={(v) => updateField("source", v)}
               />
             </div>
 
