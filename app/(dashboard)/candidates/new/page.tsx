@@ -99,6 +99,14 @@ function NewCandidatePage() {
     return channels;
   }
 
+  // Union of channels that triggered any visible match — used to
+  // highlight the specific form fields that collided with an existing
+  // candidate, so the recruiter sees at a glance which input to rethink.
+  const flaggedFields = new Set<string>();
+  for (const m of duplicateMatches) {
+    for (const c of getMatchedChannels(m)) flaggedFields.add(c);
+  }
+
   /**
    * Check for duplicates across all three identifiers the form captures.
    * The backend dedupes by candidate id, so a single person matching on
@@ -446,6 +454,11 @@ function NewCandidatePage() {
                   name="email"
                   type="email"
                   value={formValues.email}
+                  className={
+                    flaggedFields.has("email")
+                      ? "border-indigo-400 ring-2 ring-indigo-100"
+                      : ""
+                  }
                   onChange={(e) => {
                     updateField("email", e.target.value);
                     // Clear any stale warning so the user can keep editing
@@ -460,6 +473,11 @@ function NewCandidatePage() {
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
                 <div
+                  className={
+                    flaggedFields.has("phone")
+                      ? "rounded-md ring-2 ring-indigo-100 [&_input]:border-indigo-400 [&>div>button]:border-indigo-400"
+                      : ""
+                  }
                   onBlur={(e) => {
                     // Only check when focus leaves the phone input group
                     // entirely (prefix dropdown + number field).
@@ -486,6 +504,11 @@ function NewCandidatePage() {
                 id="linkedIn"
                 name="linkedIn"
                 value={formValues.linkedIn}
+                className={
+                  flaggedFields.has("LinkedIn")
+                    ? "border-indigo-400 ring-2 ring-indigo-100"
+                    : ""
+                }
                 onChange={(e) => {
                   updateField("linkedIn", e.target.value);
                   if (duplicateMatches.length > 0) setDuplicateMatches([]);
