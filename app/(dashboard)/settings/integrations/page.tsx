@@ -99,19 +99,19 @@ function IntegrationsContent() {
           Failed to connect Google Calendar.
         </div>
       )}
-      {msParam === "connected" && (
+      {FEATURES.microsoftIntegration && msParam === "connected" && (
         <div className="flex items-center gap-2 bg-green-50 text-green-700 p-3 rounded-lg text-sm">
           <CheckCircle className="h-4 w-4" />
           Microsoft Teams connected. Interviews will auto-generate Teams meetings.
         </div>
       )}
-      {msParam === "denied" && (
+      {FEATURES.microsoftIntegration && msParam === "denied" && (
         <div className="flex items-center gap-2 bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm">
           <AlertCircle className="h-4 w-4" />
           Microsoft connection cancelled. You can try again anytime.
         </div>
       )}
-      {msParam === "error" && (
+      {FEATURES.microsoftIntegration && msParam === "error" && (
         <div className="flex items-center gap-2 bg-red-50 text-red-600 p-3 rounded-lg text-sm">
           <XCircle className="h-4 w-4" />
           Failed to connect Microsoft Teams.
@@ -207,7 +207,10 @@ function IntegrationsContent() {
               )}
             </div>
 
-            {/* Microsoft Teams / Outlook */}
+            {/* Microsoft Teams / Outlook — gated until the Azure App
+                Registration is configured against a proper RecruitingATS
+                tenant. Flip NEXT_PUBLIC_ENABLE_MICROSOFT=true when ready. */}
+            {FEATURES.microsoftIntegration && (
             <div className="border rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -276,6 +279,7 @@ function IntegrationsContent() {
                 </div>
               )}
             </div>
+            )}
           </CardContent>
         </Card>
       ) : (

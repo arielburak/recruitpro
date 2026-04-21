@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   Mail,
 } from "lucide-react";
+import { FEATURES } from "@/lib/feature-flags";
 
 function ForgotPasswordSection({
   forgotSent,
@@ -379,22 +380,24 @@ function ClientPortalLoginInner() {
                   </svg>
                   Continue with Google
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    markClientOAuth();
-                    signIn("azure-ad", { callbackUrl: "/client-portal/dashboard" });
-                  }}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
-                  Continue with Microsoft
-                </button>
+                {FEATURES.microsoftIntegration && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      markClientOAuth();
+                      signIn("azure-ad", { callbackUrl: "/client-portal/dashboard" });
+                    }}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 23 23">
+                      <path fill="#f35325" d="M1 1h10v10H1z" />
+                      <path fill="#81bc06" d="M12 1h10v10H12z" />
+                      <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                      <path fill="#ffba08" d="M12 12h10v10H12z" />
+                    </svg>
+                    Continue with Microsoft
+                  </button>
+                )}
               </div>
 
               <div className="relative my-5">

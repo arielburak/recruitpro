@@ -61,8 +61,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const ALL_PLATFORM_OPTIONS = [
-  { value: "google_meet", label: "Google Meet", color: "text-green-600", requiresIntegration: true },
-  { value: "microsoft_teams", label: "Microsoft Teams", color: "text-blue-600", requiresIntegration: true },
+  { value: "google_meet", label: "Google Meet", color: "text-green-600", requiresIntegration: true, provider: "google" as const },
+  { value: "microsoft_teams", label: "Microsoft Teams", color: "text-blue-600", requiresIntegration: true, provider: "microsoft" as const },
   { value: "zoom", label: "Zoom", color: "text-blue-500", requiresIntegration: false },
   { value: "custom", label: "Custom Link", color: "text-gray-600", requiresIntegration: false },
   { value: "none", label: "No Video", color: "text-gray-400", requiresIntegration: false },
@@ -70,9 +70,14 @@ const ALL_PLATFORM_OPTIONS = [
 
 // When the calendar integration feature is off (e.g. while Google OAuth
 // verification is pending), hide options that require a native integration.
-const PLATFORM_OPTIONS = FEATURES.calendarIntegrations
+// The Microsoft option is further gated on FEATURES.microsoftIntegration
+// so we don't show "Microsoft Teams" until the Azure tenant is configured.
+const PLATFORM_OPTIONS = (FEATURES.calendarIntegrations
   ? ALL_PLATFORM_OPTIONS
-  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration);
+  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration)
+).filter(
+  (p) => !(("provider" in p) && p.provider === "microsoft" && !FEATURES.microsoftIntegration)
+);
 
 const TIMEZONE_OPTIONS = [
   // Americas
