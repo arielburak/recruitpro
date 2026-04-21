@@ -9,7 +9,7 @@
 - Si una decisión de producto falta tomarse, vive en **Decisiones pendientes** al final
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-04-17
+**Última actualización**: 2026-04-21
 
 ---
 
@@ -19,7 +19,7 @@
 - [ ] Sacar testimonios inventados (Jessica Torres, David Chen). Dejar sección vacía o "Early access"
 - [ ] Sacar claim SOC 2 del forgot-password y copy
 - [ ] Sacar métricas en cero ("0 recruiting firms served")
-- [ ] Sacar "Free forever" y rebalancear pricing con trial + plan pago
+- [x] ~~Sacar "Free forever" y rebalancear pricing con trial + plan pago~~
 - [ ] Reemplazar color naranja de validación de email por paleta del ATS
 - [ ] Mejorar copy de landing (textos más honestos, sin mentiras)
 - [ ] Destacar la sección de "Math" en la landing
@@ -38,7 +38,7 @@
   - [ ] Si es Recruiting → terms completos (fee + garantía + fechas de cobro)
 - [ ] **Alerta de candidato duplicado** (por cliente, match nombre+apellido, con opción "crear igual")
 - [ ] **Alerta de job order duplicado** (por cliente, con opción override)
-- [ ] Stages estándar — NO personalizados (decisión tomada con Ari)
+- [x] ~~Stages estándar — NO personalizados~~ (decisión tomada con Ari)
 
 ### Onboarding + trial
 - [ ] Wizard de onboarding 3 pasos: crear primer job + primer candidato + invitar primer cliente
@@ -55,6 +55,7 @@
 - [ ] Dunning (email de reintento si falla el pago)
 - [ ] Seat management (admin invita team, roles admin/recruiter/viewer, sync con Stripe)
 - [ ] Cálculo de comisiones para el equipo (parametrizable por recruiter)
+- [ ] Billing tab en client portal **(depende de: decisión "¿cobrar a hiring companies?")**
 
 ### Terms comerciales + reporting base
 - [ ] Payment terms + guarantee en Recruiting clients (días de cobro desde fecha de comienzo, garantía)
@@ -83,6 +84,7 @@
 - [ ] **Chrome extension para LinkedIn** (1-click add candidate) — killer feature vs Bullhorn/Loxo
 - [ ] Import desde LinkedIn, Indeed, otros portales
 - [ ] Gmail / Outlook sync real de threads con candidates
+- [ ] **Microsoft Teams integration** (calendar + meeting link, cada user linkea el suyo — igual que Google Meet)
 - [ ] Tracking específico para Outsourcing / Staff Aug (métricas propias del modelo)
 - [ ] Copilot alerts: "Búsqueda X sin candidatos hace Y días", ambos lados
 - [ ] Referral scheme (ambos lados: recruiter→recruiter, cliente→cliente)
@@ -109,12 +111,13 @@
 
 ## ⚠️ Decisiones pendientes (bloquean dev hasta que las tomemos)
 
-- [ ] Trial: con o sin credit card? (doc recomienda sin CC para MVP)
+- [x] ~~Trial: con o sin credit card?~~ → **con CC**, 5 días (commit `eeeb661`) (doc recomienda sin CC para MVP)
 - [ ] Qué métricas mostrar primero en reporting?
 - [ ] Referral scheme: qué incentivo damos? (crédito en suscripción / cash / otro)
 - [ ] Definición completa de qué campos cambian entre Staff Aug y Recruiting (necesario para el dropdown de cliente)
 - [ ] Logo abbreviation: qué mostramos cuando la empresa no cargó logo? (iniciales / placeholder / nada)
 - [ ] Responder las 5 preguntas técnicas que Ari dejó abiertas en el doc (trial/Stripe %, parser model+cost, drag-drop persistencia, RBAC, tests)
+- [ ] **¿Cobrar a las hiring companies también?** (aún no decidido). Si sí → habilitar tab Billing en el client portal + definir pricing model separado. Si no → el client portal queda gratis.
 
 ---
 
@@ -143,7 +146,12 @@ Marcado para referencia. Está todo en `git log origin/staging --since="2026-04-
 - [x] ~~Roles Admin/User simplificados (antes había recruiter/manager)~~ · ✅ 2026-04-16
 - [x] ~~Notion-style multi-select filters en Jobs y Candidates~~ · ✅ 2026-04-15
 - [x] ~~Add Candidate inline create mode (modal de job detail)~~ · ✅ 2026-04-17
-- [x] ~~Client portal OAuth (Google + Microsoft botones) con contexto vía cookie~~ · ✅ 2026-04-17
+- [x] ~~Client portal OAuth (Google + Microsoft botones) con contexto vía cookie~~
+- [x] ~~Settings unificado con tabs (Profile + Integrations + Team + Organization + Billing) en ambos portales~~
+- [x] ~~Pricing two-tier: Solo $15/seat, Team $19/seat (2–10)~~
+- [x] ~~Pipeline stages unificados (9 stages canónicos en firm + client portal)~~
+- [x] ~~OAuth sign-ups fuerzan a ingresar company name real~~
+- [x] ~~Stage filter en firm portal candidates~~ · ✅ 2026-04-17
 
 ---
 
