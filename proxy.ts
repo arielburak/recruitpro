@@ -77,6 +77,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Please sign in to the client portal" }, { status: 401 });
   }
 
+  // Staffing users whose organization hasn't set a real company name yet
+  // (e.g. fresh OAuth sign-ups) must complete onboarding before accessing
+  // anything else.
+  if (!token.isClientUser && token.needsOnboarding) {
+    const onboardingAllowed =
+      pathname === "/onboarding" ||
+      pathname.startsWith("/api/auth") ||
+      pathname.startsWith("/api/profile");
+    if (!onboardingAllowed) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Please finish setting up your company." },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
+  } else if (!token.isClientUser && pathname === "/onboarding") {
+    // Already onboarded — don't let them land back on onboarding
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   // Internal users: check subscription status for non-admin routes
   if (!token.isClientUser && !pathname.startsWith("/admin/billing") && !pathname.startsWith("/api/")) {
     // Subscription check is handled at the layout level to avoid DB calls in middleware

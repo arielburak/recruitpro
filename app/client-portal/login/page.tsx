@@ -287,12 +287,6 @@ function ClientPortalLoginInner() {
           </div>
         </div>
 
-        <div className="border-t border-white/20 pt-8">
-          <p className="text-emerald-100 text-sm">
-            <span className="font-semibold text-white">100% free</span> for hiring companies.
-            No credit card required. No hidden fees.
-          </p>
-        </div>
       </div>
 
       {/* Right Panel */}
@@ -446,7 +440,7 @@ function ClientPortalLoginInner() {
                 <p className="text-gray-500 mt-1">
                   {isInvitedUser
                     ? "A recruiter invited you. Set a password to get started."
-                    : "Free during early access for hiring companies."}
+                    : "Post jobs, invite recruiting firms, and hire great people."}
                 </p>
               </div>
               <form onSubmit={handleRegister} className="space-y-4">
@@ -489,13 +483,9 @@ function ClientPortalLoginInner() {
                   <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}
+                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Account")}
                 </Button>
               </form>
-              <div className="mt-4 flex items-center gap-2 justify-center text-xs text-gray-400">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                No credit card required
-              </div>
             </>
           )}
 

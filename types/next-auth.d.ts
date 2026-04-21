@@ -7,6 +7,7 @@ declare module "next-auth" {
       role?: string;
       organizationId?: string;
       organizationName?: string;
+      needsOnboarding?: boolean;
       clientId?: string;
       clientName?: string;
       isClientUser?: boolean;
@@ -20,6 +21,7 @@ declare module "next-auth/jwt" {
     role?: string;
     organizationId?: string;
     organizationName?: string;
+    needsOnboarding?: boolean;
     clientId?: string;
     clientName?: string;
     isClientUser?: boolean;
