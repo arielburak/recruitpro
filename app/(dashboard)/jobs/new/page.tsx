@@ -7,9 +7,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
+
+type JobDuplicateMatch = {
+  id: string;
+  title: string;
+  location: string | null;
+  status: string;
+  createdAt: string;
+  client: { id: string; name: string };
+};
 
 function NewJobContent() {
   const router = useRouter();
@@ -38,6 +55,42 @@ function NewJobContent() {
   const [clientSearch, setClientSearch] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const clientRef = useRef<HTMLDivElement>(null);
+
+  // Duplicate-job detection: matches existing jobs with the same
+  // (client, title) within the firm.
+  const [jobDuplicates, setJobDuplicates] = useState<JobDuplicateMatch[]>([]);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+
+  async function checkJobDuplicate(override?: {
+    title?: string;
+    clientId?: string;
+  }): Promise<JobDuplicateMatch[]> {
+    const t = (override?.title ?? title).trim();
+    const cid = (override?.clientId ?? selectedClientId).trim();
+    if (!t || !cid) {
+      setJobDuplicates([]);
+      return [];
+    }
+    setCheckingDuplicate(true);
+    try {
+      const qs = new URLSearchParams({ title: t, clientId: cid });
+      const res = await fetch(`/api/jobs/check-duplicate?${qs.toString()}`);
+      if (!res.ok) {
+        setJobDuplicates([]);
+        return [];
+      }
+      const data = await res.json();
+      const matches: JobDuplicateMatch[] = data.matches || [];
+      setJobDuplicates(matches);
+      return matches;
+    } catch {
+      setJobDuplicates([]);
+      return [];
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }
 
   const filteredClients = clientSearch
     ? clients.filter((c) => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
@@ -69,6 +122,10 @@ function NewJobContent() {
         setFeeAmount(String(Number(client.defaultFeeAmount)));
         setTermsAutoFilled(true);
       }
+    }
+    // If a title is already set, re-check duplicates with the new client.
+    if (title.trim()) {
+      void checkJobDuplicate({ clientId });
     }
   }
 
@@ -113,6 +170,13 @@ function NewJobContent() {
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
         setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
+
+        // If both identifiers are known after parsing, check duplicates
+        // right away so the recruiter sees the warning without having to
+        // manually re-focus the title field.
+        if (data.fields?.title && selectedClientId) {
+          void checkJobDuplicate({ title: data.fields.title });
+        }
       } else if (data.error) {
         setParseStatus(`Could not extract text: ${data.error}`);
       } else {
@@ -125,11 +189,9 @@ function NewJobContent() {
     }
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function actuallyCreate(fd: FormData) {
     setLoading(true);
     setError("");
-    const fd = new FormData(e.currentTarget);
 
     const res = await fetch("/api/jobs", {
       method: "POST",
@@ -169,6 +231,24 @@ function NewJobContent() {
     }
 
     router.push(`/jobs/${job.id}`);
+  }
+
+  const pendingFormData = useRef<FormData | null>(null);
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+
+    // Re-check for duplicates at submit time in case the user never
+    // blurred the title field.
+    const matches = await checkJobDuplicate();
+    if (matches.length > 0) {
+      pendingFormData.current = fd;
+      setShowDuplicateDialog(true);
+      return;
+    }
+
+    await actuallyCreate(fd);
   }
 
   return (
@@ -231,7 +311,16 @@ function NewJobContent() {
                 placeholder="Senior Software Engineer"
                 required
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                className={
+                  jobDuplicates.length > 0
+                    ? "border-indigo-400 ring-2 ring-indigo-100"
+                    : ""
+                }
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (jobDuplicates.length > 0) setJobDuplicates([]);
+                }}
+                onBlur={(e) => void checkJobDuplicate({ title: e.target.value })}
               />
             </div>
             <div className="space-y-2">
@@ -289,6 +378,46 @@ function NewJobContent() {
                 </p>
               )}
             </div>
+
+            {checkingDuplicate && (
+              <p className="text-xs text-gray-400">Checking for duplicates…</p>
+            )}
+            {jobDuplicates.length > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
+                <div className="flex items-center gap-1.5 px-1.5 pt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                  <span className="text-[10.5px] font-medium text-gray-500 uppercase tracking-wider">
+                    This client already has a job with this title
+                  </span>
+                </div>
+                {jobDuplicates.map((m) => (
+                  <Link
+                    key={m.id}
+                    href={`/jobs/${m.id}`}
+                    target="_blank"
+                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {m.title}
+                        </p>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">
+                          {m.status.toLowerCase()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">
+                        {m.client.name}
+                        {m.location ? ` · ${m.location}` : ""}
+                        {" · opened "}
+                        {new Date(m.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                  </Link>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>Location</Label>
@@ -364,6 +493,66 @@ function NewJobContent() {
           </CardContent>
         </Card>
       </form>
+
+      <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">This client already has a job with this title</DialogTitle>
+            <DialogDescription className="text-sm">
+              Open the existing job to reuse its pipeline, or create a new one anyway if this is a separate search.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-1.5 space-y-1 max-h-64 overflow-y-auto">
+            {jobDuplicates.map((m) => (
+              <Link
+                key={m.id}
+                href={`/jobs/${m.id}`}
+                target="_blank"
+                className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-white hover:shadow-sm transition group"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {m.title}
+                    </p>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">
+                      {m.status.toLowerCase()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate">
+                    {m.client.name}
+                    {m.location ? ` · ${m.location}` : ""}
+                    {" · opened "}
+                    {new Date(m.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+              </Link>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDuplicateDialog(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setShowDuplicateDialog(false);
+                if (pendingFormData.current) {
+                  await actuallyCreate(pendingFormData.current);
+                  pendingFormData.current = null;
+                }
+              }}
+              disabled={loading}
+            >
+              {loading ? "Creating..." : "Create anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
