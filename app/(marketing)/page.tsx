@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -40,44 +40,12 @@ import {
   MoveRight,
   Heart,
   Workflow,
-  Timer,
   Award,
   CircleDollarSign,
   Handshake,
   Bot,
   ArrowDown,
 } from "lucide-react";
-
-// ─── ANIMATED COUNTER ───
-function AnimatedNumber({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const counted = useRef(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !counted.current) {
-          counted.current = true;
-          const duration = 1800;
-          const start = performance.now();
-          function tick(now: number) {
-            const progress = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 4);
-            setCount(Math.floor(eased * target));
-            if (progress < 1) requestAnimationFrame(tick);
-          }
-          requestAnimationFrame(tick);
-        }
-      },
-      { threshold: 0.3 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [target]);
-
-  return <span ref={ref}>{prefix}{count}{suffix}</span>;
-}
 
 // ─── NAVBAR ───
 function Navbar() {
@@ -101,7 +69,7 @@ function Navbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {["Features", "How It Works", "Pricing", "Testimonials"].map((item) => (
+          {["Features", "How It Works", "The Math", "Pricing"].map((item) => (
             <a key={item} href={`#${item.toLowerCase().replace(/\s+/g, "-")}`} className="text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors">
               {item}
             </a>
@@ -133,7 +101,7 @@ function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden bg-white/95 backdrop-blur-md border-t border-gray-100 px-6 py-6 space-y-4 shadow-lg">
-          {["Features", "How It Works", "Pricing", "Testimonials"].map((item) => (
+          {["Features", "How It Works", "The Math", "Pricing"].map((item) => (
             <a key={item} href={`#${item.toLowerCase().replace(/\s+/g, "-")}`} onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-gray-700 hover:text-indigo-600">
               {item}
             </a>
@@ -337,26 +305,27 @@ function Hero() {
   );
 }
 
-// ─── SOCIAL PROOF STRIP ───
-function SocialProof() {
+// ─── TRUST BAR ───
+function TrustBar() {
+  const items = [
+    { icon: Sparkles, title: "Fresh off the build", desc: "New platform, honest start", bg: "bg-emerald-100", color: "text-emerald-600" },
+    { icon: Zap, title: "Ships every week", desc: "Real-time roadmap, not quarterly", bg: "bg-indigo-100", color: "text-indigo-600" },
+    { icon: Heart, title: "Built with recruiters", desc: "Early access is open", bg: "bg-violet-100", color: "text-violet-600" },
+  ];
   return (
-    <section className="py-16 sm:py-20 border-y border-gray-100 bg-white">
-      <div className="max-w-6xl mx-auto px-6">
-        <p className="text-center text-sm font-medium text-gray-400 uppercase tracking-widest mb-10">
-          Trusted by recruiting firms worldwide
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12 text-center">
-          {[
-            { value: 500, suffix: "+", label: "Recruiting Firms" },
-            { value: 2, suffix: "M+", label: "Candidates Managed" },
-            { value: 98, suffix: "%", label: "Customer Satisfaction" },
-            { value: 40, suffix: "%", label: "Faster Time-to-Fill" },
-          ].map((s) => (
-            <div key={s.label}>
-              <p className="text-3xl sm:text-5xl font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-                <AnimatedNumber target={s.value} suffix={s.suffix} />
-              </p>
-              <p className="text-sm text-gray-500 mt-2 font-medium">{s.label}</p>
+    <section className="py-12 sm:py-14 border-y border-gray-100 bg-white">
+      <div className="max-w-5xl mx-auto px-6">
+        <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12">
+          {items.map((it, i) => (
+            <div key={it.title} className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${it.bg}`}>
+                <it.icon className={`w-5 h-5 ${it.color}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-gray-900 text-sm leading-tight">{it.title}</p>
+                <p className="text-xs text-gray-500 leading-tight">{it.desc}</p>
+              </div>
+              {i < items.length - 1 && <div className="hidden md:block h-8 w-px bg-gray-200 ml-6" />}
             </div>
           ))}
         </div>
@@ -952,88 +921,130 @@ function Pricing() {
           </a>{" "}
           about a custom plan.
         </p>
+      </div>
+    </section>
+  );
+}
 
-        {/* ROI callout */}
-        <div className="mt-12 max-w-3xl mx-auto bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-8 text-white text-center shadow-xl">
-          <p className="text-sm font-medium text-indigo-200 uppercase tracking-widest mb-2">The Math</p>
-          <h3 className="text-2xl font-bold mb-3">One placement pays for 20+ years of Recruiting ATS</h3>
-          <p className="text-indigo-100 max-w-lg mx-auto text-sm leading-relaxed">
-            Average recruiting fee: $25,000. A 5-person firm on Team: $95/month.
-            If we help you close even one extra placement a year, the ROI is 260x.
-          </p>
+// ─── THE MATH (dedicated section) ───
+function TheMath() {
+  return (
+    <section id="the-math" className="py-24 px-6">
+      <div className="max-w-5xl mx-auto">
+        <div className="relative rounded-3xl overflow-hidden shadow-2xl shadow-indigo-200/50">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.18),transparent)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:48px_48px]" />
+
+          <div className="relative p-10 md:p-16 text-white">
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/20 uppercase tracking-widest mb-5">
+                <CircleDollarSign className="w-3.5 h-3.5" />
+                The Math
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold leading-tight mb-4">
+                One placement covers <br className="hidden sm:block" />
+                <span className="relative inline-block">
+                  <span className="bg-gradient-to-r from-white to-indigo-100 bg-clip-text text-transparent">
+                    21 years
+                  </span>
+                  <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" fill="none">
+                    <path d="M2 8C50 2 100 2 150 6C200 10 250 4 298 8" stroke="rgba(255,255,255,0.6)" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                </span>{" "}
+                of Recruiting ATS
+              </h2>
+              <p className="text-indigo-100 text-base md:text-lg max-w-2xl mx-auto">
+                One placement. Two decades. The math isn&apos;t hard.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4 md:gap-6 mb-10">
+              <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 text-center">
+                <p className="text-[11px] uppercase tracking-widest text-indigo-200 mb-2 font-semibold">Avg. placement fee</p>
+                <p className="text-3xl md:text-4xl font-extrabold">$25,000</p>
+                <p className="text-xs text-indigo-200 mt-1">Industry average</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 text-center">
+                <p className="text-[11px] uppercase tracking-widest text-indigo-200 mb-2 font-semibold">Your cost</p>
+                <p className="text-3xl md:text-4xl font-extrabold">$95</p>
+                <p className="text-xs text-indigo-200 mt-1">/ month, Team plan (5 seats)</p>
+              </div>
+              <div className="bg-gradient-to-br from-emerald-400 to-emerald-500 border border-emerald-300/40 rounded-2xl p-6 text-center shadow-lg shadow-emerald-500/20">
+                <p className="text-[11px] uppercase tracking-widest text-white/90 mb-2 font-semibold">Months covered</p>
+                <p className="text-3xl md:text-4xl font-extrabold text-white">263</p>
+                <p className="text-xs text-white/80 mt-1">= 21+ years</p>
+              </div>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5 md:p-6 text-center max-w-3xl mx-auto">
+              <p className="text-indigo-50 text-sm md:text-base leading-relaxed">
+                <span className="font-bold text-white">If Recruiting ATS helps you close one extra placement</span>{" "}
+                — ever — the ROI pays for the whole team. For years.
+              </p>
+            </div>
+
+            <div className="mt-8 text-center">
+              <Link
+                href="/register"
+                className="inline-flex items-center gap-2 bg-white text-indigo-700 font-semibold text-base px-7 py-3.5 rounded-xl hover:bg-indigo-50 transition-all shadow-lg hover:-translate-y-0.5"
+              >
+                Start your 5-day trial
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-// ─── TESTIMONIALS ───
-function Testimonials() {
-  const testimonials = [
+// ─── EARLY ACCESS ───
+function EarlyAccess() {
+  const perks = [
     {
-      quote: "We switched from spreadsheets and our placement rate jumped 40% in the first quarter. The client portal alone is worth the price.",
-      name: "Jessica Torres",
-      role: "Managing Partner",
-      company: "Apex IT Recruiting",
-      metric: "+40% placements",
-      metricIcon: TrendingUp,
+      icon: MessageSquare,
+      title: "Direct line to the team",
+      desc: "Feedback reaches us the same day. Bugs get fixed in hours, not sprint cycles. Your feature request goes straight to the roadmap.",
     },
     {
-      quote: "My team of 8 was up and running in a day. The pipeline view is exactly what we needed — simple, visual, fast.",
-      name: "David Chen",
-      role: "Director of Operations",
-      company: "TechBridge Staffing",
-      metric: "1 day setup",
-      metricIcon: Timer,
+      icon: Zap,
+      title: "We ship every week",
+      desc: "New improvements land every week based on what our first users actually need. You help shape what comes next.",
     },
     {
-      quote: "Our clients love the portal. They review candidates and give feedback without me being in the middle. Game changer.",
-      name: "Sarah Mitchell",
-      role: "Senior Recruiter",
-      company: "MedSearch Partners",
-      metric: "3x faster feedback",
-      metricIcon: Zap,
+      icon: Award,
+      title: "Early-adopter pricing",
+      desc: "Lock in $10/user/month today. When we raise prices later, your account stays grandfathered — no surprises.",
     },
   ];
 
   return (
-    <section id="testimonials" className="py-24 px-6">
+    <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Testimonials</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Recruiters love Recruiting ATS</h2>
-          <p className="text-lg text-gray-500">Don&apos;t take our word for it.</p>
+        <div className="text-center mb-14">
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Early Access</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            You&apos;re early. We think that&apos;s a good thing.
+          </h2>
+          <p className="text-lg text-gray-500 max-w-2xl mx-auto">
+            Recruiting ATS is a new platform. No inflated testimonials, no fake logos.
+            We&apos;d rather build it with you than pretend we&apos;re something we&apos;re not.
+          </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
-          {testimonials.map((t) => (
-            <div key={t.name} className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group hover:-translate-y-1">
-              {/* Stars */}
-              <div className="flex gap-1 mb-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
-                ))}
+          {perks.map((p) => (
+            <div
+              key={p.title}
+              className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col"
+            >
+              <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mb-5">
+                <p.icon className="w-6 h-6 text-indigo-600" />
               </div>
-
-              {/* Metric badge */}
-              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full w-fit mb-5 border border-emerald-100">
-                <t.metricIcon className="w-3.5 h-3.5" />
-                {t.metric}
-              </div>
-
-              <p className="text-gray-700 mb-6 leading-relaxed text-[15px] flex-1">
-                &ldquo;{t.quote}&rdquo;
-              </p>
-
-              <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
-                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
-                  {t.name.split(" ").map(w => w[0]).join("")}
-                </div>
-                <div>
-                  <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
-                  <p className="text-xs text-gray-500">{t.role}, {t.company}</p>
-                </div>
-              </div>
+              <h3 className="font-bold text-gray-900 text-lg mb-2">{p.title}</h3>
+              <p className="text-sm text-gray-600 leading-relaxed flex-1">{p.desc}</p>
             </div>
           ))}
         </div>
@@ -1048,9 +1059,9 @@ function FAQ() {
 
   const questions = [
     { q: "How does the free trial work?", a: "You get 5 days of full access to try Recruiting ATS. A credit card is required at signup — we won't charge you until the trial ends. Solo is $15/seat/month (1 seat) and Team is $19/seat/month (2–10 seats). Cancel any time before the trial ends and you won't be billed." },
-    { q: "Can I import data from my current ATS?", a: "Absolutely. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
+    { q: "Can I import data from my current ATS?", a: "Yes. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
     { q: "How does the client portal work?", a: "You generate a shareable link for each client/job. Clients see candidate profiles (with salary info redacted), rate them, leave comments, and download resumes. Or they can sign up to manage all their searches in one place." },
-    { q: "Is my data secure?", a: "Yes. All data is encrypted in transit and at rest. We use enterprise infrastructure with Neon PostgreSQL and follow SOC 2 security practices. Each organization's data is fully isolated." },
+    { q: "Is my data secure?", a: "Yes. All data is encrypted in transit (TLS) and at rest. We run on managed Postgres (Neon) with per-organization isolation. We&apos;re not SOC 2 certified yet — that&apos;s on the roadmap, and we&apos;ll be transparent about it when we are." },
     { q: "What happens when I cancel?", a: "You can export all your data anytime. When you cancel, you retain read-only access through your billing period end. We never hold your data hostage." },
   ];
 
@@ -1094,8 +1105,8 @@ function FinalCTA() {
 
           <div className="relative py-20 px-8 text-center">
             <div className="inline-flex items-center gap-2 bg-white/10 text-white/90 text-sm font-medium px-4 py-2 rounded-full mb-6 backdrop-blur-sm border border-white/10">
-              <Zap className="w-4 h-4" />
-              Join 500+ firms already using Recruiting ATS
+              <Sparkles className="w-4 h-4" />
+              Early access is open
             </div>
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
               Ready to close more<br />placements, faster?
@@ -1156,14 +1167,15 @@ export default function LandingPage() {
     <main className="min-h-screen bg-white">
       <Navbar />
       <Hero />
-      <SocialProof />
+      <TrustBar />
       <PainSolution />
       <Features />
       <TwoSides />
       <HowItWorks />
       <Comparison />
+      <TheMath />
       <Pricing />
-      <Testimonials />
+      <EarlyAccess />
       <FAQ />
       <FinalCTA />
       <Footer />
