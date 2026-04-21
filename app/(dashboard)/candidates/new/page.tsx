@@ -50,6 +50,23 @@ function NewCandidatePage() {
   // Attachments state
   const [attachments, setAttachments] = useState<File[]>([]);
 
+  // Form field state for pre-filling
+  const [formValues, setFormValues] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    linkedIn: "",
+    location: "",
+    currentTitle: "",
+    currentCompany: "",
+    currentSalary: "",
+    desiredSalary: "",
+    salaryCurrency: "USD",
+    source: "",
+    summary: "",
+  });
+
   // Duplicate candidate detection — matches any of email / phone / LinkedIn
   type DuplicateMatch = {
     id: string;
@@ -146,23 +163,6 @@ function NewCandidatePage() {
       setCheckingDuplicate(false);
     }
   }
-
-  // Form field state for pre-filling
-  const [formValues, setFormValues] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    linkedIn: "",
-    location: "",
-    currentTitle: "",
-    currentCompany: "",
-    currentSalary: "",
-    desiredSalary: "",
-    salaryCurrency: "USD",
-    source: "",
-    summary: "",
-  });
 
   // Pre-fill from URL search params (LinkedIn import redirect)
   useEffect(() => {
