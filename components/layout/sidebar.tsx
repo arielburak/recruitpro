@@ -12,14 +12,12 @@ import {
   Handshake,
   Trophy,
   Settings,
-  UserPlus,
   Menu,
   X,
   LogOut,
   Upload,
   Inbox,
   Calendar,
-  User,
   UserRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -39,14 +37,14 @@ const mainNavItems = [
   { label: "Engagements", href: "/engagements", icon: Inbox },
 ];
 
-const adminNavItems = [
-  { label: "Team", href: "/admin/users", icon: UserPlus },
-  { label: "Settings", href: "/admin/settings", icon: Settings },
-];
-
-const accountNavItems = [
-  { label: "Profile", href: "/profile", icon: User },
-];
+// Profile + team + integrations + org settings all live under /settings
+// with tabs. Single entry keeps the sidebar tight and mirrors the client
+// portal pattern.
+const settingsNavItem = {
+  label: "Settings",
+  href: "/settings",
+  icon: Settings,
+};
 
 function NavLink({
   item,
@@ -149,7 +147,7 @@ function UserInfo({ session }: { session: ReturnType<typeof useSession>["data"] 
       {/* User row */}
       <div className="flex items-center gap-3">
         <Link
-          href="/profile"
+          href="/settings/profile"
           className="flex items-center gap-3 flex-1 min-w-0 rounded-md -mx-1 px-1 py-1 transition-colors hover:bg-white/5 group"
           title="View profile"
         >
@@ -245,37 +243,14 @@ export function Sidebar() {
           />
         ))}
 
-        {isAdmin && (
-          <>
-            {/* Separator */}
-            <div className="!my-4 mx-0 border-t border-white/[0.06]" />
-            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
-              Admin
-            </p>
-            {adminNavItems.map((item) => (
-              <NavLink
-                key={item.href}
-                item={item}
-                pathname={pathname}
-                onClick={() => setMobileOpen(false)}
-              />
-            ))}
-          </>
-        )}
-
-        {/* Account section (for everyone) */}
+        {/* Single unified Settings entry — profile, team, integrations,
+            organization, billing all live behind tabs on /settings */}
         <div className="!my-4 mx-0 border-t border-white/[0.06]" />
-        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
-          Account
-        </p>
-        {accountNavItems.map((item) => (
-          <NavLink
-            key={item.href}
-            item={item}
-            pathname={pathname}
-            onClick={() => setMobileOpen(false)}
-          />
-        ))}
+        <NavLink
+          item={settingsNavItem}
+          pathname={pathname}
+          onClick={() => setMobileOpen(false)}
+        />
       </nav>
 
       {/* Separator */}
