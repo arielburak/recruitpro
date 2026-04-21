@@ -5,6 +5,7 @@ import { registerSchema } from "@/lib/validations/auth";
 import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
+import { sendWelcomeEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -54,23 +55,37 @@ export async function POST(request: Request) {
       });
 
       // Create trial subscription (Stripe customer created on first billing action)
+      const trialEndsAt = new Date(
+        Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000
+      );
       await tx.subscription.create({
         data: {
           organizationId: org.id,
           stripeCustomerId: `pending_${org.id}`,
           status: "TRIALING",
-          trialEndsAt: new Date(
-            Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000
-          ),
+          trialEndsAt,
           seats: 1,
         },
       });
 
-      return { org, user };
+      return { org, user, trialEndsAt };
     });
 
     // Process any pending firm invites for this email
     await processPendingInvites(data.email, result.org.id).catch(() => {});
+
+    // Fire-and-forget welcome email. A delivery failure (e.g. bad address,
+    // transient Resend outage) shouldn't block account creation.
+    const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+    sendWelcomeEmail({
+      to: data.email,
+      recipientName: data.name,
+      organizationName: data.orgName,
+      dashboardUrl: `${origin}/dashboard`,
+      trialEndsAt: result.trialEndsAt,
+    }).catch((err) => {
+      console.error("[register] welcome email failed:", err);
+    });
 
     return NextResponse.json(
       { message: "Organization created", orgId: result.org.id },

@@ -511,3 +511,43 @@ export async function sendClientSetPasswordEmail({
     html,
   });
 }
+
+export async function sendWelcomeEmail({
+  to,
+  recipientName,
+  organizationName,
+  dashboardUrl,
+  trialEndsAt,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  dashboardUrl: string;
+  trialEndsAt?: Date;
+}) {
+  const firstName = recipientName?.split(" ")[0] || recipientName;
+  const trialLine = trialEndsAt
+    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong> — no credit card needed.</p>`
+    : "";
+
+  const html = wrapTemplate(
+    `Welcome to ${appName}, ${firstName}`,
+    `<p>Thanks for signing up — <strong>${organizationName}</strong> is all set on ${appName}.</p>
+     ${trialLine}
+     <p>Three things to try first:</p>
+     <ul style="color: #4b5563; padding-left: 20px; line-height: 1.7;">
+       <li>Add your first client and post a job</li>
+       <li>Import candidates (CSV, resume parser, or manually)</li>
+       <li>Invite a teammate and start working the pipeline</li>
+     </ul>
+     <p>Everything lives in one place: your candidates, your clients, and the conversations with both.</p>`,
+    dashboardUrl,
+    "Open Dashboard"
+  );
+
+  return sendEmail({
+    to,
+    subject: `Welcome to ${appName} — ${organizationName} is ready`,
+    html,
+  });
+}
