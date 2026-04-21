@@ -456,50 +456,6 @@ function NewCandidatePage() {
                     void checkDuplicates({ email: e.target.value });
                   }}
                 />
-                {checkingDuplicate && (
-                  <p className="text-xs text-gray-400">Checking for duplicates…</p>
-                )}
-                {duplicateMatches.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
-                    <div className="flex items-center gap-1.5 px-1.5 pt-0.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                      <span className="text-[10.5px] font-medium text-gray-500 uppercase tracking-wider">
-                        Already in your database
-                      </span>
-                    </div>
-                    {duplicateMatches.map((m) => {
-                      const channels = getMatchedChannels(m);
-                      return (
-                        <Link
-                          key={m.id}
-                          href={`/candidates/${m.id}`}
-                          target="_blank"
-                          className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {m.firstName} {m.lastName}
-                              </p>
-                              {channels.map((c) => (
-                                <span
-                                  key={c}
-                                  className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
-                                >
-                                  {c}
-                                </span>
-                              ))}
-                            </div>
-                            <p className="text-xs text-gray-500 truncate">
-                              {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
-                            </p>
-                          </div>
-                          <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
@@ -539,6 +495,51 @@ function NewCandidatePage() {
                 }}
               />
             </div>
+
+            {checkingDuplicate && (
+              <p className="text-xs text-gray-400">Checking for duplicates…</p>
+            )}
+            {duplicateMatches.length > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
+                <div className="flex items-center gap-1.5 px-1.5 pt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                  <span className="text-[10.5px] font-medium text-gray-500 uppercase tracking-wider">
+                    Already in your database
+                  </span>
+                </div>
+                {duplicateMatches.map((m) => {
+                  const channels = getMatchedChannels(m);
+                  return (
+                    <Link
+                      key={m.id}
+                      href={`/candidates/${m.id}`}
+                      target="_blank"
+                      className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {m.firstName} {m.lastName}
+                          </p>
+                          {channels.map((c) => (
+                            <span
+                              key={c}
+                              className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                            >
+                              matched by {c}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">
+                          {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                        </p>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="location">Location</Label>
@@ -749,7 +750,7 @@ function NewCandidatePage() {
                           key={c}
                           className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
                         >
-                          {c}
+                          matched by {c}
                         </span>
                       ))}
                     </div>
