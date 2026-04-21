@@ -50,12 +50,14 @@ function NewCandidatePage() {
   // Attachments state
   const [attachments, setAttachments] = useState<File[]>([]);
 
-  // Duplicate candidate detection (by email, within the firm)
+  // Duplicate candidate detection — matches any of email / phone / LinkedIn
   type DuplicateMatch = {
     id: string;
     firstName: string;
     lastName: string;
     email: string | null;
+    phone: string | null;
+    linkedIn: string | null;
     currentTitle: string | null;
     currentCompany: string | null;
     createdAt: string;
@@ -64,6 +66,38 @@ function NewCandidatePage() {
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+
+  /**
+   * For a given match, figure out which of the form's identifiers
+   * actually triggered it — so the recruiter can see *why* it's flagged
+   * as a duplicate, not just that it is one.
+   */
+  function getMatchedChannels(m: DuplicateMatch): string[] {
+    const channels: string[] = [];
+    const formEmail = formValues.email.trim().toLowerCase();
+    if (formEmail && m.email && m.email.toLowerCase() === formEmail) {
+      channels.push("email");
+    }
+    const formPhoneDigits = formValues.phone.replace(/\D/g, "");
+    const matchPhoneDigits = m.phone?.replace(/\D/g, "") || "";
+    if (formPhoneDigits && formPhoneDigits === matchPhoneDigits) {
+      channels.push("phone");
+    }
+    const extractHandle = (v: string) => {
+      if (!v) return "";
+      const match = v
+        .trim()
+        .toLowerCase()
+        .match(/(?:linkedin\.com\/in\/|^\/?in\/)([a-z0-9\-_.]+)/i);
+      return match ? match[1].replace(/\/$/, "") : "";
+    };
+    const formHandle = extractHandle(formValues.linkedIn);
+    const matchHandle = extractHandle(m.linkedIn || "");
+    if (formHandle && formHandle === matchHandle) {
+      channels.push("LinkedIn");
+    }
+    return channels;
+  }
 
   /**
    * Check for duplicates across all three identifiers the form captures.
@@ -433,24 +467,37 @@ function NewCandidatePage() {
                         Already in your database
                       </span>
                     </div>
-                    {duplicateMatches.map((m) => (
-                      <Link
-                        key={m.id}
-                        href={`/candidates/${m.id}`}
-                        target="_blank"
-                        className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {m.firstName} {m.lastName}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
-                          </p>
-                        </div>
-                        <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
-                      </Link>
-                    ))}
+                    {duplicateMatches.map((m) => {
+                      const channels = getMatchedChannels(m);
+                      return (
+                        <Link
+                          key={m.id}
+                          href={`/candidates/${m.id}`}
+                          target="_blank"
+                          className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {m.firstName} {m.lastName}
+                              </p>
+                              {channels.map((c) => (
+                                <span
+                                  key={c}
+                                  className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                                >
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+                            <p className="text-xs text-gray-500 truncate">
+                              {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                            </p>
+                          </div>
+                          <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -683,24 +730,37 @@ function NewCandidatePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-1.5 space-y-1 max-h-64 overflow-y-auto">
-            {duplicateMatches.map((m) => (
-              <Link
-                key={m.id}
-                href={`/candidates/${m.id}`}
-                target="_blank"
-                className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-white hover:shadow-sm transition group"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {m.firstName} {m.lastName}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
-                  </p>
-                </div>
-                <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
-              </Link>
-            ))}
+            {duplicateMatches.map((m) => {
+              const channels = getMatchedChannels(m);
+              return (
+                <Link
+                  key={m.id}
+                  href={`/candidates/${m.id}`}
+                  target="_blank"
+                  className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-white hover:shadow-sm transition group"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {m.firstName} {m.lastName}
+                      </p>
+                      {channels.map((c) => (
+                        <span
+                          key={c}
+                          className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">
+                      {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                    </p>
+                  </div>
+                  <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                </Link>
+              );
+            })}
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button
