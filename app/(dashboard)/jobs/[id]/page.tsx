@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -45,6 +45,83 @@ export default function JobDetailPage() {
   const [newCandidate, setNewCandidate] = useState(emptyNewCandidate);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  // Duplicate detection for the inline "Create new" tab — mirrors the
+  // /candidates/new page so recruiters get the same heads-up in both
+  // flows. Hits the same /api/candidates/check-duplicate endpoint.
+  type InlineDupe = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    linkedIn: string | null;
+    currentTitle: string | null;
+    currentCompany: string | null;
+  };
+  const [inlineDupes, setInlineDupes] = useState<InlineDupe[]>([]);
+  const [checkingInlineDupe, setCheckingInlineDupe] = useState(false);
+
+  async function checkInlineDuplicates(override?: {
+    email?: string;
+    phone?: string;
+    linkedIn?: string;
+  }): Promise<InlineDupe[]> {
+    const email = (override?.email ?? newCandidate.email).trim();
+    const phone = (override?.phone ?? newCandidate.phone).trim();
+    const linkedIn = (override?.linkedIn ?? newCandidate.linkedIn).trim();
+    if (!email && !phone && !linkedIn) {
+      setInlineDupes([]);
+      return [];
+    }
+    setCheckingInlineDupe(true);
+    try {
+      const qs = new URLSearchParams();
+      if (email) qs.set("email", email);
+      if (phone) qs.set("phone", phone);
+      if (linkedIn) qs.set("linkedIn", linkedIn);
+      const res = await fetch(`/api/candidates/check-duplicate?${qs.toString()}`);
+      if (!res.ok) {
+        setInlineDupes([]);
+        return [];
+      }
+      const data = await res.json();
+      const matches: InlineDupe[] = data.matches || [];
+      setInlineDupes(matches);
+      return matches;
+    } catch {
+      setInlineDupes([]);
+      return [];
+    } finally {
+      setCheckingInlineDupe(false);
+    }
+  }
+
+  function getInlineMatchedChannels(m: InlineDupe): string[] {
+    const channels: string[] = [];
+    const formEmail = newCandidate.email.trim().toLowerCase();
+    if (formEmail && m.email && m.email.toLowerCase() === formEmail) channels.push("email");
+    const formPhoneDigits = newCandidate.phone.replace(/\D/g, "");
+    const matchPhoneDigits = m.phone?.replace(/\D/g, "") || "";
+    if (formPhoneDigits && formPhoneDigits === matchPhoneDigits) channels.push("phone");
+    const extractHandle = (v: string) => {
+      if (!v) return "";
+      const match = v
+        .trim()
+        .toLowerCase()
+        .match(/(?:linkedin\.com\/in\/|^\/?in\/)([a-z0-9\-_.]+)/i);
+      return match ? match[1].replace(/\/$/, "") : "";
+    };
+    const formHandle = extractHandle(newCandidate.linkedIn);
+    const matchHandle = extractHandle(m.linkedIn || "");
+    if (formHandle && formHandle === matchHandle) channels.push("LinkedIn");
+    return channels;
+  }
+
+  const inlineFlaggedFields = new Set<string>();
+  for (const m of inlineDupes) {
+    for (const c of getInlineMatchedChannels(m)) inlineFlaggedFields.add(c);
+  }
   const [inlineResume, setInlineResume] = useState<File | null>(null);
   const [inlineParsing, setInlineParsing] = useState(false);
   const [inlineParseMessage, setInlineParseMessage] = useState("");
@@ -57,6 +134,7 @@ export default function JobDetailPage() {
     setCreateError("");
     setInlineResume(null);
     setInlineParseMessage("");
+    setInlineDupes([]);
   }
 
   // Share dialog state
@@ -214,6 +292,13 @@ export default function JobDetailPage() {
         currentCompany: parsed.currentCompany || prev.currentCompany,
       }));
       setInlineParseMessage("Resume parsed — review the fields below.");
+      if (parsed.email || parsed.phone || parsed.linkedIn) {
+        void checkInlineDuplicates({
+          email: parsed.email,
+          phone: parsed.phone,
+          linkedIn: parsed.linkedIn,
+        });
+      }
     } catch {
       setInlineParseMessage("Failed to parse resume. Try a .txt file for best results.");
     }
@@ -693,24 +778,124 @@ export default function JobDetailPage() {
                       <Input
                         type="email"
                         value={newCandidate.email}
-                        onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })}
+                        className={
+                          inlineFlaggedFields.has("email")
+                            ? "border-indigo-400 ring-2 ring-indigo-100"
+                            : ""
+                        }
+                        onChange={(e) => {
+                          setNewCandidate({ ...newCandidate, email: e.target.value });
+                          if (inlineDupes.length > 0) setInlineDupes([]);
+                        }}
+                        onBlur={(e) => void checkInlineDuplicates({ email: e.target.value })}
                       />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Phone</Label>
-                      <PhoneInput
-                        value={newCandidate.phone}
-                        onChange={(val) => setNewCandidate({ ...newCandidate, phone: val })}
-                      />
+                      <div
+                        onBlur={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            void checkInlineDuplicates({ phone: newCandidate.phone });
+                          }
+                        }}
+                      >
+                        <PhoneInput
+                          value={newCandidate.phone}
+                          onChange={(val) => {
+                            setNewCandidate({ ...newCandidate, phone: val });
+                            if (inlineDupes.length > 0) setInlineDupes([]);
+                          }}
+                          highlighted={inlineFlaggedFields.has("phone")}
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">LinkedIn URL</Label>
                     <Input
                       value={newCandidate.linkedIn}
-                      onChange={(e) => setNewCandidate({ ...newCandidate, linkedIn: e.target.value })}
+                      className={
+                        inlineFlaggedFields.has("LinkedIn")
+                          ? "border-indigo-400 ring-2 ring-indigo-100"
+                          : ""
+                      }
+                      onChange={(e) => {
+                        setNewCandidate({ ...newCandidate, linkedIn: e.target.value });
+                        if (inlineDupes.length > 0) setInlineDupes([]);
+                      }}
+                      onBlur={(e) => void checkInlineDuplicates({ linkedIn: e.target.value })}
                     />
                   </div>
+
+                  {checkingInlineDupe && (
+                    <p className="text-xs text-gray-400">Checking for duplicates…</p>
+                  )}
+                  {inlineDupes.length > 0 && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
+                      <div className="flex items-center gap-1.5 px-1.5 pt-0.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                        <span className="text-[10.5px] font-medium text-gray-500 uppercase tracking-wider">
+                          Already in your database — add to this pipeline?
+                        </span>
+                      </div>
+                      {inlineDupes.map((m) => {
+                        const channels = getInlineMatchedChannels(m);
+                        const alreadyAdded = job.submissions.some(
+                          (s: any) => s.candidateId === m.id
+                        );
+                        return (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white transition"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {m.firstName} {m.lastName}
+                                </p>
+                                {channels.map((c) => (
+                                  <span
+                                    key={c}
+                                    className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                                  >
+                                    matched by {c}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate">
+                                {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Link
+                                href={`/candidates/${m.id}`}
+                                target="_blank"
+                                className="p-1.5 text-gray-400 hover:text-indigo-600 transition"
+                                title="Open candidate"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Link>
+                              {alreadyAdded ? (
+                                <span className="text-[10px] text-gray-400 px-2">
+                                  In pipeline
+                                </span>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => addCandidateToJob(m.id)}
+                                >
+                                  Add to pipeline
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Current title</Label>
