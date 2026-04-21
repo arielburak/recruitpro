@@ -16,7 +16,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ArrowLeft, ExternalLink } from "lucide-react";
-import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
@@ -26,6 +25,10 @@ type DuplicateMatch = {
   industry: string | null;
   website: string | null;
   contactName: string | null;
+  // contactEmail/contactPhone are still returned by the check-duplicate
+  // API for legacy clients, but the new Create Client form no longer
+  // surfaces those fields — contacts are managed in the dedicated
+  // Contacts section where you pick the primary one.
   contactEmail: string | null;
   contactPhone: string | null;
   createdAt: string;
@@ -49,9 +52,6 @@ export default function NewClientPage() {
     name: "",
     industry: "",
     website: "",
-    contactName: "",
-    contactEmail: "",
-    contactPhone: "",
     notes: "",
     defaultCurrency: "USD",
     defaultFeeAmount: "",
@@ -78,15 +78,6 @@ export default function NewClientPage() {
     if (formHost && m.website && websiteHost(m.website) === formHost) {
       channels.push("website");
     }
-    const formEmail = formValues.contactEmail.trim().toLowerCase();
-    if (formEmail && m.contactEmail && m.contactEmail.toLowerCase() === formEmail) {
-      channels.push("email");
-    }
-    const formPhoneDigits = formValues.contactPhone.replace(/\D/g, "");
-    const matchPhoneDigits = m.contactPhone?.replace(/\D/g, "") || "";
-    if (formPhoneDigits && formPhoneDigits === matchPhoneDigits) {
-      channels.push("phone");
-    }
     return channels;
   }
 
@@ -98,14 +89,10 @@ export default function NewClientPage() {
   async function checkDuplicates(override?: {
     name?: string;
     website?: string;
-    contactEmail?: string;
-    contactPhone?: string;
   }): Promise<DuplicateMatch[]> {
     const name = (override?.name ?? formValues.name).trim();
     const website = (override?.website ?? formValues.website).trim();
-    const contactEmail = (override?.contactEmail ?? formValues.contactEmail).trim();
-    const contactPhone = (override?.contactPhone ?? formValues.contactPhone).trim();
-    if (!name && !website && !contactEmail && !contactPhone) {
+    if (!name && !website) {
       setDuplicateMatches([]);
       return [];
     }
@@ -114,8 +101,6 @@ export default function NewClientPage() {
       const qs = new URLSearchParams();
       if (name) qs.set("name", name);
       if (website) qs.set("website", website);
-      if (contactEmail) qs.set("contactEmail", contactEmail);
-      if (contactPhone) qs.set("contactPhone", contactPhone);
       const res = await fetch(`/api/clients/check-duplicate?${qs.toString()}`);
       if (!res.ok) {
         setDuplicateMatches([]);
@@ -143,9 +128,6 @@ export default function NewClientPage() {
         name: formValues.name,
         industry: formValues.industry,
         website: formValues.website,
-        contactName: formValues.contactName,
-        contactEmail: formValues.contactEmail,
-        contactPhone: formValues.contactPhone,
         notes: formValues.notes,
         defaultCurrency: formValues.defaultCurrency || "USD",
         defaultFeeType,
@@ -243,58 +225,10 @@ export default function NewClientPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Contact Name</Label>
-                <Input
-                  name="contactName"
-                  value={formValues.contactName}
-                  onChange={(e) => updateField("contactName", e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Contact Email</Label>
-                <Input
-                  name="contactEmail"
-                  type="email"
-                  value={formValues.contactEmail}
-                  className={
-                    flaggedFields.has("email")
-                      ? "border-indigo-400 ring-2 ring-indigo-100"
-                      : ""
-                  }
-                  onChange={(e) => {
-                    updateField("contactEmail", e.target.value);
-                    if (duplicateMatches.length > 0) setDuplicateMatches([]);
-                  }}
-                  onBlur={(e) =>
-                    void checkDuplicates({ contactEmail: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Contact Phone</Label>
-                <div
-                  onBlur={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                      void checkDuplicates({
-                        contactPhone: formValues.contactPhone,
-                      });
-                    }
-                  }}
-                >
-                  <PhoneInput
-                    name="contactPhone"
-                    value={formValues.contactPhone}
-                    onChange={(val) => {
-                      updateField("contactPhone", val);
-                      if (duplicateMatches.length > 0) setDuplicateMatches([]);
-                    }}
-                    highlighted={flaggedFields.has("phone")}
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Main contact is intentionally managed from the dedicated
+                Contacts section on the client detail page. You add
+                contacts there and mark one as Primary. Keeps the create
+                form focused on company-level info. */}
 
             {checkingDuplicate && (
               <p className="text-xs text-gray-400">Checking for duplicates…</p>
