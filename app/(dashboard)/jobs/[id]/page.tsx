@@ -15,6 +15,7 @@ import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, F
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
+import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -367,13 +368,35 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
-  async function moveSubmission(submissionId: string, stageId: string) {
+  // Pending stage move that's waiting on the share-with-client confirmation.
+  // Set when the user drags a not-yet-shared candidate into "Submitted"; we
+  // intercept and show the share dialog before actually persisting the move.
+  const [pendingShareMove, setPendingShareMove] = useState<{
+    submission: any;
+    stageId: string;
+  } | null>(null);
+
+  async function persistMove(submissionId: string, stageId: string) {
     await fetch(`/api/submissions/${submissionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stageId }),
     });
     fetchJob();
+  }
+
+  async function moveSubmission(submissionId: string, stageId: string) {
+    const target = job?.stages?.find((s: any) => s.id === stageId);
+    const submission = job?.submissions?.find((s: any) => s.id === submissionId);
+    const movingToSubmitted = target?.name === "Submitted";
+    const notYetShared = submission && !submission.isSharedWithClient;
+
+    if (movingToSubmitted && notYetShared) {
+      setPendingShareMove({ submission, stageId });
+      return;
+    }
+
+    await persistMove(submissionId, stageId);
   }
 
   async function sendClientInvite(e: React.FormEvent) {
@@ -974,6 +997,32 @@ export default function JobDetailPage() {
             clientName={job.client?.name}
             jobTitle={job.title}
           />
+          {pendingShareMove && (
+            <ShareCandidateDialog
+              open={true}
+              onOpenChange={(open) => {
+                if (!open) setPendingShareMove(null);
+              }}
+              submission={{
+                id: pendingShareMove.submission.id,
+                candidate: {
+                  firstName: pendingShareMove.submission.candidate.firstName,
+                  lastName: pendingShareMove.submission.candidate.lastName,
+                  currentTitle: pendingShareMove.submission.candidate.currentTitle,
+                },
+                job: {
+                  title: job.title,
+                  client: job.client ? { name: job.client.name } : null,
+                },
+              }}
+              onShared={async () => {
+                // Share succeeded — now persist the stage move that triggered this.
+                const move = pendingShareMove;
+                setPendingShareMove(null);
+                if (move) await persistMove(move.submission.id, move.stageId);
+              }}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">

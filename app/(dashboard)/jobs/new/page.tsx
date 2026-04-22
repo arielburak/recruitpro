@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
@@ -40,6 +40,10 @@ function NewJobContent() {
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
+  // True only after a JD upload has populated `title` for the user. Lets us
+  // hide the "Auto-filled from document" hint when the recruiter typed the
+  // title themselves; cleared on any manual edit.
+  const [titleFromDoc, setTitleFromDoc] = useState(false);
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
   const descRef = useRef<HTMLTextAreaElement>(null);
@@ -54,6 +58,8 @@ function NewJobContent() {
   const [selectedClientId, setSelectedClientId] = useState(preselectedClientId);
   const [clientSearch, setClientSearch] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [createClientError, setCreateClientError] = useState("");
   const clientRef = useRef<HTMLDivElement>(null);
 
   // Duplicate-job detection: matches existing jobs with the same
@@ -129,6 +135,35 @@ function NewJobContent() {
     }
   }
 
+  // Inline client creation: keeps the recruiter inside the Create Job flow
+  // when the company they want isn't on the list yet. We POST just the name
+  // (everything else can be filled later from the client detail page) and
+  // select the result so the form picks up immediately.
+  async function createInlineClient(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreatingClient(true);
+    setCreateClientError("");
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const created = await res.json();
+      if (!res.ok) {
+        setCreateClientError(created.error || "Could not create client");
+        return;
+      }
+      setClients((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      selectClient(created.id);
+    } catch {
+      setCreateClientError("Could not create client");
+    } finally {
+      setCreatingClient(false);
+    }
+  }
+
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
@@ -165,7 +200,10 @@ function NewJobContent() {
         // Always overwrite structured fields with the parsed JD — the document
         // is the source of truth, regardless of whatever the user typed before.
         if (data.fields) {
-          if (data.fields.title) setTitle(data.fields.title);
+          if (data.fields.title) {
+            setTitle(data.fields.title);
+            setTitleFromDoc(true);
+          }
           if (data.fields.location) setLocation(data.fields.location);
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
@@ -305,7 +343,14 @@ function NewJobContent() {
             </div>
 
             <div className="space-y-2">
-              <Label>Job Title * {title && description && <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span>}</Label>
+              <Label>
+                Job Title *
+                {titleFromDoc && (
+                  <span className="text-xs text-green-600 font-normal ml-2">
+                    Auto-filled from document
+                  </span>
+                )}
+              </Label>
               <Input
                 name="title"
                 placeholder="Senior Software Engineer"
@@ -318,6 +363,7 @@ function NewJobContent() {
                 }
                 onChange={(e) => {
                   setTitle(e.target.value);
+                  if (titleFromDoc) setTitleFromDoc(false);
                   if (jobDuplicates.length > 0) setJobDuplicates([]);
                 }}
                 onBlur={(e) => void checkJobDuplicate({ title: e.target.value })}
@@ -351,31 +397,41 @@ function NewJobContent() {
                   </div>
                 )}
                 {clientDropdownOpen && (
-                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {filteredClients.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-gray-500">
-                        {clientSearch ? "No clients match your search" : "No clients found"}
-                      </div>
-                    ) : (
-                      filteredClients.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className={`flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-indigo-50 transition-colors ${c.id === selectedClientId ? "bg-indigo-50 text-indigo-700" : ""}`}
-                          onClick={() => selectClient(c.id)}
-                        >
-                          <span>{c.name}</span>
-                          {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
-                        </button>
-                      ))
+                  <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                    {filteredClients.length === 0 && !clientSearch.trim() && (
+                      <div className="px-3 py-2 text-sm text-gray-500">No clients yet</div>
+                    )}
+                    {filteredClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={`flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-indigo-50 transition-colors ${c.id === selectedClientId ? "bg-indigo-50 text-indigo-700" : ""}`}
+                        onClick={() => selectClient(c.id)}
+                      >
+                        <span>{c.name}</span>
+                        {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
+                      </button>
+                    ))}
+                    {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) && (
+                      <button
+                        type="button"
+                        disabled={creatingClient}
+                        onClick={() => void createInlineClient(clientSearch)}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors disabled:opacity-60"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>
+                          {creatingClient
+                            ? "Creating…"
+                            : <>Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client</>}
+                        </span>
+                      </button>
                     )}
                   </div>
                 )}
               </div>
-              {clients.length === 0 && (
-                <p className="text-xs text-gray-400">
-                  <Link href="/clients/new" className="text-indigo-600 hover:underline">Add a client first</Link>
-                </p>
+              {createClientError && (
+                <p className="text-xs text-red-500">{createClientError}</p>
               )}
             </div>
 

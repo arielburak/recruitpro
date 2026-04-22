@@ -99,12 +99,62 @@ function examplePlaceholder(prefix: string): string {
   return formatPhoneNumber("1234567890123456", prefix);
 }
 
+// Map ISO-3166-2 country code → dial code we know about. Used to derive a
+// sensible default from the browser locale so a user signing up from the US
+// doesn't see "+54" pre-filled.
+const COUNTRY_TO_DIAL: Record<string, string> = COUNTRY_CODES.reduce(
+  (acc, c) => {
+    acc[c.country] = c.code;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+/**
+ * Best-effort country guess from the browser. Reads `navigator.language`
+ * (e.g. "es-AR", "en-US") and falls back to the timezone if the locale has
+ * no region tag. Returns null when we can't tell — caller decides the
+ * fallback dial code. Server-side this returns null because `navigator` is
+ * not defined; the prefix is then set on hydration via useEffect.
+ */
+function detectBrowserDialCode(): string | null {
+  if (typeof navigator === "undefined") return null;
+
+  const langs: string[] = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ].filter(Boolean) as string[];
+
+  for (const lang of langs) {
+    const region = lang.split("-")[1]?.toUpperCase();
+    if (region && COUNTRY_TO_DIAL[region]) return COUNTRY_TO_DIAL[region];
+  }
+
+  // Fallback: extract country from IANA timezone (e.g. America/Argentina/Buenos_Aires).
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz.includes("Argentina")) return "+54";
+    if (tz.startsWith("America/") && !tz.includes("Argentina")) return "+1";
+    if (tz.startsWith("Europe/London")) return "+44";
+    if (tz.startsWith("Europe/Madrid")) return "+34";
+    if (tz.startsWith("Europe/Paris")) return "+33";
+  } catch {
+    // ignore — Intl missing or restricted
+  }
+
+  return null;
+}
+
 /**
  * Parse existing phone value into prefix + number.
- * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678"
+ * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678".
+ * When no value is provided the prefix defaults to the user's locale, with
+ * "+54" as the final fallback.
  */
 function parsePhone(value: string): { prefix: string; number: string } {
-  if (!value) return { prefix: "+54", number: "" };
+  if (!value) {
+    return { prefix: detectBrowserDialCode() ?? "+54", number: "" };
+  }
   const trimmed = value.trim();
 
   // Try to match a known country code at the start
@@ -120,8 +170,8 @@ function parsePhone(value: string): { prefix: string; number: string } {
     if (match) return { prefix: match[1], number: match[2] };
   }
 
-  // No prefix found - default to AR
-  return { prefix: "+54", number: trimmed };
+  // No prefix in the input — fall back to the locale-derived default.
+  return { prefix: detectBrowserDialCode() ?? "+54", number: trimmed };
 }
 
 interface PhoneInputProps {
@@ -160,6 +210,18 @@ export function PhoneInput({
       setNumber(formatPhoneNumber(parsed.number, parsed.prefix));
     }
   }, [value]);
+
+  // After hydration, swap the SSR fallback prefix ("+54") for one derived
+  // from the user's browser locale — but only when there's no value yet and
+  // the user hasn't already picked a country. This avoids the awkward case
+  // where a US recruiter sees "+54" pre-filled.
+  useEffect(() => {
+    if (value || defaultValue || number) return;
+    const detected = detectBrowserDialCode();
+    if (detected && detected !== prefix) setPrefix(detected);
+    // Run once on mount; later edits should keep the user's choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

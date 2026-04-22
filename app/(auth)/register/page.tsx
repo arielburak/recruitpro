@@ -258,6 +258,21 @@ export default function RegisterPage() {
               Sign in
             </Link>
           </p>
+
+          <div className="mt-6 border-t border-gray-100 pt-5 text-center">
+            <p className="text-xs text-gray-500">
+              Are you a hiring client?
+            </p>
+            <Link
+              href="/client-portal/login"
+              className="text-sm text-emerald-600 font-medium hover:underline inline-block mt-1"
+            >
+              Use the Client Portal instead →
+            </Link>
+            <p className="text-[11px] text-gray-400 mt-1">
+              You already pay a fee — no need to pay for the ATS as well.
+            </p>
+          </div>
         </div>
       </div>
     </div>

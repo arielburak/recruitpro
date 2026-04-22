@@ -556,7 +556,7 @@ export default function ClientDetailPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        <TableRow key={contact.id} className="cursor-pointer hover:bg-gray-50" onClick={() => startEditContact(contact)}>
+                        <TableRow key={contact.id} className="hover:bg-gray-50">
                           <TableCell className="font-medium">
                             {contact.firstName} {contact.lastName}
                           </TableCell>
@@ -581,11 +581,11 @@ export default function ClientDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                              <Button size="sm" variant="ghost" onClick={() => startEditContact(contact)}>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => startEditContact(contact)} title="Edit contact">
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteContact(contact.id)}>
+                              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteContact(contact.id)} title="Delete contact">
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
