@@ -31,16 +31,18 @@ export async function PUT(
       return NextResponse.json({ error: "Already responded" }, { status: 400 });
     }
 
-    // Only the invited person — or a firm admin acting on their behalf —
-    // can respond. This mirrors the visibility rule in /api/engagements
-    // (non-admins only see their own invites) so you can't accept
-    // something you weren't meant to see.
-    const isAdmin = ctx.role === "ADMIN";
+    // Only the invited person can respond. Admins don't get to respond on
+    // behalf of others — that would leak the invite into their inbox,
+    // which is exactly what the person-level model exists to prevent.
+    // Legacy rows (invitedUserId null) are the only thing admins can
+    // touch, because nobody else knows they exist.
     const isInvitedUser =
       engagement.invitedUserId !== null && engagement.invitedUserId === ctx.userId;
-    if (!isAdmin && !isInvitedUser) {
+    const isLegacyAdminFallback =
+      engagement.invitedUserId === null && ctx.role === "ADMIN";
+    if (!isInvitedUser && !isLegacyAdminFallback) {
       return NextResponse.json(
-        { error: "Only the invited recruiter or a firm admin can respond to this" },
+        { error: "Only the invited recruiter can respond to this invitation" },
         { status: 403 }
       );
     }

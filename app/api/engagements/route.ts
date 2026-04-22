@@ -5,12 +5,15 @@ import { processPendingInvites } from "@/lib/process-pending-invites";
 
 // List engagements visible to the current staffing user.
 //
-// Visibility rules:
-//   - Firm ADMINs see every engagement for the firm (oversight + billing).
-//   - Non-ADMINs see only engagements where they are the invited user.
-//   - Legacy engagements that pre-date person-level invites (no
-//     invitedUserId on the row) stay admin-only so we don't accidentally
-//     leak them into everyone's inbox.
+// Invites are STRICTLY person-level: admins do NOT see engagements they
+// weren't invited to. The client on the other side chose to reach out to
+// a specific person (e.g. an HM of a given area), and exposing that to
+// the whole firm — even just to admins — defeats the purpose.
+//
+// The one exception is legacy rows that pre-date person-level invites
+// (invitedUserId is null). We can't retroactively figure out who those
+// were meant for, so we grandfather them as admin-visible instead of
+// orphaning the data.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -24,10 +27,15 @@ export async function GET() {
       await processPendingInvites(user.email, ctx.organizationId, ctx.userId).catch(() => {});
     }
 
-    const where: any = { organizationId: ctx.organizationId };
-    if (ctx.role !== "ADMIN") {
-      where.invitedUserId = ctx.userId;
-    }
+    const personalClause: any = { invitedUserId: ctx.userId };
+    const legacyAdminClause: any = { invitedUserId: null };
+
+    const where: any = {
+      organizationId: ctx.organizationId,
+      OR: ctx.role === "ADMIN"
+        ? [personalClause, legacyAdminClause]
+        : [personalClause],
+    };
 
     const engagements = await prisma.firmEngagement.findMany({
       where,
