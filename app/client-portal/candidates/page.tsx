@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +28,25 @@ type Filters = {
 };
 
 export default function ClientCandidatesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+          <div className="h-8 w-48 bg-gray-100 rounded animate-pulse" />
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-14 bg-gray-100 rounded-md animate-pulse" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <ClientCandidatesPageInner />
+    </Suspense>
+  );
+}
+
+function ClientCandidatesPageInner() {
   const searchParams = useSearchParams();
   // The portal job-detail page links here with ?clientJobId=… so the user
   // sees just the candidates from that one search. Resolved server-side via

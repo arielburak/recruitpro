@@ -246,10 +246,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         setInviteSuccess(data.error || "Failed to invite");
       } else {
         setInviteSuccess(data.sent ? "Email invitation sent!" : "Firm invited successfully!");
-        setFirmSearch("");
         setInviteEmail("");
         setInviteMessage("");
-        setFirmResults([]);
         fetchJob();
       }
     } catch {
