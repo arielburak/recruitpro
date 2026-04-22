@@ -10,6 +10,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Briefcase, CheckCircle2, Users, Globe, UserPlus, Sparkles } from "lucide-react";
 import { FEATURES } from "@/lib/feature-flags";
+import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -30,6 +31,8 @@ export default function RegisterPage() {
       title: formData.get("title") as string,
       email,
       password,
+      industry: formData.get("industry") as string,
+      companySize: formData.get("companySize") as string,
     };
 
     try {
@@ -184,6 +187,39 @@ export default function RegisterPage() {
                 className="focus-visible:ring-indigo-500"
                 required
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="industry">Industry</Label>
+                <select
+                  id="industry"
+                  name="industry"
+                  required
+                  defaultValue=""
+                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <option value="" disabled>Select…</option>
+                  {INDUSTRY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companySize">Team Size</Label>
+                <select
+                  id="companySize"
+                  name="companySize"
+                  required
+                  defaultValue=""
+                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <option value="" disabled>Select…</option>
+                  {COMPANY_SIZE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

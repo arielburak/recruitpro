@@ -94,3 +94,32 @@ export const WORK_ARRANGEMENT_COLORS: Record<string, string> = {
   REMOTE: "bg-emerald-100 text-emerald-800",
   HYBRID: "bg-sky-100 text-sky-800",
 };
+
+// Industry verticals a recruiting firm may focus on. Stored as the raw label
+// so it renders directly without an extra lookup.
+export const INDUSTRY_OPTIONS: string[] = [
+  "Technology & Engineering",
+  "Finance & Banking",
+  "Healthcare & Life Sciences",
+  "Sales & Marketing",
+  "Executive / C-Suite",
+  "Legal",
+  "Manufacturing & Industrial",
+  "Retail & Consumer",
+  "Creative & Design",
+  "Operations & Supply Chain",
+  "Non-profit & Education",
+  "General / Multi-vertical",
+  "Other",
+];
+
+// Recruiting firm headcount bucket. Stored as the label so we don't need a
+// separate mapping table for reads.
+export const COMPANY_SIZE_OPTIONS: string[] = [
+  "Just me",
+  "2–5",
+  "6–10",
+  "11–25",
+  "26–50",
+  "50+",
+];

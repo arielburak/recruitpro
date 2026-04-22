@@ -40,6 +40,8 @@ export async function POST(request: Request) {
         data: {
           name: data.orgName,
           slug,
+          industry: data.industry,
+          companySize: data.companySize,
         },
       });
 
