@@ -9,7 +9,7 @@
 - Si una decisión de producto falta tomarse, vive en **Decisiones pendientes** al final
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-04-21
+**Última actualización**: 2026-04-22
 
 ---
 
@@ -26,10 +26,22 @@
 
 ### Auth & email transaccional
 - [ ] **Microsoft OAuth**: configurar App Registration en Azure Entra ID y cargar `AZURE_AD_CLIENT_ID` + `AZURE_AD_CLIENT_SECRET` en `.env` + Vercel (Prod + Preview)
-- [ ] Email verification en `/register`
+- [ ] Email verification en `/register` (obligatoria apenas se loguea)
 - [ ] Integrar Resend o Postmark para email transaccional
 - [ ] Templates de email: welcome, reset password, verification, client invite, feedback notification
 - [ ] Welcome email automático al registrarse + capturar a base de marketing
+- [ ] Revisar/rehacer el mail de Welcome (copy + CTA + tracking)
+- [ ] **Un solo login unificado** — mismo `/login` sirve Client Portal y Agency Workspace (detecta tenant del user)
+- [ ] En `/signin` y `/signup (Start Free Trial)` mostrar selector "Agency Workspace" vs "Client Portal", con copy en el lado cliente tipo *"You already pay a fee — no need to pay for the ATS"*
+- [ ] Sacar "Sign in with Microsoft" del Free Trial (dejar Google + email/password)
+
+### Onboarding — primera experiencia
+- [ ] Loom de onboarding autoplay al primer login (modal dismissible); dejar slot para un segundo video (feature tour)
+- [ ] Signup obligatorio: **industry** + **company size** (dropdowns)
+- [ ] Prefijo de teléfono default por geo-IP (AR → +54, US → +1, etc.) — override manual siempre disponible
+- [ ] Volver a mostrar el **nombre de la empresa** debajo del logo "Recruiting ATS" en el header
+- [ ] Banner destacado durante la **primera semana** (solo agencia) promoviendo "Migrar desde tu ATS actual" → CTA a flow de import
+- [ ] Apollo: trackear logins + eventos clave del onboarding y pushearlos a sequences de mail (seguimiento automatizado al usuario)
 
 ### Workflows core
 - [ ] **Client → Firm invite**: cuando cliente invita una recruiting firm, obligarla a loguearse/registrarse
@@ -43,6 +55,79 @@
 ### Onboarding + trial
 - [ ] Wizard de onboarding 3 pasos: crear primer job + primer candidato + invitar primer cliente
 - [ ] Downgrade automático al vencer trial (sin esto usan gratis para siempre)
+
+### Agency workspace — UX core (sesión 21/4)
+
+**Clients / contactos**
+- [ ] Sacar el campo "Main contact" del formulario de creación de cliente; elegir el main contact después, desde la lista de contactos del cliente (botón "Set as main")
+- [ ] Sacar "contact" + "email" + cualquier referencia a main contact de la **view de client** y del **intake form**
+- [ ] Eliminar la tab "Client Portal Users" — invitar al portal se hace desde **Contacts** (más limpio y directo)
+- [ ] Edición inline **solo con el ícono lápiz** — click en el medio del campo no entra a editar (ej: email de contacto)
+- [ ] Eliminar el apartado **Deals**
+- [ ] Al crear cliente, sumar sección **Attachments**
+- [ ] "Auto-filled document" NO aparece de antemano; recién aparece cuando efectivamente subo un documento
+
+**Jobs / búsquedas**
+- [ ] Diferenciar **acceso al portal** vs **acceso a la búsqueda**: tres contactos pueden estar en el portal pero yo solo invito a uno a la búsqueda
+- [ ] Al crear una búsqueda para un cliente con contactos ya en el portal → **sugerir** (no auto-invitar) a quiénes sumar
+- [ ] Flow "Invite Contact" en búsqueda: lista de contactos ya en el portal + opción "crear uno nuevo". Crear uno nuevo por esta vía lo deja persistido en los contactos del cliente + le manda invite al portal + a la búsqueda
+- [ ] Persistir **JD + Additional Documents** en el ATS (hoy parsea pero no deja archivo descargable ni registro accesible)
+
+**Pipeline / candidatos**
+- [ ] Rename stage **Contacted → Internal Review**
+- [ ] Refuerzo del share workflow: candidato agregado a una JD NO se comparte con el cliente automáticamente
+- [ ] Share habilitado solo al arrastrar a **Submitted** o al apretar share desde Internal Review → Submitted; botón llamado **"Share with Client"**
+- [ ] Confirm modal al compartir (*"Are you sure you want to send this profile to the client?"*)
+- [ ] Cambiar stage de un candidato **desde la lista de Jobs** sin entrar a la búsqueda (dropdown rápido, refleja el pipeline)
+- [ ] **List view** (tipo Notion) además del pipeline; en list view el cambio de stage es un dropdown, el pipeline queda como vista visual
+- [ ] Desde la info del candidato, mostrar las **búsquedas activas** en las que está y permitir cambiar el stage desde ahí
+- [ ] **Notas del candidato**: independientes del job (notas internas del candidato) + notas específicas por búsqueda
+- [ ] **Chat por búsqueda**: general interno + con el cliente
+- [ ] **Chat por candidato**: interno + con el cliente (misma lógica dual)
+
+**Placements**
+- [ ] Al marcar un candidato como **Placed** saltar modal "Congratulations! 🎉 As a next step, please complete the placement info" con botones `Skip / Complete later` y `Fill form`
+- [ ] Form de placement pre-llenado: agreed salary (del job/candidate), estimated start date, payment terms (del cliente), fecha de cobro calculada, todo editable
+- [ ] Permitir crear placement **manual** desde `/placements`
+
+**Interviews**
+- [ ] Al mover un candidato a **Interview** (desde pipeline, list view o info del candidato) saltar modal "Crear evento en calendar" con el mismo form del create manual
+- [ ] Vista agregada de interviews: lista de todas las entrevistas del job (internas + con cliente) + vista calendario
+
+**Scheduling (último del bloque, investigar antes)**
+- [ ] Calendly-like: permitir al candidato elegir slot del calendar del recruiter. Investigar feasibility; la parte cliente se complica, por ahora solo candidato
+
+**Import**
+- [ ] UI de **mapeo de columnas** al importar cualquier cosa
+- [ ] Soportar CSV (`.csv`), Excel (`.xlsx`, `.xls`), TSV (`.tsv`) — los tres imprescindibles
+- [ ] Sacar "LinkedIn Import"
+- [ ] Sacar referencias a Bullhorn y competencia en el flow de import
+
+### Client portal — UX core (sesión 21/4)
+
+**Dashboard / navegación**
+- [ ] "Firms engaged" **interactivo**: click → detalle de las firmas o navegación a lista
+- [ ] **Sacar "Assigned Recruiter"** — el cliente no tiene que saber quién labura la búsqueda (ya tiene un POC)
+- [ ] **Back to home** desde el client portal (breadcrumb / botón claro)
+
+**Team / accesos**
+- [ ] Al invitar member, si el email ya existe como contacto del cliente → sugerir *"¿Agregar al usuario existente?"*; si no, permitir crearlo
+- [ ] "Your Team" queda general, pero al crear una JO elegir **cuáles de esos members tienen acceso a esta búsqueda**
+- [ ] **Deshacer invites**: hoy queda en historial para siempre, hace falta cancelar
+- [ ] Al compartir una descripción, pedir **solo el email** — no obligar a buscar por empresa. Cuando el invitee se loguea la primera vez, ahí se le pide el nombre de la empresa (enriquecimiento)
+
+**Jobs / candidatos**
+- [ ] Renombrar "Candidates in Assigned Firms" → **Rejected** (para cuando la agencia rechaza el invite que compartió el cliente)
+- [ ] Cliente solo **ve** el status del candidato, no lo puede modificar
+- [ ] **List view** además del pipeline
+- [ ] Chat por búsqueda (interno + con la agencia) y chat por candidato (interno + con la agencia) — replicar estructura de la agencia
+- [ ] **Sacar el calendar** del client portal (replica del lado agencia, por ahora no aplica)
+
+**Bugs / polish**
+- [ ] Archivos: upload funciona, **download no** → fixear
+- [ ] Candidato linkeado a una búsqueda **no aparece** en la solapa de esa búsqueda — arreglar la sincronización
+- [ ] En Candidates, click sobre un job rompe la página → fixear navegación
+- [ ] Autocomplete de firmas: buscar "Mora" no matchea "Morabits" (ya aceptada) — arreglar partial match
 
 ---
 
@@ -74,6 +159,7 @@
 
 ### Migración
 - [ ] CSV import masivo de candidatos (columnas: name, email, phone, company, title, notes)
+- [ ] Sumar soporte Excel (`.xlsx`, `.xls`) y TSV (`.tsv`) al flow de import (ver mapeo de columnas en P0)
 
 ---
 
