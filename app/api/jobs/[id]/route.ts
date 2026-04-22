@@ -17,6 +17,7 @@ export async function GET(
         client: true,
         stages: { orderBy: { order: "asc" } },
         assignments: { include: { user: { select: { id: true, name: true } } } },
+        documents: { orderBy: { createdAt: "desc" } },
         submissions: {
           include: {
             candidate: {
