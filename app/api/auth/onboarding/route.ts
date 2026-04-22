@@ -4,11 +4,16 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/utils";
-import { TRIAL_DAYS } from "@/lib/constants";
+import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS, TRIAL_DAYS } from "@/lib/constants";
 
 const onboardingSchema = z.object({
   orgName: z.string().trim().min(2, "Company name must be at least 2 characters"),
-  industry: z.string().trim().max(120).optional(),
+  industry: z
+    .string()
+    .refine((v) => INDUSTRY_OPTIONS.includes(v), "Please pick your industry"),
+  companySize: z
+    .string()
+    .refine((v) => COMPANY_SIZE_OPTIONS.includes(v), "Please pick your team size"),
 });
 
 export async function POST(request: Request) {
@@ -45,6 +50,8 @@ export async function POST(request: Request) {
         data: {
           name: data.orgName,
           slug,
+          industry: data.industry,
+          companySize: data.companySize,
           needsOnboarding: false,
         },
       });

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Briefcase, LogOut } from "lucide-react";
+import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -22,9 +23,16 @@ export default function OnboardingPage() {
     const formData = new FormData(e.currentTarget);
     const orgName = (formData.get("orgName") as string)?.trim();
     const industry = (formData.get("industry") as string)?.trim();
+    const companySize = (formData.get("companySize") as string)?.trim();
 
     if (!orgName || orgName.length < 2) {
       setError("Please enter your company name.");
+      setLoading(false);
+      return;
+    }
+
+    if (!industry || !companySize) {
+      setError("Please pick your industry and team size.");
       setLoading(false);
       return;
     }
@@ -33,7 +41,7 @@ export default function OnboardingPage() {
       const res = await fetch("/api/auth/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgName, industry: industry || undefined }),
+        body: JSON.stringify({ orgName, industry, companySize }),
       });
 
       if (!res.ok) {
@@ -103,16 +111,37 @@ export default function OnboardingPage() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="industry">
-                Industry <span className="text-gray-400">(optional)</span>
-              </Label>
-              <Input
-                id="industry"
-                name="industry"
-                placeholder="e.g. Technology, Healthcare"
-                className="focus-visible:ring-indigo-500"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="industry">Industry</Label>
+                <select
+                  id="industry"
+                  name="industry"
+                  required
+                  defaultValue=""
+                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <option value="" disabled>Select…</option>
+                  {INDUSTRY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companySize">Team Size</Label>
+                <select
+                  id="companySize"
+                  name="companySize"
+                  required
+                  defaultValue=""
+                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <option value="" disabled>Select…</option>
+                  {COMPANY_SIZE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <Button
