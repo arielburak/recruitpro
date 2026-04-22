@@ -48,8 +48,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
-  const [firmSearch, setFirmSearch] = useState("");
-  const [firmResults, setFirmResults] = useState<any[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -230,16 +228,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setAddingMember(false);
   }
 
-  async function searchFirms(query: string) {
-    setFirmSearch(query);
-    if (query.length < 2) { setFirmResults([]); return; }
-    try {
-      const res = await fetch(`/api/client-portal/invite-firm?q=${encodeURIComponent(query)}`);
-      if (res.ok) setFirmResults(await res.json());
-    } catch {}
-  }
-
-  async function inviteFirm(organizationId?: string) {
+  async function inviteFirm() {
     setInviting(true);
     setInviteSuccess("");
     try {
@@ -248,8 +237,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientJobId: id,
-          organizationId: organizationId || undefined,
-          email: !organizationId ? inviteEmail : undefined,
+          email: inviteEmail,
           message: inviteMessage || undefined,
         }),
       });
@@ -719,46 +707,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
 
-          {/* Assigned Recruiters (from staffing firms) */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4 text-indigo-600" />
-                Assigned Recruiters
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!job.teamMembers || job.teamMembers.length === 0 ? (
-                <p className="text-sm text-gray-400 py-3 text-center">
-                  No recruiters assigned yet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {job.teamMembers.map((member: any) => (
-                    <div key={member.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg">
-                      <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
-                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-gray-900">{member.name}</p>
-                        <p className="text-[11px] text-gray-500 capitalize">{member.role?.toLowerCase().replace("_", " ")}</p>
-                        <div className="mt-1.5 space-y-0.5">
-                          <a
-                            href={`mailto:${member.email}`}
-                            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:underline"
-                          >
-                            <Mail className="h-3 w-3" />
-                            {member.email}
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Recruiting Firms */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -787,11 +735,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     </p>
                     <p className="text-[10px] text-amber-600">Pending</p>
                   </div>
-                  <div className="flex-1 bg-blue-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-blue-700">
-                      {Object.values(job.firmCandidateCounts || {}).reduce((a: number, b: any) => a + (b as number), 0) as number}
+                  <div className="flex-1 bg-rose-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-rose-700">
+                      {job.engagements.filter((e: any) => e.status === "DECLINED").length}
                     </p>
-                    <p className="text-[10px] text-blue-600">Candidates</p>
+                    <p className="text-[10px] text-rose-600">Rejected</p>
                   </div>
                 </div>
               )}
@@ -854,54 +802,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             <Card className="border-emerald-200">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">Invite a Recruiting Firm</h4>
+                  <h4 className="text-sm font-semibold">Invite a Recruiter</h4>
                   <button onClick={() => setShowInvite(false)}>
                     <X className="h-4 w-4 text-gray-400" />
                   </button>
                 </div>
 
-                {/* Search existing firms */}
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Search firms on Recruiting ATS</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                    <Input
-                      value={firmSearch}
-                      onChange={(e) => searchFirms(e.target.value)}
-                      placeholder="Search by name..."
-                      className="pl-9 text-sm"
-                    />
-                  </div>
-                  {firmResults.length > 0 && (
-                    <div className="mt-1 border rounded-lg max-h-32 overflow-y-auto">
-                      {firmResults.map((firm: any) => (
-                        <button
-                          key={firm.id}
-                          onClick={() => inviteFirm(firm.id)}
-                          disabled={inviting}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-gray-400" />
-                            <span>{firm.name}</span>
-                          </div>
-                          <span className="text-xs text-gray-400">{firm._count?.users || 0} members</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-2 bg-white text-gray-400">or invite by email</span>
-                  </div>
-                </div>
+                <p className="text-xs text-gray-500">
+                  Invite the specific recruiter you want to work with — by email.
+                  We&apos;ll ask them which firm they belong to when they sign in for
+                  the first time, so the invitation only reaches them, not their
+                  whole team.
+                </p>
 
                 <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
                     type="email"
                     value={inviteEmail}
@@ -922,7 +837,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 <Button
                   size="sm"
                   className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                  disabled={inviting || (!inviteEmail && firmResults.length === 0)}
+                  disabled={inviting || !inviteEmail}
                   onClick={() => inviteFirm()}
                 >
                   <Send className="h-3.5 w-3.5" />

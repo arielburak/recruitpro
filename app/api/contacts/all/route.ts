@@ -4,9 +4,12 @@ import { getOrgContext } from "@/lib/tenant";
 
 // Returns a UNIFIED list of all contacts related to this organization:
 //   - Contact[] table (explicit per-client contacts)
-//   - Client.contactName/Email/Phone (the "Main Contact" inline fields)
 //   - ClientUser[] (client portal users — colleagues of the hiring company)
 // Deduplicated by email within the same client.
+//
+// The legacy "Main Contact" inline fields on Client (contactName/Email/Phone)
+// are no longer surfaced — that concept has been retired in favor of the
+// Contact[] table with isPrimary marking the main point of contact.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -22,9 +25,6 @@ export async function GET() {
         select: {
           id: true,
           name: true,
-          contactName: true,
-          contactEmail: true,
-          contactPhone: true,
           clientUsers: {
             where: { isActive: true },
             select: {
@@ -41,7 +41,7 @@ export async function GET() {
 
     type UnifiedContact = {
       id: string;
-      source: "contact" | "main" | "portal_user";
+      source: "contact" | "portal_user";
       firstName: string;
       lastName: string;
       name: string;
@@ -80,36 +80,7 @@ export async function GET() {
       });
     }
 
-    // 2. Client.contactName — only if not already present as Contact[]
-    for (const client of clients) {
-      if (!client.contactName) continue;
-      const [firstName, ...rest] = client.contactName.trim().split(" ");
-      const lastName = rest.join(" ");
-      const k = makeKey(client.id, client.contactEmail, client.contactName);
-      if (seenKeys.has(k)) continue;
-      // Also check if a Contact with same email already exists for this client
-      if (client.contactEmail) {
-        const emailKey = makeKey(client.id, client.contactEmail, "");
-        if (seenKeys.has(emailKey)) continue;
-      }
-      seenKeys.add(k);
-      all.push({
-        id: `main_${client.id}`,
-        source: "main",
-        firstName: firstName || client.contactName,
-        lastName: lastName || "",
-        name: client.contactName,
-        title: null,
-        email: client.contactEmail || null,
-        phone: client.contactPhone || null,
-        isPrimary: true,
-        portalRole: null,
-        clientId: client.id,
-        clientName: client.name,
-      });
-    }
-
-    // 3. ClientUser[] — colleagues of the hiring company who have portal access
+    // 2. ClientUser[] — colleagues of the hiring company who have portal access
     for (const client of clients) {
       for (const u of client.clientUsers) {
         const [firstName, ...rest] = (u.name || "").trim().split(" ");

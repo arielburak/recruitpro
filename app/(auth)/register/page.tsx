@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Briefcase, CheckCircle2, Users, Globe, UserPlus, Sparkles } from "lucide-react";
+import { FEATURES } from "@/lib/feature-flags";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -148,19 +149,21 @@ export default function RegisterPage() {
                 </svg>
                 Sign up with Google
               </button>
-              <button
-                type="button"
-                onClick={() => signIn("azure-ad", { callbackUrl: "/dashboard" })}
-                className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 23 23">
-                  <path fill="#f35325" d="M1 1h10v10H1z" />
-                  <path fill="#81bc06" d="M12 1h10v10H12z" />
-                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                  <path fill="#ffba08" d="M12 12h10v10H12z" />
-                </svg>
-                Sign up with Microsoft
-              </button>
+              {FEATURES.microsoftIntegration && (
+                <button
+                  type="button"
+                  onClick={() => signIn("azure-ad", { callbackUrl: "/dashboard" })}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 23 23">
+                    <path fill="#f35325" d="M1 1h10v10H1z" />
+                    <path fill="#81bc06" d="M12 1h10v10H12z" />
+                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                    <path fill="#ffba08" d="M12 12h10v10H12z" />
+                  </svg>
+                  Sign up with Microsoft
+                </button>
+              )}
             </div>
 
             <div className="relative my-6">

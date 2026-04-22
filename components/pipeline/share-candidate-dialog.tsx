@@ -151,7 +151,7 @@ export function ShareCandidateDialog({ open, onOpenChange, submission, onShared 
             className="bg-emerald-600 hover:bg-emerald-700 gap-1.5"
           >
             <Send className="h-3.5 w-3.5" />
-            {submitting ? "Sharing..." : "Share"}
+            {submitting ? "Sharing..." : "Share with Client"}
           </Button>
         </div>
       </DialogContent>

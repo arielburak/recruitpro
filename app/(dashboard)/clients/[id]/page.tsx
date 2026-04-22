@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, X } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
@@ -52,9 +52,6 @@ export default function ClientDetailPage() {
     name: "",
     industry: "",
     website: "",
-    contactName: "",
-    contactEmail: "",
-    contactPhone: "",
     notes: "",
     defaultCurrency: "USD",
     defaultFeeType: "PERCENTAGE",
@@ -66,9 +63,6 @@ export default function ClientDetailPage() {
       name: client.name || "",
       industry: client.industry || "",
       website: client.website || "",
-      contactName: client.contactName || "",
-      contactEmail: client.contactEmail || "",
-      contactPhone: client.contactPhone || "",
       notes: client.notes || "",
       defaultCurrency: client.defaultCurrency || "USD",
       defaultFeeType: client.defaultFeeType || "PERCENTAGE",
@@ -191,18 +185,6 @@ export default function ClientDetailPage() {
     setSavingContact(false);
   }
 
-  async function removeClientUser(userId: string, userName: string) {
-    if (!confirm(`Remove "${userName}" from the client portal? They will lose access.`)) return;
-    try {
-      await fetch(`/api/client-users/${userId}`, { method: "DELETE" });
-      // Refresh client data to update the portal users list
-      const res = await fetch(`/api/clients/${clientId}`);
-      if (res.ok) setClient(await res.json());
-    } catch {
-      alert("Failed to remove user");
-    }
-  }
-
   async function deleteClient() {
     if (!confirm(`Delete "${client.name}"? This will also delete all associated jobs, pipeline data, and contacts. This cannot be undone.`)) return;
     try {
@@ -281,23 +263,6 @@ export default function ClientDetailPage() {
                     ) : <p className="text-sm text-gray-900">—</p>}
                   </div>
                 </div>
-                {client.contactName && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Main Contact</p>
-                    <p className="text-sm font-medium">{client.contactName}</p>
-                    {client.contactEmail && (
-                      <div className="flex items-center gap-1.5 text-sm mt-1">
-                        <Mail className="h-3 w-3 text-gray-400" />
-                        <a href={`mailto:${client.contactEmail}`} className="text-indigo-600 hover:underline">{client.contactEmail}</a>
-                      </div>
-                    )}
-                    {client.contactPhone && (
-                      <div className="flex items-center gap-1.5 text-sm mt-1">
-                        <Phone className="h-3 w-3 text-gray-400" /> {client.contactPhone}
-                      </div>
-                    )}
-                  </div>
-                )}
                 {(client.defaultFeeAmount || client.defaultCurrency) && (
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Default Fee Terms</p>
@@ -336,20 +301,6 @@ export default function ClientDetailPage() {
                   <div className="space-y-2">
                     <Label>Website</Label>
                     <Input value={clientForm.website} onChange={(e) => setClientForm({ ...clientForm, website: e.target.value })} placeholder="https://..." />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Main Contact Name</Label>
-                  <Input value={clientForm.contactName} onChange={(e) => setClientForm({ ...clientForm, contactName: e.target.value })} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Contact Email</Label>
-                    <Input type="email" value={clientForm.contactEmail} onChange={(e) => setClientForm({ ...clientForm, contactEmail: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Contact Phone</Label>
-                    <PhoneInput value={clientForm.contactPhone} onChange={(val) => setClientForm({ ...clientForm, contactPhone: val })} />
                   </div>
                 </div>
                 <div className="border-t pt-3 mt-3">
@@ -401,34 +352,6 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-gray-500">Client Portal Users</CardTitle></CardHeader>
-          <CardContent>
-            {client.clientUsers?.length === 0 ? (
-              <p className="text-sm text-gray-400">No portal users yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {client.clientUsers?.map((u: any) => (
-                  <div key={u.id} className="flex items-center justify-between text-sm group">
-                    <div className="flex items-center gap-2">
-                      <span>{u.name} ({u.email})</span>
-                      <Badge variant={u.isActive ? "default" : "secondary"}>
-                        {u.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    <button
-                      onClick={() => removeClientUser(u.id, u.name)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
-                      title="Remove access"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       <Tabs defaultValue="jobs" className="space-y-3">

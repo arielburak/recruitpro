@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { Briefcase, LayoutDashboard, FolderOpen, LogOut, Calendar, List, User, Users } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Home } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
 import { useLogoUrl } from "@/components/logo-uploader";
 
@@ -16,7 +16,7 @@ export default function ClientPortalLayout({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|calendar|settings|candidates)[a-z0-9]+$/.test(pathname);
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
   // Only fetch the logo when the user is authenticated as a client user (avoids 401 on public pages)
   const clientLogo = useLogoUrl(showNav ? "/api/client-portal/logo" : "");
@@ -88,10 +88,6 @@ export default function ClientPortalLayout({
                   <Users className="h-4 w-4" />
                   Candidates
                 </NavLink>
-                <NavLink href="/client-portal/calendar" current={pathname === "/client-portal/calendar"}>
-                  <Calendar className="h-4 w-4" />
-                  Calendar
-                </NavLink>
                 <NavLink href="/client-portal/jobs/new" current={pathname === "/client-portal/jobs/new"}>
                   <FolderOpen className="h-4 w-4" />
                   Post a Job
@@ -143,8 +139,12 @@ export default function ClientPortalLayout({
             <span className="font-semibold text-emerald-600">Recruiting ATS</span>
           </p>
           {showNav && (
-            <Link href="/client-portal/dashboard" className="text-xs text-gray-400 hover:text-emerald-600 transition-colors">
-              Back to Dashboard
+            <Link
+              href="/client-portal/dashboard"
+              className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-emerald-600 transition-colors"
+            >
+              <Home className="h-3 w-3" />
+              Back to Home
             </Link>
           )}
         </div>

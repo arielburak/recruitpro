@@ -18,7 +18,7 @@ import { UserRound, Mail, Phone, Search, Building2, Shield, Star } from "lucide-
 
 type UnifiedContact = {
   id: string;
-  source: "contact" | "main" | "portal_user";
+  source: "contact" | "portal_user";
   firstName: string;
   lastName: string;
   name: string;
@@ -33,13 +33,11 @@ type UnifiedContact = {
 
 const SOURCE_LABELS: Record<string, string> = {
   contact: "Contact",
-  main: "Main",
   portal_user: "Portal User",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
   contact: "bg-gray-100 text-gray-700",
-  main: "bg-indigo-100 text-indigo-700",
   portal_user: "bg-emerald-100 text-emerald-700",
 };
 
@@ -92,7 +90,6 @@ export default function ContactsPage() {
     return {
       total: contacts.length,
       contact: contacts.filter((c) => c.source === "contact").length,
-      main: contacts.filter((c) => c.source === "main").length,
       portal_user: contacts.filter((c) => c.source === "portal_user").length,
     };
   }, [contacts]);
@@ -142,7 +139,6 @@ export default function ContactsPage() {
         >
           <option value="all">All Sources ({counts.total})</option>
           <option value="contact">Contact ({counts.contact})</option>
-          <option value="main">Main Contact ({counts.main})</option>
           <option value="portal_user">Portal User ({counts.portal_user})</option>
         </select>
       </div>
@@ -247,10 +243,6 @@ export default function ContactsPage() {
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gray-400" />
             <strong>Contact</strong> — added in client detail page
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-indigo-400" />
-            <strong>Main Contact</strong> — inline field on the client record
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />

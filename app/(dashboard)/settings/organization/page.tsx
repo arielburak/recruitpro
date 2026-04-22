@@ -53,8 +53,9 @@ export default function OrganizationSettingsPage() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500">
-            Default stages applied to new jobs: Sourced, Contacted, Submitted,
-            Interview, Offer, Placed. Each job can customize its own stages.
+            Default stages applied to new jobs: Sourced, Internal Review,
+            Submitted, Under Review, Interviewing, Offered, Placed, Lost,
+            Rejected. Each job can customize its own stages.
           </p>
         </CardContent>
       </Card>

@@ -48,15 +48,15 @@ export interface StageSpec {
 }
 
 export const DEFAULT_STAGES: StageSpec[] = [
-  { name: "Sourced",      color: "#94a3b8", isTerminal: false, kind: null },
-  { name: "Contacted",    color: "#60a5fa", isTerminal: false, kind: null },
-  { name: "Submitted",    color: "#a78bfa", isTerminal: false, kind: null },
-  { name: "Under Review", color: "#f59e0b", isTerminal: false, kind: null },
-  { name: "Interviewing", color: "#3b82f6", isTerminal: false, kind: null },
-  { name: "Offered",      color: "#8b5cf6", isTerminal: false, kind: null },
-  { name: "Placed",       color: "#10b981", isTerminal: true,  kind: "positive" },
-  { name: "Lost",         color: "#ef4444", isTerminal: true,  kind: "negative" },
-  { name: "Rejected",     color: "#6b7280", isTerminal: true,  kind: "negative" },
+  { name: "Sourced",         color: "#94a3b8", isTerminal: false, kind: null },
+  { name: "Internal Review", color: "#60a5fa", isTerminal: false, kind: null },
+  { name: "Submitted",       color: "#a78bfa", isTerminal: false, kind: null },
+  { name: "Under Review",    color: "#f59e0b", isTerminal: false, kind: null },
+  { name: "Interviewing",    color: "#3b82f6", isTerminal: false, kind: null },
+  { name: "Offered",         color: "#8b5cf6", isTerminal: false, kind: null },
+  { name: "Placed",          color: "#10b981", isTerminal: true,  kind: "positive" },
+  { name: "Lost",            color: "#ef4444", isTerminal: true,  kind: "negative" },
+  { name: "Rejected",        color: "#6b7280", isTerminal: true,  kind: "negative" },
 ];
 
 // Aliases from legacy stage names to the canonical set. Used by the migration
@@ -64,6 +64,7 @@ export const DEFAULT_STAGES: StageSpec[] = [
 export const LEGACY_STAGE_ALIASES: Record<string, string> = {
   Interview: "Interviewing",
   Offer: "Offered",
+  Contacted: "Internal Review",
 };
 
 export const JOB_STATUS_LABELS: Record<string, string> = {

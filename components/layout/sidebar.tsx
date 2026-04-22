@@ -9,7 +9,6 @@ import {
   Users,
   Briefcase,
   Building2,
-  Handshake,
   Trophy,
   Settings,
   Menu,
@@ -30,7 +29,6 @@ const mainNavItems = [
   { label: "Jobs", href: "/jobs", icon: Briefcase },
   { label: "Clients", href: "/clients", icon: Building2 },
   { label: "Contacts", href: "/contacts", icon: UserRound },
-  { label: "Deals", href: "/deals", icon: Handshake },
   { label: "Placements", href: "/placements", icon: Trophy },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Import", href: "/import", icon: Upload },
@@ -219,6 +217,14 @@ export function Sidebar() {
             <span className="text-lg font-semibold tracking-tight text-white leading-tight block truncate">
               Recruiting ATS
             </span>
+            {session?.user?.organizationName && (
+              <span
+                className="text-[11px] text-gray-400 leading-tight block truncate"
+                title={session.user.organizationName}
+              >
+                {session.user.organizationName}
+              </span>
+            )}
           </div>
         </Link>
         <div className="shrink-0">

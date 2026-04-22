@@ -12,19 +12,14 @@ import {
   Briefcase,
   CheckCircle,
   AlertCircle,
-  Link2,
-  ArrowRight,
   Download,
 } from "lucide-react";
 
-const ATS_SOURCES = [
-  { name: "Bullhorn", icon: "B", format: "CSV" },
-  { name: "Zoho Recruit", icon: "Z", format: "CSV" },
-  { name: "Lever", icon: "L", format: "CSV/JSON" },
-  { name: "Greenhouse", icon: "G", format: "CSV" },
-  { name: "Loxo", icon: "X", format: "CSV" },
-  { name: "Ashby", icon: "A", format: "CSV/JSON" },
-  { name: "Other ATS", icon: "?", format: "CSV/JSON" },
+const SUPPORTED_FORMATS = [
+  { name: "CSV", ext: ".csv" },
+  { name: "Excel", ext: ".xlsx / .xls" },
+  { name: "TSV", ext: ".tsv" },
+  { name: "JSON", ext: ".json" },
 ];
 
 export default function ImportPage() {
@@ -32,8 +27,6 @@ export default function ImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [linkedInUrl, setLinkedInUrl] = useState("");
-  const [linkedInLoading, setLinkedInLoading] = useState(false);
 
   async function handleImport() {
     if (!file) return;
@@ -54,84 +47,34 @@ export default function ImportPage() {
     setImporting(false);
   }
 
-  async function handleLinkedInImport() {
-    if (!linkedInUrl) return;
-    setLinkedInLoading(true);
-    try {
-      const res = await fetch("/api/import/linkedin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: linkedInUrl }),
-      });
-      const data = await res.json();
-      if (data.linkedIn) {
-        window.location.href = `/candidates/new?linkedIn=${encodeURIComponent(data.linkedIn)}&source=LinkedIn`;
-      }
-    } catch {}
-    setLinkedInLoading(false);
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Import Data</h1>
         <p className="text-gray-500">
-          Import candidates, clients, and jobs from other platforms
+          Import candidates, clients, and jobs from a spreadsheet or export
         </p>
       </div>
-
-      {/* LinkedIn Quick Import */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-[#0A66C2]" />
-            LinkedIn Import
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-500 mb-4">
-            Paste a LinkedIn profile URL to quickly add a candidate.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={linkedInUrl}
-              onChange={(e) => setLinkedInUrl(e.target.value)}
-              placeholder="https://linkedin.com/in/john-doe"
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <Button
-              onClick={handleLinkedInImport}
-              disabled={!linkedInUrl || linkedInLoading}
-              className="gap-1.5"
-            >
-              <ArrowRight className="h-4 w-4" />
-              {linkedInLoading ? "Importing..." : "Import"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Bulk Import */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5 text-indigo-600" />
-            Bulk Import from ATS
+            Bulk Import
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-gray-500">
-            Export your data from your current ATS as CSV or JSON, then upload it here.
+            Export your data from your current ATS as a spreadsheet, then upload it here.
           </p>
 
-          {/* Source badges */}
+          {/* Supported formats */}
           <div className="flex flex-wrap gap-2">
-            {ATS_SOURCES.map((source) => (
-              <Badge key={source.name} variant="secondary" className="text-xs py-1 px-2.5">
-                <span className="mr-1 font-bold">{source.icon}</span>
-                {source.name}
-                <span className="ml-1 text-gray-400">({source.format})</span>
+            {SUPPORTED_FORMATS.map((fmt) => (
+              <Badge key={fmt.name} variant="secondary" className="text-xs py-1 px-2.5">
+                {fmt.name}
+                <span className="ml-1 text-gray-400">({fmt.ext})</span>
               </Badge>
             ))}
           </div>
@@ -172,15 +115,15 @@ export default function ImportPage() {
           <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
             <Upload className="h-8 w-8 text-gray-300 mb-2" />
             <span className="text-sm font-medium text-gray-700">
-              {file ? file.name : "Click to upload CSV or JSON file"}
+              {file ? file.name : "Click to upload a CSV, Excel, TSV or JSON file"}
             </span>
             <span className="text-xs text-gray-400 mt-1">
-              CSV, JSON (max 10MB)
+              CSV, XLSX, XLS, TSV, JSON (max 10MB)
             </span>
             <input
               type="file"
               className="hidden"
-              accept=".csv,.json"
+              accept=".csv,.xlsx,.xls,.tsv,.json"
               onChange={(e) => {
                 setFile(e.target.files?.[0] || null);
                 setResult(null);

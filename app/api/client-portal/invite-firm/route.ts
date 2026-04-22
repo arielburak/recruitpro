@@ -7,41 +7,37 @@ function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-// GET - search for recruiting firms on the platform (only firms with active subscriptions)
+// GET - search for recruiting firms on the platform (firms with an active or
+// not-yet-expired trial subscription). Single query — substring match on name,
+// case-insensitive, with the trial-expiry filter pushed into Prisma so the
+// result is consistent with what the user typed.
 export async function GET(request: Request) {
   try {
     await getClientContext();
     const url = new URL(request.url);
-    const q = url.searchParams.get("q") || "";
+    const q = (url.searchParams.get("q") || "").trim();
+    if (!q) return NextResponse.json([]);
 
+    const now = new Date();
     const firms = await prisma.organization.findMany({
       where: {
         name: { contains: q, mode: "insensitive" },
         subscription: {
-          status: { in: ["ACTIVE", "TRIALING"] },
+          OR: [
+            { status: "ACTIVE" },
+            {
+              status: "TRIALING",
+              OR: [{ trialEndsAt: null }, { trialEndsAt: { gte: now } }],
+            },
+          ],
         },
       },
       select: { id: true, name: true, logo: true, _count: { select: { users: true } } },
+      orderBy: { name: "asc" },
       take: 20,
     });
 
-    // Filter out firms with expired trials
-    const now = new Date();
-    const activeFirms = [];
-    for (const firm of firms) {
-      const sub = await prisma.subscription.findUnique({
-        where: { organizationId: firm.id },
-        select: { status: true, trialEndsAt: true },
-      });
-      if (!sub) continue;
-      if (sub.status === "ACTIVE") {
-        activeFirms.push(firm);
-      } else if (sub.status === "TRIALING" && (!sub.trialEndsAt || now <= sub.trialEndsAt)) {
-        activeFirms.push(firm);
-      }
-    }
-
-    return NextResponse.json(activeFirms);
+    return NextResponse.json(firms);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

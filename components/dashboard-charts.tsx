@@ -23,7 +23,7 @@ const COLORS = [
 
 const STAGE_COLORS: Record<string, string> = {
   Sourced: "#94a3b8",
-  Contacted: "#60a5fa",
+  "Internal Review": "#60a5fa",
   Submitted: "#818cf8",
   Interview: "#a78bfa",
   Offer: "#f59e0b",
