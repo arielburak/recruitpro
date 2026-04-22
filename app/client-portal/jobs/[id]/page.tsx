@@ -1016,6 +1016,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       (s.firmName || "").toLowerCase().includes(q) ||
                       (s.name || "").toLowerCase().includes(q)
                     );
+                    // Empty-state: no past invites at all. Instead of
+                    // hiding the dropdown (which makes the form feel
+                    // broken), render a gentle hint so the user knows
+                    // the picker is working and what to do next.
+                    if (inviteSuggestions.length === 0) {
+                      return (
+                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
+                          <p className="px-3 py-2 text-[11px] text-gray-500 leading-relaxed">
+                            No recruiters invited from this client yet. Type an
+                            email above — we&apos;ll tell you if they&apos;re
+                            already on Recruiting ATS or send them a signup link.
+                          </p>
+                        </div>
+                      );
+                    }
                     if (matches.length === 0) return null;
                     return (
                       <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
@@ -1100,17 +1115,17 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         ? "already declined this job"
                         : "already invited to this job";
                     return (
-                      <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 text-xs text-indigo-700 flex items-center gap-2">
-                        <Clock className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{inviteLookup.email} — {label}</span>
+                      <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 text-xs text-indigo-700 flex items-start gap-2">
+                        <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span className="break-words">{inviteLookup.email} — {label}</span>
                       </div>
                     );
                   }
                   if (inviteLookup.onPlatform) {
                     return (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-xs text-emerald-800 flex items-center gap-2">
-                        <CheckCircle className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-xs text-emerald-800 flex items-start gap-2">
+                        <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span className="break-words">
                           <span className="font-medium">{inviteLookup.name || inviteLookup.email}</span>
                           {inviteLookup.firmName ? <span className="text-emerald-700/80"> · {inviteLookup.firmName}</span> : null}
                           <span className="text-emerald-700/80"> — on Recruiting ATS</span>
@@ -1119,10 +1134,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     );
                   }
                   return (
-                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-center gap-2">
-                      <Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                      <span className="truncate">
-                        No account found — we&apos;ll email {inviteLookup.email} a signup link.
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-start gap-2">
+                      <Mail className="h-3.5 w-3.5 shrink-0 mt-0.5 text-gray-400" />
+                      <span className="break-words">
+                        No account found — we&apos;ll email{" "}
+                        <span className="font-medium text-gray-700">{inviteLookup.email}</span>{" "}
+                        a signup link to join Recruiting ATS.
                       </span>
                     </div>
                   );
