@@ -43,12 +43,25 @@ import {
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { formatDate } from "@/lib/utils";
 
+type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
+
 type InviteSuggestion = {
   email: string;
   firmName: string | null;
   name: string | null;
   lastInvitedAt: string;
+  status: InviteStatus;
   alreadyOnThisJob: boolean;
+};
+
+type InviteLookup = {
+  email: string;
+  shape: "invalid" | "valid";
+  onPlatform?: boolean;
+  name?: string | null;
+  firmName?: string | null;
+  alreadyOnThisJob?: boolean;
+  alreadyOnThisJobStatus?: InviteStatus | null;
 };
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,6 +75,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSuggestions, setInviteSuggestions] = useState<InviteSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [inviteLookup, setInviteLookup] = useState<InviteLookup | null>(null);
+  const [lookupPending, setLookupPending] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Team member management state
@@ -145,6 +160,47 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Debounced lookup: as the user types an email, resolve it against the
+  // platform so we can show "Found — Nick Cuello at Alphabridge" or "No
+  // account — we'll email them a signup link" before they hit Send.
+  // Skipped when the input doesn't look like an email or matches one of
+  // the suggestions (which already carry richer info).
+  useEffect(() => {
+    const raw = inviteEmail.trim().toLowerCase();
+    if (!raw || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+      setInviteLookup(null);
+      setLookupPending(false);
+      return;
+    }
+    const matchingSuggestion = inviteSuggestions.find((s) => s.email === raw);
+    if (matchingSuggestion) {
+      setInviteLookup(null);
+      setLookupPending(false);
+      return;
+    }
+    setLookupPending(true);
+    const t = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ email: raw, clientJobId: id });
+        const res = await fetch(`/api/client-portal/invite-lookup?${qs.toString()}`);
+        if (res.ok) {
+          const data = (await res.json()) as InviteLookup;
+          // Guard against a stale response winning over a newer typed
+          // value — only commit if the email we asked about is still
+          // the one in the input.
+          if (data.email === inviteEmail.trim().toLowerCase()) {
+            setInviteLookup(data);
+          }
+        }
+      } catch {}
+      setLookupPending(false);
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      setLookupPending(false);
+    };
+  }, [inviteEmail, id, inviteSuggestions]);
 
   async function fetchJobCandidates() {
     try {
@@ -977,7 +1033,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             }}
                             className={`w-full text-left px-3 py-2 transition-colors ${
                               s.alreadyOnThisJob
-                                ? "opacity-50 cursor-not-allowed"
+                                ? "opacity-60 cursor-not-allowed"
                                 : "hover:bg-indigo-50"
                             }`}
                           >
@@ -991,11 +1047,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                   {s.firmName && <span className="text-gray-400"> · {s.firmName}</span>}
                                 </p>
                               </div>
-                              {s.alreadyOnThisJob && (
-                                <span className="text-[10px] font-medium text-indigo-600 shrink-0">
-                                  already on this job
-                                </span>
-                              )}
+                              {(() => {
+                                if (s.alreadyOnThisJob) {
+                                  return (
+                                    <span className="text-[10px] font-medium text-indigo-600 shrink-0">
+                                      already on this job
+                                    </span>
+                                  );
+                                }
+                                const pill: Record<InviteStatus, { label: string; className: string }> = {
+                                  accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
+                                  pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
+                                  email_sent: { label: "awaiting signup", className: "bg-gray-100 text-gray-600" },
+                                  declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
+                                };
+                                const p = pill[s.status];
+                                return (
+                                  <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
+                                    {p.label}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </button>
                         ))}
@@ -1003,6 +1075,58 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     );
                   })()}
                 </div>
+
+                {/* Live resolution for a freshly-typed email that isn't
+                    in the suggestions list. Tells the user upfront
+                    whether we'll be routing to an existing recruiter or
+                    sending a signup email, and flags when this exact
+                    email is already on this job. */}
+                {(() => {
+                  if (lookupPending) {
+                    return (
+                      <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Checking…
+                      </p>
+                    );
+                  }
+                  if (!inviteLookup || inviteLookup.shape !== "valid") return null;
+                  if (inviteLookup.alreadyOnThisJob) {
+                    const s = inviteLookup.alreadyOnThisJobStatus;
+                    const label =
+                      s === "accepted"
+                        ? "already accepted this job"
+                        : s === "declined"
+                        ? "already declined this job"
+                        : "already invited to this job";
+                    return (
+                      <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 text-xs text-indigo-700 flex items-center gap-2">
+                        <Clock className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{inviteLookup.email} — {label}</span>
+                      </div>
+                    );
+                  }
+                  if (inviteLookup.onPlatform) {
+                    return (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-xs text-emerald-800 flex items-center gap-2">
+                        <CheckCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          <span className="font-medium">{inviteLookup.name || inviteLookup.email}</span>
+                          {inviteLookup.firmName ? <span className="text-emerald-700/80"> · {inviteLookup.firmName}</span> : null}
+                          <span className="text-emerald-700/80"> — on Recruiting ATS</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-center gap-2">
+                      <Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                      <span className="truncate">
+                        No account found — we&apos;ll email {inviteLookup.email} a signup link.
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 <Textarea
                   value={inviteMessage}
@@ -1012,15 +1136,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   className="text-sm"
                 />
 
-                <Button
-                  size="sm"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                  disabled={inviting || !inviteEmail}
-                  onClick={() => inviteFirm()}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {inviting ? "Sending..." : "Send Invitation"}
-                </Button>
+                {(() => {
+                  // Block send if we know (via suggestion OR live lookup)
+                  // that this exact email is already on this job. Lets
+                  // us give a clearer affordance than a 400 on submit.
+                  const emailNow = inviteEmail.trim().toLowerCase();
+                  const matchingSuggestion = inviteSuggestions.find((s) => s.email === emailNow);
+                  const blocked =
+                    matchingSuggestion?.alreadyOnThisJob === true ||
+                    inviteLookup?.alreadyOnThisJob === true;
+                  return (
+                    <Button
+                      size="sm"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
+                      disabled={inviting || !inviteEmail || blocked}
+                      onClick={() => inviteFirm()}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {inviting ? "Sending..." : blocked ? "Already on this job" : "Send Invitation"}
+                    </Button>
+                  );
+                })()}
 
                 {inviteSuccess && (
                   <p className="text-xs text-center text-emerald-600">{inviteSuccess}</p>
