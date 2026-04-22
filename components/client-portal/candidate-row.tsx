@@ -17,7 +17,7 @@ export type CandidateRow = {
     currentCompany: string | null;
     location: string | null;
   };
-  job: { id: string; title: string };
+  job: { id: string; title: string; clientJobId?: string | null };
   firm: { id: string; name: string };
   stage: { id: string; name: string; order: number; color: string } | null;
   sharedBy: string | null;
@@ -98,13 +98,20 @@ export function CandidateTableRow({ row, showJob = true, showFirm = true, onRate
 
       {showJob && (
         <TableCell>
-          <Link
-            href={`/client-portal/jobs/${row.job.id}`}
-            className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-emerald-600"
-          >
-            <Briefcase className="h-3 w-3 text-gray-400 shrink-0" />
-            <span className="truncate max-w-[140px]">{row.job.title}</span>
-          </Link>
+          {row.job.clientJobId ? (
+            <Link
+              href={`/client-portal/jobs/${row.job.clientJobId}`}
+              className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-emerald-600"
+            >
+              <Briefcase className="h-3 w-3 text-gray-400 shrink-0" />
+              <span className="truncate max-w-[140px]">{row.job.title}</span>
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+              <Briefcase className="h-3 w-3 text-gray-400 shrink-0" />
+              <span className="truncate max-w-[140px]">{row.job.title}</span>
+            </span>
+          )}
         </TableCell>
       )}
 

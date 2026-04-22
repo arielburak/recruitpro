@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { put, del } from "@vercel/blob";
+import { put, del, getDownloadUrl } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
@@ -37,7 +37,16 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(documents);
+    // Blobs are uploaded with `access: "private"`, so the stored `url` returns
+    // 403 when hit directly from the browser. Sign a short-lived download URL
+    // per document so the portal's download buttons work without a separate
+    // round-trip.
+    const withDownload = documents.map((d) => ({
+      ...d,
+      downloadUrl: getDownloadUrl(d.url),
+    }));
+
+    return NextResponse.json(withDownload);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

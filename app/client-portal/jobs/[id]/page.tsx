@@ -127,7 +127,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
   async function fetchJobCandidates() {
     try {
-      const res = await fetch(`/api/client-portal/candidates?flat=true&jobId=${id}`);
+      const res = await fetch(`/api/client-portal/candidates?flat=true&clientJobId=${id}`);
       if (res.ok) {
         const data = await res.json();
         setJobCandidates(Array.isArray(data) ? data : []);
@@ -437,7 +437,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
                   </CardTitle>
                   {jobCandidates.length > 0 && (
-                    <Link href={`/client-portal/candidates?jobId=${id}`} className="text-xs text-emerald-600 hover:underline">
+                    <Link href={`/client-portal/candidates?clientJobId=${id}`} className="text-xs text-emerald-600 hover:underline">
                       View all →
                     </Link>
                   )}
@@ -500,7 +500,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
-                            <a href={jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                            <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
                               <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                             </a>
                             <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
@@ -581,7 +581,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" download>
+                            <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
                               <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
                             </a>
                             <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
