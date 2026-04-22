@@ -268,6 +268,11 @@ model Job {
   placements     Placement[]
   documents      Document[]
   interviews     Interview[]
+  // Populated when the Job was born out of a client-portal invite. Used
+  // to enforce person-level privacy on Job visibility — if any of the
+  // linked engagements has invitedUserId set, only the assignees see
+  // the Job (admins included).
+  firmEngagements FirmEngagement[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -696,6 +701,7 @@ model FirmEngagement {
   clientJob    ClientJob    @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
   invitedUser  User?        @relation("InvitedUser", fields: [invitedUserId], references: [id])
+  job          Job?         @relation(fields: [jobId], references: [id])
 
   // One invite per email per job. Legacy rows (null invitedEmail) are
   // exempt — Postgres treats NULLs as distinct — so the migration is safe.
