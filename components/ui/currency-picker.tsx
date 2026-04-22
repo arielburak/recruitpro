@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { ChevronDown, Search } from "lucide-react";
 
 /**
@@ -89,7 +89,12 @@ export function CurrencyPicker({
   const [code, setCode] = useState(initial);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // When the trigger sits close to the right viewport edge, a left-anchored
+  // dropdown (w-72) would extend past the page and cause horizontal scroll.
+  // Measure on open and flip to right-anchored when needed.
+  const [alignRight, setAlignRight] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Sync if controlled value changes externally
   useEffect(() => {
@@ -108,6 +113,13 @@ export function CurrencyPicker({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const DROPDOWN_WIDTH = 288;
+    setAlignRight(rect.left + DROPDOWN_WIDTH > window.innerWidth - 8);
+  }, [open]);
 
   const selected = getCurrency(code);
 
@@ -133,6 +145,7 @@ export function CurrencyPicker({
     <div ref={dropdownRef} className={`relative ${className}`}>
       {name && <input type="hidden" name={name} value={code} />}
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => !disabled && setOpen(!open)}
         disabled={disabled}
@@ -145,7 +158,7 @@ export function CurrencyPicker({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 left-0 w-72 bg-white border rounded-md shadow-lg overflow-hidden">
+        <div className={`absolute z-50 mt-1 ${alignRight ? "right-0" : "left-0"} w-72 bg-white border rounded-md shadow-lg overflow-hidden`}>
           <div className="p-2 border-b">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />

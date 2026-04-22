@@ -256,6 +256,19 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setInviting(false);
   }
 
+  async function withdrawEngagement(engagementId: string, firmName: string) {
+    if (!confirm(`Withdraw the invitation to ${firmName}? They won't be able to accept it anymore.`)) return;
+    const res = await fetch(`/api/client-portal/engagements/${engagementId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      fetchJob();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Could not withdraw invitation");
+    }
+  }
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
@@ -783,9 +796,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           </div>
                         )}
                         {eng.status === "PENDING" && (
-                          <p className="text-[10px] text-amber-600 ml-10 mt-1">
-                            Waiting for response...
-                          </p>
+                          <div className="ml-10 mt-1 flex items-center justify-between gap-2">
+                            <p className="text-[10px] text-amber-600">
+                              Waiting for response...
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => withdrawEngagement(eng.id, eng.organization.name)}
+                              className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                            >
+                              Withdraw
+                            </button>
+                          </div>
                         )}
                       </div>
                     );

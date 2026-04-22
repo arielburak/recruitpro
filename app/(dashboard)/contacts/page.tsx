@@ -14,11 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserRound, Mail, Phone, Search, Building2, Shield, Star } from "lucide-react";
+import { UserRound, Mail, Phone, Search, Building2, Shield, Star, KeyRound } from "lucide-react";
+import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 type UnifiedContact = {
   id: string;
-  source: "contact" | "portal_user";
+  isContact: boolean;
+  hasPortalAccess: boolean;
+  portalRole: string | null;
   firstName: string;
   lastName: string;
   name: string;
@@ -26,19 +29,9 @@ type UnifiedContact = {
   email: string | null;
   phone: string | null;
   isPrimary: boolean;
-  portalRole: string | null;
   clientId: string;
   clientName: string;
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  contact: "Contact",
-  portal_user: "Portal User",
-};
-
-const SOURCE_COLORS: Record<string, string> = {
-  contact: "bg-gray-100 text-gray-700",
-  portal_user: "bg-emerald-100 text-emerald-700",
+  createdAt: string;
 };
 
 export default function ContactsPage() {
@@ -46,7 +39,9 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  // "all" = everyone, "with" = has portal access, "without" = no portal access
+  const [portalFilter, setPortalFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
 
   useEffect(() => {
     fetch("/api/contacts/all")
@@ -68,7 +63,9 @@ export default function ContactsPage() {
     const q = search.trim().toLowerCase();
     return contacts.filter((c) => {
       if (clientFilter !== "all" && c.clientId !== clientFilter) return false;
-      if (sourceFilter !== "all" && c.source !== sourceFilter) return false;
+      if (portalFilter === "with" && !c.hasPortalAccess) return false;
+      if (portalFilter === "without" && c.hasPortalAccess) return false;
+      if (!dateInRange(c.createdAt, dateRange)) return false;
       if (!q) return true;
       const haystack = [
         c.firstName,
@@ -84,13 +81,13 @@ export default function ContactsPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [contacts, search, clientFilter, sourceFilter]);
+  }, [contacts, search, clientFilter, portalFilter, dateRange]);
 
   const counts = useMemo(() => {
     return {
       total: contacts.length,
-      contact: contacts.filter((c) => c.source === "contact").length,
-      portal_user: contacts.filter((c) => c.source === "portal_user").length,
+      withPortal: contacts.filter((c) => c.hasPortalAccess).length,
+      withoutPortal: contacts.filter((c) => !c.hasPortalAccess).length,
     };
   }, [contacts]);
 
@@ -133,14 +130,15 @@ export default function ContactsPage() {
           ))}
         </select>
         <select
-          value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}
+          value={portalFilter}
+          onChange={(e) => setPortalFilter(e.target.value)}
           className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
         >
-          <option value="all">All Sources ({counts.total})</option>
-          <option value="contact">Contact ({counts.contact})</option>
-          <option value="portal_user">Portal User ({counts.portal_user})</option>
+          <option value="all">All ({counts.total})</option>
+          <option value="with">With portal access ({counts.withPortal})</option>
+          <option value="without">Without portal access ({counts.withoutPortal})</option>
         </select>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
       </div>
 
       {/* Content */}
@@ -182,7 +180,7 @@ export default function ContactsPage() {
                   <TableHead>Client</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Phone</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>Access</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -219,9 +217,15 @@ export default function ContactsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
-                        <Badge className={`text-[10px] ${SOURCE_COLORS[c.source]}`}>
-                          {SOURCE_LABELS[c.source]}
-                        </Badge>
+                        {c.hasPortalAccess ? (
+                          <Badge className="text-[10px] bg-emerald-100 text-emerald-700">
+                            <KeyRound className="h-2.5 w-2.5 mr-0.5" /> Portal
+                          </Badge>
+                        ) : (
+                          <Badge className="text-[10px] bg-gray-100 text-gray-600">
+                            Contact only
+                          </Badge>
+                        )}
                         {c.portalRole === "ADMIN" && (
                           <Badge className="text-[10px] bg-amber-50 text-amber-700">
                             <Shield className="h-2.5 w-2.5 mr-0.5" /> Admin
@@ -242,11 +246,11 @@ export default function ContactsPage() {
         <div className="text-xs text-gray-400 flex flex-wrap items-center gap-4 px-1">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-gray-400" />
-            <strong>Contact</strong> — added in client detail page
+            <strong>Contact only</strong> — added from the client detail page
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <strong>Portal User</strong> — has access to the Client Portal
+            <strong>Portal</strong> — has access to the Client Portal
           </span>
         </div>
       )}

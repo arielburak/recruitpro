@@ -28,6 +28,25 @@ type JobDuplicateMatch = {
   client: { id: string; name: string };
 };
 
+// Key under which we stash the in-progress Job form state when the recruiter
+// hops over to the Create Client page, so they don't lose their typing/parsing
+// when they come back.
+const JOB_DRAFT_KEY = "newJobDraft";
+
+type JobDraft = {
+  title: string;
+  titleFromDoc: boolean;
+  description: string;
+  location: string;
+  workMode: string;
+  currency: string;
+  feeType: string;
+  feeAmount: string;
+  termsAutoFilled: boolean;
+  parseStatus: string;
+  jdFileName?: string | null;
+};
+
 function NewJobContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -36,6 +55,7 @@ function NewJobContent() {
   const [error, setError] = useState("");
   const [clients, setClients] = useState<any[]>([]);
   const [jdFile, setJdFile] = useState<File | null>(null);
+  const [jdFileMissing, setJdFileMissing] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
@@ -58,8 +78,6 @@ function NewJobContent() {
   const [selectedClientId, setSelectedClientId] = useState(preselectedClientId);
   const [clientSearch, setClientSearch] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  const [creatingClient, setCreatingClient] = useState(false);
-  const [createClientError, setCreateClientError] = useState("");
   const clientRef = useRef<HTMLDivElement>(null);
 
   // Duplicate-job detection: matches existing jobs with the same
@@ -135,41 +153,71 @@ function NewJobContent() {
     }
   }
 
-  // Inline client creation: keeps the recruiter inside the Create Job flow
-  // when the company they want isn't on the list yet. We POST just the name
-  // (everything else can be filled later from the client detail page) and
-  // select the result so the form picks up immediately.
-  async function createInlineClient(name: string) {
+  // Hand off to the full Create Client form so the recruiter can set fee
+  // defaults / industry / website etc., then come back and have those terms
+  // auto-fill on this Job. We stash the in-progress Job draft in
+  // sessionStorage because the File object can't survive navigation; the
+  // parsed text and structured fields do, so the recruiter only loses the
+  // raw upload, not their work.
+  function goCreateClient(name: string) {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    setCreatingClient(true);
-    setCreateClientError("");
+    const draft: JobDraft = {
+      title,
+      titleFromDoc,
+      description,
+      location,
+      workMode,
+      currency,
+      feeType,
+      feeAmount,
+      termsAutoFilled,
+      parseStatus,
+      jdFileName: jdFile?.name || null,
+    };
     try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      const created = await res.json();
-      if (!res.ok) {
-        setCreateClientError(created.error || "Could not create client");
-        return;
-      }
-      setClients((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-      selectClient(created.id);
-    } catch {
-      setCreateClientError("Could not create client");
-    } finally {
-      setCreatingClient(false);
-    }
+      sessionStorage.setItem(JOB_DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+    const params = new URLSearchParams({ returnTo: "/jobs/new" });
+    if (trimmed) params.set("name", trimmed);
+    router.push(`/clients/new?${params.toString()}`);
   }
 
   useEffect(() => {
+    // Restore draft saved before hopping to /clients/new. Run before the
+    // client fetch resolves so the user sees their fields immediately. If
+    // we also have a preselected client (i.e. we just came back from
+    // creating one), the client-driven fee defaults below will overwrite
+    // whatever was in the draft — that's intentional, the new client's
+    // terms are the whole reason we made this round-trip.
+    let draft: JobDraft | null = null;
+    try {
+      const raw = sessionStorage.getItem(JOB_DRAFT_KEY);
+      if (raw) draft = JSON.parse(raw) as JobDraft;
+    } catch {}
+    if (draft) {
+      sessionStorage.removeItem(JOB_DRAFT_KEY);
+      if (draft.title) setTitle(draft.title);
+      if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
+      if (draft.description) setDescription(draft.description);
+      if (draft.location) setLocation(draft.location);
+      if (draft.workMode) setWorkMode(draft.workMode);
+      if (draft.currency) setCurrency(draft.currency);
+      if (draft.feeType) setFeeType(draft.feeType);
+      if (draft.feeAmount) setFeeAmount(draft.feeAmount);
+      if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
+      if (draft.parseStatus) setParseStatus(draft.parseStatus);
+      // The actual File can't survive navigation; tell the user what was
+      // there before so they know to re-upload if they want to keep the
+      // attachment.
+      if (draft.jdFileName) setJdFileMissing(draft.jdFileName);
+    }
+
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
         setClients(data);
-        // Auto-fill if preselected client
+        // Auto-fill if preselected client (covers both ?clientId from
+        // navigation and the round-trip from /clients/new).
         if (preselectedClientId) {
           const client = data.find((c: any) => c.id === preselectedClientId);
           if (client) {
@@ -415,23 +463,22 @@ function NewJobContent() {
                     {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) && (
                       <button
                         type="button"
-                        disabled={creatingClient}
-                        onClick={() => void createInlineClient(clientSearch)}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors disabled:opacity-60"
+                        onClick={() => goCreateClient(clientSearch)}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
                       >
                         <Plus className="h-3.5 w-3.5" />
                         <span>
-                          {creatingClient
-                            ? "Creating…"
-                            : <>Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client</>}
+                          Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client
                         </span>
                       </button>
                     )}
                   </div>
                 )}
               </div>
-              {createClientError && (
-                <p className="text-xs text-red-500">{createClientError}</p>
+              {jdFileMissing && (
+                <p className="text-xs text-amber-600">
+                  Your previous JD file <span className="font-medium">{jdFileMissing}</span> wasn&apos;t restored after creating the client. Re-upload it to keep it as an attachment — the parsed text is still here.
+                </p>
               )}
             </div>
 

@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Building2, Trash2 } from "lucide-react";
+import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
 
   useEffect(() => {
     fetch("/api/clients")
@@ -26,14 +28,19 @@ export default function ClientsPage() {
     setClients(clients.filter((c) => c.id !== id));
   }
 
-  const filtered = search
-    ? clients.filter((c) =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.industry || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.contactName || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.contactEmail || "").toLowerCase().includes(search.toLowerCase())
-      )
-    : clients;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (!dateInRange(c.createdAt, dateRange)) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.industry || "").toLowerCase().includes(q) ||
+        (c.contactName || "").toLowerCase().includes(q) ||
+        (c.contactEmail || "").toLowerCase().includes(q)
+      );
+    });
+  }, [clients, search, dateRange]);
 
   return (
     <div className="space-y-4">
@@ -47,14 +54,17 @@ export default function ClientsPage() {
         </Link>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by name, industry, contact..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 h-9 text-sm"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search by name, industry, contact..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 h-9 text-sm"
+          />
+        </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
       </div>
 
       {loading ? (

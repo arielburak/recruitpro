@@ -82,6 +82,21 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // Date Created range. Bounds are inclusive whole days; "to" is bumped to
+    // the start of the next day so candidates created at any time on that day
+    // are still matched.
+    const createdFrom = searchParams.get("createdFrom");
+    const createdTo = searchParams.get("createdTo");
+    if (createdFrom || createdTo) {
+      where.createdAt = {};
+      if (createdFrom) where.createdAt.gte = new Date(`${createdFrom}T00:00:00`);
+      if (createdTo) {
+        const end = new Date(`${createdTo}T00:00:00`);
+        end.setDate(end.getDate() + 1);
+        where.createdAt.lt = end;
+      }
+    }
+
     // Sorting
     const sort = searchParams.get("sort");
     let orderBy: any = { createdAt: "desc" };
