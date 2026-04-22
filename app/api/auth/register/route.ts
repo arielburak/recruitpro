@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     });
 
     // Process any pending firm invites for this email
-    await processPendingInvites(data.email, result.org.id).catch(() => {});
+    await processPendingInvites(data.email, result.org.id, result.user.id).catch(() => {});
 
     // Fire-and-forget welcome email. A delivery failure (e.g. bad address,
     // transient Resend outage) shouldn't block account creation.
