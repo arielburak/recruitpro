@@ -57,6 +57,7 @@ model User {
   interviewFeedback     InterviewFeedback[]
   integrations          UserIntegration[]
   notifications         UserNotification[]
+  firmEngagements       FirmEngagement[]      @relation("InvitedUser")
 
   @@index([organizationId])
 }
@@ -678,6 +679,14 @@ model FirmEngagement {
   id             String    @id @default(cuid())
   clientJobId    String
   organizationId String
+  // Email of the SPECIFIC recruiter invited. Nullable because legacy
+  // engagements (pre-person-level invites) only stored organizationId;
+  // new rows always set this.
+  invitedEmail   String?
+  // User that claimed the invite. Set when the invited email matches an
+  // existing User at invite time, or later when a PendingFirmInvite is
+  // promoted to an engagement on login. Null for legacy rows.
+  invitedUserId  String?
   status         String    @default("PENDING")
   message        String?
   jobId          String?
@@ -686,9 +695,13 @@ model FirmEngagement {
 
   clientJob    ClientJob    @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
+  invitedUser  User?        @relation("InvitedUser", fields: [invitedUserId], references: [id])
 
-  @@unique([clientJobId, organizationId])
+  // One invite per email per job. Legacy rows (null invitedEmail) are
+  // exempt — Postgres treats NULLs as distinct — so the migration is safe.
+  @@unique([clientJobId, invitedEmail])
   @@index([organizationId])
+  @@index([invitedUserId])
   @@index([organizationId, status])
 }
 

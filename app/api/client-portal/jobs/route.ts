@@ -13,7 +13,14 @@ export async function GET() {
         engagements: {
           include: {
             organization: { select: { name: true, id: true } },
+            invitedUser: { select: { id: true, name: true, email: true } },
           },
+        },
+        // Email invites sent to people who haven't registered yet. We
+        // surface them alongside engagements so the client doesn't lose
+        // track of who they've already reached out to.
+        pendingFirmInvites: {
+          select: { id: true, email: true, message: true, createdAt: true },
         },
       },
       orderBy: { createdAt: "desc" },

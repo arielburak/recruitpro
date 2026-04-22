@@ -43,6 +43,14 @@ import {
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { formatDate } from "@/lib/utils";
 
+type InviteSuggestion = {
+  email: string;
+  firmName: string | null;
+  name: string | null;
+  lastInvitedAt: string;
+  alreadyOnThisJob: boolean;
+};
+
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [job, setJob] = useState<any>(null);
@@ -52,6 +60,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviteSuggestions, setInviteSuggestions] = useState<InviteSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Team member management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -124,6 +135,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchDocuments();
     fetchJobCandidates();
   }, [id]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function fetchJobCandidates() {
     try {
@@ -256,8 +277,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setInviting(false);
   }
 
-  async function withdrawEngagement(engagementId: string, firmName: string) {
-    if (!confirm(`Withdraw the invitation to ${firmName}? They won't be able to accept it anymore.`)) return;
+  async function withdrawEngagement(engagementId: string, label: string) {
+    if (!confirm(`Withdraw the invitation to ${label}? They won't be able to accept it anymore.`)) return;
     const res = await fetch(`/api/client-portal/engagements/${engagementId}`, {
       method: "DELETE",
     });
@@ -267,6 +288,29 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       const data = await res.json().catch(() => ({}));
       alert(data.error || "Could not withdraw invitation");
     }
+  }
+
+  async function withdrawPendingInvite(pendingId: string, email: string) {
+    if (!confirm(`Cancel the pending invitation to ${email}?`)) return;
+    const res = await fetch(`/api/client-portal/pending-invites/${pendingId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      fetchJob();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Could not cancel invitation");
+    }
+  }
+
+  async function loadInviteSuggestions() {
+    try {
+      const res = await fetch(`/api/client-portal/invite-suggestions?clientJobId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInviteSuggestions(Array.isArray(data) ? data : []);
+      }
+    } catch {}
   }
 
   if (loading) {
@@ -725,44 +769,62 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 <Building2 className="h-4 w-4 text-indigo-600" />
                 Assigned Firms
               </CardTitle>
-              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowInvite(!showInvite)}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-xs"
+                onClick={() => {
+                  const next = !showInvite;
+                  setShowInvite(next);
+                  if (next) loadInviteSuggestions();
+                }}
+              >
                 <Plus className="h-3 w-3" />
                 Invite
               </Button>
             </CardHeader>
             <CardContent>
               {/* Summary Stats */}
-              {job.engagements?.length > 0 && (
-                <div className="flex gap-3 mb-3">
-                  <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-green-700">
-                      {job.engagements.filter((e: any) => e.status === "ACCEPTED").length}
-                    </p>
-                    <p className="text-[10px] text-green-600">Active</p>
+              {(() => {
+                const pendingInvites = job.pendingFirmInvites || [];
+                const accepted = (job.engagements || []).filter((e: any) => e.status === "ACCEPTED").length;
+                const pending = (job.engagements || []).filter((e: any) => e.status === "PENDING").length + pendingInvites.length;
+                const declined = (job.engagements || []).filter((e: any) => e.status === "DECLINED").length;
+                const totalRows = (job.engagements?.length || 0) + pendingInvites.length;
+                if (totalRows === 0) return null;
+                return (
+                  <div className="flex gap-3 mb-3">
+                    <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-green-700">{accepted}</p>
+                      <p className="text-[10px] text-green-600">Active</p>
+                    </div>
+                    <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-amber-700">{pending}</p>
+                      <p className="text-[10px] text-amber-600">Pending</p>
+                    </div>
+                    <div className="flex-1 bg-rose-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-rose-700">{declined}</p>
+                      <p className="text-[10px] text-rose-600">Rejected</p>
+                    </div>
                   </div>
-                  <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-amber-700">
-                      {job.engagements.filter((e: any) => e.status === "PENDING").length}
-                    </p>
-                    <p className="text-[10px] text-amber-600">Pending</p>
-                  </div>
-                  <div className="flex-1 bg-rose-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-rose-700">
-                      {job.engagements.filter((e: any) => e.status === "DECLINED").length}
-                    </p>
-                    <p className="text-[10px] text-rose-600">Rejected</p>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {job.engagements?.length === 0 ? (
+              {(job.engagements?.length || 0) + (job.pendingFirmInvites?.length || 0) === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
-                  No firms invited yet. Click Invite to get started.
+                  No recruiters invited yet. Click Invite to get started.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {job.engagements?.map((eng: any) => {
                     const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
+                    // Prefer the registered user's name when we have it
+                    // (most engagements post-person-level invites). Fall
+                    // back to the invited email, then — for legacy org-
+                    // level rows — just the firm name.
+                    const personLabel =
+                      eng.invitedUser?.name || eng.invitedEmail || null;
+                    const withdrawLabel = personLabel || eng.organization.name;
                     return (
                       <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -771,8 +833,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <Building2 className="h-4 w-4 text-indigo-600" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{eng.organization.name}</p>
-                              <p className="text-[10px] text-gray-400 truncate">Invited {formatDate(eng.invitedAt)}</p>
+                              <p className="text-sm font-medium truncate">
+                                {personLabel || eng.organization.name}
+                              </p>
+                              <p className="text-[10px] text-gray-400 truncate">
+                                {personLabel && eng.organization.name ? (
+                                  <>{eng.organization.name} · </>
+                                ) : null}
+                                Invited {formatDate(eng.invitedAt)}
+                              </p>
                             </div>
                           </div>
                           <Badge className={`text-[10px] shrink-0 ${statusColor[eng.status]}`}>
@@ -802,7 +871,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </p>
                             <button
                               type="button"
-                              onClick={() => withdrawEngagement(eng.id, eng.organization.name)}
+                              onClick={() => withdrawEngagement(eng.id, withdrawLabel)}
                               className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
                             >
                               Withdraw
@@ -812,6 +881,42 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       </div>
                     );
                   })}
+
+                  {/* Pending email invites — the recipient hasn't signed
+                      up yet, so there's no FirmEngagement row. Surface
+                      them here so the client sees who they still owe a
+                      response from, and can cancel if they change their
+                      mind. */}
+                  {job.pendingFirmInvites?.map((p: any) => (
+                    <div key={`pending_${p.id}`} className="p-2.5 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                            <Mail className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{p.email}</p>
+                            <p className="text-[10px] text-gray-400 truncate">
+                              Email sent {formatDate(p.createdAt)} · not registered yet
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="text-[10px] shrink-0 bg-gray-100 text-gray-600 border-gray-200">
+                          <Clock className="h-3 w-3 mr-1" />
+                          awaiting signup
+                        </Badge>
+                      </div>
+                      <div className="ml-10 mt-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => withdrawPendingInvite(p.id, p.email)}
+                          className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                        >
+                          Cancel invitation
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -829,21 +934,74 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </div>
 
                 <p className="text-xs text-gray-500">
-                  Invite the specific recruiter you want to work with — by email.
-                  We&apos;ll ask them which firm they belong to when they sign in for
-                  the first time, so the invitation only reaches them, not their
-                  whole team.
+                  Invite by email. The invitation reaches only that person — not
+                  their whole firm — so you can pick a specific HM or POC.
                 </p>
 
-                <div>
+                <div ref={suggestionsRef} className="relative">
                   <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
                     type="email"
                     value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onChange={(e) => {
+                      setInviteEmail(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
                     placeholder="recruiter@firm.com"
                     className="text-sm"
+                    autoComplete="off"
                   />
+                  {showSuggestions && (() => {
+                    const q = inviteEmail.trim().toLowerCase();
+                    const matches = inviteSuggestions.filter((s) =>
+                      !q ||
+                      s.email.toLowerCase().includes(q) ||
+                      (s.firmName || "").toLowerCase().includes(q) ||
+                      (s.name || "").toLowerCase().includes(q)
+                    );
+                    if (matches.length === 0) return null;
+                    return (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                          Previously invited
+                        </div>
+                        {matches.map((s) => (
+                          <button
+                            key={s.email}
+                            type="button"
+                            disabled={s.alreadyOnThisJob}
+                            onClick={() => {
+                              setInviteEmail(s.email);
+                              setShowSuggestions(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 transition-colors ${
+                              s.alreadyOnThisJob
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-indigo-50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {s.name || s.email}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  {s.email}
+                                  {s.firmName && <span className="text-gray-400"> · {s.firmName}</span>}
+                                </p>
+                              </div>
+                              {s.alreadyOnThisJob && (
+                                <span className="text-[10px] font-medium text-indigo-600 shrink-0">
+                                  already on this job
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <Textarea
