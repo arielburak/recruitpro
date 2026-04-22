@@ -52,7 +52,12 @@ function initials(name: string): string {
 }
 
 function renderMentions(text: string) {
-  const parts = text.split(/(@\w+(?:\s\w+)?)/g);
+  // Only style the @-prefixed first name. Trying to also consume a second
+  // word was over-greedy and swallowed normal text following a mention
+  // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
+  // userId is stored separately on the comment, so using first-name-only
+  // here doesn't break notification routing.
+  const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
       return (
@@ -160,7 +165,8 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
     const textBeforeCursor = text.slice(0, cursorPosition);
     const textAfterCursor = text.slice(cursorPosition);
     const atIndex = textBeforeCursor.lastIndexOf("@");
-    const newText = textBeforeCursor.slice(0, atIndex) + `@${user.name} ` + textAfterCursor;
+    const firstName = user.name.split(" ")[0];
+    const newText = textBeforeCursor.slice(0, atIndex) + `@${firstName} ` + textAfterCursor;
     setText(newText);
     setShowMentions(false);
     if (!mentions.find((m) => m.id === user.id)) {

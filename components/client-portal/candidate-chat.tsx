@@ -56,7 +56,12 @@ function initials(name: string): string {
 }
 
 function renderMentions(text: string) {
-  const parts = text.split(/(@\w+(?:\s\w+)?)/g);
+  // Only style the @-prefixed first name. Trying to also consume a second
+  // word was over-greedy and swallowed normal text following a mention
+  // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
+  // userId is stored separately on the comment, so using first-name-only
+  // here doesn't break notification routing.
+  const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
       return (
