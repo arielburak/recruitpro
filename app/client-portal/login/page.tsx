@@ -293,6 +293,14 @@ function ClientPortalLoginInner() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to home
+          </Link>
+
           {hasStaffingSession && (
             <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
               <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
