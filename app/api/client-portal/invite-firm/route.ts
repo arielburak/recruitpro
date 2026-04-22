@@ -136,7 +136,26 @@ export async function POST(request: Request) {
       },
     });
 
-    // TODO: Send in-app notification to the firm
+    // Notify every admin in the invited firm so they actually find out about
+    // the request without having to randomly check /engagements. We hit only
+    // ADMINs to avoid spamming the entire firm — they can route it internally.
+    try {
+      const admins = await prisma.user.findMany({
+        where: { organizationId: orgId, role: "ADMIN" },
+        select: { id: true },
+      });
+      if (admins.length > 0) {
+        await prisma.userNotification.createMany({
+          data: admins.map((a) => ({
+            userId: a.id,
+            type: "engagement_invited",
+            title: `${job.client.name} invited you to work on ${job.title}`,
+            body: message || null,
+            link: "/engagements",
+          })),
+        });
+      }
+    } catch {}
 
     return NextResponse.json(engagement, { status: 201 });
   } catch (error: any) {

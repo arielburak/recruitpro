@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ArrowUpDown,
 } from "lucide-react";
+import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
 
 // ─── Types ───
 
@@ -268,6 +269,7 @@ export default function CandidatesPage() {
   const [jobFilter, setJobFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
   const [sort, setSort] = useState("created_desc");
 
   // Filter options from API
@@ -300,13 +302,15 @@ export default function CandidatesPage() {
     if (jobFilter.length > 0) params.set("jobId", jobFilter.join(","));
     if (clientFilter.length > 0) params.set("clientId", clientFilter.join(","));
     if (stageFilter.length > 0) params.set("stage", stageFilter.join(","));
+    if (dateRange.from) params.set("createdFrom", dateRange.from);
+    if (dateRange.to) params.set("createdTo", dateRange.to);
 
     const res = await fetch(`/api/candidates?${params}`);
     const data = await res.json();
     setCandidates(data.candidates || []);
     setTotal(data.total || 0);
     setLoading(false);
-  }, [page, search, sort, ownerFilter, locationFilter, jobFilter, clientFilter, stageFilter]);
+  }, [page, search, sort, ownerFilter, locationFilter, jobFilter, clientFilter, stageFilter, dateRange]);
 
   useEffect(() => {
     fetchCandidates();
@@ -422,6 +426,11 @@ export default function CandidatesPage() {
             selected={locationFilter}
             options={filterOptions.locations}
             onChange={(v) => updateFilter(setLocationFilter, v)}
+          />
+          <DateRangeFilter
+            value={dateRange}
+            onChange={(v) => { setDateRange(v); setPage(1); }}
+            label="Created"
           />
           <SortSelector value={sort} onChange={(v) => { setSort(v); setPage(1); }} />
         </div>

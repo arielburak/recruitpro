@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
+import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -171,6 +172,7 @@ export default function JobsPage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [recruiterFilter, setRecruiterFilter] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
 
   useEffect(() => {
     fetch("/api/jobs")
@@ -258,9 +260,10 @@ export default function JobsPage() {
       if (locationFilter.length > 0 && !locationFilter.includes(j.location?.trim())) return false;
       if (clientFilter.length > 0 && !clientFilter.includes(j.client.id)) return false;
       if (recruiterFilter.length > 0 && !(j.assignments || []).some((a: any) => recruiterFilter.includes(a.user.id))) return false;
+      if (!dateInRange(j.createdAt, dateRange)) return false;
       return true;
     });
-  }, [jobs, search, statusFilter, workArrangementFilter, locationFilter, clientFilter, recruiterFilter]);
+  }, [jobs, search, statusFilter, workArrangementFilter, locationFilter, clientFilter, recruiterFilter, dateRange]);
 
   const activeFilters = [
     ...statusFilter.map((v) => ({ type: "Status", value: v, label: JOB_STATUS_LABELS[v] || v, clear: () => setStatusFilter(statusFilter.filter((x) => x !== v)) })),
@@ -334,6 +337,7 @@ export default function JobsPage() {
             options={filterOptions.recruiters}
             onChange={setRecruiterFilter}
           />
+          <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
         </div>
       </div>
 

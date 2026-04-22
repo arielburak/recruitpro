@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,11 @@ import {
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
+
+// Whitelist of in-app paths we accept as a `returnTo` target. Stops anyone
+// from rigging a link that bounces the user to an external site after
+// creating a client.
+const RETURN_TO_ALLOWLIST = ["/jobs/new"];
 
 type DuplicateMatch = {
   id: string;
@@ -42,14 +47,18 @@ function websiteHost(value: string): string {
   return withoutWww.split("/")[0].replace(/[.,;]+$/, "");
 }
 
-export default function NewClientPage() {
+function NewClientContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnToParam = searchParams.get("returnTo");
+  const returnTo = returnToParam && RETURN_TO_ALLOWLIST.includes(returnToParam) ? returnToParam : null;
+  const prefillName = searchParams.get("name") || "";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [defaultFeeType, setDefaultFeeType] = useState("PERCENTAGE");
 
   const [formValues, setFormValues] = useState({
-    name: "",
+    name: prefillName,
     industry: "",
     website: "",
     notes: "",
@@ -145,7 +154,13 @@ export default function NewClientPage() {
     }
 
     const client = await res.json();
-    router.push(`/clients/${client.id}`);
+    if (returnTo) {
+      // Hand control back to the original flow (e.g. Job creation) with the
+      // new client id so it can re-select and absorb the fee defaults.
+      router.push(`${returnTo}?clientId=${client.id}`);
+    } else {
+      router.push(`/clients/${client.id}`);
+    }
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -160,16 +175,24 @@ export default function NewClientPage() {
     await actuallyCreate();
   }
 
+  const backHref = returnTo || "/clients";
+  const backLabel = returnTo === "/jobs/new" ? "Back to Job" : "Back";
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/clients">
+        <Link href={backHref}>
           <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            <ArrowLeft className="h-4 w-4 mr-1" /> {backLabel}
           </Button>
         </Link>
         <h1 className="text-2xl font-bold">Add Client</h1>
       </div>
+      {returnTo === "/jobs/new" && (
+        <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-700">
+          You&apos;re creating this client as part of a Job. Once you save, you&apos;ll be sent back to the Job form with this client selected and its fee defaults applied.
+        </div>
+      )}
 
       <form onSubmit={onSubmit}>
         <Card>
@@ -329,7 +352,7 @@ export default function NewClientPage() {
               />
             </div>
             <div className="flex justify-end gap-2 pt-4">
-              <Link href="/clients">
+              <Link href={backHref}>
                 <Button type="button" variant="outline">
                   Cancel
                 </Button>
@@ -404,5 +427,13 @@ export default function NewClientPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function NewClientPage() {
+  return (
+    <Suspense fallback={<div className="h-96 bg-gray-100 rounded-lg animate-pulse" />}>
+      <NewClientContent />
+    </Suspense>
   );
 }
