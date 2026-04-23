@@ -11,8 +11,12 @@ export const clientSchema = z.object({
   industry: z.string().optional(),
   website: z.string().url("Invalid URL").optional().or(z.literal("")),
   notes: z.string().optional(),
-  defaultCurrency: z.string().optional(),
-  defaultFeeType: z.string().optional(),
+  engagementType: z.enum(["RECRUITING", "STAFF_AUG"]).optional(),
+  // All three default-fee fields nullable so switching a client from
+  // Recruiting → Staff Aug (which wipes fee defaults) can round-trip
+  // through the API.
+  defaultCurrency: z.string().optional().nullable(),
+  defaultFeeType: z.string().optional().nullable(),
   defaultFeeAmount: z.number().optional().nullable(),
 });
 

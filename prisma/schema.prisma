@@ -114,6 +114,13 @@ model Client {
   contactEmail   String?
   contactPhone   String?
   notes          String?
+  // Engagement model with this client. "RECRUITING" = traditional
+  // headhunting with fee + guarantee + payment terms (the defaults
+  // below). "STAFF_AUG" = outsourcing / staff augmentation where
+  // every search negotiates its own economics — we skip the defaults
+  // entirely in that mode. Defaults to RECRUITING so pre-existing
+  // clients stay on the current form.
+  engagementType      String   @default("RECRUITING")
   defaultCurrency     String?  @default("USD")
   defaultFeeType      String?  @default("PERCENTAGE")
   defaultFeeAmount    Decimal?

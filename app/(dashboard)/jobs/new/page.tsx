@@ -566,6 +566,14 @@ function NewJobContent() {
                 </span>
               </div>
             )}
+            {selectedClient?.engagementType === "STAFF_AUG" && (
+              <div className="flex items-start gap-1.5 text-[11px] text-emerald-700 bg-emerald-50/70 border border-emerald-200 rounded-md px-2.5 py-2">
+                <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span>
+                  <span className="font-medium">{selectedClient.name}</span> is a Staff Augmentation client — set the fee terms for this specific search below.
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fee Type</Label>
