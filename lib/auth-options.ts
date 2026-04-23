@@ -1,13 +1,12 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import AzureADProvider from "next-auth/providers/azure-ad";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 
 // Helper — reads the per-portal OAuth hint cookie set by the UI before
-// calling signIn("google" | "azure-ad"). Cookie is short-lived (60s).
+// calling signIn("google"). Cookie is short-lived (60s).
 async function getOAuthPortal(): Promise<"client" | "staffing"> {
   try {
     const c = await cookies();
@@ -27,12 +26,6 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
-    }),
-    AzureADProvider({
-      clientId: process.env.AZURE_AD_CLIENT_ID!,
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-      tenantId: "common",
       allowDangerousEmailAccountLinking: true,
     }),
     CredentialsProvider({

@@ -8,14 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Briefcase, CheckCircle2, Users, Globe, UserPlus, Sparkles } from "lucide-react";
-import { FEATURES } from "@/lib/feature-flags";
+import { ArrowLeft, Briefcase, Building2, ChevronRight, CheckCircle2, Users, Globe, UserPlus, Sparkles, Mail } from "lucide-react";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // The trial sign-up is agency-side only. Client portal access comes
+  // from a recruiter's invite — you don't self-register for it. The
+  // selector leads with that distinction so hiring companies don't get
+  // stuck typing company details they can't use.
+  const [step, setStep] = useState<"select" | "agency" | "client-info">("select");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -124,6 +128,123 @@ export default function RegisterPage() {
             Back to home
           </Link>
 
+          {step === "select" && (
+            <>
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900">Get started</h2>
+                <p className="text-gray-500 mt-1">Which side are you on?</p>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setStep("agency")}
+                  className="group w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <Briefcase className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Agency Workspace</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      I work at a recruiting firm and want to manage searches, candidates, and client relationships.
+                    </p>
+                    <p className="text-[11px] text-indigo-700 mt-1.5 font-medium">
+                      5-day free trial · Credit card required · Cancel anytime
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 shrink-0 mt-1 transition-colors" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep("client-info")}
+                  className="group w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/30 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Client Portal</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      I&apos;m a hiring company working with recruiting firms on searches.
+                    </p>
+                    <p className="text-[11px] text-emerald-700 mt-1.5">
+                      You already pay a fee — no need to pay for the ATS.
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-500 shrink-0 mt-1 transition-colors" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-500 text-center mt-8">
+                Already have an account?{" "}
+                <Link href="/login" className="text-indigo-600 font-medium hover:underline">
+                  Sign in
+                </Link>
+              </p>
+            </>
+          )}
+
+          {step === "client-info" && (
+            <>
+              <button
+                type="button"
+                onClick={() => setStep("select")}
+                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-4 -mt-2"
+              >
+                <ArrowLeft className="w-3 h-3" />
+                Back
+              </button>
+
+              <div className="mb-6">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
+                  <Mail className="w-6 h-6" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">You&apos;ll get an invite</h2>
+                <p className="text-gray-500 mt-2 leading-relaxed">
+                  The Client Portal works by invitation. Your recruiting agency
+                  invites you by email when they&apos;re ready to share a search
+                  with you — you don&apos;t sign up on your own.
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-emerald-50/60 border border-emerald-200 p-4 text-sm text-emerald-800">
+                <p className="font-medium mb-1">Already invited?</p>
+                <p className="text-emerald-700">
+                  Check your email for the invitation link, or sign in directly
+                  if you&apos;ve already set up your password.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Link
+                    href="/client-portal/login"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition"
+                  >
+                    Sign in to Client Portal
+                    <ChevronRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-400 mt-6 leading-relaxed">
+                If your agency isn&apos;t on Recruiting ATS yet, share this link
+                with them — they can start a free trial and invite you once
+                they&apos;re set up.
+              </p>
+            </>
+          )}
+
+          {step === "agency" && (
+          <>
+          <button
+            type="button"
+            onClick={() => setStep("select")}
+            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-4 -mt-2"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            Back
+          </button>
+
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-gray-900">Start your free trial</h2>
             <p className="text-gray-500 mt-1">
@@ -152,21 +273,6 @@ export default function RegisterPage() {
                 </svg>
                 Sign up with Google
               </button>
-              {FEATURES.microsoftIntegration && (
-                <button
-                  type="button"
-                  onClick={() => signIn("azure-ad", { callbackUrl: "/dashboard" })}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
-                  Sign up with Microsoft
-                </button>
-              )}
             </div>
 
             <div className="relative my-6">
@@ -294,21 +400,8 @@ export default function RegisterPage() {
               Sign in
             </Link>
           </p>
-
-          <div className="mt-6 border-t border-gray-100 pt-5 text-center">
-            <p className="text-xs text-gray-500">
-              Are you a hiring client?
-            </p>
-            <Link
-              href="/client-portal/login"
-              className="text-sm text-emerald-600 font-medium hover:underline inline-block mt-1"
-            >
-              Use the Client Portal instead →
-            </Link>
-            <p className="text-[11px] text-gray-400 mt-1">
-              You already pay a fee — no need to pay for the ATS as well.
-            </p>
-          </div>
+          </>
+          )}
         </div>
       </div>
     </div>

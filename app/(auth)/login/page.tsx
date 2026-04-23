@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Briefcase, CheckCircle2 } from "lucide-react";
-import { FEATURES } from "@/lib/feature-flags";
+import { ArrowLeft, Briefcase, Building2, ChevronRight, CheckCircle2 } from "lucide-react";
 
 function LoginContent() {
   const router = useRouter();
@@ -17,8 +16,15 @@ function LoginContent() {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [clearingSession, setClearingSession] = useState(false);
   const registered = searchParams.get("registered");
+  // Which side of the product the user is signing into. The selector is
+  // the default first view; `?portal=agency` (or coming back from a
+  // fresh registration) skips it. Client-portal selection redirects out
+  // to /client-portal/login so each side keeps its own dedicated form.
+  const portalParam = searchParams.get("portal");
+  const [step, setStep] = useState<"select" | "agency">(
+    portalParam === "agency" || registered ? "agency" : "select"
+  );
 
   // If a staffing user is already signed in, go to dashboard
   useEffect(() => {
@@ -135,9 +141,87 @@ function LoginContent() {
             Back to home
           </Link>
 
+          {step === "select" && (
+            <>
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
+                <p className="text-gray-500 mt-1">Which portal are you signing in to?</p>
+              </div>
+
+              {hasClientSession && (
+                <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="flex-1 truncate">
+                    Currently in client portal as <span className="font-medium text-gray-800">{(session?.user as any)?.email || session?.user?.name}</span>
+                  </span>
+                  <Link href="/client-portal/dashboard" className="text-indigo-600 hover:text-indigo-700 font-medium whitespace-nowrap">
+                    Go there →
+                  </Link>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setStep("agency")}
+                  className="group w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <Briefcase className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Agency Workspace</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      I work at a recruiting firm managing searches and candidates.
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 shrink-0 mt-1 transition-colors" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/client-portal/login")}
+                  className="group w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/30 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Client Portal</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      I&apos;m a hiring company reviewing candidates my recruiters shared.
+                    </p>
+                    <p className="text-[11px] text-emerald-700 mt-1.5">
+                      You already pay a fee — no need to pay for the ATS.
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-500 shrink-0 mt-1 transition-colors" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-500 text-center mt-8">
+                Don&apos;t have an account?{" "}
+                <Link href="/register" className="text-indigo-600 font-medium hover:underline">
+                  Start free trial
+                </Link>
+              </p>
+            </>
+          )}
+
+          {step === "agency" && (
+          <>
+          <button
+            type="button"
+            onClick={() => setStep("select")}
+            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-4 -mt-2"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            Back to portal selection
+          </button>
+
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-            <p className="text-gray-500 mt-1">Sign in to your account to continue.</p>
+            <p className="text-gray-500 mt-1">Sign in to your agency workspace.</p>
           </div>
 
           {hasClientSession && (
@@ -178,21 +262,6 @@ function LoginContent() {
                 </svg>
                 Continue with Google
               </button>
-              {FEATURES.microsoftIntegration && (
-                <button
-                  type="button"
-                  onClick={() => signIn("azure-ad", { callbackUrl: "/dashboard" })}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
-                  Continue with Microsoft
-                </button>
-              )}
             </div>
 
             <div className="relative my-6">
@@ -249,21 +318,8 @@ function LoginContent() {
               Start free trial
             </Link>
           </p>
-
-          <div className="mt-6 border-t border-gray-100 pt-5 text-center">
-            <p className="text-xs text-gray-500">
-              Are you a hiring client?
-            </p>
-            <Link
-              href="/client-portal/login"
-              className="text-sm text-emerald-600 font-medium hover:underline inline-block mt-1"
-            >
-              Sign in to the Client Portal →
-            </Link>
-            <p className="text-[11px] text-gray-400 mt-1">
-              You already pay a fee — no need to pay for the ATS as well.
-            </p>
-          </div>
+          </>
+          )}
         </div>
       </div>
     </div>
