@@ -25,7 +25,6 @@ model Organization {
   candidates   Candidate[]
   contacts     Contact[]
   jobs         Job[]
-  deals        Deal[]
   placements   Placement[]
   subscription Subscription?
   activities   Activity[]
@@ -131,8 +130,8 @@ model Client {
   jobs         Job[]
   clientUsers  ClientUser[]
   contacts     Contact[]
-  deals        Deal[]
   placements   Placement[]
+  documents    Document[]
   portalTokens ClientPortalToken[]
   clientJobs   ClientJob[]
   pipelineStages ClientPipelineStage[]
@@ -161,7 +160,6 @@ model Contact {
   client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
   jobs         Job[]        @relation("HiringManager")
-  deals        Deal[]
   interviews   InterviewClientContact[]
 
   @@index([clientId])
@@ -548,19 +546,19 @@ model Document {
   candidateId  String?
   jobId        String?
   clientJobId  String?
-  dealId       String?
+  clientId     String?
   uploadedBy   String
   createdAt    DateTime @default(now())
 
   candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
-  deal      Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  client    Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
   @@index([clientJobId])
-  @@index([dealId])
+  @@index([clientId])
 }
 
 // ─── ACTIVITIES ───
@@ -581,42 +579,6 @@ model Activity {
 
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([candidateId])
-}
-
-// ─── DEALS (BD Pipeline) ───
-
-model Deal {
-  id             String     @id @default(cuid())
-  title          String
-  value          Decimal?
-  currency       String     @default("USD")
-  probability    Int?       @default(50)
-  stage          DealStage  @default(LEAD)
-  expectedClose  DateTime?
-  notes          String?
-  clientId       String
-  contactId      String?
-  ownerId        String
-  organizationId String
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  client       Client       @relation(fields: [clientId], references: [id])
-  contact      Contact?     @relation(fields: [contactId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id])
-  documents    Document[]
-
-  @@index([organizationId])
-  @@index([organizationId, stage])
-}
-
-enum DealStage {
-  LEAD
-  QUALIFIED
-  PITCHED
-  NEGOTIATION
-  WON
-  LOST
 }
 
 // ─── PLACEMENTS ───

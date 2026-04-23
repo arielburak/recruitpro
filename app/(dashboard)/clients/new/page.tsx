@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, Upload, FileText, X, Paperclip } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
@@ -65,9 +65,30 @@ function NewClientContent() {
     defaultCurrency: "USD",
     defaultFeeAmount: "",
   });
+  // Attachments staged before the client exists. We can't upload until
+  // we have a clientId from the POST response, so they live in memory
+  // here and we flush them right after creation.
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   function updateField(field: string, value: string) {
     setFormValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function addAttachments(files: FileList | null) {
+    if (!files) return;
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    const next: File[] = [];
+    for (const f of Array.from(files)) {
+      if (f.size === 0) continue;
+      if (f.size > MAX_FILE_SIZE) continue;
+      next.push(f);
+    }
+    if (next.length === 0) return;
+    setAttachments((prev) => [...prev, ...next]);
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
@@ -154,6 +175,27 @@ function NewClientContent() {
     }
 
     const client = await res.json();
+
+    // Flush any staged attachments. Upload failures are logged but
+    // shouldn't block the creation flow — the client already exists
+    // and the user can re-upload from the detail page.
+    if (attachments.length > 0) {
+      await Promise.all(
+        attachments.map(async (file) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          try {
+            await fetch(`/api/clients/${client.id}/documents`, {
+              method: "POST",
+              body: fd,
+            });
+          } catch (e) {
+            console.error("[client create] attachment upload failed:", e);
+          }
+        })
+      );
+    }
+
     if (returnTo) {
       // Hand control back to the original flow (e.g. Job creation) with the
       // new client id so it can re-select and absorb the fee defaults.
@@ -341,6 +383,54 @@ function NewClientContent() {
                   </div>
                 </div>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5 text-gray-400" />
+                Attachments
+              </Label>
+              <p className="text-xs text-gray-400 -mt-0.5">
+                MSA, fee schedule, NDAs, anything you want to pin on this client. Max 10MB each.
+              </p>
+              {attachments.length > 0 && (
+                <div className="space-y-1.5">
+                  {attachments.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{f.name}</p>
+                          <p className="text-[11px] text-gray-400">{(f.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(i)}
+                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-5 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors">
+                <Upload className="h-5 w-5 text-gray-400 mb-1.5" />
+                <span className="text-xs text-gray-500">
+                  {attachments.length === 0 ? "Add files" : "Add more files"}
+                </span>
+                <span className="text-[11px] text-gray-400 mt-0.5">PDF, DOCX, XLSX, CSV, TXT, images</span>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg"
+                  onChange={(e) => {
+                    addAttachments(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
             </div>
             <div className="space-y-2">
               <Label>Notes</Label>

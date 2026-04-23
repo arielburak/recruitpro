@@ -25,6 +25,12 @@ export default function PostJobPage() {
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
+  // True only when the title was populated from a JD upload. Any manual
+  // edit clears it — this is what gates the "Auto-filled from document"
+  // hint so it doesn't appear preemptively just because a user typed a
+  // title and description by hand.
+  const [titleFromDoc, setTitleFromDoc] = useState(false);
+  const [descriptionFromDoc, setDescriptionFromDoc] = useState(false);
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
   const descRef = useRef<HTMLTextAreaElement>(null);
@@ -42,10 +48,14 @@ export default function PostJobPage() {
 
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
+        setDescriptionFromDoc(true);
         // Always overwrite structured fields with the parsed JD — the document
         // is the source of truth, regardless of whatever the user typed before.
         if (data.fields) {
-          if (data.fields.title) setTitle(data.fields.title);
+          if (data.fields.title) {
+            setTitle(data.fields.title);
+            setTitleFromDoc(true);
+          }
           if (data.fields.location) setLocation(data.fields.location);
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
@@ -197,7 +207,11 @@ export default function PostJobPage() {
             <div className="space-y-2">
               <Label htmlFor="title">
                 Job Title *
-                {title && description && <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span>}
+                {titleFromDoc && (
+                  <span className="text-xs text-green-600 font-normal ml-2">
+                    Auto-filled from document
+                  </span>
+                )}
               </Label>
               <Input
                 id="title"
@@ -205,14 +219,21 @@ export default function PostJobPage() {
                 placeholder="e.g. Senior Software Engineer"
                 required
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (titleFromDoc) setTitleFromDoc(false);
+                }}
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">
                 Job Description
-                {description ? <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span> : ""}
+                {descriptionFromDoc && (
+                  <span className="text-xs text-green-600 font-normal ml-2">
+                    Auto-filled from document
+                  </span>
+                )}
               </Label>
               <Textarea
                 ref={descRef}
@@ -221,7 +242,10 @@ export default function PostJobPage() {
                 rows={description ? 12 : 5}
                 placeholder="Describe the role, responsibilities, team structure..."
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (descriptionFromDoc) setDescriptionFromDoc(false);
+                }}
               />
             </div>
 
