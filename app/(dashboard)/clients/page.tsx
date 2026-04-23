@@ -13,6 +13,11 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
+  // "all" = no filter, "RECRUITING" or "STAFF_AUG" filters the list
+  // by engagement model. Empty/legacy engagementType is treated as
+  // RECRUITING (that's the schema default) so legacy rows show up
+  // under Headhunting.
+  const [engagementFilter, setEngagementFilter] = useState<"all" | "RECRUITING" | "STAFF_AUG">("all");
 
   useEffect(() => {
     fetch("/api/clients")
@@ -28,10 +33,24 @@ export default function ClientsPage() {
     setClients(clients.filter((c) => c.id !== id));
   }
 
+  const engagementCounts = useMemo(() => {
+    let recruiting = 0;
+    let staffAug = 0;
+    for (const c of clients) {
+      if (c.engagementType === "STAFF_AUG") staffAug++;
+      else recruiting++;
+    }
+    return { recruiting, staffAug };
+  }, [clients]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return clients.filter((c) => {
       if (!dateInRange(c.createdAt, dateRange)) return false;
+      if (engagementFilter !== "all") {
+        const type = c.engagementType === "STAFF_AUG" ? "STAFF_AUG" : "RECRUITING";
+        if (type !== engagementFilter) return false;
+      }
       if (!q) return true;
       const primary = c.contacts?.[0];
       const primaryName = primary ? `${primary.firstName || ""} ${primary.lastName || ""}` : "";
@@ -42,7 +61,7 @@ export default function ClientsPage() {
         (primary?.email || "").toLowerCase().includes(q)
       );
     });
-  }, [clients, search, dateRange]);
+  }, [clients, search, dateRange, engagementFilter]);
 
   return (
     <div className="space-y-4">
@@ -66,6 +85,15 @@ export default function ClientsPage() {
             className="pl-10 h-9 text-sm"
           />
         </div>
+        <select
+          value={engagementFilter}
+          onChange={(e) => setEngagementFilter(e.target.value as "all" | "RECRUITING" | "STAFF_AUG")}
+          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+        >
+          <option value="all">All types ({clients.length})</option>
+          <option value="RECRUITING">Headhunting / Recruiting ({engagementCounts.recruiting})</option>
+          <option value="STAFF_AUG">Staff Aug / Outsourcing ({engagementCounts.staffAug})</option>
+        </select>
         <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
       </div>
 
@@ -103,6 +131,11 @@ export default function ClientsPage() {
                     {c.name.slice(0, 2).toUpperCase()}
                   </div>
                   <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
+                  {c.engagementType === "STAFF_AUG" && (
+                    <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">
+                      Staff Aug
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 truncate">{c.industry || "—"}</p>
