@@ -75,11 +75,21 @@ function BillingContent() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {subscription?.isComp && (
+                <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+                  Your workspace is on a <strong>complimentary plan</strong> —
+                  no billing required. All features stay unlocked.
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Status</span>
-                <Badge className={statusColors[subscription?.status || "TRIALING"]}>
-                  {subscription?.status || "TRIALING"}
-                </Badge>
+                {subscription?.isComp ? (
+                  <Badge className="bg-emerald-100 text-emerald-800">COMPLIMENTARY</Badge>
+                ) : (
+                  <Badge className={statusColors[subscription?.status || "TRIALING"]}>
+                    {subscription?.status || "TRIALING"}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500 flex items-center gap-2">
@@ -114,22 +124,24 @@ function BillingContent() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-2">
-            {(!subscription?.stripeSubscriptionId ||
-              subscription?.status === "TRIALING") && (
-              <Button onClick={handleCheckout} className="flex-1">
-                {subscription?.status === "TRIALING"
-                  ? "Add Payment Method"
-                  : "Subscribe Now"}
-              </Button>
-            )}
-            {subscription?.stripeSubscriptionId &&
-              !subscription.stripeCustomerId.startsWith("pending_") && (
-                <Button variant="outline" onClick={handleManageBilling} className="flex-1">
-                  Manage Subscription
+          {!subscription?.isComp && (
+            <div className="flex gap-2">
+              {(!subscription?.stripeSubscriptionId ||
+                subscription?.status === "TRIALING") && (
+                <Button onClick={handleCheckout} className="flex-1">
+                  {subscription?.status === "TRIALING"
+                    ? "Add Payment Method"
+                    : "Subscribe Now"}
                 </Button>
               )}
-          </div>
+              {subscription?.stripeSubscriptionId &&
+                !subscription.stripeCustomerId.startsWith("pending_") && (
+                  <Button variant="outline" onClick={handleManageBilling} className="flex-1">
+                    Manage Subscription
+                  </Button>
+                )}
+            </div>
+          )}
 
           <Card>
             <CardContent className="p-6">

@@ -9,7 +9,7 @@
  */
 export async function register() {
   // Skip on edge runtime — Prisma + Neon adapter only runs on the Node
-  // runtime, and the migration doesn't need to run twice.
+  // runtime, and the migrations don't need to run twice.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   try {
@@ -30,5 +30,20 @@ export async function register() {
     // Don't block server startup on a migration failure — log and move on.
     // Operator can rerun via `ts-node scripts/migrate-stages-to-canonical.ts`.
     console.error("[stages-migration] failed:", err);
+  }
+
+  // One-shot: grandfather every pre-cutoff org into "free forever" so
+  // all current test accounts stay unlocked. Idempotent — after the
+  // first successful run this is a ~0-row updateMany.
+  try {
+    const { grandfatherExistingOrgs } = await import("./lib/migrations/grandfather-orgs");
+    const stats = await grandfatherExistingOrgs();
+    if (stats.comped > 0) {
+      console.log(
+        `[grandfather-orgs] comped ${stats.comped} pre-${stats.cutoff} subscriptions in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[grandfather-orgs] failed:", err);
   }
 }

@@ -750,6 +750,11 @@ model Subscription {
   trialEndsAt          DateTime?
   currentPeriodEnd     DateTime?
   seats                Int                @default(1)
+  // Complimentary / free-forever flag. Used for founding-team orgs,
+  // partners, long-running test accounts — anyone we want to keep
+  // unlocked without tying them to a Stripe subscription. When true,
+  // subscription checks pass regardless of status/trial.
+  isComp               Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 

@@ -7,18 +7,19 @@ import { getClientContext } from "@/lib/tenant";
 // The client portal's "Invite a Recruiter" picker uses this to show live
 // feedback while the user types:
 //   - "Found · Nick Cuello at Alphabridge" if the email belongs to a
-//     registered User whose firm has an active/trialing subscription
+//     registered User
 //   - "No account — we'll email them a signup link" otherwise
 //
 // We also flag if this email was already invited to the current job so
 // the UI can disable Send and say so up-front instead of 400-ing on
 // submit.
 //
-// Privacy note: this is the same resolution that POST invite-firm has
-// always done silently — we're just surfacing the result before the
-// action. We restrict User matches to firms with a live subscription
-// (same filter as the firms search) to avoid leaking random platform
-// Users.
+// Resolution is aligned with POST invite-firm: a plain findUnique by
+// email, no subscription filter. Earlier versions gated by sub status
+// here but not in the invite POST, which caused "No account found" to
+// show for recruiters whose firm had an expired trial — confusing and
+// inconsistent. The subscription check lives at accept time where the
+// user gets a clear message about renewing.
 export async function GET(request: Request) {
   try {
     const ctx = await getClientContext();
@@ -31,24 +32,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ email, shape: "invalid" });
     }
 
-    const now = new Date();
-
     const [user, engagement, pending] = await Promise.all([
-      prisma.user.findFirst({
-        where: {
-          email,
-          organization: {
-            subscription: {
-              OR: [
-                { status: "ACTIVE" },
-                {
-                  status: "TRIALING",
-                  OR: [{ trialEndsAt: null }, { trialEndsAt: { gte: now } }],
-                },
-              ],
-            },
-          },
-        },
+      prisma.user.findUnique({
+        where: { email },
         select: {
           id: true,
           name: true,

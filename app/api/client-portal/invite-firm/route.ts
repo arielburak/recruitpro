@@ -109,7 +109,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // b) Not on the platform yet → pending invite + email
+    const baseUrl =
+      process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
+    // b) Not on the platform yet → pending invite + signup email
     if (!user) {
       await prisma.pendingFirmInvite.create({
         data: {
@@ -121,10 +125,6 @@ export async function POST(request: Request) {
       });
 
       try {
-        const baseUrl =
-          process.env.NEXTAUTH_URL ||
-          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-
         await getResend().emails.send({
           from: `Recruiting ATS <${process.env.EMAIL_FROM || "noreply@recruitingats.com"}>`,
           to: normalizedEmail,
@@ -144,12 +144,18 @@ export async function POST(request: Request) {
             </div>
           `,
         });
-      } catch {}
+      } catch (e) {
+        // Surface email failures in logs so we can tell a "nothing
+        // arrived" report apart from "sent but went to spam". Don't
+        // block the invite — the PendingFirmInvite row lets the
+        // recipient still claim the invite on manual registration.
+        console.error("[invite-firm] signup email failed:", e);
+      }
 
       return NextResponse.json({ sent: true, pending: true });
     }
 
-    // a) Registered user → person-level engagement
+    // a) Registered user → person-level engagement, notify them directly
     const engagement = await prisma.firmEngagement.create({
       data: {
         clientJobId,
@@ -160,10 +166,9 @@ export async function POST(request: Request) {
       },
     });
 
-    // Notify only the invited person, not their whole firm. Firm admins
-    // still see the engagement via the visibility rule in /api/engagements
-    // so they retain oversight — the notification is just a "you've been
-    // tapped for a search" nudge to the right person.
+    // In-app notification for the specific invited user. Firm admins
+    // don't get pinged — that's the whole point of person-level
+    // invites.
     try {
       await prisma.userNotification.create({
         data: {
@@ -174,7 +179,40 @@ export async function POST(request: Request) {
           link: "/engagements",
         },
       });
-    } catch {}
+    } catch (e) {
+      console.error("[invite-firm] in-app notification failed:", e);
+    }
+
+    // Also email them. Even registered users expect the "you've been
+    // invited" notification in their inbox — in-app alone is easy to
+    // miss. Different copy than the signup path: we know who they are
+    // and where they're going.
+    try {
+      await getResend().emails.send({
+        from: `Recruiting ATS <${process.env.EMAIL_FROM || "noreply@recruitingats.com"}>`,
+        to: normalizedEmail,
+        subject: `${job.client.name} invited you to work on ${job.title}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 20px;">
+            <p style="color: #6b7280; font-size: 13px; margin-bottom: 4px;">New search request</p>
+            <h2 style="margin: 0 0 8px 0;">${job.title}</h2>
+            <p style="color: #374151; margin: 0 0 16px 0;">
+              <strong>${job.client.name}</strong> would like <strong>${user.name || "you"}</strong> to work on this role.
+            </p>
+            ${message ? `<blockquote style="border-left: 3px solid #e5e7eb; margin: 0 0 16px 0; padding: 8px 12px; color: #4b5563; font-size: 14px;">${message}</blockquote>` : ""}
+            <p>Open it in Recruiting ATS to accept or decline:</p>
+            <a href="${baseUrl}/engagements" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
+              Review the request
+            </a>
+            <p style="margin-top: 16px; font-size: 12px; color: #9ca3af;">
+              You're receiving this because ${job.client.name} invited you specifically. Only you (and your firm's admins) can see this request.
+            </p>
+          </div>
+        `,
+      });
+    } catch (e) {
+      console.error("[invite-firm] engagement email failed:", e);
+    }
 
     return NextResponse.json(engagement, { status: 201 });
   } catch (error: any) {
