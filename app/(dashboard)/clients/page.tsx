@@ -33,11 +33,13 @@ export default function ClientsPage() {
     return clients.filter((c) => {
       if (!dateInRange(c.createdAt, dateRange)) return false;
       if (!q) return true;
+      const primary = c.contacts?.[0];
+      const primaryName = primary ? `${primary.firstName || ""} ${primary.lastName || ""}` : "";
       return (
         c.name.toLowerCase().includes(q) ||
         (c.industry || "").toLowerCase().includes(q) ||
-        (c.contactName || "").toLowerCase().includes(q) ||
-        (c.contactEmail || "").toLowerCase().includes(q)
+        primaryName.toLowerCase().includes(q) ||
+        (primary?.email || "").toLowerCase().includes(q)
       );
     });
   }, [clients, search, dateRange]);
@@ -85,7 +87,7 @@ export default function ClientsPage() {
           <div className="grid grid-cols-[1fr_120px_140px_1fr_70px_36px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
             <div>Company</div>
             <div>Industry</div>
-            <div>Contact</div>
+            <div>Primary contact</div>
             <div>Email</div>
             <div className="text-right">Jobs</div>
             <div></div>
@@ -106,11 +108,17 @@ export default function ClientsPage() {
                   <p className="text-xs text-gray-500 truncate">{c.industry || "—"}</p>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-gray-600 truncate">{c.contactName || "—"}</p>
+                  {c.contacts?.[0] ? (
+                    <p className="text-sm text-gray-600 truncate">
+                      {c.contacts[0].firstName} {c.contacts[0].lastName}
+                    </p>
+                  ) : (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
                 </div>
                 <div className="min-w-0">
-                  {c.contactEmail ? (
-                    <p className="text-xs text-gray-400 truncate">{c.contactEmail}</p>
+                  {c.contacts?.[0]?.email ? (
+                    <p className="text-xs text-gray-400 truncate">{c.contacts[0].email}</p>
                   ) : (
                     <span className="text-xs text-gray-300">—</span>
                   )}

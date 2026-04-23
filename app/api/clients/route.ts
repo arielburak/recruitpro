@@ -15,18 +15,46 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
     if (search) {
+      // Match by company info OR by any contact linked to the company.
+      // Legacy inline contactName/Email fields are intentionally out of
+      // the filter — they're no longer the source of truth.
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
         { industry: { contains: search, mode: "insensitive" } },
-        { contactName: { contains: search, mode: "insensitive" } },
-        { contactEmail: { contains: search, mode: "insensitive" } },
+        {
+          contacts: {
+            some: {
+              OR: [
+                { firstName: { contains: search, mode: "insensitive" } },
+                { lastName: { contains: search, mode: "insensitive" } },
+                { email: { contains: search, mode: "insensitive" } },
+              ],
+            },
+          },
+        },
       ];
     }
+
+    // Include the primary contact so the list row can show a real
+    // "who to contact" column instead of the legacy inline fields.
+    const include = {
+      _count: { select: { jobs: true } },
+      contacts: {
+        where: { isPrimary: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          title: true,
+        },
+        take: 1,
+      },
+    };
 
     if (!paginated) {
       const clients = await prisma.client.findMany({
         where,
-        include: { _count: { select: { jobs: true } } },
+        include,
         orderBy: { name: "asc" },
       });
       return NextResponse.json(clients);
@@ -35,7 +63,7 @@ export async function GET(request: NextRequest) {
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
         where,
-        include: { _count: { select: { jobs: true } } },
+        include,
         orderBy: { name: "asc" },
         skip: (page - 1) * pageSize,
         take: pageSize,

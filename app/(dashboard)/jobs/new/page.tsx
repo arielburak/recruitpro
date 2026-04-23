@@ -37,6 +37,7 @@ type JobDraft = {
   title: string;
   titleFromDoc: boolean;
   description: string;
+  descriptionFromDoc: boolean;
   location: string;
   workMode: string;
   currency: string;
@@ -60,10 +61,11 @@ function NewJobContent() {
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
-  // True only after a JD upload has populated `title` for the user. Lets us
-  // hide the "Auto-filled from document" hint when the recruiter typed the
-  // title themselves; cleared on any manual edit.
+  // True only after a JD upload has populated the fields for the user.
+  // Lets us hide the "Auto-filled from document" hint when the recruiter
+  // typed the field themselves; cleared on any manual edit.
   const [titleFromDoc, setTitleFromDoc] = useState(false);
+  const [descriptionFromDoc, setDescriptionFromDoc] = useState(false);
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
   const descRef = useRef<HTMLTextAreaElement>(null);
@@ -165,6 +167,7 @@ function NewJobContent() {
       title,
       titleFromDoc,
       description,
+      descriptionFromDoc,
       location,
       workMode,
       currency,
@@ -199,6 +202,7 @@ function NewJobContent() {
       if (draft.title) setTitle(draft.title);
       if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
       if (draft.description) setDescription(draft.description);
+      if (draft.descriptionFromDoc) setDescriptionFromDoc(draft.descriptionFromDoc);
       if (draft.location) setLocation(draft.location);
       if (draft.workMode) setWorkMode(draft.workMode);
       if (draft.currency) setCurrency(draft.currency);
@@ -245,6 +249,7 @@ function NewJobContent() {
 
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
+        setDescriptionFromDoc(true);
         // Always overwrite structured fields with the parsed JD — the document
         // is the source of truth, regardless of whatever the user typed before.
         if (data.fields) {
@@ -587,14 +592,24 @@ function NewJobContent() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Description {description ? <span className="text-xs text-green-600 font-normal ml-2">Auto-filled from document</span> : ""}</Label>
+              <Label>
+                Description
+                {descriptionFromDoc && (
+                  <span className="text-xs text-green-600 font-normal ml-2">
+                    Auto-filled from document
+                  </span>
+                )}
+              </Label>
               <Textarea
                 ref={descRef}
                 name="description"
                 rows={description ? 12 : 4}
                 placeholder="Job description, requirements..."
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (descriptionFromDoc) setDescriptionFromDoc(false);
+                }}
               />
             </div>
             <div className="flex justify-end gap-2 pt-4">
