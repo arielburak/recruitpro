@@ -16,6 +16,7 @@ import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARR
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
+import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -378,6 +379,14 @@ export default function JobDetailPage() {
     stageId: string;
   } | null>(null);
 
+  // Pending placement creation triggered by dragging a candidate into the
+  // "Placed" stage. Held here so we can pop the Congrats + form dialog
+  // before the submission is actually flipped (POST /api/placements does
+  // the stage move server-side once the user confirms or skips).
+  const [pendingPlacement, setPendingPlacement] = useState<{
+    submission: any;
+  } | null>(null);
+
   async function persistMove(submissionId: string, stageId: string) {
     await fetch(`/api/submissions/${submissionId}`, {
       method: "PATCH",
@@ -392,9 +401,17 @@ export default function JobDetailPage() {
     const submission = job?.submissions?.find((s: any) => s.id === submissionId);
     const movingToSubmitted = target?.name === "Submitted";
     const notYetShared = submission && !submission.isSharedWithClient;
+    const movingToPlaced = target?.name === "Placed";
 
     if (movingToSubmitted && notYetShared) {
       setPendingShareMove({ submission, stageId });
+      return;
+    }
+
+    // Drop into the placement-creation flow only if there isn't already a
+    // placement for this submission (POST /api/placements would 409 anyway).
+    if (movingToPlaced && submission && !submission.placement) {
+      setPendingPlacement({ submission });
       return;
     }
 
@@ -1027,6 +1044,31 @@ export default function JobDetailPage() {
                 const move = pendingShareMove;
                 setPendingShareMove(null);
                 if (move) await persistMove(move.submission.id, move.stageId);
+              }}
+            />
+          )}
+          {pendingPlacement && (
+            <PlacementDialog
+              mode="congrats"
+              open={true}
+              onOpenChange={(open) => {
+                if (!open) setPendingPlacement(null);
+              }}
+              submissionId={pendingPlacement.submission.id}
+              candidateName={`${pendingPlacement.submission.candidate.firstName} ${pendingPlacement.submission.candidate.lastName}`}
+              jobTitle={job.title}
+              clientName={job.client?.name}
+              defaults={{
+                agreedSalary: pendingPlacement.submission.candidate.desiredSalary
+                  ? String(pendingPlacement.submission.candidate.desiredSalary)
+                  : undefined,
+                feeAmount: job.feeAmount ? String(job.feeAmount) : undefined,
+                feeType: (job.feeType as "PERCENTAGE" | "FLAT") || undefined,
+                paymentTerms: job.client?.defaultPaymentTerms ?? undefined,
+              }}
+              onSuccess={() => {
+                setPendingPlacement(null);
+                fetchJob();
               }}
             />
           )}
