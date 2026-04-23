@@ -315,10 +315,19 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       if (!res.ok) {
         setInviteSuccess(data.error || "Failed to invite");
       } else {
-        setInviteSuccess(data.sent ? "Email invitation sent!" : "Firm invited successfully!");
+        setInviteSuccess(
+          data.pending
+            ? "Signup email sent — they'll join and see this job on first login."
+            : "Invitation sent by email and in-app. Waiting for their response."
+        );
         setInviteEmail("");
         setInviteMessage("");
+        setInviteLookup(null);
+        // Pull the fresh job (so the new row appears in Assigned Firms)
+        // AND the updated suggestions book (so the person you just
+        // invited shows up for reuse on the next job).
         fetchJob();
+        loadInviteSuggestions();
       }
     } catch {
       setInviteSuccess("Something went wrong");
