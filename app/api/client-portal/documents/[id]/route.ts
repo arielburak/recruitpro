@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { getDownloadUrl } from "@vercel/blob";
+import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { validateClientPortalToken } from "@/lib/tokens";
 
+// Token-scoped document download for the (legacy) shareable-link client
+// portal flow. Same shape as the session-auth candidate doc route: we
+// stream the blob through the server instead of redirecting to a signed
+// URL, which was silently breaking when the browser tried to fetch a
+// private blob.
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -21,7 +26,6 @@ export async function GET(
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 403 });
     }
 
-    // Find the document and verify it belongs to a candidate shared with this client
     const document = await prisma.document.findFirst({
       where: {
         id,
@@ -34,15 +38,32 @@ export async function GET(
           },
         },
       },
+      select: { url: true, name: true },
     });
 
     if (!document) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    const downloadUrl = getDownloadUrl(document.url);
-    return NextResponse.redirect(downloadUrl);
+    const blobResult = await get(document.url, { access: "private" });
+
+    if (!blobResult || blobResult.statusCode === 304) {
+      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
+    }
+
+    return new NextResponse(blobResult.stream, {
+      status: 200,
+      headers: {
+        "Content-Type": blobResult.blob.contentType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(document.name)}"`,
+        "Content-Length": blobResult.blob.size.toString(),
+      },
+    });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[client-portal doc] download error:", error);
+    return NextResponse.json(
+      { error: error.message || "Download failed" },
+      { status: 500 }
+    );
   }
 }
