@@ -83,9 +83,6 @@ function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/client-portal/login" className="text-sm font-medium text-gray-500 hover:text-gray-700 px-3 py-2 transition-colors">
-            Client Portal
-          </Link>
           <Link href="/login" className="text-sm font-medium text-gray-700 hover:text-gray-900 px-4 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all">
             Sign In
           </Link>
@@ -189,8 +186,8 @@ function Hero() {
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Stop losing placements to spreadsheets and scattered emails. Recruiting ATS gives your firm a visual pipeline,
-            a client portal, and everything you need to place faster — from $15/seat/month.
+            Stop losing placements to spreadsheets and scattered emails. Recruiting ATS gives your firm a visual pipeline
+            and everything you need to place faster — from $15/seat/month.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-3">
@@ -200,13 +197,6 @@ function Hero() {
             >
               Start 5-Day Trial
               <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-            <Link
-              href="/client-portal/login"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-gray-600 text-lg font-semibold px-8 py-4 rounded-xl border-2 border-gray-200 hover:border-emerald-300 hover:text-emerald-700 bg-white transition-all hover:-translate-y-0.5"
-            >
-              <Building2 className="w-5 h-5" />
-              I&apos;m Hiring
             </Link>
           </div>
           <p className="text-sm text-gray-400 mb-12">5-day trial &middot; Credit card required &middot; Cancel anytime</p>
@@ -479,11 +469,11 @@ function Features() {
       ),
     },
     {
-      tab: "Marketplace",
+      tab: "Client Requests",
       icon: Handshake,
-      title: "Clients post jobs — you get hired",
-      desc: "Hiring companies sign up, post their open roles, and invite your firm to work on them. Accept with one click and a pipeline is auto-created.",
-      bullets: ["Clients sign up directly", "Job posting & firm discovery", "One-click engagement accept", "Auto-creates pipeline & client record"],
+      title: "Searches come straight to you",
+      desc: "When a client opens a new search in their portal, you get a notification with the full brief. Accept with one click and a pipeline is auto-created — no re-keying.",
+      bullets: ["Incoming search notifications", "Job + salary + requirements pre-filled", "One-click engagement accept", "Auto-creates pipeline & client record"],
       mockup: (
         <div className="space-y-3">
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
@@ -588,12 +578,12 @@ function TwoSides() {
     <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
-          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Two Sides, One Platform</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Built for everyone in the hiring process</h2>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto">Recruiters run the pipeline. Clients collaborate in real time. Everyone wins.</p>
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-widest mb-3">Everything in one place</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Built for recruiting firms</h2>
+          <p className="text-lg text-gray-500 max-w-2xl mx-auto">Run your pipeline, collaborate with your team, and keep your hiring clients in the loop — all from one workspace.</p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="max-w-xl mx-auto">
           {/* Recruiter */}
           <div className="relative group">
             <div className="absolute -inset-0.5 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
@@ -631,44 +621,6 @@ function TwoSides() {
               </div>
               <Link href="/register" className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 hover:shadow-xl">
                 Start Free Trial <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-
-          {/* Client */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
-            <div className="relative bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-xl transition-all duration-500 h-full">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
-                  <Building2 className="w-7 h-7 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">For Hiring Companies</h3>
-                  <p className="text-sm text-gray-500">Collaborate with your recruiting firms in one portal.</p>
-                </div>
-              </div>
-              <div className="space-y-3 mb-8">
-                {[
-                  { icon: FileText, text: "Post job descriptions & requirements" },
-                  { icon: Search, text: "Find and invite recruiting firms" },
-                  { icon: Eye, text: "Review candidate profiles & resumes" },
-                  { icon: Star, text: "Rate and give feedback on candidates" },
-                  { icon: MessageSquare, text: "Real-time chat with your recruiters" },
-                  { icon: Target, text: "Track progress across all your roles" },
-                  { icon: Shield, text: "Secure, branded portal experience" },
-                  { icon: TrendingUp, text: "Compare recruiting firm performance" },
-                ].map(({ icon: Icon, text }) => (
-                  <div key={text} className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0">
-                      <Icon className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <span className="text-sm text-gray-700">{text}</span>
-                  </div>
-                ))}
-              </div>
-              <Link href="/client-portal/login" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 text-white font-semibold py-3.5 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 hover:shadow-xl">
-                Open Client Portal <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
           </div>
@@ -1060,7 +1012,7 @@ function FAQ() {
   const questions = [
     { q: "How does the free trial work?", a: "You get 5 days of full access to try Recruiting ATS. A credit card is required at signup — we won't charge you until the trial ends. Solo is $15/seat/month (1 seat) and Team is $19/seat/month (2–10 seats). Cancel any time before the trial ends and you won't be billed." },
     { q: "Can I import data from my current ATS?", a: "Yes. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
-    { q: "How does the client portal work?", a: "You generate a shareable link for each client/job. Clients see candidate profiles (with salary info redacted), rate them, leave comments, and download resumes. Or they can sign up to manage all their searches in one place." },
+    { q: "How does the client portal work?", a: "The client portal is included with every Recruiting ATS plan. You invite each hiring client by email. They see the candidates you share, rate them, leave comments, chat with you, and track progress — all without ever touching your internal pipeline. Salary info is auto-redacted. Your clients don't pay a cent and don't need an account until you invite them." },
     { q: "Is my data secure?", a: "Yes. All data is encrypted in transit (TLS) and at rest. We run on managed Postgres (Neon) with per-organization isolation. We&apos;re not SOC 2 certified yet — that&apos;s on the roadmap, and we&apos;ll be transparent about it when we are." },
     { q: "What happens when I cancel?", a: "You can export all your data anytime. When you cancel, you retain read-only access through your billing period end. We never hold your data hostage." },
   ];
@@ -1122,13 +1074,6 @@ function FinalCTA() {
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
               </Link>
-              <Link
-                href="/client-portal/login"
-                className="inline-flex items-center justify-center gap-2 text-white/90 border-2 border-white/20 font-semibold text-lg px-8 py-4 rounded-xl hover:bg-white/10 transition-all hover:-translate-y-0.5"
-              >
-                <Building2 className="w-5 h-5" />
-                I&apos;m Hiring
-              </Link>
             </div>
           </div>
         </div>
@@ -1152,7 +1097,6 @@ function Footer() {
         <div className="flex items-center gap-6 flex-wrap justify-center">
           <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
           <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
-          <Link href="/client-portal/login" className="text-sm text-gray-500 hover:text-gray-700">Client Portal</Link>
           <Link href="/privacy" className="text-sm text-gray-500 hover:text-gray-700">Privacy</Link>
           <Link href="/terms" className="text-sm text-gray-500 hover:text-gray-700">Terms</Link>
         </div>
