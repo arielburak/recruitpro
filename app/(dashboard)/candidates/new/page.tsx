@@ -113,6 +113,16 @@ function NewCandidatePage() {
     if (formHandle && formHandle === matchHandle) {
       channels.push("LinkedIn");
     }
+    const formFirst = formValues.firstName.trim().toLowerCase();
+    const formLast = formValues.lastName.trim().toLowerCase();
+    if (
+      formFirst &&
+      formLast &&
+      m.firstName?.toLowerCase() === formFirst &&
+      m.lastName?.toLowerCase() === formLast
+    ) {
+      channels.push("name");
+    }
     return channels;
   }
 
@@ -133,11 +143,19 @@ function NewCandidatePage() {
     email?: string;
     phone?: string;
     linkedIn?: string;
+    firstName?: string;
+    lastName?: string;
   }): Promise<DuplicateMatch[]> {
     const email = (override?.email ?? formValues.email).trim();
     const phone = (override?.phone ?? formValues.phone).trim();
     const linkedIn = (override?.linkedIn ?? formValues.linkedIn).trim();
-    if (!email && !phone && !linkedIn) {
+    const firstName = (override?.firstName ?? formValues.firstName).trim();
+    const lastName = (override?.lastName ?? formValues.lastName).trim();
+    // The API only fires a name match when both first and last are
+    // supplied; mirroring that guard here avoids a query for the
+    // common "typing the first name" transition state.
+    const hasName = !!(firstName && lastName);
+    if (!email && !phone && !linkedIn && !hasName) {
       setDuplicateMatches([]);
       return [];
     }
@@ -147,6 +165,10 @@ function NewCandidatePage() {
       if (email) qs.set("email", email);
       if (phone) qs.set("phone", phone);
       if (linkedIn) qs.set("linkedIn", linkedIn);
+      if (hasName) {
+        qs.set("firstName", firstName);
+        qs.set("lastName", lastName);
+      }
       const res = await fetch(`/api/candidates/check-duplicate?${qs.toString()}`);
       if (!res.ok) {
         setDuplicateMatches([]);
@@ -426,7 +448,16 @@ function NewCandidatePage() {
                   name="firstName"
                   required
                   value={formValues.firstName}
-                  onChange={(e) => updateField("firstName", e.target.value)}
+                  onChange={(e) => {
+                    updateField("firstName", e.target.value);
+                    if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                  }}
+                  onBlur={(e) => void checkDuplicates({ firstName: e.target.value })}
+                  className={
+                    flaggedFields.has("name")
+                      ? "border-amber-400 ring-2 ring-amber-100"
+                      : ""
+                  }
                 />
               </div>
               <div className="space-y-2">
@@ -436,7 +467,16 @@ function NewCandidatePage() {
                   name="lastName"
                   required
                   value={formValues.lastName}
-                  onChange={(e) => updateField("lastName", e.target.value)}
+                  onChange={(e) => {
+                    updateField("lastName", e.target.value);
+                    if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                  }}
+                  onBlur={(e) => void checkDuplicates({ lastName: e.target.value })}
+                  className={
+                    flaggedFields.has("name")
+                      ? "border-amber-400 ring-2 ring-amber-100"
+                      : ""
+                  }
                 />
               </div>
             </div>
