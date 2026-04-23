@@ -13,6 +13,8 @@ import {
   Send,
   Search,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Clock,
   XCircle,
   Users,
@@ -74,10 +76,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSuggestions, setInviteSuggestions] = useState<InviteSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [inviteLookup, setInviteLookup] = useState<InviteLookup | null>(null);
   const [lookupPending, setLookupPending] = useState(false);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
+  // Per-firm collapsed state for the grouped contacts list. Firms default
+  // to expanded when the total list is short, collapsed otherwise.
+  const [collapsedFirms, setCollapsedFirms] = useState<Set<string>>(new Set());
 
   // Team member management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -150,16 +153,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchDocuments();
     fetchJobCandidates();
   }, [id]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // Debounced lookup: as the user types an email, resolve it against the
   // platform so we can show "Found — Nick Cuello at Alphabridge" or "No
@@ -994,101 +987,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   their whole firm — so you can pick a specific HM or POC.
                 </p>
 
-                <div ref={suggestionsRef} className="relative">
-                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email or search</label>
                   <Input
                     type="email"
                     value={inviteEmail}
-                    onChange={(e) => {
-                      setInviteEmail(e.target.value);
-                      setShowSuggestions(true);
-                    }}
-                    onFocus={() => setShowSuggestions(true)}
-                    placeholder="recruiter@firm.com"
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="recruiter@firm.com or search by name / firm"
                     className="text-sm"
                     autoComplete="off"
                   />
-                  {showSuggestions && (() => {
-                    const q = inviteEmail.trim().toLowerCase();
-                    const matches = inviteSuggestions.filter((s) =>
-                      !q ||
-                      s.email.toLowerCase().includes(q) ||
-                      (s.firmName || "").toLowerCase().includes(q) ||
-                      (s.name || "").toLowerCase().includes(q)
-                    );
-                    // Empty-state: no past invites at all. Instead of
-                    // hiding the dropdown (which makes the form feel
-                    // broken), render a gentle hint so the user knows
-                    // the picker is working and what to do next.
-                    if (inviteSuggestions.length === 0) {
-                      return (
-                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
-                          <p className="px-3 py-2 text-[11px] text-gray-500 leading-relaxed">
-                            No recruiters invited from this client yet. Type an
-                            email above — we&apos;ll tell you if they&apos;re
-                            already on Recruiting ATS or send them a signup link.
-                          </p>
-                        </div>
-                      );
-                    }
-                    if (matches.length === 0) return null;
-                    return (
-                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                          Previously invited
-                        </div>
-                        {matches.map((s) => (
-                          <button
-                            key={s.email}
-                            type="button"
-                            disabled={s.alreadyOnThisJob}
-                            onClick={() => {
-                              setInviteEmail(s.email);
-                              setShowSuggestions(false);
-                            }}
-                            className={`w-full text-left px-3 py-2 transition-colors ${
-                              s.alreadyOnThisJob
-                                ? "opacity-60 cursor-not-allowed"
-                                : "hover:bg-indigo-50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {s.name || s.email}
-                                </p>
-                                <p className="text-[11px] text-gray-500 truncate">
-                                  {s.email}
-                                  {s.firmName && <span className="text-gray-400"> · {s.firmName}</span>}
-                                </p>
-                              </div>
-                              {(() => {
-                                if (s.alreadyOnThisJob) {
-                                  return (
-                                    <span className="text-[10px] font-medium text-indigo-600 shrink-0">
-                                      already on this job
-                                    </span>
-                                  );
-                                }
-                                const pill: Record<InviteStatus, { label: string; className: string }> = {
-                                  accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
-                                  pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
-                                  email_sent: { label: "awaiting signup", className: "bg-gray-100 text-gray-600" },
-                                  declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
-                                };
-                                const p = pill[s.status];
-                                return (
-                                  <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
-                                    {p.label}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Live resolution for a freshly-typed email that isn't
@@ -1141,6 +1049,178 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         <span className="font-medium text-gray-700">{inviteLookup.email}</span>{" "}
                         a signup link to join Recruiting ATS.
                       </span>
+                    </div>
+                  );
+                })()}
+
+                {/* Your recruiter contacts — always-visible book of
+                    people this client has invited before, across all
+                    jobs. Grouped by firm when long, filtered as the
+                    user types in the email input. Sourced purely from
+                    this client's own past invites — never from the
+                    firm's internal user roster, which would leak the
+                    agency's team. */}
+                {(() => {
+                  if (inviteSuggestions.length === 0) {
+                    return (
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        You haven&apos;t invited anyone from this client yet.
+                        The first recruiter you invite shows up here for one-
+                        click reuse on future jobs.
+                      </p>
+                    );
+                  }
+                  const q = inviteEmail.trim().toLowerCase();
+                  const matches = inviteSuggestions.filter((s) =>
+                    !q ||
+                    s.email.toLowerCase().includes(q) ||
+                    (s.firmName || "").toLowerCase().includes(q) ||
+                    (s.name || "").toLowerCase().includes(q)
+                  );
+                  // Group by firmName. People we don't have a firm for
+                  // (pending email invites that never registered) fall
+                  // into a trailing "No firm yet" bucket.
+                  const NO_FIRM_KEY = "__no_firm__";
+                  const groups = new Map<string, { label: string; items: InviteSuggestion[] }>();
+                  for (const m of matches) {
+                    const key = m.firmName || NO_FIRM_KEY;
+                    const label = m.firmName || "No firm yet";
+                    const g = groups.get(key) || { label, items: [] };
+                    g.items.push(m);
+                    groups.set(key, g);
+                  }
+                  const groupList = Array.from(groups.entries())
+                    .sort((a, b) => {
+                      if (a[0] === NO_FIRM_KEY) return 1;
+                      if (b[0] === NO_FIRM_KEY) return -1;
+                      return a[1].label.localeCompare(b[1].label);
+                    });
+                  // Collapse policy: when the book gets busy (≥4 firms
+                  // or ≥10 people), only the largest firm stays
+                  // expanded by default so the form doesn't grow off-
+                  // screen. User can click any firm header to toggle.
+                  const totalFirms = groupList.length;
+                  const totalPeople = matches.length;
+                  const startsCollapsed = totalFirms >= 4 || totalPeople >= 10;
+                  const largestFirmKey = groupList.length > 0
+                    ? groupList.reduce((a, b) => (b[1].items.length > a[1].items.length ? b : a))[0]
+                    : null;
+                  const isCollapsed = (key: string) => {
+                    if (collapsedFirms.has(key)) return true;
+                    if (!startsCollapsed) return false;
+                    return key !== largestFirmKey;
+                  };
+                  const toggleFirm = (key: string) => {
+                    setCollapsedFirms((prev) => {
+                      const next = new Set(prev);
+                      const currentlyCollapsed = isCollapsed(key);
+                      if (currentlyCollapsed) next.delete(key);
+                      else next.add(key);
+                      // If we're starting from the collapse-policy
+                      // default and clicking to expand, we need to
+                      // explicitly uncollapse the default-collapsed
+                      // ones. Handled by deleting the key above.
+                      return next;
+                    });
+                  };
+
+                  if (matches.length === 0) {
+                    return (
+                      <p className="text-[11px] text-gray-400">
+                        No contacts match &ldquo;{q}&rdquo;.
+                      </p>
+                    );
+                  }
+
+                  const statusPill: Record<InviteStatus, { label: string; className: string }> = {
+                    accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
+                    pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
+                    email_sent: { label: "awaiting signup", className: "bg-gray-100 text-gray-600" },
+                    declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
+                  };
+
+                  return (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                          Your recruiter contacts
+                        </p>
+                        <span className="text-[10px] text-gray-400">{totalPeople}</span>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-gray-50/60 divide-y divide-gray-100 overflow-hidden">
+                        {groupList.map(([key, g]) => {
+                          const collapsed = isCollapsed(key);
+                          return (
+                            <div key={key}>
+                              <button
+                                type="button"
+                                onClick={() => toggleFirm(key)}
+                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                              >
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  {collapsed
+                                    ? <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
+                                    : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />}
+                                  <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
+                                  <span className="font-medium truncate">{g.label}</span>
+                                </span>
+                                <span className="text-[10px] text-gray-400 shrink-0">{g.items.length}</span>
+                              </button>
+                              {!collapsed && (
+                                <ul className="bg-white">
+                                  {g.items.map((s) => {
+                                    const selected = inviteEmail.trim().toLowerCase() === s.email;
+                                    return (
+                                      <li key={s.email}>
+                                        <button
+                                          type="button"
+                                          disabled={s.alreadyOnThisJob}
+                                          onClick={() => setInviteEmail(s.email)}
+                                          className={`w-full text-left px-2.5 py-1.5 transition-colors ${
+                                            s.alreadyOnThisJob
+                                              ? "opacity-60 cursor-not-allowed"
+                                              : selected
+                                              ? "bg-indigo-50"
+                                              : "hover:bg-indigo-50/70"
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                              <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                                {s.name || s.email}
+                                              </p>
+                                              {s.name && (
+                                                <p className="text-[10px] text-gray-400 truncate">
+                                                  {s.email}
+                                                </p>
+                                              )}
+                                            </div>
+                                            {(() => {
+                                              if (s.alreadyOnThisJob) {
+                                                return (
+                                                  <span className="text-[10px] font-medium text-indigo-600 shrink-0">
+                                                    on this job
+                                                  </span>
+                                                );
+                                              }
+                                              const p = statusPill[s.status];
+                                              return (
+                                                <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
+                                                  {p.label}
+                                                </span>
+                                              );
+                                            })()}
+                                          </div>
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })()}
