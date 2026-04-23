@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Upload, FileText, X, Paperclip } from "lucide-react";
+import { ArrowLeft, ExternalLink, Upload, FileText, X, Paperclip, Target, UsersRound, Check } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import Link from "next/link";
 
@@ -56,6 +56,11 @@ function NewClientContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [defaultFeeType, setDefaultFeeType] = useState("PERCENTAGE");
+  // How this client is engaged. "RECRUITING" = traditional headhunting
+  // (fee terms live on the client, auto-fill per search). "STAFF_AUG" =
+  // outsourcing / per-search economics — we hide the Default Fee Terms
+  // section entirely, every Job for this client fills fee separately.
+  const [engagementType, setEngagementType] = useState<"RECRUITING" | "STAFF_AUG">("RECRUITING");
 
   const [formValues, setFormValues] = useState({
     name: prefillName,
@@ -151,6 +156,10 @@ function NewClientContent() {
   async function actuallyCreate() {
     setLoading(true);
     setError("");
+    // For STAFF_AUG clients every search negotiates its own economics,
+    // so the client-level fee defaults aren't meaningful. We send null/
+    // unset values to keep the row clean.
+    const isRecruiting = engagementType === "RECRUITING";
     const res = await fetch("/api/clients", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,11 +168,13 @@ function NewClientContent() {
         industry: formValues.industry,
         website: formValues.website,
         notes: formValues.notes,
-        defaultCurrency: formValues.defaultCurrency || "USD",
-        defaultFeeType,
-        defaultFeeAmount: formValues.defaultFeeAmount
-          ? Number(formValues.defaultFeeAmount)
-          : null,
+        engagementType,
+        defaultCurrency: isRecruiting ? (formValues.defaultCurrency || "USD") : null,
+        defaultFeeType: isRecruiting ? defaultFeeType : null,
+        defaultFeeAmount:
+          isRecruiting && formValues.defaultFeeAmount
+            ? Number(formValues.defaultFeeAmount)
+            : null,
       }),
     });
 
@@ -243,6 +254,63 @@ function NewClientContent() {
           </CardHeader>
           <CardContent className="space-y-4">
             {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>}
+
+            {/* Engagement type picker — drives whether the rest of the
+                form asks for fee defaults (RECRUITING) or skips them
+                entirely (STAFF_AUG, every search negotiates its own). */}
+            <div className="space-y-2">
+              <Label>Engagement type</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {([
+                  {
+                    value: "RECRUITING" as const,
+                    icon: Target,
+                    title: "Headhunting / Recruiting",
+                    desc: "Traditional contingent/retained search. You set default fee terms for this client and every search picks them up.",
+                    tone: "indigo",
+                  },
+                  {
+                    value: "STAFF_AUG" as const,
+                    icon: UsersRound,
+                    title: "Staff Augmentation / Outsourcing",
+                    desc: "Every search negotiates its own economics. No defaults saved at the client level — you'll set fee + terms per search.",
+                    tone: "emerald",
+                  },
+                ]).map((opt) => {
+                  const selected = engagementType === opt.value;
+                  const ring = opt.tone === "indigo"
+                    ? "border-indigo-400 bg-indigo-50/60 ring-2 ring-indigo-100"
+                    : "border-emerald-400 bg-emerald-50/60 ring-2 ring-emerald-100";
+                  const iconBg = opt.tone === "indigo"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "bg-emerald-100 text-emerald-600";
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setEngagementType(opt.value)}
+                      className={`text-left rounded-xl border p-3.5 transition-all ${
+                        selected ? ring : "border-gray-200 hover:border-gray-300 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+                          <opt.icon className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <p className="text-sm font-semibold text-gray-900">{opt.title}</p>
+                            {selected && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                          </div>
+                          <p className="text-xs text-gray-500 leading-relaxed">{opt.desc}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label>Company Name *</Label>
               <Input
@@ -340,50 +408,61 @@ function NewClientContent() {
               </div>
             )}
 
-            <div className="border-t pt-4 mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Default Fee Terms</h3>
-              <p className="text-xs text-gray-400 mb-3">These terms will auto-fill when creating a Job Order for this client.</p>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Currency</Label>
-                  <CurrencyPicker
-                    name="defaultCurrency"
-                    defaultValue="USD"
-                    value={formValues.defaultCurrency}
-                    onChange={(c) => updateField("defaultCurrency", c)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Fee Type</Label>
-                  <select
-                    name="defaultFeeType"
-                    value={defaultFeeType}
-                    onChange={(e) => setDefaultFeeType(e.target.value)}
-                    className="w-full border rounded-md px-3 py-2 text-sm"
-                  >
-                    <option value="PERCENTAGE">Percentage</option>
-                    <option value="FLAT">Flat Fee</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Fee Amount</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                      {defaultFeeType === "FLAT" ? "$" : "%"}
-                    </span>
-                    <Input
-                      name="defaultFeeAmount"
-                      type="number"
-                      step="0.01"
-                      placeholder="e.g. 15"
-                      className="pl-7"
-                      value={formValues.defaultFeeAmount}
-                      onChange={(e) => updateField("defaultFeeAmount", e.target.value)}
+            {engagementType === "RECRUITING" ? (
+              <div className="border-t pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Default Fee Terms</h3>
+                <p className="text-xs text-gray-400 mb-3">These terms will auto-fill when creating a Job Order for this client.</p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <CurrencyPicker
+                      name="defaultCurrency"
+                      defaultValue="USD"
+                      value={formValues.defaultCurrency}
+                      onChange={(c) => updateField("defaultCurrency", c)}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fee Type</Label>
+                    <select
+                      name="defaultFeeType"
+                      value={defaultFeeType}
+                      onChange={(e) => setDefaultFeeType(e.target.value)}
+                      className="w-full border rounded-md px-3 py-2 text-sm"
+                    >
+                      <option value="PERCENTAGE">Percentage</option>
+                      <option value="FLAT">Flat Fee</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fee Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                        {defaultFeeType === "FLAT" ? "$" : "%"}
+                      </span>
+                      <Input
+                        name="defaultFeeAmount"
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 15"
+                        className="pl-7"
+                        value={formValues.defaultFeeAmount}
+                        onChange={(e) => updateField("defaultFeeAmount", e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="border-t pt-4 mt-4">
+                <div className="rounded-lg bg-emerald-50/60 border border-emerald-200 p-3 text-xs text-emerald-800 leading-relaxed">
+                  <p className="font-medium mb-1">No fee defaults on Staff Augmentation clients</p>
+                  <p className="text-emerald-700">
+                    You&apos;ll set the fee terms directly on each search when you create it. This keeps client-level terms blank when they don&apos;t apply across the whole relationship.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="h-3.5 w-3.5 text-gray-400" />

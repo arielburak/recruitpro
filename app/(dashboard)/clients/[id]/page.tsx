@@ -53,6 +53,7 @@ export default function ClientDetailPage() {
     industry: "",
     website: "",
     notes: "",
+    engagementType: "RECRUITING" as "RECRUITING" | "STAFF_AUG",
     defaultCurrency: "USD",
     defaultFeeType: "PERCENTAGE",
     defaultFeeAmount: "" as string | number,
@@ -64,6 +65,7 @@ export default function ClientDetailPage() {
       industry: client.industry || "",
       website: client.website || "",
       notes: client.notes || "",
+      engagementType: (client.engagementType === "STAFF_AUG" ? "STAFF_AUG" : "RECRUITING"),
       defaultCurrency: client.defaultCurrency || "USD",
       defaultFeeType: client.defaultFeeType || "PERCENTAGE",
       defaultFeeAmount: client.defaultFeeAmount ? Number(client.defaultFeeAmount) : "",
@@ -74,12 +76,21 @@ export default function ClientDetailPage() {
   async function saveClient() {
     setSavingClient(true);
     try {
+      // For staff-aug clients we don't persist fee defaults — every
+      // search sets its own. Force them to null on save so flipping
+      // between types doesn't leave stale values behind.
+      const isRecruiting = clientForm.engagementType === "RECRUITING";
       const res = await fetch(`/api/clients/${clientId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...clientForm,
-          defaultFeeAmount: clientForm.defaultFeeAmount ? Number(clientForm.defaultFeeAmount) : null,
+          defaultCurrency: isRecruiting ? clientForm.defaultCurrency : null,
+          defaultFeeType: isRecruiting ? clientForm.defaultFeeType : null,
+          defaultFeeAmount:
+            isRecruiting && clientForm.defaultFeeAmount
+              ? Number(clientForm.defaultFeeAmount)
+              : null,
         }),
       });
       if (!res.ok) {
@@ -251,6 +262,26 @@ export default function ClientDetailPage() {
           <CardContent>
             {!editingClient ? (
               <div className="space-y-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Engagement type</p>
+                  <div className="flex items-center gap-2">
+                    {client.engagementType === "STAFF_AUG" ? (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                          Staff Augmentation
+                        </span>
+                        <span className="text-xs text-gray-400">per-search economics</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-sm font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                          Headhunting / Recruiting
+                        </span>
+                        <span className="text-xs text-gray-400">defaults auto-fill per search</span>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Industry</p>
@@ -263,7 +294,7 @@ export default function ClientDetailPage() {
                     ) : <p className="text-sm text-gray-900">—</p>}
                   </div>
                 </div>
-                {(client.defaultFeeAmount || client.defaultCurrency) && (
+                {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency) && (
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Default Fee Terms</p>
                     <div className="flex items-center gap-3 text-sm">
@@ -303,46 +334,64 @@ export default function ClientDetailPage() {
                     <Input value={clientForm.website} onChange={(e) => setClientForm({ ...clientForm, website: e.target.value })} placeholder="https://..." />
                   </div>
                 </div>
-                <div className="border-t pt-3 mt-3">
-                  <p className="text-xs font-semibold text-gray-500 mb-2">Default Fee Terms</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Currency</Label>
-                      <CurrencyPicker
-                        compact
-                        value={clientForm.defaultCurrency}
-                        onChange={(c) => setClientForm({ ...clientForm, defaultCurrency: c })}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Fee Type</Label>
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                        value={clientForm.defaultFeeType}
-                        onChange={(e) => setClientForm({ ...clientForm, defaultFeeType: e.target.value })}
-                      >
-                        <option value="PERCENTAGE">Percentage</option>
-                        <option value="FLAT">Flat Fee</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Fee Amount</Label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                          {clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
-                        </span>
-                        <Input
-                          className="h-9 pl-7"
-                          type="number"
-                          step="0.01"
-                          placeholder="e.g. 15"
-                          value={clientForm.defaultFeeAmount}
-                          onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
+                <div className="space-y-2">
+                  <Label className="text-xs">Engagement type</Label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    value={clientForm.engagementType}
+                    onChange={(e) => setClientForm({ ...clientForm, engagementType: e.target.value as "RECRUITING" | "STAFF_AUG" })}
+                  >
+                    <option value="RECRUITING">Headhunting / Recruiting</option>
+                    <option value="STAFF_AUG">Staff Augmentation / Outsourcing</option>
+                  </select>
+                  <p className="text-[11px] text-gray-400">
+                    {clientForm.engagementType === "STAFF_AUG"
+                      ? "Every search negotiates its own fee terms — we won't save any defaults on this client."
+                      : "Fee defaults on this client auto-fill when you create a search."}
+                  </p>
+                </div>
+                {clientForm.engagementType === "RECRUITING" && (
+                  <div className="border-t pt-3 mt-3">
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Default Fee Terms</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Currency</Label>
+                        <CurrencyPicker
+                          compact
+                          value={clientForm.defaultCurrency}
+                          onChange={(c) => setClientForm({ ...clientForm, defaultCurrency: c })}
                         />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Fee Type</Label>
+                        <select
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          value={clientForm.defaultFeeType}
+                          onChange={(e) => setClientForm({ ...clientForm, defaultFeeType: e.target.value })}
+                        >
+                          <option value="PERCENTAGE">Percentage</option>
+                          <option value="FLAT">Flat Fee</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Fee Amount</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                            {clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
+                          </span>
+                          <Input
+                            className="h-9 pl-7"
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g. 15"
+                            value={clientForm.defaultFeeAmount}
+                            onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
                 <div className="space-y-2">
                   <Label>Notes</Label>
                   <Textarea rows={3} value={clientForm.notes} onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })} placeholder="Internal notes about this client..." />
