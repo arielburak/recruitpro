@@ -48,11 +48,15 @@ import { formatDate } from "@/lib/utils";
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
 
 type InviteSuggestion = {
-  email: string;
+  key: string;
+  // Null when the suggestion is a legacy firm-only entry (pre-person-
+  // level invite) — we know the firm but not a specific person.
+  email: string | null;
   firmName: string | null;
   name: string | null;
   lastInvitedAt: string;
   status: InviteStatus;
+  firmOnly: boolean;
   alreadyOnThisJob: boolean;
 };
 
@@ -166,7 +170,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       setLookupPending(false);
       return;
     }
-    const matchingSuggestion = inviteSuggestions.find((s) => s.email === raw);
+    const matchingSuggestion = inviteSuggestions.find((s) => s.email && s.email === raw);
     if (matchingSuggestion) {
       setInviteLookup(null);
       setLookupPending(false);
@@ -1082,7 +1086,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   const q = inviteEmail.trim().toLowerCase();
                   const matches = inviteSuggestions.filter((s) =>
                     !q ||
-                    s.email.toLowerCase().includes(q) ||
+                    (s.email || "").toLowerCase().includes(q) ||
                     (s.firmName || "").toLowerCase().includes(q) ||
                     (s.name || "").toLowerCase().includes(q)
                   );
@@ -1178,13 +1182,19 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               {!collapsed && (
                                 <ul className="bg-white">
                                   {g.items.map((s) => {
-                                    const selected = inviteEmail.trim().toLowerCase() === s.email;
+                                    const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
                                     return (
-                                      <li key={s.email}>
+                                      <li key={s.key}>
                                         <button
                                           type="button"
                                           disabled={s.alreadyOnThisJob}
-                                          onClick={() => setInviteEmail(s.email)}
+                                          onClick={() => {
+                                            if (s.alreadyOnThisJob) return;
+                                            // Firm-only rows have no email to prefill;
+                                            // clicking them clears the input so the
+                                            // user can type the specific person.
+                                            setInviteEmail(s.email || "");
+                                          }}
                                           className={`w-full text-left px-2.5 py-1.5 transition-colors ${
                                             s.alreadyOnThisJob
                                               ? "opacity-60 cursor-not-allowed"
@@ -1195,13 +1205,26 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                         >
                                           <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
-                                              <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                                {s.name || s.email}
-                                              </p>
-                                              {s.name && (
-                                                <p className="text-[10px] text-gray-400 truncate">
-                                                  {s.email}
-                                                </p>
+                                              {s.firmOnly ? (
+                                                <>
+                                                  <p className="text-xs font-medium text-gray-800 truncate">
+                                                    {s.firmName}
+                                                  </p>
+                                                  <p className="text-[10px] text-gray-400 truncate">
+                                                    Previously engaged · type the specific person&apos;s email
+                                                  </p>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                                    {s.name || s.email}
+                                                  </p>
+                                                  {s.name && (
+                                                    <p className="text-[10px] text-gray-400 truncate">
+                                                      {s.email}
+                                                    </p>
+                                                  )}
+                                                </>
                                               )}
                                             </div>
                                             {(() => {
@@ -1209,6 +1232,13 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                                 return (
                                                   <span className="text-[10px] font-medium text-indigo-600 shrink-0">
                                                     on this job
+                                                  </span>
+                                                );
+                                              }
+                                              if (s.firmOnly) {
+                                                return (
+                                                  <span className="text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                                                    firm only
                                                   </span>
                                                 );
                                               }
@@ -1247,7 +1277,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   // that this exact email is already on this job. Lets
                   // us give a clearer affordance than a 400 on submit.
                   const emailNow = inviteEmail.trim().toLowerCase();
-                  const matchingSuggestion = inviteSuggestions.find((s) => s.email === emailNow);
+                  const matchingSuggestion = inviteSuggestions.find((s) => s.email && s.email === emailNow);
                   const blocked =
                     matchingSuggestion?.alreadyOnThisJob === true ||
                     inviteLookup?.alreadyOnThisJob === true;
