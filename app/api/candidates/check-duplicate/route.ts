@@ -46,11 +46,9 @@ export async function GET(request: NextRequest) {
     const email = params.get("email")?.trim().toLowerCase() || "";
     const phone = phoneDigits(params.get("phone") || "");
     const linkedIn = linkedInHandle(params.get("linkedIn") || "");
-    const firstName = params.get("firstName")?.trim() || "";
-    const lastName = params.get("lastName")?.trim() || "";
 
     // Nothing to check — avoids an unnecessary query.
-    if (!email && !phone && !linkedIn && !(firstName && lastName)) {
+    if (!email && !phone && !linkedIn) {
       return NextResponse.json({ matches: [] });
     }
 
@@ -61,25 +59,6 @@ export async function GET(request: NextRequest) {
       queries.push(
         prisma.candidate.findMany({
           where: { ...orgFilter, email: { equals: email, mode: "insensitive" } },
-          select: MATCH_SELECT,
-          take: 5,
-        })
-      );
-    }
-
-    // Name match only fires when BOTH first and last are provided —
-    // firstName alone would collide too aggressively (every "John" in
-    // the DB). Both names combined is the duplicate-detection signal
-    // the roadmap asks for, and keeps the query precise enough that
-    // we can still return everything in a single select.
-    if (firstName && lastName) {
-      queries.push(
-        prisma.candidate.findMany({
-          where: {
-            ...orgFilter,
-            firstName: { equals: firstName, mode: "insensitive" },
-            lastName: { equals: lastName, mode: "insensitive" },
-          },
           select: MATCH_SELECT,
           take: 5,
         })
