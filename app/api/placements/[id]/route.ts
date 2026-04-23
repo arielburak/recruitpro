@@ -44,33 +44,81 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const { startDate, feeAmount, feePercentage, salary, invoiceStatus, guaranteePeriod, notes } = body;
+    const {
+      estimatedStartDate,
+      startDate,
+      feeAmount,
+      feePercentage,
+      salary,
+      invoiceStatus,
+      paymentTerms,
+      paymentDueDate,
+      guaranteePeriod,
+      notes,
+    } = body;
 
-    // Recalculate guarantee expiry if startDate or guaranteePeriod change
+    // Any anchor or terms touch triggers a re-resolve of derived dates.
+    const touchesGuarantee = startDate !== undefined || guaranteePeriod !== undefined;
+    const touchesPaymentDue =
+      paymentDueDate === undefined &&
+      (estimatedStartDate !== undefined ||
+        startDate !== undefined ||
+        paymentTerms !== undefined);
+
     let guaranteeExpiry: Date | undefined;
-    if (startDate !== undefined || guaranteePeriod !== undefined) {
-      // Need current placement to fill in missing values
+    let resolvedDue: Date | undefined;
+
+    if (touchesGuarantee || touchesPaymentDue) {
       const current = await prisma.placement.findFirst({
         where: { id, organizationId: ctx.organizationId },
       });
       if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-      const sd = startDate ? new Date(startDate) : current.startDate;
+      const sd =
+        startDate !== undefined
+          ? startDate
+            ? new Date(startDate)
+            : null
+          : current.startDate;
+      const esd =
+        estimatedStartDate !== undefined
+          ? estimatedStartDate
+            ? new Date(estimatedStartDate)
+            : null
+          : current.estimatedStartDate;
       const gp = guaranteePeriod ?? current.guaranteePeriod ?? 90;
-      if (sd) {
+      const pt = paymentTerms !== undefined ? paymentTerms : current.paymentTerms;
+
+      if (touchesGuarantee && sd) {
         guaranteeExpiry = new Date(sd);
         guaranteeExpiry.setDate(guaranteeExpiry.getDate() + gp);
+      }
+
+      if (touchesPaymentDue && pt != null) {
+        const anchor = sd ?? esd;
+        if (anchor) {
+          resolvedDue = new Date(anchor);
+          resolvedDue.setDate(resolvedDue.getDate() + pt);
+        }
       }
     }
 
     const updated = await prisma.placement.updateMany({
       where: { id, organizationId: ctx.organizationId },
       data: {
+        ...(estimatedStartDate !== undefined && {
+          estimatedStartDate: estimatedStartDate ? new Date(estimatedStartDate) : null,
+        }),
         ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
         ...(feeAmount !== undefined && { feeAmount }),
         ...(feePercentage !== undefined && { feePercentage }),
         ...(salary !== undefined && { salary }),
         ...(invoiceStatus !== undefined && { invoiceStatus }),
+        ...(paymentTerms !== undefined && { paymentTerms }),
+        ...(paymentDueDate !== undefined && {
+          paymentDueDate: paymentDueDate ? new Date(paymentDueDate) : null,
+        }),
+        ...(touchesPaymentDue && resolvedDue !== undefined && { paymentDueDate: resolvedDue }),
         ...(guaranteePeriod !== undefined && { guaranteePeriod }),
         ...(guaranteeExpiry !== undefined && { guaranteeExpiry }),
         ...(notes !== undefined && { notes }),
