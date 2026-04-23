@@ -36,12 +36,12 @@
 - [ ] Sacar "Sign in with Microsoft" del Free Trial (dejar Google + email/password)
 
 ### Onboarding — primera experiencia
-- [ ] Loom de onboarding autoplay al primer login (modal dismissible); dejar slot para un segundo video (feature tour)
 - [ ] Signup obligatorio: **industry** + **company size** (dropdowns)
 - [ ] Prefijo de teléfono default por geo-IP (AR → +54, US → +1, etc.) — override manual siempre disponible
 - [ ] Volver a mostrar el **nombre de la empresa** debajo del logo "Recruiting ATS" en el header
 - [ ] Banner destacado durante la **primera semana** (solo agencia) promoviendo "Migrar desde tu ATS actual" → CTA a flow de import
 - [ ] Apollo: trackear logins + eventos clave del onboarding y pushearlos a sequences de mail (seguimiento automatizado al usuario)
+- [ ] ~~Loom de onboarding autoplay al primer login~~ → **DIFERIDO** al final (junto con Calendly-like y landing polish)
 
 ### Workflows core
 - [ ] **Client → Firm invite**: cuando cliente invita una recruiting firm, obligarla a loguearse/registrarse

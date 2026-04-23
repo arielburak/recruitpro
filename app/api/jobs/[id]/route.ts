@@ -59,12 +59,14 @@ export async function GET(
               select: {
                 id: true, firstName: true, lastName: true,
                 currentTitle: true, currentCompany: true, location: true,
+                desiredSalary: true, salaryCurrency: true,
               },
             },
             stage: true,
             clientStage: {
               select: { id: true, name: true, color: true, order: true },
             },
+            placement: { select: { id: true } },
             _count: { select: { comments: true, ratings: true } },
           },
         },

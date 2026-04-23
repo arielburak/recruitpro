@@ -30,86 +30,153 @@ export async function GET() {
   }
 }
 
+// Resolve when the agency expects to be paid: anchor on startDate, fall back
+// to estimatedStartDate. Returns undefined if neither anchor nor terms exist.
+function computePaymentDueDate(
+  estimatedStartDate: Date | null | undefined,
+  startDate: Date | null | undefined,
+  paymentTerms: number | null | undefined
+): Date | undefined {
+  if (paymentTerms == null) return undefined;
+  const anchor = startDate ?? estimatedStartDate;
+  if (!anchor) return undefined;
+  const due = new Date(anchor);
+  due.setDate(due.getDate() + paymentTerms);
+  return due;
+}
+
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
     const body = await request.json();
 
-    const { submissionId, startDate, feeAmount, feePercentage, salary, guaranteePeriod, notes } = body;
+    const {
+      submissionId,
+      jobId: rawJobId,
+      clientId: rawClientId,
+      estimatedStartDate,
+      startDate,
+      feeAmount,
+      feePercentage,
+      salary,
+      paymentTerms,
+      paymentDueDate,
+      guaranteePeriod,
+      notes,
+    } = body;
 
-    if (!submissionId) {
-      return NextResponse.json(
-        { error: "submissionId is required" },
-        { status: 400 }
-      );
-    }
+    let jobId: string | undefined;
+    let clientId: string | undefined;
+    let candidateLabel = "candidate";
+    let jobTitle = "job";
 
-    // Fetch submission and validate it belongs to the org (via job)
-    const submission = await prisma.candidateSubmission.findFirst({
-      where: { id: submissionId },
-      include: {
-        job: {
-          select: { id: true, clientId: true, organizationId: true, title: true },
+    if (submissionId) {
+      // Submission-anchored placement (pipeline drag-to-Placed flow).
+      const submission = await prisma.candidateSubmission.findFirst({
+        where: { id: submissionId },
+        include: {
+          job: {
+            select: { id: true, clientId: true, organizationId: true, title: true },
+          },
+          candidate: { select: { firstName: true, lastName: true } },
         },
-        candidate: {
-          select: { firstName: true, lastName: true },
-        },
-      },
-    });
+      });
 
-    if (!submission || submission.job.organizationId !== ctx.organizationId) {
-      return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+      if (!submission || submission.job.organizationId !== ctx.organizationId) {
+        return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+      }
+
+      const existing = await prisma.placement.findUnique({ where: { submissionId } });
+      if (existing) {
+        return NextResponse.json(
+          { error: "A placement already exists for this submission" },
+          { status: 409 }
+        );
+      }
+
+      jobId = submission.job.id;
+      clientId = submission.job.clientId;
+      candidateLabel = `${submission.candidate.firstName} ${submission.candidate.lastName}`;
+      jobTitle = submission.job.title;
+    } else {
+      // Manual placement (no submission — recruiter is back-filling history
+      // or recording a placement that started outside the pipeline).
+      if (!rawJobId || !rawClientId) {
+        return NextResponse.json(
+          { error: "Either submissionId, or jobId + clientId, is required" },
+          { status: 400 }
+        );
+      }
+
+      const job = await prisma.job.findFirst({
+        where: { id: rawJobId, organizationId: ctx.organizationId },
+        select: { id: true, clientId: true, title: true },
+      });
+      if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      if (job.clientId !== rawClientId) {
+        return NextResponse.json(
+          { error: "Job does not belong to the given client" },
+          { status: 400 }
+        );
+      }
+
+      jobId = job.id;
+      clientId = job.clientId;
+      jobTitle = job.title;
     }
 
-    // Check if placement already exists for this submission
-    const existing = await prisma.placement.findUnique({
-      where: { submissionId },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { error: "A placement already exists for this submission" },
-        { status: 409 }
-      );
-    }
-
-    // Calculate guarantee expiry if startDate and guaranteePeriod are provided
-    let guaranteeExpiry: Date | undefined;
     const gp = guaranteePeriod ?? 90;
-    if (startDate) {
-      guaranteeExpiry = new Date(startDate);
-      guaranteeExpiry.setDate(guaranteeExpiry.getDate() + gp);
-    }
+    const startDateValue = startDate ? new Date(startDate) : null;
+    const estimatedValue = estimatedStartDate ? new Date(estimatedStartDate) : null;
+
+    const guaranteeExpiry = startDateValue
+      ? (() => {
+          const d = new Date(startDateValue);
+          d.setDate(d.getDate() + gp);
+          return d;
+        })()
+      : undefined;
+
+    const resolvedDue = paymentDueDate
+      ? new Date(paymentDueDate)
+      : computePaymentDueDate(estimatedValue, startDateValue, paymentTerms);
 
     const placement = await prisma.placement.create({
       data: {
-        submissionId,
-        jobId: submission.job.id,
-        clientId: submission.job.clientId,
+        submissionId: submissionId || null,
+        jobId: jobId!,
+        clientId: clientId!,
         organizationId: ctx.organizationId,
-        startDate: startDate ? new Date(startDate) : undefined,
+        estimatedStartDate: estimatedValue ?? undefined,
+        startDate: startDateValue ?? undefined,
         feeAmount,
         feePercentage,
         salary,
+        paymentTerms: paymentTerms ?? undefined,
+        paymentDueDate: resolvedDue ?? undefined,
         guaranteePeriod: gp,
         guaranteeExpiry,
         notes,
       },
     });
 
-    // Move submission to "Placed" stage if such a stage exists for the job
-    const placedStage = await prisma.pipelineStage.findFirst({
-      where: { jobId: submission.job.id, name: "Placed" },
-    });
-    if (placedStage) {
-      await prisma.candidateSubmission.update({
-        where: { id: submissionId },
-        data: { stageId: placedStage.id },
+    // For submission-anchored placements, also flip the submission to the
+    // canonical "Placed" stage so the pipeline matches the placement record.
+    if (submissionId) {
+      const placedStage = await prisma.pipelineStage.findFirst({
+        where: { jobId: jobId!, name: "Placed" },
       });
+      if (placedStage) {
+        await prisma.candidateSubmission.update({
+          where: { id: submissionId },
+          data: { stageId: placedStage.id },
+        });
+      }
     }
 
     await logActivity({
       action: "PLACEMENT_CREATED",
-      description: `Placed ${submission.candidate.firstName} ${submission.candidate.lastName} on ${submission.job.title}`,
+      description: `Placed ${candidateLabel} on ${jobTitle}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
