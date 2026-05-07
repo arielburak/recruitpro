@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { validateClientPortalToken } from "@/lib/tokens";
+import { sendCandidateFeedbackEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -54,6 +55,40 @@ export async function POST(request: Request) {
           clientUserId,
         },
       });
+    }
+
+    // Notify the recruiter who owns the candidate that feedback landed.
+    // Fire-and-forget — never block the client's feedback save if mail fails.
+    if (hasRating || hasComment) {
+      (async () => {
+        try {
+          const submission = await prisma.candidateSubmission.findUnique({
+            where: { id: submissionId },
+            include: {
+              candidate: { include: { owner: true } },
+              job: { include: { client: true } },
+            },
+          });
+          if (!submission?.candidate?.owner?.email) return;
+
+          const origin =
+            request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+
+          await sendCandidateFeedbackEmail({
+            to: submission.candidate.owner.email,
+            recruiterName: submission.candidate.owner.name || undefined,
+            candidateName: `${submission.candidate.firstName} ${submission.candidate.lastName}`,
+            jobTitle: submission.job.title,
+            clientCompanyName: submission.job.client.name,
+            reviewerName: clientName || "A client reviewer",
+            rating: hasRating ? rating : null,
+            comment: hasComment ? comment : null,
+            candidateUrl: `${origin}/candidates/${submission.candidateId}`,
+          });
+        } catch (err) {
+          console.error("[feedback] notification email failed:", err);
+        }
+      })();
     }
 
     return NextResponse.json({ success: true });

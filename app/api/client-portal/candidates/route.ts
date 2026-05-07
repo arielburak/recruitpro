@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
     const search = params.get("search") || "";
     const firmId = params.get("firmId") || "";
     const jobId = params.get("jobId") || "";
+    // The portal job-detail page hits us with a ClientJob.id, not a firm-side
+    // Job.id. Resolve it to the underlying firm-Job.ids via FirmEngagement so
+    // the candidates that recruiters shared actually surface in the job tab.
+    const clientJobId = params.get("clientJobId") || "";
     const clientStageId = params.get("clientStageId") || params.get("stageId") || "";
     const flat = params.get("flat") === "true";
 
@@ -34,6 +38,14 @@ export async function GET(request: NextRequest) {
     }
 
     if (jobId) where.jobId = jobId;
+    if (clientJobId) {
+      const linkedJobs = await prisma.firmEngagement.findMany({
+        where: { clientJobId, jobId: { not: null }, clientJob: { clientId: ctx.clientId } },
+        select: { jobId: true },
+      });
+      const ids = linkedJobs.map((e) => e.jobId).filter((v): v is string => !!v);
+      where.jobId = ids.length > 0 ? { in: ids } : "__none__";
+    }
     if (clientStageId) where.clientStageId = clientStageId;
     if (firmId) where.job.organizationId = firmId;
 
@@ -80,6 +92,22 @@ export async function GET(request: NextRequest) {
       take: flat ? 200 : 50,
     });
 
+    // Map firm-side Job.id → ClientJob.id via FirmEngagement so the candidates
+    // list can link to the right ClientJob detail page in the portal. Without
+    // this, /client-portal/jobs/<firm-Job-id> 404s and the list crashes when
+    // the user clicks the job badge.
+    const firmJobIds = Array.from(new Set(submissions.map((s) => s.job.id)));
+    const engagements = firmJobIds.length
+      ? await prisma.firmEngagement.findMany({
+          where: { jobId: { in: firmJobIds }, clientJob: { clientId: ctx.clientId } },
+          select: { jobId: true, clientJobId: true },
+        })
+      : [];
+    const firmJobToClientJob = new Map<string, string>();
+    for (const e of engagements) {
+      if (e.jobId) firmJobToClientJob.set(e.jobId, e.clientJobId);
+    }
+
     if (flat) {
       const result = submissions.map((sub) => {
         const myRating = sub.ratings.find((r) => r.clientUserId === ctx.clientUserId);
@@ -98,6 +126,9 @@ export async function GET(request: NextRequest) {
           job: {
             id: sub.job.id,
             title: sub.job.title,
+            // Maps the recruiter-side Job to the ClientJob the portal can
+            // actually render. Null when the engagement linkage is missing.
+            clientJobId: firmJobToClientJob.get(sub.job.id) || null,
           },
           firm: {
             id: sub.job.organization.id,

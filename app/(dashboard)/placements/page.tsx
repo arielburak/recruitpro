@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,8 +12,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trophy, DollarSign } from "lucide-react";
+import { Trophy, DollarSign, Plus } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { PlacementDialog } from "@/components/placements/placement-dialog";
+
+type JobOption = {
+  id: string;
+  title: string;
+  clientId: string;
+  clientName: string;
+  clientPaymentTerms: number | null;
+  clientFeeAmount: string | null;
+  clientFeeType: "PERCENTAGE" | "FLAT" | null;
+};
 
 const INVOICE_STATUS_COLORS: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-800",
@@ -44,8 +56,10 @@ export default function PlacementsPage() {
   const [placements, setPlacements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
 
-  useEffect(() => {
+  function reloadPlacements() {
     fetch("/api/placements")
       .then((r) => r.json())
       .then((data) => {
@@ -56,7 +70,23 @@ export default function PlacementsPage() {
         setError("Failed to load placements");
         setLoading(false);
       });
+  }
+
+  useEffect(() => {
+    reloadPlacements();
   }, []);
+
+  function openNewDialog() {
+    // Lazy-load job options the first time the dialog opens — keeps the
+    // initial /placements render light.
+    if (jobOptions.length === 0) {
+      fetch("/api/placements/job-options")
+        .then((r) => r.json())
+        .then((data) => Array.isArray(data) && setJobOptions(data))
+        .catch(() => {});
+    }
+    setShowNewDialog(true);
+  }
 
   // Calculate revenue this quarter
   const now = new Date();
@@ -93,12 +123,26 @@ export default function PlacementsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Placements</h1>
-        <p className="text-gray-500">
-          {placements.length} placement{placements.length !== 1 ? "s" : ""}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Placements</h1>
+          <p className="text-gray-500">
+            {placements.length} placement{placements.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <Button onClick={openNewDialog} className="bg-emerald-600 hover:bg-emerald-700">
+          <Plus className="h-4 w-4 mr-1.5" />
+          New Placement
+        </Button>
       </div>
+
+      <PlacementDialog
+        mode="manual"
+        open={showNewDialog}
+        onOpenChange={setShowNewDialog}
+        jobOptions={jobOptions}
+        onSuccess={reloadPlacements}
+      />
 
       {error && (
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>

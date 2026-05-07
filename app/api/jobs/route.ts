@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { logActivity } from "@/lib/activity";
-import { DEFAULT_PIPELINE_STAGES } from "@/lib/constants";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,9 +17,22 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Non-admin users only see jobs they're assigned to
+    // Non-admins see only their assigned jobs.
+    //
+    // Admins see every job in the org EXCEPT jobs born from a person-
+    // level client-portal invite they weren't invited to. Those jobs
+    // stay private to the invited recruiter (and anyone that recruiter
+    // chose to assign) — that's the whole point of person-level
+    // invites. A job becomes "private" when it has at least one
+    // FirmEngagement row with invitedUserId set; legacy jobs without
+    // such engagements keep the old org-wide admin visibility.
     if (ctx.role !== "ADMIN") {
       where.assignments = { some: { userId: ctx.userId } };
+    } else {
+      where.OR = [
+        { firmEngagements: { none: { invitedUserId: { not: null } } } },
+        { assignments: { some: { userId: ctx.userId } } },
+      ];
     }
 
     if (status) where.status = status;
@@ -86,11 +99,13 @@ export async function POST(request: Request) {
         },
       });
 
-      // Create pipeline stages from defaults
+      // Create the canonical 9 pipeline stages
       await tx.pipelineStage.createMany({
-        data: DEFAULT_PIPELINE_STAGES.map((s, i) => ({
+        data: DEFAULT_STAGES.map((s, i) => ({
           name: s.name,
           color: s.color,
+          isTerminal: s.isTerminal,
+          kind: s.kind,
           order: i,
           jobId: j.id,
         })),

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireActiveSubscription, SubscriptionError } from "@/lib/subscription-guard";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function PUT(
   request: Request,
@@ -30,6 +31,22 @@ export async function PUT(
       return NextResponse.json({ error: "Already responded" }, { status: 400 });
     }
 
+    // Only the invited person can respond. Admins don't get to respond on
+    // behalf of others — that would leak the invite into their inbox,
+    // which is exactly what the person-level model exists to prevent.
+    // Legacy rows (invitedUserId null) are the only thing admins can
+    // touch, because nobody else knows they exist.
+    const isInvitedUser =
+      engagement.invitedUserId !== null && engagement.invitedUserId === ctx.userId;
+    const isLegacyAdminFallback =
+      engagement.invitedUserId === null && ctx.role === "ADMIN";
+    if (!isInvitedUser && !isLegacyAdminFallback) {
+      return NextResponse.json(
+        { error: "Only the invited recruiter can respond to this invitation" },
+        { status: 403 }
+      );
+    }
+
     if (action === "accept") {
       // Verify active subscription before accepting
       try {
@@ -43,12 +60,6 @@ export async function PUT(
         }
         throw e;
       }
-
-      // Get org default stages
-      const org = await prisma.organization.findUnique({
-        where: { id: ctx.organizationId },
-        select: { defaultStages: true },
-      });
 
       // Ensure the client exists in the recruiter's org
       let client = await prisma.client.findFirst({
@@ -64,33 +75,66 @@ export async function PUT(
         });
       }
 
-      // Create a Job in the recruiter's org from the ClientJob
-      const job = await prisma.job.create({
-        data: {
-          title: engagement.clientJob.title,
-          description: engagement.clientJob.description || null,
-          location: engagement.clientJob.location || null,
-          salary: engagement.clientJob.salaryRange || null,
-          status: "ACTIVE",
-          clientId: client.id,
+      // If another recruiter at this firm already accepted this same
+      // ClientJob, reuse that Job instead of spawning a duplicate — we
+      // just add the current user as an additional assignee. The
+      // sibling-engagement lookup matches by (clientJobId,
+      // organizationId) with a jobId set, which is guaranteed once
+      // they've accepted.
+      const siblingEngagement = await prisma.firmEngagement.findFirst({
+        where: {
+          clientJobId: engagement.clientJobId,
           organizationId: ctx.organizationId,
+          jobId: { not: null },
+          NOT: { id: engagement.id },
         },
+        select: { jobId: true },
       });
 
-      // Create default pipeline stages
-      const stages = org?.defaultStages || ["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"];
-      for (let i = 0; i < stages.length; i++) {
-        await prisma.pipelineStage.create({
-          data: { name: stages[i], order: i, jobId: job.id },
+      let jobId = siblingEngagement?.jobId || null;
+
+      if (!jobId) {
+        const job = await prisma.job.create({
+          data: {
+            title: engagement.clientJob.title,
+            description: engagement.clientJob.description || null,
+            location: engagement.clientJob.location || null,
+            salary: engagement.clientJob.salaryRange || null,
+            status: "ACTIVE",
+            clientId: client.id,
+            organizationId: ctx.organizationId,
+          },
+        });
+        jobId = job.id;
+
+        // Create the canonical 9 pipeline stages
+        await prisma.pipelineStage.createMany({
+          data: DEFAULT_STAGES.map((s, i) => ({
+            name: s.name,
+            color: s.color,
+            isTerminal: s.isTerminal,
+            kind: s.kind,
+            order: i,
+            jobId: jobId!,
+          })),
         });
       }
 
-      // Update engagement
+      // Make sure the accepting user can actually see and work on the
+      // Job. Visibility for non-admins is gated on JobAssignment, so an
+      // accept without an assignment means the person who just accepted
+      // wouldn't see their own job.
+      await prisma.jobAssignment.upsert({
+        where: { jobId_userId: { jobId: jobId!, userId: ctx.userId } },
+        update: {},
+        create: { jobId: jobId!, userId: ctx.userId },
+      });
+
       await prisma.firmEngagement.update({
         where: { id },
         data: {
           status: "ACCEPTED",
-          jobId: job.id,
+          jobId,
           respondedAt: new Date(),
         },
       });
@@ -102,7 +146,7 @@ export async function PUT(
         organizationId: ctx.organizationId,
       });
 
-      return NextResponse.json({ success: true, jobId: job.id });
+      return NextResponse.json({ success: true, jobId });
     } else if (action === "decline") {
       await prisma.firmEngagement.update({
         where: { id },

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ArrowUpDown,
 } from "lucide-react";
+import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
 
 // ─── Types ───
 
@@ -44,6 +45,7 @@ interface FilterOptions {
   locations: FilterOption[];
   jobs: FilterOption[];
   clients: FilterOption[];
+  stages: FilterOption[];
 }
 
 // ─── Notion-style Multi-Select Filter ───
@@ -266,6 +268,8 @@ export default function CandidatesPage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [jobFilter, setJobFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
   const [sort, setSort] = useState("created_desc");
 
   // Filter options from API
@@ -274,6 +278,7 @@ export default function CandidatesPage() {
     locations: [],
     jobs: [],
     clients: [],
+    stages: [],
   });
 
   // Load filter options once
@@ -296,13 +301,16 @@ export default function CandidatesPage() {
     if (locationFilter.length > 0) params.set("location", locationFilter.join(","));
     if (jobFilter.length > 0) params.set("jobId", jobFilter.join(","));
     if (clientFilter.length > 0) params.set("clientId", clientFilter.join(","));
+    if (stageFilter.length > 0) params.set("stage", stageFilter.join(","));
+    if (dateRange.from) params.set("createdFrom", dateRange.from);
+    if (dateRange.to) params.set("createdTo", dateRange.to);
 
     const res = await fetch(`/api/candidates?${params}`);
     const data = await res.json();
     setCandidates(data.candidates || []);
     setTotal(data.total || 0);
     setLoading(false);
-  }, [page, search, sort, ownerFilter, locationFilter, jobFilter, clientFilter]);
+  }, [page, search, sort, ownerFilter, locationFilter, jobFilter, clientFilter, stageFilter, dateRange]);
 
   useEffect(() => {
     fetchCandidates();
@@ -318,6 +326,12 @@ export default function CandidatesPage() {
 
   // Active filter pills
   const activeFilters = [
+    ...stageFilter.map((v) => ({
+      type: "Stage",
+      value: v,
+      label: v,
+      clear: () => updateFilter(setStageFilter, stageFilter.filter((x) => x !== v)),
+    })),
     ...ownerFilter.map((v) => ({
       type: "Owner",
       value: v,
@@ -349,6 +363,7 @@ export default function CandidatesPage() {
     setLocationFilter([]);
     setJobFilter([]);
     setClientFilter([]);
+    setStageFilter([]);
     setPage(1);
   }
 
@@ -383,6 +398,12 @@ export default function CandidatesPage() {
         </div>
         <div className="flex items-center gap-1.5">
           <MultiFilter
+            label="Stage"
+            selected={stageFilter}
+            options={filterOptions.stages}
+            onChange={(v) => updateFilter(setStageFilter, v)}
+          />
+          <MultiFilter
             label="Owner"
             selected={ownerFilter}
             options={filterOptions.owners}
@@ -405,6 +426,11 @@ export default function CandidatesPage() {
             selected={locationFilter}
             options={filterOptions.locations}
             onChange={(v) => updateFilter(setLocationFilter, v)}
+          />
+          <DateRangeFilter
+            value={dateRange}
+            onChange={(v) => { setDateRange(v); setPage(1); }}
+            label="Created"
           />
           <SortSelector value={sort} onChange={(v) => { setSort(v); setPage(1); }} />
         </div>

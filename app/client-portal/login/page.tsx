@@ -287,17 +287,19 @@ function ClientPortalLoginInner() {
           </div>
         </div>
 
-        <div className="border-t border-white/20 pt-8">
-          <p className="text-emerald-100 text-sm">
-            <span className="font-semibold text-white">100% free</span> for hiring companies.
-            No credit card required. No hidden fees.
-          </p>
-        </div>
       </div>
 
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to home
+          </Link>
+
           {hasStaffingSession && (
             <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
               <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
@@ -385,22 +387,6 @@ function ClientPortalLoginInner() {
                   </svg>
                   Continue with Google
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    markClientOAuth();
-                    signIn("azure-ad", { callbackUrl: "/client-portal/dashboard" });
-                  }}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z" />
-                    <path fill="#81bc06" d="M12 1h10v10H12z" />
-                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                    <path fill="#ffba08" d="M12 12h10v10H12z" />
-                  </svg>
-                  Continue with Microsoft
-                </button>
               </div>
 
               <div className="relative my-5">
@@ -446,7 +432,7 @@ function ClientPortalLoginInner() {
                 <p className="text-gray-500 mt-1">
                   {isInvitedUser
                     ? "A recruiter invited you. Set a password to get started."
-                    : "Free forever for hiring companies."}
+                    : "Post jobs, invite recruiting firms, and hire great people."}
                 </p>
               </div>
               <form onSubmit={handleRegister} className="space-y-4">
@@ -489,13 +475,9 @@ function ClientPortalLoginInner() {
                   <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
                 </div>
                 <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Free Account")}
+                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Account")}
                 </Button>
               </form>
-              <div className="mt-4 flex items-center gap-2 justify-center text-xs text-gray-400">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                No credit card required
-              </div>
             </>
           )}
 

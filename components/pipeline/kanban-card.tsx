@@ -149,7 +149,7 @@ export function KanbanCard({
                     title="Share with client"
                   >
                     <Share2 className="h-3 w-3" />
-                    Share
+                    Share with Client
                   </button>
                 )}
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { createCheckoutSession, createStripeCustomer } from "@/lib/stripe";
-import { STRIPE_PRICE_ID } from "@/lib/constants";
+import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 
 export async function POST() {
   try {
@@ -18,6 +18,13 @@ export async function POST() {
 
     if (!subscription) {
       return NextResponse.json({ error: "No subscription found" }, { status: 404 });
+    }
+
+    if (subscription.seats > TEAM_MAX_SEATS) {
+      return NextResponse.json(
+        { error: `Self-serve plans top out at ${TEAM_MAX_SEATS} seats — contact us for more.` },
+        { status: 400 }
+      );
     }
 
     let customerId = subscription.stripeCustomerId;
@@ -38,7 +45,7 @@ export async function POST() {
 
     const session = await createCheckoutSession(
       customerId,
-      STRIPE_PRICE_ID,
+      stripePriceIdForSeats(subscription.seats),
       subscription.seats,
       ctx.organizationId
     );

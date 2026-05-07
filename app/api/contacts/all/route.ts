@@ -2,11 +2,23 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 
-// Returns a UNIFIED list of all contacts related to this organization:
-//   - Contact[] table (explicit per-client contacts)
-//   - Client.contactName/Email/Phone (the "Main Contact" inline fields)
-//   - ClientUser[] (client portal users — colleagues of the hiring company)
-// Deduplicated by email within the same client.
+// Returns a UNIFIED list of all contacts related to this organization.
+//
+// A "person" can show up in two places:
+//   - Contact[]    — explicit per-client contacts the recruiter manages.
+//   - ClientUser[] — those that can actually log in to the Client Portal.
+//
+// We MERGE both sources by (clientId, email) into a single row instead of
+// showing the same person twice (or — worse — only as a Contact, hiding the
+// fact that they have portal access). The row carries two independent flags:
+//   isContact         — present in the Contact table
+//   hasPortalAccess   — has an active ClientUser for the same client
+// The UI renders one badge per flag, so portal access is always visible
+// even when the person was first added as a regular Contact.
+//
+// The legacy "Main Contact" inline fields on Client (contactName/Email/Phone)
+// are no longer surfaced — that concept has been retired in favor of the
+// Contact[] table with isPrimary marking the main point of contact.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -22,9 +34,6 @@ export async function GET() {
         select: {
           id: true,
           name: true,
-          contactName: true,
-          contactEmail: true,
-          contactPhone: true,
           clientUsers: {
             where: { isActive: true },
             select: {
@@ -41,7 +50,9 @@ export async function GET() {
 
     type UnifiedContact = {
       id: string;
-      source: "contact" | "main" | "portal_user";
+      isContact: boolean;
+      hasPortalAccess: boolean;
+      portalRole: string | null;
       firstName: string;
       lastName: string;
       name: string;
@@ -49,24 +60,25 @@ export async function GET() {
       email: string | null;
       phone: string | null;
       isPrimary: boolean;
-      portalRole: string | null;
       clientId: string;
       clientName: string;
+      createdAt: string;
     };
 
-    const all: UnifiedContact[] = [];
-    const seenKeys = new Set<string>();
+    const byKey = new Map<string, UnifiedContact>();
 
     const makeKey = (clientId: string, email: string | null | undefined, name: string) =>
       `${clientId}::${(email || name).trim().toLowerCase()}`;
 
-    // 1. Contact[] table — source of truth
+    // 1. Contact[] table — recruiter-curated source of truth for fields
+    //    (title, phone, primary flag).
     for (const c of contacts) {
       const k = makeKey(c.client.id, c.email, `${c.firstName} ${c.lastName}`);
-      seenKeys.add(k);
-      all.push({
+      byKey.set(k, {
         id: `contact_${c.id}`,
-        source: "contact",
+        isContact: true,
+        hasPortalAccess: false,
+        portalRole: null,
         firstName: c.firstName,
         lastName: c.lastName,
         name: `${c.firstName} ${c.lastName}`.trim(),
@@ -74,52 +86,34 @@ export async function GET() {
         email: c.email,
         phone: c.phone,
         isPrimary: c.isPrimary,
-        portalRole: null,
         clientId: c.client.id,
         clientName: c.client.name,
+        createdAt: c.createdAt.toISOString(),
       });
     }
 
-    // 2. Client.contactName — only if not already present as Contact[]
-    for (const client of clients) {
-      if (!client.contactName) continue;
-      const [firstName, ...rest] = client.contactName.trim().split(" ");
-      const lastName = rest.join(" ");
-      const k = makeKey(client.id, client.contactEmail, client.contactName);
-      if (seenKeys.has(k)) continue;
-      // Also check if a Contact with same email already exists for this client
-      if (client.contactEmail) {
-        const emailKey = makeKey(client.id, client.contactEmail, "");
-        if (seenKeys.has(emailKey)) continue;
-      }
-      seenKeys.add(k);
-      all.push({
-        id: `main_${client.id}`,
-        source: "main",
-        firstName: firstName || client.contactName,
-        lastName: lastName || "",
-        name: client.contactName,
-        title: null,
-        email: client.contactEmail || null,
-        phone: client.contactPhone || null,
-        isPrimary: true,
-        portalRole: null,
-        clientId: client.id,
-        clientName: client.name,
-      });
-    }
-
-    // 3. ClientUser[] — colleagues of the hiring company who have portal access
+    // 2. ClientUser[] — merge into the existing row if we already saw this
+    //    person as a Contact, otherwise add a new portal-only row.
     for (const client of clients) {
       for (const u of client.clientUsers) {
+        const k = makeKey(client.id, u.email, u.name);
+        const existing = byKey.get(k);
+        if (existing) {
+          existing.hasPortalAccess = true;
+          existing.portalRole = u.role;
+          // Backfill missing fields from the ClientUser so we don't lose
+          // information when the Contact was added with sparse data.
+          if (!existing.title && u.title) existing.title = u.title;
+          if (!existing.email && u.email) existing.email = u.email;
+          continue;
+        }
         const [firstName, ...rest] = (u.name || "").trim().split(" ");
         const lastName = rest.join(" ");
-        const k = makeKey(client.id, u.email, u.name);
-        if (seenKeys.has(k)) continue;
-        seenKeys.add(k);
-        all.push({
+        byKey.set(k, {
           id: `portal_${u.id}`,
-          source: "portal_user",
+          isContact: false,
+          hasPortalAccess: true,
+          portalRole: u.role,
           firstName: firstName || u.name,
           lastName: lastName || "",
           name: u.name,
@@ -127,12 +121,14 @@ export async function GET() {
           email: u.email,
           phone: null,
           isPrimary: false,
-          portalRole: u.role,
           clientId: client.id,
           clientName: client.name,
+          createdAt: new Date(0).toISOString(),
         });
       }
     }
+
+    const all = Array.from(byKey.values());
 
     // Sort alphabetically by last name, then first name
     all.sort((a, b) => {

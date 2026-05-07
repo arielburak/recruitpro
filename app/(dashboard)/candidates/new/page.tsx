@@ -12,9 +12,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, X, Upload, FileText, Sparkles } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, X, Upload, FileText, Sparkles, ExternalLink } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import { SourceInput } from "@/components/ui/source-input";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -57,6 +66,103 @@ function NewCandidatePage() {
     source: "",
     summary: "",
   });
+
+  // Duplicate candidate detection — matches any of email / phone / LinkedIn
+  type DuplicateMatch = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    linkedIn: string | null;
+    currentTitle: string | null;
+    currentCompany: string | null;
+    createdAt: string;
+    owner: { id: string; name: string } | null;
+  };
+  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+
+  /**
+   * For a given match, figure out which of the form's identifiers
+   * actually triggered it — so the recruiter can see *why* it's flagged
+   * as a duplicate, not just that it is one.
+   */
+  function getMatchedChannels(m: DuplicateMatch): string[] {
+    const channels: string[] = [];
+    const formEmail = formValues.email.trim().toLowerCase();
+    if (formEmail && m.email && m.email.toLowerCase() === formEmail) {
+      channels.push("email");
+    }
+    const formPhoneDigits = formValues.phone.replace(/\D/g, "");
+    const matchPhoneDigits = m.phone?.replace(/\D/g, "") || "";
+    if (formPhoneDigits && formPhoneDigits === matchPhoneDigits) {
+      channels.push("phone");
+    }
+    const extractHandle = (v: string) => {
+      if (!v) return "";
+      const match = v
+        .trim()
+        .toLowerCase()
+        .match(/(?:linkedin\.com\/in\/|^\/?in\/)([a-z0-9\-_.]+)/i);
+      return match ? match[1].replace(/\/$/, "") : "";
+    };
+    const formHandle = extractHandle(formValues.linkedIn);
+    const matchHandle = extractHandle(m.linkedIn || "");
+    if (formHandle && formHandle === matchHandle) {
+      channels.push("LinkedIn");
+    }
+    return channels;
+  }
+
+  // Union of channels that triggered any visible match — used to
+  // highlight the specific form fields that collided with an existing
+  // candidate, so the recruiter sees at a glance which input to rethink.
+  const flaggedFields = new Set<string>();
+  for (const m of duplicateMatches) {
+    for (const c of getMatchedChannels(m)) flaggedFields.add(c);
+  }
+
+  /**
+   * Check for duplicates across all three identifiers the form captures.
+   * The backend dedupes by candidate id, so a single person matching on
+   * more than one channel still appears once.
+   */
+  async function checkDuplicates(override?: {
+    email?: string;
+    phone?: string;
+    linkedIn?: string;
+  }): Promise<DuplicateMatch[]> {
+    const email = (override?.email ?? formValues.email).trim();
+    const phone = (override?.phone ?? formValues.phone).trim();
+    const linkedIn = (override?.linkedIn ?? formValues.linkedIn).trim();
+    if (!email && !phone && !linkedIn) {
+      setDuplicateMatches([]);
+      return [];
+    }
+    setCheckingDuplicate(true);
+    try {
+      const qs = new URLSearchParams();
+      if (email) qs.set("email", email);
+      if (phone) qs.set("phone", phone);
+      if (linkedIn) qs.set("linkedIn", linkedIn);
+      const res = await fetch(`/api/candidates/check-duplicate?${qs.toString()}`);
+      if (!res.ok) {
+        setDuplicateMatches([]);
+        return [];
+      }
+      const data = await res.json();
+      const matches: DuplicateMatch[] = data.matches || [];
+      setDuplicateMatches(matches);
+      return matches;
+    } catch {
+      setDuplicateMatches([]);
+      return [];
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }
 
   // Pre-fill from URL search params (LinkedIn import redirect)
   useEffect(() => {
@@ -128,6 +234,16 @@ function NewCandidatePage() {
         (v) => v && (typeof v === "string" ? v.length > 0 : Array.isArray(v) && v.length > 0)
       ).length;
       setParseMessage(`Parsed successfully - filled ${fieldCount} fields from resume.`);
+
+      // If the parser pulled any identifier, check for duplicates right
+      // away so the recruiter sees the warning without having to blur.
+      if (parsed.email || parsed.phone || parsed.linkedIn) {
+        void checkDuplicates({
+          email: parsed.email,
+          phone: parsed.phone,
+          linkedIn: parsed.linkedIn,
+        });
+      }
     } catch {
       setParseMessage("Failed to parse resume. Try a .txt file for best results.");
     }
@@ -157,8 +273,7 @@ function NewCandidatePage() {
     }
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function actuallyCreate() {
     setLoading(true);
     setError("");
 
@@ -209,6 +324,35 @@ function NewCandidatePage() {
       setError("Something went wrong");
       setLoading(false);
     }
+  }
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    // Require at least one way to contact the candidate. We don't force
+    // all three, so recruiters sourcing from LinkedIn-only (or a networking
+    // event with just an email) aren't forced to fabricate values — but we
+    // do guarantee every candidate is reachable and dedupe-able.
+    const hasContact =
+      formValues.email.trim() ||
+      formValues.phone.trim() ||
+      formValues.linkedIn.trim();
+    if (!hasContact) {
+      setError("Add at least one way to contact this candidate — email, phone or LinkedIn URL.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    // Re-check duplicates across all three channels at submit time in
+    // case the user typed past a field without blurring (e.g. submitted
+    // via Enter). If any match, open the confirm dialog.
+    const matches = await checkDuplicates();
+    if (matches.length > 0) {
+      setShowDuplicateDialog(true);
+      return;
+    }
+
+    await actuallyCreate();
   }
 
   return (
@@ -299,22 +443,54 @@ function NewCandidatePage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="flex items-center justify-between gap-2">
+                  <span>Email</span>
+                  <span className="text-[10.5px] font-normal text-gray-400 normal-case">
+                    email, phone or LinkedIn required
+                  </span>
+                </Label>
                 <Input
                   id="email"
                   name="email"
                   type="email"
                   value={formValues.email}
-                  onChange={(e) => updateField("email", e.target.value)}
+                  className={
+                    flaggedFields.has("email")
+                      ? "border-indigo-400 ring-2 ring-indigo-100"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    updateField("email", e.target.value);
+                    // Clear any stale warning so the user can keep editing
+                    // without seeing an outdated dupe match.
+                    if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                  }}
+                  onBlur={(e) => {
+                    void checkDuplicates({ email: e.target.value });
+                  }}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <PhoneInput
-                  value={formValues.phone}
-                  onChange={(val) => updateField("phone", val)}
-                  name="phone"
-                />
+                <div
+                  onBlur={(e) => {
+                    // Only check when focus leaves the phone input group
+                    // entirely (prefix dropdown + number field).
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      void checkDuplicates({ phone: formValues.phone });
+                    }
+                  }}
+                >
+                  <PhoneInput
+                    value={formValues.phone}
+                    onChange={(val) => {
+                      updateField("phone", val);
+                      if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                    }}
+                    name="phone"
+                    highlighted={flaggedFields.has("phone")}
+                  />
+                </div>
               </div>
             </div>
 
@@ -324,9 +500,65 @@ function NewCandidatePage() {
                 id="linkedIn"
                 name="linkedIn"
                 value={formValues.linkedIn}
-                onChange={(e) => updateField("linkedIn", e.target.value)}
+                className={
+                  flaggedFields.has("LinkedIn")
+                    ? "border-indigo-400 ring-2 ring-indigo-100"
+                    : ""
+                }
+                onChange={(e) => {
+                  updateField("linkedIn", e.target.value);
+                  if (duplicateMatches.length > 0) setDuplicateMatches([]);
+                }}
+                onBlur={(e) => {
+                  void checkDuplicates({ linkedIn: e.target.value });
+                }}
               />
             </div>
+
+            {checkingDuplicate && (
+              <p className="text-xs text-gray-400">Checking for duplicates…</p>
+            )}
+            {duplicateMatches.length > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
+                <div className="flex items-center gap-1.5 px-1.5 pt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                  <span className="text-[10.5px] font-medium text-gray-500 uppercase tracking-wider">
+                    Already in your database
+                  </span>
+                </div>
+                {duplicateMatches.map((m) => {
+                  const channels = getMatchedChannels(m);
+                  return (
+                    <Link
+                      key={m.id}
+                      href={`/candidates/${m.id}`}
+                      target="_blank"
+                      className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-white hover:shadow-sm transition group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {m.firstName} {m.lastName}
+                          </p>
+                          {channels.map((c) => (
+                            <span
+                              key={c}
+                              className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                            >
+                              matched by {c}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">
+                          {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                        </p>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="location">Location</Label>
@@ -392,12 +624,11 @@ function NewCandidatePage() {
 
             <div className="space-y-2">
               <Label htmlFor="source">Source</Label>
-              <Input
+              <SourceInput
                 id="source"
                 name="source"
-                placeholder="LinkedIn, Referral, etc."
                 value={formValues.source}
-                onChange={(e) => updateField("source", e.target.value)}
+                onChange={(v) => updateField("source", v)}
               />
             </div>
 
@@ -509,6 +740,68 @@ function NewCandidatePage() {
           </CardContent>
         </Card>
       </form>
+
+      <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">This candidate is already in your database</DialogTitle>
+            <DialogDescription className="text-sm">
+              Open the existing record to pick up where you left off, or create a new one anyway.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-1.5 space-y-1 max-h-64 overflow-y-auto">
+            {duplicateMatches.map((m) => {
+              const channels = getMatchedChannels(m);
+              return (
+                <Link
+                  key={m.id}
+                  href={`/candidates/${m.id}`}
+                  target="_blank"
+                  className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md hover:bg-white hover:shadow-sm transition group"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {m.firstName} {m.lastName}
+                      </p>
+                      {channels.map((c) => (
+                        <span
+                          key={c}
+                          className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded"
+                        >
+                          matched by {c}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">
+                      {[m.currentTitle, m.currentCompany].filter(Boolean).join(" · ") || m.email}
+                    </p>
+                  </div>
+                  <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-600 shrink-0 transition" />
+                </Link>
+              );
+            })}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDuplicateDialog(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setShowDuplicateDialog(false);
+                await actuallyCreate();
+              }}
+              disabled={loading}
+            >
+              {loading ? "Creating..." : "Create anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

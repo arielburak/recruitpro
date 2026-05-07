@@ -3,6 +3,36 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 
+// A job is "private" when it was born from a person-level client-portal
+// invite: at least one FirmEngagement row points at it with invitedUserId
+// set. Private jobs are visible only to their assignees, even to firm
+// admins. Legacy or directly-created jobs (no such engagements) keep
+// the old behaviour — admins see everything, non-admins need an
+// assignment.
+async function canAccessJob(
+  jobId: string,
+  organizationId: string,
+  userId: string,
+  role: "ADMIN" | "USER"
+): Promise<boolean> {
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, organizationId },
+    select: {
+      assignments: { where: { userId }, select: { userId: true } },
+      firmEngagements: {
+        where: { invitedUserId: { not: null } },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+  if (!job) return false;
+  const isAssigned = job.assignments.length > 0;
+  const isPrivate = job.firmEngagements.length > 0;
+  if (isPrivate) return isAssigned;
+  return role === "ADMIN" || isAssigned;
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -17,18 +47,26 @@ export async function GET(
         client: true,
         stages: { orderBy: { order: "asc" } },
         assignments: { include: { user: { select: { id: true, name: true } } } },
+        documents: { orderBy: { createdAt: "desc" } },
+        firmEngagements: {
+          where: { invitedUserId: { not: null } },
+          select: { id: true },
+          take: 1,
+        },
         submissions: {
           include: {
             candidate: {
               select: {
                 id: true, firstName: true, lastName: true,
                 currentTitle: true, currentCompany: true, location: true,
+                desiredSalary: true, salaryCurrency: true,
               },
             },
             stage: true,
             clientStage: {
               select: { id: true, name: true, color: true, order: true },
             },
+            placement: { select: { id: true } },
             _count: { select: { comments: true, ratings: true } },
           },
         },
@@ -60,13 +98,18 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Non-admin users can only view jobs they're assigned to
-    if (ctx.role !== "ADMIN") {
-      const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
+    const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
+    const isPrivate = job.firmEngagements.length > 0;
+    if (isPrivate) {
       if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    } else if (ctx.role !== "ADMIN" && !isAssigned) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    return NextResponse.json(job);
+    // Strip the privacy marker we only loaded to make the decision — the
+    // client doesn't need that noise.
+    const { firmEngagements: _drop, ...jobForClient } = job as any;
+    return NextResponse.json(jobForClient);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
@@ -81,6 +124,9 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const data = jobSchema.parse(body);
+
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const updated = await prisma.job.updateMany({
       where: { id, organizationId: ctx.organizationId },
@@ -101,6 +147,10 @@ export async function DELETE(
   try {
     const ctx = await getOrgContext();
     const { id } = await params;
+
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
     await prisma.job.deleteMany({
       where: { id, organizationId: ctx.organizationId },
     });

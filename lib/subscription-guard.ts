@@ -8,8 +8,8 @@ export class SubscriptionError extends Error {
 }
 
 /**
- * Checks if the organization has an active subscription (ACTIVE or valid TRIALING).
- * Throws SubscriptionError if not.
+ * Checks if the organization has an active subscription (ACTIVE, valid
+ * TRIALING, or isComp=true). Throws SubscriptionError if not.
  */
 export async function requireActiveSubscription(organizationId: string) {
   const subscription = await prisma.subscription.findUnique({
@@ -20,6 +20,13 @@ export async function requireActiveSubscription(organizationId: string) {
     throw new SubscriptionError(
       "No subscription found. Please set up a subscription to continue."
     );
+  }
+
+  // Complimentary / grandfathered accounts always pass, regardless of
+  // Stripe status or trial expiry. Used for founders, partners, and
+  // long-running internal test accounts.
+  if (subscription.isComp) {
+    return subscription;
   }
 
   if (subscription.status === "ACTIVE") {

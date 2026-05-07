@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get("location");
     const jobId = searchParams.get("jobId");
     const clientId = searchParams.get("clientId");
+    const stage = searchParams.get("stage");
 
     if (ownerId) {
       const ownerIds = ownerId.split(",");
@@ -66,6 +67,34 @@ export async function GET(request: NextRequest) {
           },
         },
       };
+    }
+
+    if (stage) {
+      const stageNames = stage.split(",");
+      where.submissions = {
+        ...where.submissions,
+        some: {
+          ...where.submissions?.some,
+          stage: {
+            name: stageNames.length === 1 ? stageNames[0] : { in: stageNames },
+          },
+        },
+      };
+    }
+
+    // Date Created range. Bounds are inclusive whole days; "to" is bumped to
+    // the start of the next day so candidates created at any time on that day
+    // are still matched.
+    const createdFrom = searchParams.get("createdFrom");
+    const createdTo = searchParams.get("createdTo");
+    if (createdFrom || createdTo) {
+      where.createdAt = {};
+      if (createdFrom) where.createdAt.gte = new Date(`${createdFrom}T00:00:00`);
+      if (createdTo) {
+        const end = new Date(`${createdTo}T00:00:00`);
+        end.setDate(end.getDate() + 1);
+        where.createdAt.lt = end;
+      }
     }
 
     // Sorting

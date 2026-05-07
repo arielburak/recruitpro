@@ -14,17 +14,17 @@ model Organization {
   name      String
   slug      String   @unique
   logo      String?
+  industry  String?
+  companySize String?
+  needsOnboarding Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  defaultStages String[] @default(["Sourced", "Contacted", "Submitted", "Interview", "Offer", "Placed"])
 
   users        User[]
   clients      Client[]
   candidates   Candidate[]
   contacts     Contact[]
   jobs         Job[]
-  deals        Deal[]
   placements   Placement[]
   subscription Subscription?
   activities   Activity[]
@@ -56,6 +56,7 @@ model User {
   interviewFeedback     InterviewFeedback[]
   integrations          UserIntegration[]
   notifications         UserNotification[]
+  firmEngagements       FirmEngagement[]      @relation("InvitedUser")
 
   @@index([organizationId])
 }
@@ -113,9 +114,19 @@ model Client {
   contactEmail   String?
   contactPhone   String?
   notes          String?
-  defaultCurrency  String?  @default("USD")
-  defaultFeeType   String?  @default("PERCENTAGE")
-  defaultFeeAmount Decimal?
+  // Engagement model with this client. "RECRUITING" = traditional
+  // headhunting with fee + guarantee + payment terms (the defaults
+  // below). "STAFF_AUG" = outsourcing / staff augmentation where
+  // every search negotiates its own economics — we skip the defaults
+  // entirely in that mode. Defaults to RECRUITING so pre-existing
+  // clients stay on the current form.
+  engagementType      String   @default("RECRUITING")
+  defaultCurrency     String?  @default("USD")
+  defaultFeeType      String?  @default("PERCENTAGE")
+  defaultFeeAmount    Decimal?
+  // Default invoice payment terms in days (e.g. 30 = "Net 30"). Used as the
+  // pre-filled value when creating a placement for this client.
+  defaultPaymentTerms Int?     @default(30)
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
   organizationId String?
@@ -126,8 +137,8 @@ model Client {
   jobs         Job[]
   clientUsers  ClientUser[]
   contacts     Contact[]
-  deals        Deal[]
   placements   Placement[]
+  documents    Document[]
   portalTokens ClientPortalToken[]
   clientJobs   ClientJob[]
   pipelineStages ClientPipelineStage[]
@@ -156,7 +167,6 @@ model Contact {
   client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
   jobs         Job[]        @relation("HiringManager")
-  deals        Deal[]
   interviews   InterviewClientContact[]
 
   @@index([clientId])
@@ -266,6 +276,11 @@ model Job {
   placements     Placement[]
   documents      Document[]
   interviews     Interview[]
+  // Populated when the Job was born out of a client-portal invite. Used
+  // to enforce person-level privacy on Job visibility — if any of the
+  // linked engagements has invitedUserId set, only the assignees see
+  // the Job (admins included).
+  firmEngagements FirmEngagement[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -299,11 +314,13 @@ model JobAssignment {
 // ─── PIPELINE ───
 
 model PipelineStage {
-  id    String @id @default(cuid())
-  name  String
-  order Int
-  color String @default("#6366f1")
-  jobId String
+  id         String  @id @default(cuid())
+  name       String
+  order      Int
+  color      String  @default("#6366f1")
+  isTerminal Boolean @default(false)
+  kind       String? // "positive" | "negative" | null
+  jobId      String
 
   job         Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   submissions CandidateSubmission[]
@@ -450,6 +467,10 @@ model Interview {
   // (e.g. to add a new attendee if the candidate email changes).
   googleEventId          String?
   googleCalendarOwnerId  String?
+  // Microsoft (Outlook + Teams) integration — same idea for Teams
+  // meetings.
+  microsoftEventId          String?
+  microsoftCalendarOwnerId  String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -532,19 +553,19 @@ model Document {
   candidateId  String?
   jobId        String?
   clientJobId  String?
-  dealId       String?
+  clientId     String?
   uploadedBy   String
   createdAt    DateTime @default(now())
 
   candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
-  deal      Deal?      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  client    Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
   @@index([clientJobId])
-  @@index([dealId])
+  @@index([clientId])
 }
 
 // ─── ACTIVITIES ───
@@ -567,65 +588,37 @@ model Activity {
   @@index([candidateId])
 }
 
-// ─── DEALS (BD Pipeline) ───
-
-model Deal {
-  id             String     @id @default(cuid())
-  title          String
-  value          Decimal?
-  currency       String     @default("USD")
-  probability    Int?       @default(50)
-  stage          DealStage  @default(LEAD)
-  expectedClose  DateTime?
-  notes          String?
-  clientId       String
-  contactId      String?
-  ownerId        String
-  organizationId String
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  client       Client       @relation(fields: [clientId], references: [id])
-  contact      Contact?     @relation(fields: [contactId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id])
-  documents    Document[]
-
-  @@index([organizationId])
-  @@index([organizationId, stage])
-}
-
-enum DealStage {
-  LEAD
-  QUALIFIED
-  PITCHED
-  NEGOTIATION
-  WON
-  LOST
-}
-
 // ─── PLACEMENTS ───
 
 model Placement {
-  id               String          @id @default(cuid())
-  startDate        DateTime?
-  feeAmount        Decimal?
-  feePercentage    Decimal?
-  salary           Decimal?
-  invoiceStatus    InvoiceStatus   @default(DRAFT)
-  guaranteePeriod  Int?            @default(90)
-  guaranteeExpiry  DateTime?
-  notes            String?
-  submissionId     String          @unique
-  jobId            String
-  clientId         String
-  organizationId   String
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  // estimatedStartDate is what the recruiter/candidate negotiated up front.
+  // startDate is the confirmed start once the candidate actually shows up.
+  estimatedStartDate  DateTime?
+  startDate           DateTime?
+  feeAmount           Decimal?
+  feePercentage       Decimal?
+  salary              Decimal?
+  // paymentTerms is the number of days between startDate (or estimated)
+  // and when the agency expects to be paid. paymentDueDate is the
+  // resolved date — kept on the row so reporting doesn't have to compute it.
+  paymentTerms        Int?
+  paymentDueDate      DateTime?
+  invoiceStatus       InvoiceStatus   @default(DRAFT)
+  guaranteePeriod     Int?            @default(90)
+  guaranteeExpiry     DateTime?
+  notes               String?
+  submissionId        String?         @unique
+  jobId               String
+  clientId            String
+  organizationId      String
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  submission   CandidateSubmission @relation(fields: [submissionId], references: [id])
-  job          Job                 @relation(fields: [jobId], references: [id])
-  client       Client              @relation(fields: [clientId], references: [id])
-  organization Organization        @relation(fields: [organizationId], references: [id])
+  submission   CandidateSubmission? @relation(fields: [submissionId], references: [id])
+  job          Job                  @relation(fields: [jobId], references: [id])
+  client       Client               @relation(fields: [clientId], references: [id])
+  organization Organization         @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
   @@index([organizationId, createdAt(sort: Desc)])
@@ -671,6 +664,14 @@ model FirmEngagement {
   id             String    @id @default(cuid())
   clientJobId    String
   organizationId String
+  // Email of the SPECIFIC recruiter invited. Nullable because legacy
+  // engagements (pre-person-level invites) only stored organizationId;
+  // new rows always set this.
+  invitedEmail   String?
+  // User that claimed the invite. Set when the invited email matches an
+  // existing User at invite time, or later when a PendingFirmInvite is
+  // promoted to an engagement on login. Null for legacy rows.
+  invitedUserId  String?
   status         String    @default("PENDING")
   message        String?
   jobId          String?
@@ -679,9 +680,14 @@ model FirmEngagement {
 
   clientJob    ClientJob    @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
+  invitedUser  User?        @relation("InvitedUser", fields: [invitedUserId], references: [id])
+  job          Job?         @relation(fields: [jobId], references: [id])
 
-  @@unique([clientJobId, organizationId])
+  // One invite per email per job. Legacy rows (null invitedEmail) are
+  // exempt — Postgres treats NULLs as distinct — so the migration is safe.
+  @@unique([clientJobId, invitedEmail])
   @@index([organizationId])
+  @@index([invitedUserId])
   @@index([organizationId, status])
 }
 
@@ -713,6 +719,11 @@ model Subscription {
   trialEndsAt          DateTime?
   currentPeriodEnd     DateTime?
   seats                Int                @default(1)
+  // Complimentary / free-forever flag. Used for founding-team orgs,
+  // partners, long-running test accounts — anyone we want to keep
+  // unlocked without tying them to a Stripe subscription. When true,
+  // subscription checks pass regardless of status/trial.
+  isComp               Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 

@@ -37,7 +37,17 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(documents);
+    // Blobs are uploaded with `access: "private"`, so the stored `url`
+    // returns 403 when hit directly from the browser. Point each row's
+    // downloadUrl at our streaming endpoint instead of a signed Vercel
+    // Blob URL — signed private-blob URLs were silently failing in the
+    // browser.
+    const withDownload = documents.map((d) => ({
+      ...d,
+      downloadUrl: `/api/client-portal/jobs/${id}/documents/${d.id}`,
+    }));
+
+    return NextResponse.json(withDownload);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

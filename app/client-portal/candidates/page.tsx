@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,31 @@ type Filters = {
 };
 
 export default function ClientCandidatesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+          <div className="h-8 w-48 bg-gray-100 rounded animate-pulse" />
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-14 bg-gray-100 rounded-md animate-pulse" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <ClientCandidatesPageInner />
+    </Suspense>
+  );
+}
+
+function ClientCandidatesPageInner() {
+  const searchParams = useSearchParams();
+  // The portal job-detail page links here with ?clientJobId=… so the user
+  // sees just the candidates from that one search. Resolved server-side via
+  // FirmEngagement → firm Job.id; the page itself just passes it through.
+  const initialClientJobId = searchParams.get("clientJobId") || "";
+
   const [rows, setRows] = useState<CandidateRow[]>([]);
   const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
   const [loading, setLoading] = useState(true);
@@ -35,6 +61,7 @@ export default function ClientCandidatesPage() {
   const [jobFilter, setJobFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [firmFilter, setFirmFilter] = useState<string>("all");
+  const [clientJobIdFilter, setClientJobIdFilter] = useState<string>(initialClientJobId);
 
   useEffect(() => {
     fetch("/api/client-portal/candidates/filters")
@@ -52,6 +79,7 @@ export default function ClientCandidatesPage() {
     if (jobFilter !== "all") params.set("jobId", jobFilter);
     if (stageFilter !== "all") params.set("clientStageId", stageFilter);
     if (firmFilter !== "all") params.set("firmId", firmFilter);
+    if (clientJobIdFilter) params.set("clientJobId", clientJobIdFilter);
 
     setLoading(true);
     const t = setTimeout(() => {
@@ -65,7 +93,7 @@ export default function ClientCandidatesPage() {
         .finally(() => setLoading(false));
     }, 200);
     return () => clearTimeout(t);
-  }, [search, jobFilter, stageFilter, firmFilter]);
+  }, [search, jobFilter, stageFilter, firmFilter, clientJobIdFilter]);
 
   const jobOptions: SearchableSelectOption[] = useMemo(
     () => filters.jobs.map((j) => ({ value: j.id, label: j.title })),
@@ -90,12 +118,14 @@ export default function ClientCandidatesPage() {
   const activeFilterCount =
     (jobFilter !== "all" ? 1 : 0) +
     (stageFilter !== "all" ? 1 : 0) +
-    (firmFilter !== "all" ? 1 : 0);
+    (firmFilter !== "all" ? 1 : 0) +
+    (clientJobIdFilter ? 1 : 0);
 
   function clearFilters() {
     setJobFilter("all");
     setStageFilter("all");
     setFirmFilter("all");
+    setClientJobIdFilter("");
     setSearch("");
   }
 
@@ -106,6 +136,7 @@ export default function ClientCandidatesPage() {
     if (jobFilter !== "all") params.set("jobId", jobFilter);
     if (stageFilter !== "all") params.set("clientStageId", stageFilter);
     if (firmFilter !== "all") params.set("firmId", firmFilter);
+    if (clientJobIdFilter) params.set("clientJobId", clientJobIdFilter);
     fetch(`/api/client-portal/candidates?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => {

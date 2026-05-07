@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,18 +15,46 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
     if (search) {
+      // Match by company info OR by any contact linked to the company.
+      // Legacy inline contactName/Email fields are intentionally out of
+      // the filter — they're no longer the source of truth.
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },
         { industry: { contains: search, mode: "insensitive" } },
-        { contactName: { contains: search, mode: "insensitive" } },
-        { contactEmail: { contains: search, mode: "insensitive" } },
+        {
+          contacts: {
+            some: {
+              OR: [
+                { firstName: { contains: search, mode: "insensitive" } },
+                { lastName: { contains: search, mode: "insensitive" } },
+                { email: { contains: search, mode: "insensitive" } },
+              ],
+            },
+          },
+        },
       ];
     }
+
+    // Include the primary contact so the list row can show a real
+    // "who to contact" column instead of the legacy inline fields.
+    const include = {
+      _count: { select: { jobs: true } },
+      contacts: {
+        where: { isPrimary: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          title: true,
+        },
+        take: 1,
+      },
+    };
 
     if (!paginated) {
       const clients = await prisma.client.findMany({
         where,
-        include: { _count: { select: { jobs: true } } },
+        include,
         orderBy: { name: "asc" },
       });
       return NextResponse.json(clients);
@@ -34,7 +63,7 @@ export async function GET(request: NextRequest) {
     const [clients, total] = await Promise.all([
       prisma.client.findMany({
         where,
-        include: { _count: { select: { jobs: true } } },
+        include,
         orderBy: { name: "asc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -58,16 +87,16 @@ export async function POST(request: Request) {
       data: { ...data, organizationId: ctx.organizationId },
     });
 
-    // Seed default pipeline stages for the client portal
+    // Seed the canonical 9 pipeline stages for the client portal
     await prisma.clientPipelineStage.createMany({
-      data: [
-        { name: "Under Review", order: 0, color: "#f59e0b", isTerminal: false, clientId: client.id },
-        { name: "Interviewing", order: 1, color: "#3b82f6", isTerminal: false, clientId: client.id },
-        { name: "Offered", order: 2, color: "#8b5cf6", isTerminal: false, clientId: client.id },
-        { name: "Placed", order: 3, color: "#10b981", isTerminal: true, kind: "positive", clientId: client.id },
-        { name: "Lost", order: 4, color: "#ef4444", isTerminal: true, kind: "negative", clientId: client.id },
-        { name: "Rejected", order: 5, color: "#6b7280", isTerminal: true, kind: "negative", clientId: client.id },
-      ],
+      data: DEFAULT_STAGES.map((s, i) => ({
+        name: s.name,
+        order: i,
+        color: s.color,
+        isTerminal: s.isTerminal,
+        kind: s.kind,
+        clientId: client.id,
+      })),
     });
 
     return NextResponse.json(client, { status: 201 });

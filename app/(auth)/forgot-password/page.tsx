@@ -62,8 +62,8 @@ export default function ForgotPasswordPage() {
 
           <div className="space-y-5">
             {[
-              { icon: ShieldCheck, label: "Enterprise-grade encryption" },
-              { icon: Lock, label: "SOC 2 compliant infrastructure" },
+              { icon: ShieldCheck, label: "Encrypted in transit and at rest" },
+              { icon: Lock, label: "Per-organization data isolation" },
               { icon: KeyRound, label: "Secure token-based reset links" },
             ].map(({ icon: Icon, label }) => (
               <div key={label} className="flex items-center gap-3">

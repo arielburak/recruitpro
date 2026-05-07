@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function GET() {
   try {
@@ -8,7 +9,7 @@ export async function GET() {
     const orgFilter = { organizationId: ctx.organizationId };
 
     // Run all queries in parallel
-    const [owners, locations, jobsWithClients] = await Promise.all([
+    const [owners, locations, jobsWithClients, stageCounts] = await Promise.all([
       // Unique owners who have candidates
       prisma.user.findMany({
         where: {
@@ -41,6 +42,21 @@ export async function GET() {
         },
         orderBy: { title: "asc" },
       }),
+
+      // Count DISTINCT candidates per canonical stage name. A candidate can
+      // sit in more than one stage across different jobs — they get counted
+      // once per stage they appear in.
+      Promise.all(
+        DEFAULT_STAGES.map(async (stage) => {
+          const count = await prisma.candidate.count({
+            where: {
+              ...orgFilter,
+              submissions: { some: { stage: { name: stage.name } } },
+            },
+          });
+          return { name: stage.name, count };
+        })
+      ),
     ]);
 
     // Count candidates per location
@@ -92,6 +108,13 @@ export async function GET() {
           count: data.count,
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
+      // Returned in canonical pipeline order so the dropdown reads
+      // Sourced → Rejected, not alphabetical.
+      stages: stageCounts.map((s) => ({
+        value: s.name,
+        label: s.name,
+        count: s.count,
+      })),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });

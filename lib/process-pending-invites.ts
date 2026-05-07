@@ -1,14 +1,19 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * Converts PendingFirmInvite records into FirmEngagement records
- * for a user who just registered or logged in.
+ * Converts PendingFirmInvite records into person-level FirmEngagement
+ * records for a user who just registered or logged in.
+ *
+ * Invites are person-scoped: the resulting engagement carries the email +
+ * userId of the specific recruiter who claimed it, so only they (plus
+ * their firm's admins) will see it.
  *
  * Called after registration and when viewing engagements.
  */
-export async function processPendingInvites(email: string, organizationId: string) {
+export async function processPendingInvites(email: string, organizationId: string, userId: string) {
+  const normalized = email.trim().toLowerCase();
   const pending = await prisma.pendingFirmInvite.findMany({
-    where: { email },
+    where: { email: normalized },
   });
 
   if (pending.length === 0) return 0;
@@ -16,12 +21,14 @@ export async function processPendingInvites(email: string, organizationId: strin
   let created = 0;
 
   for (const invite of pending) {
-    // Check if engagement already exists for this firm + job
+    // Skip if this exact person was already turned into an engagement for
+    // this job (e.g. they were invited again after registering and the
+    // pending row lingered).
     const existing = await prisma.firmEngagement.findUnique({
       where: {
-        clientJobId_organizationId: {
+        clientJobId_invitedEmail: {
           clientJobId: invite.clientJobId,
-          organizationId,
+          invitedEmail: normalized,
         },
       },
     });
@@ -31,6 +38,8 @@ export async function processPendingInvites(email: string, organizationId: strin
         data: {
           clientJobId: invite.clientJobId,
           organizationId,
+          invitedEmail: normalized,
+          invitedUserId: userId,
           message: invite.message,
         },
       });

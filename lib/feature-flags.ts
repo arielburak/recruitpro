@@ -20,4 +20,19 @@ export const FEATURES = {
    */
   calendarIntegrations:
     process.env.NEXT_PUBLIC_ENABLE_CALENDAR_INTEGRATIONS !== "false",
+
+  /**
+   * Microsoft Outlook Calendar + Teams meeting integration. Microsoft as
+   * an auth/login provider was removed product-wide — this flag now only
+   * gates the Teams/Calendar integration UI entry points (integrations
+   * tab card + calendar platform picker option). Hidden by default until
+   * the Azure App Registration is configured against a proper
+   * RecruitingATS tenant.
+   *
+   * To enable: set NEXT_PUBLIC_ENABLE_MICROSOFT to "true" in Vercel
+   * (Production + Preview) + fill in AZURE_AD_CLIENT_ID /
+   * AZURE_AD_CLIENT_SECRET. Then redeploy.
+   */
+  microsoftIntegration:
+    process.env.NEXT_PUBLIC_ENABLE_MICROSOFT === "true",
 } as const;

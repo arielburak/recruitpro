@@ -33,11 +33,128 @@ const COUNTRY_CODES = [
 ];
 
 /**
+ * Best-effort display formats per country. `#` = digit placeholder,
+ * any other character is a literal separator. These cover the common
+ * national formats; edge cases (e.g. Brazilian 8-digit numbers) still
+ * render readably because extra digits spill past the template.
+ */
+const PHONE_FORMATS: Record<string, string> = {
+  "+54": "## ####-####",     // AR
+  "+1": "(###) ###-####",    // US / CA
+  "+55": "## #####-####",    // BR
+  "+56": "# #### ####",      // CL
+  "+57": "### ### ####",     // CO
+  "+52": "## #### ####",     // MX
+  "+51": "### ### ###",      // PE
+  "+598": "#### ####",       // UY
+  "+595": "### ### ###",     // PY
+  "+591": "#### ####",       // BO
+  "+593": "## ### ####",     // EC
+  "+58": "###-#######",      // VE
+  "+44": "#### ######",      // GB
+  "+34": "### ### ###",      // ES
+  "+33": "# ## ## ## ##",    // FR
+  "+49": "### #######",      // DE
+  "+39": "### ### ####",     // IT
+  "+351": "### ### ###",     // PT
+  "+31": "## ### ####",      // NL
+  "+41": "## ### ## ##",     // CH
+  "+61": "### ### ###",      // AU
+  "+81": "### #### ####",    // JP
+  "+86": "### #### ####",    // CN
+  "+91": "##### #####",      // IN
+  "+972": "## ### ####",     // IL
+  "+971": "## ### ####",     // AE
+};
+
+function formatPhoneNumber(value: string, prefix: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const template = PHONE_FORMATS[prefix];
+  if (!template) return digits;
+
+  let out = "";
+  let i = 0;
+  for (const char of template) {
+    if (i >= digits.length) break;
+    if (char === "#") {
+      out += digits[i];
+      i++;
+    } else {
+      out += char;
+    }
+  }
+  // Any digits beyond the template length spill over without separators
+  // rather than being truncated — better UX for numbers longer than we expected.
+  if (i < digits.length) out += digits.slice(i);
+  return out;
+}
+
+/**
+ * Build an example placeholder for a given prefix by running the
+ * formatter on a canned digit sequence. Keeps the hint in sync with the
+ * format automatically whenever PHONE_FORMATS grows.
+ */
+function examplePlaceholder(prefix: string): string {
+  return formatPhoneNumber("1234567890123456", prefix);
+}
+
+// Map ISO-3166-2 country code → dial code we know about. Used to derive a
+// sensible default from the browser locale so a user signing up from the US
+// doesn't see "+54" pre-filled.
+const COUNTRY_TO_DIAL: Record<string, string> = COUNTRY_CODES.reduce(
+  (acc, c) => {
+    acc[c.country] = c.code;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+/**
+ * Best-effort country guess from the browser. Reads `navigator.language`
+ * (e.g. "es-AR", "en-US") and falls back to the timezone if the locale has
+ * no region tag. Returns null when we can't tell — caller decides the
+ * fallback dial code. Server-side this returns null because `navigator` is
+ * not defined; the prefix is then set on hydration via useEffect.
+ */
+function detectBrowserDialCode(): string | null {
+  if (typeof navigator === "undefined") return null;
+
+  const langs: string[] = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ].filter(Boolean) as string[];
+
+  for (const lang of langs) {
+    const region = lang.split("-")[1]?.toUpperCase();
+    if (region && COUNTRY_TO_DIAL[region]) return COUNTRY_TO_DIAL[region];
+  }
+
+  // Fallback: extract country from IANA timezone (e.g. America/Argentina/Buenos_Aires).
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz.includes("Argentina")) return "+54";
+    if (tz.startsWith("America/") && !tz.includes("Argentina")) return "+1";
+    if (tz.startsWith("Europe/London")) return "+44";
+    if (tz.startsWith("Europe/Madrid")) return "+34";
+    if (tz.startsWith("Europe/Paris")) return "+33";
+  } catch {
+    // ignore — Intl missing or restricted
+  }
+
+  return null;
+}
+
+/**
  * Parse existing phone value into prefix + number.
- * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678"
+ * Handles "+54 11 1234-5678", "+1 555-1234", or just "11 1234-5678".
+ * When no value is provided the prefix defaults to the user's locale, with
+ * "+54" as the final fallback.
  */
 function parsePhone(value: string): { prefix: string; number: string } {
-  if (!value) return { prefix: "+54", number: "" };
+  if (!value) {
+    return { prefix: detectBrowserDialCode() ?? "+54", number: "" };
+  }
   const trimmed = value.trim();
 
   // Try to match a known country code at the start
@@ -53,8 +170,8 @@ function parsePhone(value: string): { prefix: string; number: string } {
     if (match) return { prefix: match[1], number: match[2] };
   }
 
-  // No prefix found - default to AR
-  return { prefix: "+54", number: trimmed };
+  // No prefix in the input — fall back to the locale-derived default.
+  return { prefix: detectBrowserDialCode() ?? "+54", number: trimmed };
 }
 
 interface PhoneInputProps {
@@ -65,6 +182,7 @@ interface PhoneInputProps {
   className?: string;
   placeholder?: string;
   compact?: boolean; // For inline table editing
+  highlighted?: boolean; // Draws attention (e.g. duplicate match detected)
 }
 
 export function PhoneInput({
@@ -73,12 +191,13 @@ export function PhoneInput({
   onChange,
   name,
   className = "",
-  placeholder = "11 1234-5678",
+  placeholder,
   compact = false,
+  highlighted = false,
 }: PhoneInputProps) {
   const initial = parsePhone(value || defaultValue || "");
   const [prefix, setPrefix] = useState(initial.prefix);
-  const [number, setNumber] = useState(initial.number);
+  const [number, setNumber] = useState(formatPhoneNumber(initial.number, initial.prefix));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -88,9 +207,21 @@ export function PhoneInput({
     if (value !== undefined) {
       const parsed = parsePhone(value);
       setPrefix(parsed.prefix);
-      setNumber(parsed.number);
+      setNumber(formatPhoneNumber(parsed.number, parsed.prefix));
     }
   }, [value]);
+
+  // After hydration, swap the SSR fallback prefix ("+54") for one derived
+  // from the user's browser locale — but only when there's no value yet and
+  // the user hasn't already picked a country. This avoids the awkward case
+  // where a US recruiter sees "+54" pre-filled.
+  useEffect(() => {
+    if (value || defaultValue || number) return;
+    const detected = detectBrowserDialCode();
+    if (detected && detected !== prefix) setPrefix(detected);
+    // Run once on mount; later edits should keep the user's choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -119,28 +250,37 @@ export function PhoneInput({
     setPrefix(code);
     setOpen(false);
     setSearch("");
+    // Re-format the existing digits with the new country's template so the
+    // UI stays consistent when a recruiter switches countries mid-edit.
+    const reformatted = formatPhoneNumber(number, code);
+    setNumber(reformatted);
     if (onChange) {
-      onChange(number ? `${code} ${number}` : "");
+      onChange(reformatted ? `${code} ${reformatted}` : "");
     }
   }
 
   function handleNumberChange(val: string) {
-    setNumber(val);
+    const formatted = formatPhoneNumber(val, prefix);
+    setNumber(formatted);
     if (onChange) {
-      onChange(val ? `${prefix} ${val}` : "");
+      onChange(formatted ? `${prefix} ${formatted}` : "");
     }
   }
 
   const height = compact ? "h-8" : "h-10";
+  const borderColor = highlighted ? "border-indigo-400" : "border-input";
+  const wrapperHighlight = highlighted
+    ? "rounded-md ring-2 ring-indigo-100"
+    : "";
 
   return (
-    <div className={`flex ${className}`}>
+    <div className={`flex ${wrapperHighlight} ${className}`}>
       {name && <input type="hidden" name={name} value={fullValue} />}
       <div ref={dropdownRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className={`flex items-center gap-1 ${height} px-2 border border-r-0 rounded-l-md bg-gray-50 hover:bg-gray-100 text-sm transition-colors whitespace-nowrap`}
+          className={`flex items-center gap-1 ${height} px-2 border ${borderColor} border-r-0 rounded-l-md bg-gray-50 hover:bg-gray-100 text-sm transition-colors whitespace-nowrap`}
         >
           <span>{selectedCountry.flag}</span>
           <span className="text-gray-600 text-xs">{prefix}</span>
@@ -179,8 +319,8 @@ export function PhoneInput({
       </div>
       <input
         type="tel"
-        className={`flex ${height} w-full rounded-r-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-        placeholder={placeholder}
+        className={`flex ${height} w-full rounded-r-md border ${borderColor} bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        placeholder={placeholder ?? examplePlaceholder(prefix)}
         value={number}
         onChange={(e) => handleNumberChange(e.target.value)}
       />

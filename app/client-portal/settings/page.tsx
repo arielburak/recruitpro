@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { PipelineStagesManager } from "@/components/client-portal/pipeline-stages-manager";
 import { LogoUploader } from "@/components/logo-uploader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,10 +30,13 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
+type SettingsTab = "profile" | "team" | "organization";
+
 export default function ClientPortalSettingsPage() {
   const { data: session } = useSession();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
   // Profile form
   const [name, setName] = useState("");
@@ -237,23 +239,54 @@ export default function ClientPortalSettingsPage() {
     );
   }
 
+  const tabs: { id: SettingsTab; label: string; icon: any; adminOnly?: boolean }[] = [
+    { id: "profile", label: "Profile", icon: User },
+    { id: "team", label: "Team", icon: Users, adminOnly: true },
+    { id: "organization", label: "Organization", icon: Building2, adminOnly: true },
+  ];
+  const visibleTabs = tabs.filter((t) => !t.adminOnly || isAdmin);
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-          <User className="w-5 h-5 text-emerald-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Profile & Settings</h1>
-          <p className="text-gray-500 text-sm">Manage your account and team</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Manage your profile, your team and your company in one place.
+        </p>
+      </div>
+
+      {/* Tabs bar */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-6 overflow-x-auto" aria-label="Settings tabs">
+          {visibleTabs.map((t) => {
+            const active = activeTab === t.id;
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                className={`group inline-flex items-center gap-2 whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium transition-colors ${
+                  active
+                    ? "border-emerald-600 text-emerald-600"
+                    : "border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Forms */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Profile */}
+          {/* ========== PROFILE TAB ========== */}
+          {activeTab === "profile" && (
+          <>
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -362,9 +395,12 @@ export default function ClientPortalSettingsPage() {
               )}
             </CardContent>
           </Card>
+          </>
+          )}
+          {/* ========== END PROFILE TAB ========== */}
 
-          {/* Candidate Pipeline */}
-          {/* Company Logo (optional) */}
+          {/* ========== ORGANIZATION TAB ========== */}
+          {activeTab === "organization" && (
           <LogoUploader
             endpoint="/api/client-portal/logo"
             isAdmin={isAdmin}
@@ -372,10 +408,10 @@ export default function ClientPortalSettingsPage() {
             helperText="Optional. Shown next to your company name in the portal header. PNG, JPG, WEBP or SVG, max 2 MB."
             accentColor="emerald"
           />
+          )}
 
-          <PipelineStagesManager isAdmin={isAdmin} />
-
-          {/* Team Members */}
+          {/* ========== TEAM TAB ========== */}
+          {activeTab === "team" && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-base flex items-center gap-2">
@@ -542,9 +578,12 @@ export default function ClientPortalSettingsPage() {
               )}
             </CardContent>
           </Card>
+          )}
+          {/* ========== END TEAM TAB ========== */}
         </div>
 
-        {/* Right Sidebar */}
+        {/* Right Sidebar — only on Profile tab */}
+        {activeTab === "profile" && (
         <div className="space-y-4">
           {/* Account Info */}
           <Card>
@@ -598,6 +637,7 @@ export default function ClientPortalSettingsPage() {
             </CardContent>
           </Card>
         </div>
+        )}
       </div>
     </div>
   );

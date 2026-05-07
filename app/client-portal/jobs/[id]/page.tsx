@@ -13,6 +13,8 @@ import {
   Send,
   Search,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Clock,
   XCircle,
   Users,
@@ -43,17 +45,46 @@ import {
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { formatDate } from "@/lib/utils";
 
+type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
+
+type InviteSuggestion = {
+  key: string;
+  // Null when the suggestion is a legacy firm-only entry (pre-person-
+  // level invite) — we know the firm but not a specific person.
+  email: string | null;
+  firmName: string | null;
+  name: string | null;
+  lastInvitedAt: string;
+  status: InviteStatus;
+  firmOnly: boolean;
+  alreadyOnThisJob: boolean;
+};
+
+type InviteLookup = {
+  email: string;
+  shape: "invalid" | "valid";
+  onPlatform?: boolean;
+  name?: string | null;
+  firmName?: string | null;
+  alreadyOnThisJob?: boolean;
+  alreadyOnThisJobStatus?: InviteStatus | null;
+};
+
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
-  const [firmSearch, setFirmSearch] = useState("");
-  const [firmResults, setFirmResults] = useState<any[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviteSuggestions, setInviteSuggestions] = useState<InviteSuggestion[]>([]);
+  const [inviteLookup, setInviteLookup] = useState<InviteLookup | null>(null);
+  const [lookupPending, setLookupPending] = useState(false);
+  // Per-firm collapsed state for the grouped contacts list. Firms default
+  // to expanded when the total list is short, collapsed otherwise.
+  const [collapsedFirms, setCollapsedFirms] = useState<Set<string>>(new Set());
 
   // Team member management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -127,9 +158,50 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchJobCandidates();
   }, [id]);
 
+  // Debounced lookup: as the user types an email, resolve it against the
+  // platform so we can show "Found — Nick Cuello at Alphabridge" or "No
+  // account — we'll email them a signup link" before they hit Send.
+  // Skipped when the input doesn't look like an email or matches one of
+  // the suggestions (which already carry richer info).
+  useEffect(() => {
+    const raw = inviteEmail.trim().toLowerCase();
+    if (!raw || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+      setInviteLookup(null);
+      setLookupPending(false);
+      return;
+    }
+    const matchingSuggestion = inviteSuggestions.find((s) => s.email && s.email === raw);
+    if (matchingSuggestion) {
+      setInviteLookup(null);
+      setLookupPending(false);
+      return;
+    }
+    setLookupPending(true);
+    const t = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ email: raw, clientJobId: id });
+        const res = await fetch(`/api/client-portal/invite-lookup?${qs.toString()}`);
+        if (res.ok) {
+          const data = (await res.json()) as InviteLookup;
+          // Guard against a stale response winning over a newer typed
+          // value — only commit if the email we asked about is still
+          // the one in the input.
+          if (data.email === inviteEmail.trim().toLowerCase()) {
+            setInviteLookup(data);
+          }
+        }
+      } catch {}
+      setLookupPending(false);
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      setLookupPending(false);
+    };
+  }, [inviteEmail, id, inviteSuggestions]);
+
   async function fetchJobCandidates() {
     try {
-      const res = await fetch(`/api/client-portal/candidates?flat=true&jobId=${id}`);
+      const res = await fetch(`/api/client-portal/candidates?flat=true&clientJobId=${id}`);
       if (res.ok) {
         const data = await res.json();
         setJobCandidates(Array.isArray(data) ? data : []);
@@ -230,16 +302,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setAddingMember(false);
   }
 
-  async function searchFirms(query: string) {
-    setFirmSearch(query);
-    if (query.length < 2) { setFirmResults([]); return; }
-    try {
-      const res = await fetch(`/api/client-portal/invite-firm?q=${encodeURIComponent(query)}`);
-      if (res.ok) setFirmResults(await res.json());
-    } catch {}
-  }
-
-  async function inviteFirm(organizationId?: string) {
+  async function inviteFirm() {
     setInviting(true);
     setInviteSuccess("");
     try {
@@ -248,8 +311,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientJobId: id,
-          organizationId: organizationId || undefined,
-          email: !organizationId ? inviteEmail : undefined,
+          email: inviteEmail,
           message: inviteMessage || undefined,
         }),
       });
@@ -257,17 +319,60 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       if (!res.ok) {
         setInviteSuccess(data.error || "Failed to invite");
       } else {
-        setInviteSuccess(data.sent ? "Email invitation sent!" : "Firm invited successfully!");
-        setFirmSearch("");
+        setInviteSuccess(
+          data.pending
+            ? "Signup email sent — they'll join and see this job on first login."
+            : "Invitation sent by email and in-app. Waiting for their response."
+        );
         setInviteEmail("");
         setInviteMessage("");
-        setFirmResults([]);
+        setInviteLookup(null);
+        // Pull the fresh job (so the new row appears in Assigned Firms)
+        // AND the updated suggestions book (so the person you just
+        // invited shows up for reuse on the next job).
         fetchJob();
+        loadInviteSuggestions();
       }
     } catch {
       setInviteSuccess("Something went wrong");
     }
     setInviting(false);
+  }
+
+  async function withdrawEngagement(engagementId: string, label: string) {
+    if (!confirm(`Withdraw the invitation to ${label}? They won't be able to accept it anymore.`)) return;
+    const res = await fetch(`/api/client-portal/engagements/${engagementId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      fetchJob();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Could not withdraw invitation");
+    }
+  }
+
+  async function withdrawPendingInvite(pendingId: string, email: string) {
+    if (!confirm(`Cancel the pending invitation to ${email}?`)) return;
+    const res = await fetch(`/api/client-portal/pending-invites/${pendingId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      fetchJob();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Could not cancel invitation");
+    }
+  }
+
+  async function loadInviteSuggestions() {
+    try {
+      const res = await fetch(`/api/client-portal/invite-suggestions?clientJobId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInviteSuggestions(Array.isArray(data) ? data : []);
+      }
+    } catch {}
   }
 
   if (loading) {
@@ -449,7 +554,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
                   </CardTitle>
                   {jobCandidates.length > 0 && (
-                    <Link href={`/client-portal/candidates?jobId=${id}`} className="text-xs text-emerald-600 hover:underline">
+                    <Link href={`/client-portal/candidates?clientJobId=${id}`} className="text-xs text-emerald-600 hover:underline">
                       View all →
                     </Link>
                   )}
@@ -512,7 +617,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
-                            <a href={jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                            <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
                               <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                             </a>
                             <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
@@ -593,7 +698,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" download>
+                            <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
                               <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
                             </a>
                             <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
@@ -719,46 +824,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
 
-          {/* Assigned Recruiters (from staffing firms) */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4 text-indigo-600" />
-                Assigned Recruiters
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!job.teamMembers || job.teamMembers.length === 0 ? (
-                <p className="text-sm text-gray-400 py-3 text-center">
-                  No recruiters assigned yet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {job.teamMembers.map((member: any) => (
-                    <div key={member.id} className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg">
-                      <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
-                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-gray-900">{member.name}</p>
-                        <p className="text-[11px] text-gray-500 capitalize">{member.role?.toLowerCase().replace("_", " ")}</p>
-                        <div className="mt-1.5 space-y-0.5">
-                          <a
-                            href={`mailto:${member.email}`}
-                            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:underline"
-                          >
-                            <Mail className="h-3 w-3" />
-                            {member.email}
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Recruiting Firms */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -766,44 +831,62 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 <Building2 className="h-4 w-4 text-indigo-600" />
                 Assigned Firms
               </CardTitle>
-              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowInvite(!showInvite)}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-xs"
+                onClick={() => {
+                  const next = !showInvite;
+                  setShowInvite(next);
+                  if (next) loadInviteSuggestions();
+                }}
+              >
                 <Plus className="h-3 w-3" />
                 Invite
               </Button>
             </CardHeader>
             <CardContent>
               {/* Summary Stats */}
-              {job.engagements?.length > 0 && (
-                <div className="flex gap-3 mb-3">
-                  <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-green-700">
-                      {job.engagements.filter((e: any) => e.status === "ACCEPTED").length}
-                    </p>
-                    <p className="text-[10px] text-green-600">Active</p>
+              {(() => {
+                const pendingInvites = job.pendingFirmInvites || [];
+                const accepted = (job.engagements || []).filter((e: any) => e.status === "ACCEPTED").length;
+                const pending = (job.engagements || []).filter((e: any) => e.status === "PENDING").length + pendingInvites.length;
+                const declined = (job.engagements || []).filter((e: any) => e.status === "DECLINED").length;
+                const totalRows = (job.engagements?.length || 0) + pendingInvites.length;
+                if (totalRows === 0) return null;
+                return (
+                  <div className="flex gap-3 mb-3">
+                    <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-green-700">{accepted}</p>
+                      <p className="text-[10px] text-green-600">Active</p>
+                    </div>
+                    <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-amber-700">{pending}</p>
+                      <p className="text-[10px] text-amber-600">Pending</p>
+                    </div>
+                    <div className="flex-1 bg-rose-50 rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-rose-700">{declined}</p>
+                      <p className="text-[10px] text-rose-600">Rejected</p>
+                    </div>
                   </div>
-                  <div className="flex-1 bg-amber-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-amber-700">
-                      {job.engagements.filter((e: any) => e.status === "PENDING").length}
-                    </p>
-                    <p className="text-[10px] text-amber-600">Pending</p>
-                  </div>
-                  <div className="flex-1 bg-blue-50 rounded-lg p-2 text-center">
-                    <p className="text-lg font-bold text-blue-700">
-                      {Object.values(job.firmCandidateCounts || {}).reduce((a: number, b: any) => a + (b as number), 0) as number}
-                    </p>
-                    <p className="text-[10px] text-blue-600">Candidates</p>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {job.engagements?.length === 0 ? (
+              {(job.engagements?.length || 0) + (job.pendingFirmInvites?.length || 0) === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
-                  No firms invited yet. Click Invite to get started.
+                  No recruiters invited yet. Click Invite to get started.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {job.engagements?.map((eng: any) => {
                     const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
+                    // Prefer the registered user's name when we have it
+                    // (most engagements post-person-level invites). Fall
+                    // back to the invited email, then — for legacy org-
+                    // level rows — just the firm name.
+                    const personLabel =
+                      eng.invitedUser?.name || eng.invitedEmail || null;
+                    const withdrawLabel = personLabel || eng.organization.name;
                     return (
                       <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -812,8 +895,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <Building2 className="h-4 w-4 text-indigo-600" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{eng.organization.name}</p>
-                              <p className="text-[10px] text-gray-400 truncate">Invited {formatDate(eng.invitedAt)}</p>
+                              <p className="text-sm font-medium truncate">
+                                {personLabel || eng.organization.name}
+                              </p>
+                              <p className="text-[10px] text-gray-400 truncate">
+                                {personLabel && eng.organization.name ? (
+                                  <>{eng.organization.name} · </>
+                                ) : null}
+                                Invited {formatDate(eng.invitedAt)}
+                              </p>
                             </div>
                           </div>
                           <Badge className={`text-[10px] shrink-0 ${statusColor[eng.status]}`}>
@@ -837,13 +927,58 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           </div>
                         )}
                         {eng.status === "PENDING" && (
-                          <p className="text-[10px] text-amber-600 ml-10 mt-1">
-                            Waiting for response...
-                          </p>
+                          <div className="ml-10 mt-1 flex items-center justify-between gap-2">
+                            <p className="text-[10px] text-amber-600">
+                              Waiting for response...
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => withdrawEngagement(eng.id, withdrawLabel)}
+                              className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                            >
+                              Withdraw
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
                   })}
+
+                  {/* Pending email invites — the recipient hasn't signed
+                      up yet, so there's no FirmEngagement row. Surface
+                      them here so the client sees who they still owe a
+                      response from, and can cancel if they change their
+                      mind. */}
+                  {job.pendingFirmInvites?.map((p: any) => (
+                    <div key={`pending_${p.id}`} className="p-2.5 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                            <Mail className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{p.email}</p>
+                            <p className="text-[10px] text-gray-400 truncate">
+                              Email sent {formatDate(p.createdAt)} · not registered yet
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="text-[10px] shrink-0 bg-gray-100 text-gray-600 border-gray-200">
+                          <Clock className="h-3 w-3 mr-1" />
+                          awaiting signup
+                        </Badge>
+                      </div>
+                      <div className="ml-10 mt-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => withdrawPendingInvite(p.id, p.email)}
+                          className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                        >
+                          Cancel invitation
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -854,62 +989,280 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             <Card className="border-emerald-200">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">Invite a Recruiting Firm</h4>
+                  <h4 className="text-sm font-semibold">Invite a Recruiter</h4>
                   <button onClick={() => setShowInvite(false)}>
                     <X className="h-4 w-4 text-gray-400" />
                   </button>
                 </div>
 
-                {/* Search existing firms */}
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Search firms on Recruiting ATS</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                    <Input
-                      value={firmSearch}
-                      onChange={(e) => searchFirms(e.target.value)}
-                      placeholder="Search by name..."
-                      className="pl-9 text-sm"
-                    />
-                  </div>
-                  {firmResults.length > 0 && (
-                    <div className="mt-1 border rounded-lg max-h-32 overflow-y-auto">
-                      {firmResults.map((firm: any) => (
-                        <button
-                          key={firm.id}
-                          onClick={() => inviteFirm(firm.id)}
-                          disabled={inviting}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-gray-400" />
-                            <span>{firm.name}</span>
-                          </div>
-                          <span className="text-xs text-gray-400">{firm._count?.users || 0} members</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-2 bg-white text-gray-400">or invite by email</span>
-                  </div>
-                </div>
+                <p className="text-xs text-gray-500">
+                  Invite by email. The invitation reaches only that person — not
+                  their whole firm — so you can pick a specific HM or POC.
+                </p>
 
                 <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email or search</label>
                   <Input
                     type="email"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="recruiter@firm.com"
+                    placeholder="recruiter@firm.com or search by name / firm"
                     className="text-sm"
+                    autoComplete="off"
                   />
                 </div>
+
+                {/* Live resolution for a freshly-typed email that isn't
+                    in the suggestions list. Tells the user upfront
+                    whether we'll be routing to an existing recruiter or
+                    sending a signup email, and flags when this exact
+                    email is already on this job. */}
+                {(() => {
+                  if (lookupPending) {
+                    return (
+                      <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Checking…
+                      </p>
+                    );
+                  }
+                  if (!inviteLookup || inviteLookup.shape !== "valid") return null;
+                  if (inviteLookup.alreadyOnThisJob) {
+                    const s = inviteLookup.alreadyOnThisJobStatus;
+                    const label =
+                      s === "accepted"
+                        ? "already accepted this job"
+                        : s === "declined"
+                        ? "already declined this job"
+                        : "already invited to this job";
+                    return (
+                      <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 text-xs text-indigo-700 flex items-start gap-2">
+                        <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span className="break-words">{inviteLookup.email} — {label}</span>
+                      </div>
+                    );
+                  }
+                  if (inviteLookup.onPlatform) {
+                    return (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-xs text-emerald-800 flex items-start gap-2">
+                        <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span className="break-words">
+                          <span className="font-medium">{inviteLookup.name || inviteLookup.email}</span>
+                          {inviteLookup.firmName ? <span className="text-emerald-700/80"> · {inviteLookup.firmName}</span> : null}
+                          <span className="text-emerald-700/80"> — on Recruiting ATS</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-start gap-2">
+                      <Mail className="h-3.5 w-3.5 shrink-0 mt-0.5 text-gray-400" />
+                      <span className="break-words">
+                        No account found — we&apos;ll email{" "}
+                        <span className="font-medium text-gray-700">{inviteLookup.email}</span>{" "}
+                        a signup link to join Recruiting ATS.
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                {/* Your recruiter contacts — always-visible book of
+                    people this client has invited before, across all
+                    jobs. Grouped by firm when long, filtered as the
+                    user types in the email input. Sourced purely from
+                    this client's own past invites — never from the
+                    firm's internal user roster, which would leak the
+                    agency's team. */}
+                {(() => {
+                  if (inviteSuggestions.length === 0) {
+                    return (
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        You haven&apos;t invited anyone from this client yet.
+                        The first recruiter you invite shows up here for one-
+                        click reuse on future jobs.
+                      </p>
+                    );
+                  }
+                  const q = inviteEmail.trim().toLowerCase();
+                  const matches = inviteSuggestions.filter((s) =>
+                    !q ||
+                    (s.email || "").toLowerCase().includes(q) ||
+                    (s.firmName || "").toLowerCase().includes(q) ||
+                    (s.name || "").toLowerCase().includes(q)
+                  );
+                  // Group by firmName. People we don't have a firm for
+                  // (pending email invites that never registered) fall
+                  // into a trailing "No firm yet" bucket.
+                  const NO_FIRM_KEY = "__no_firm__";
+                  const groups = new Map<string, { label: string; items: InviteSuggestion[] }>();
+                  for (const m of matches) {
+                    const key = m.firmName || NO_FIRM_KEY;
+                    const label = m.firmName || "No firm yet";
+                    const g = groups.get(key) || { label, items: [] };
+                    g.items.push(m);
+                    groups.set(key, g);
+                  }
+                  const groupList = Array.from(groups.entries())
+                    .sort((a, b) => {
+                      if (a[0] === NO_FIRM_KEY) return 1;
+                      if (b[0] === NO_FIRM_KEY) return -1;
+                      return a[1].label.localeCompare(b[1].label);
+                    });
+                  // Collapse policy: when the book gets busy (≥4 firms
+                  // or ≥10 people), only the largest firm stays
+                  // expanded by default so the form doesn't grow off-
+                  // screen. User can click any firm header to toggle.
+                  const totalFirms = groupList.length;
+                  const totalPeople = matches.length;
+                  const startsCollapsed = totalFirms >= 4 || totalPeople >= 10;
+                  const largestFirmKey = groupList.length > 0
+                    ? groupList.reduce((a, b) => (b[1].items.length > a[1].items.length ? b : a))[0]
+                    : null;
+                  const isCollapsed = (key: string) => {
+                    if (collapsedFirms.has(key)) return true;
+                    if (!startsCollapsed) return false;
+                    return key !== largestFirmKey;
+                  };
+                  const toggleFirm = (key: string) => {
+                    setCollapsedFirms((prev) => {
+                      const next = new Set(prev);
+                      const currentlyCollapsed = isCollapsed(key);
+                      if (currentlyCollapsed) next.delete(key);
+                      else next.add(key);
+                      // If we're starting from the collapse-policy
+                      // default and clicking to expand, we need to
+                      // explicitly uncollapse the default-collapsed
+                      // ones. Handled by deleting the key above.
+                      return next;
+                    });
+                  };
+
+                  if (matches.length === 0) {
+                    return (
+                      <p className="text-[11px] text-gray-400">
+                        No contacts match &ldquo;{q}&rdquo;.
+                      </p>
+                    );
+                  }
+
+                  const statusPill: Record<InviteStatus, { label: string; className: string }> = {
+                    accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
+                    pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
+                    email_sent: { label: "awaiting signup", className: "bg-gray-100 text-gray-600" },
+                    declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
+                  };
+
+                  return (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                          Your recruiter contacts
+                        </p>
+                        <span className="text-[10px] text-gray-400">{totalPeople}</span>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-gray-50/60 divide-y divide-gray-100 overflow-hidden">
+                        {groupList.map(([key, g]) => {
+                          const collapsed = isCollapsed(key);
+                          return (
+                            <div key={key}>
+                              <button
+                                type="button"
+                                onClick={() => toggleFirm(key)}
+                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                              >
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  {collapsed
+                                    ? <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
+                                    : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />}
+                                  <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
+                                  <span className="font-medium truncate">{g.label}</span>
+                                </span>
+                                <span className="text-[10px] text-gray-400 shrink-0">{g.items.length}</span>
+                              </button>
+                              {!collapsed && (
+                                <ul className="bg-white">
+                                  {g.items.map((s) => {
+                                    const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
+                                    return (
+                                      <li key={s.key}>
+                                        <button
+                                          type="button"
+                                          disabled={s.alreadyOnThisJob}
+                                          onClick={() => {
+                                            if (s.alreadyOnThisJob) return;
+                                            // Firm-only rows have no email to prefill;
+                                            // clicking them clears the input so the
+                                            // user can type the specific person.
+                                            setInviteEmail(s.email || "");
+                                          }}
+                                          className={`w-full text-left px-2.5 py-1.5 transition-colors ${
+                                            s.alreadyOnThisJob
+                                              ? "opacity-60 cursor-not-allowed"
+                                              : selected
+                                              ? "bg-indigo-50"
+                                              : "hover:bg-indigo-50/70"
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                              {s.firmOnly ? (
+                                                <>
+                                                  <p className="text-xs font-medium text-gray-800 truncate">
+                                                    {s.firmName}
+                                                  </p>
+                                                  <p className="text-[10px] text-gray-400 truncate">
+                                                    Previously engaged · type the specific person&apos;s email
+                                                  </p>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                                    {s.name || s.email}
+                                                  </p>
+                                                  {s.name && (
+                                                    <p className="text-[10px] text-gray-400 truncate">
+                                                      {s.email}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                            {(() => {
+                                              if (s.alreadyOnThisJob) {
+                                                return (
+                                                  <span className="text-[10px] font-medium text-indigo-600 shrink-0">
+                                                    on this job
+                                                  </span>
+                                                );
+                                              }
+                                              if (s.firmOnly) {
+                                                return (
+                                                  <span className="text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                                                    firm only
+                                                  </span>
+                                                );
+                                              }
+                                              const p = statusPill[s.status];
+                                              return (
+                                                <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
+                                                  {p.label}
+                                                </span>
+                                              );
+                                            })()}
+                                          </div>
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <Textarea
                   value={inviteMessage}
@@ -919,15 +1272,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   className="text-sm"
                 />
 
-                <Button
-                  size="sm"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                  disabled={inviting || (!inviteEmail && firmResults.length === 0)}
-                  onClick={() => inviteFirm()}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {inviting ? "Sending..." : "Send Invitation"}
-                </Button>
+                {(() => {
+                  // Block send if we know (via suggestion OR live lookup)
+                  // that this exact email is already on this job. Lets
+                  // us give a clearer affordance than a 400 on submit.
+                  const emailNow = inviteEmail.trim().toLowerCase();
+                  const matchingSuggestion = inviteSuggestions.find((s) => s.email && s.email === emailNow);
+                  const blocked =
+                    matchingSuggestion?.alreadyOnThisJob === true ||
+                    inviteLookup?.alreadyOnThisJob === true;
+                  return (
+                    <Button
+                      size="sm"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
+                      disabled={inviting || !inviteEmail || blocked}
+                      onClick={() => inviteFirm()}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {inviting ? "Sending..." : blocked ? "Already on this job" : "Send Invitation"}
+                    </Button>
+                  );
+                })()}
 
                 {inviteSuccess && (
                   <p className="text-xs text-center text-emerald-600">{inviteSuccess}</p>

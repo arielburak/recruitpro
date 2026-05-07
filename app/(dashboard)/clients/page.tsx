@@ -1,16 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Building2, Trash2 } from "lucide-react";
+import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
+  // "all" = no filter, "RECRUITING" or "STAFF_AUG" filters the list
+  // by engagement model. Empty/legacy engagementType is treated as
+  // RECRUITING (that's the schema default) so legacy rows show up
+  // under Headhunting.
+  const [engagementFilter, setEngagementFilter] = useState<"all" | "RECRUITING" | "STAFF_AUG">("all");
 
   useEffect(() => {
     fetch("/api/clients")
@@ -26,14 +33,35 @@ export default function ClientsPage() {
     setClients(clients.filter((c) => c.id !== id));
   }
 
-  const filtered = search
-    ? clients.filter((c) =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.industry || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.contactName || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.contactEmail || "").toLowerCase().includes(search.toLowerCase())
-      )
-    : clients;
+  const engagementCounts = useMemo(() => {
+    let recruiting = 0;
+    let staffAug = 0;
+    for (const c of clients) {
+      if (c.engagementType === "STAFF_AUG") staffAug++;
+      else recruiting++;
+    }
+    return { recruiting, staffAug };
+  }, [clients]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (!dateInRange(c.createdAt, dateRange)) return false;
+      if (engagementFilter !== "all") {
+        const type = c.engagementType === "STAFF_AUG" ? "STAFF_AUG" : "RECRUITING";
+        if (type !== engagementFilter) return false;
+      }
+      if (!q) return true;
+      const primary = c.contacts?.[0];
+      const primaryName = primary ? `${primary.firstName || ""} ${primary.lastName || ""}` : "";
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.industry || "").toLowerCase().includes(q) ||
+        primaryName.toLowerCase().includes(q) ||
+        (primary?.email || "").toLowerCase().includes(q)
+      );
+    });
+  }, [clients, search, dateRange, engagementFilter]);
 
   return (
     <div className="space-y-4">
@@ -47,14 +75,26 @@ export default function ClientsPage() {
         </Link>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by name, industry, contact..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 h-9 text-sm"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search by name, industry, contact..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 h-9 text-sm"
+          />
+        </div>
+        <select
+          value={engagementFilter}
+          onChange={(e) => setEngagementFilter(e.target.value as "all" | "RECRUITING" | "STAFF_AUG")}
+          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+        >
+          <option value="all">All types ({clients.length})</option>
+          <option value="RECRUITING">Headhunting / Recruiting ({engagementCounts.recruiting})</option>
+          <option value="STAFF_AUG">Staff Aug / Outsourcing ({engagementCounts.staffAug})</option>
+        </select>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
       </div>
 
       {loading ? (
@@ -75,7 +115,7 @@ export default function ClientsPage() {
           <div className="grid grid-cols-[1fr_120px_140px_1fr_70px_36px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
             <div>Company</div>
             <div>Industry</div>
-            <div>Contact</div>
+            <div>Primary contact</div>
             <div>Email</div>
             <div className="text-right">Jobs</div>
             <div></div>
@@ -91,16 +131,27 @@ export default function ClientsPage() {
                     {c.name.slice(0, 2).toUpperCase()}
                   </div>
                   <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
+                  {c.engagementType === "STAFF_AUG" && (
+                    <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">
+                      Staff Aug
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 truncate">{c.industry || "—"}</p>
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm text-gray-600 truncate">{c.contactName || "—"}</p>
+                  {c.contacts?.[0] ? (
+                    <p className="text-sm text-gray-600 truncate">
+                      {c.contacts[0].firstName} {c.contacts[0].lastName}
+                    </p>
+                  ) : (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
                 </div>
                 <div className="min-w-0">
-                  {c.contactEmail ? (
-                    <p className="text-xs text-gray-400 truncate">{c.contactEmail}</p>
+                  {c.contacts?.[0]?.email ? (
+                    <p className="text-xs text-gray-400 truncate">{c.contacts[0].email}</p>
                   ) : (
                     <span className="text-xs text-gray-300">—</span>
                   )}

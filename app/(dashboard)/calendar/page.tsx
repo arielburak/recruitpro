@@ -61,8 +61,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const ALL_PLATFORM_OPTIONS = [
-  { value: "google_meet", label: "Google Meet", color: "text-green-600", requiresIntegration: true },
-  { value: "teams", label: "Microsoft Teams", color: "text-blue-600", requiresIntegration: true },
+  { value: "google_meet", label: "Google Meet", color: "text-green-600", requiresIntegration: true, provider: "google" as const },
+  { value: "microsoft_teams", label: "Microsoft Teams", color: "text-blue-600", requiresIntegration: true, provider: "microsoft" as const },
   { value: "zoom", label: "Zoom", color: "text-blue-500", requiresIntegration: false },
   { value: "custom", label: "Custom Link", color: "text-gray-600", requiresIntegration: false },
   { value: "none", label: "No Video", color: "text-gray-400", requiresIntegration: false },
@@ -70,9 +70,14 @@ const ALL_PLATFORM_OPTIONS = [
 
 // When the calendar integration feature is off (e.g. while Google OAuth
 // verification is pending), hide options that require a native integration.
-const PLATFORM_OPTIONS = FEATURES.calendarIntegrations
+// The Microsoft option is further gated on FEATURES.microsoftIntegration
+// so we don't show "Microsoft Teams" until the Azure tenant is configured.
+const PLATFORM_OPTIONS = (FEATURES.calendarIntegrations
   ? ALL_PLATFORM_OPTIONS
-  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration);
+  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration)
+).filter(
+  (p) => !(("provider" in p) && p.provider === "microsoft" && !FEATURES.microsoftIntegration)
+);
 
 const TIMEZONE_OPTIONS = [
   // Americas
@@ -834,6 +839,9 @@ function CreateInterviewModal({
   // Google Calendar integration status
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  // Microsoft Teams integration status
+  const [msConnected, setMsConnected] = useState(false);
+  const [msEmail, setMsEmail] = useState<string | null>(null);
 
   // Candidate search
   const [candidateSearch, setCandidateSearch] = useState("");
@@ -867,6 +875,13 @@ function CreateInterviewModal({
         .then((data) => {
           setGoogleConnected(data.connected || false);
           setGoogleEmail(data.email || null);
+        })
+        .catch(() => {});
+      fetch("/api/integrations/microsoft/status")
+        .then((r) => r.json())
+        .then((data) => {
+          setMsConnected(data.connected || false);
+          setMsEmail(data.email || null);
         })
         .catch(() => {});
     }
@@ -1315,15 +1330,42 @@ function CreateInterviewModal({
               {platform === "google_meet" && !googleConnected && (
                 <div className="bg-amber-50 p-2.5 rounded-lg text-sm space-y-1.5">
                   <p className="text-amber-700 text-xs">
-                    Google Calendar not connected. <a href="/admin/settings" className="text-indigo-600 hover:underline font-medium">Connect in Settings</a> to auto-generate Meet links, or paste a link manually below.
+                    Google Calendar not connected. <a href="/settings/integrations" className="text-indigo-600 hover:underline font-medium">Connect in Settings</a> to auto-generate Meet links, or paste a link manually below.
                   </p>
                   <Input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
                 </div>
               )}
 
-              {platform === "teams" && (
-                <div className="space-y-1.5">
-                  <p className="text-xs text-gray-500">Paste your Teams meeting link below, or create one from <a href="https://teams.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">teams.microsoft.com</a></p>
+              {platform === "microsoft_teams" && msConnected && (
+                <div className="flex items-start gap-2 bg-green-50 p-2.5 rounded-lg text-sm">
+                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-green-800 font-medium text-xs">Teams meeting link will be auto-generated</p>
+                    <p className="text-green-600 text-xs">
+                      Connected as <strong>{msEmail}</strong>. An Outlook calendar event with a Teams link will be created and sent to all participants.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Disconnect ${msEmail} and connect a different Microsoft account?`)) return;
+                        try {
+                          await fetch("/api/integrations/microsoft/status", { method: "DELETE" });
+                        } catch {}
+                        window.location.href = "/api/integrations/microsoft/connect";
+                      }}
+                      className="text-indigo-600 hover:text-indigo-800 text-xs font-medium mt-1 underline underline-offset-2"
+                    >
+                      Switch Microsoft account
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {platform === "microsoft_teams" && !msConnected && (
+                <div className="bg-amber-50 p-2.5 rounded-lg text-sm space-y-1.5">
+                  <p className="text-amber-700 text-xs">
+                    Microsoft Teams not connected. <a href="/settings/integrations" className="text-indigo-600 hover:underline font-medium">Connect in Settings</a> to auto-generate Teams links, or paste a link manually below.
+                  </p>
                   <Input placeholder="https://teams.microsoft.com/l/meetup-join/..." value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} />
                 </div>
               )}
