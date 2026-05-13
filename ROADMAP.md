@@ -42,7 +42,7 @@
 - [~] Modal "Congratulations" al marcar Placed
 - [~] Form pre-fill (salary, start date, terms, fecha cobro)
 - [~] Manual placement create desde `/placements`
-- [ ] **Interview stage → modal para crear evento en calendar** (no hay handler hoy)
+- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Schedule = POST a `/api/interviews`. Para fields avanzados (interviewers, Google Meet auto-create) ir a /calendar.
 - [ ] **Vista agregada de interviews por job** (lista + calendar)
 - [ ] **Click en día → desglose** del día (interviews + first days + fechas de cobro de placements)
 - [ ] **Upload PDFs / archivos a meetings** (tipo Outlook invites) — schema no tiene attachments
