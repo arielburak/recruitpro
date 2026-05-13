@@ -49,6 +49,7 @@ type ManualProps = {
     candidateDesiredSalary?: string | null;
     candidateSalaryCurrency?: string | null;
     clientPaymentTerms?: number | null;
+    clientGuaranteePeriod?: number | null;
     clientFeeAmount?: string | null;
     clientFeeType?: "PERCENTAGE" | "FLAT" | null;
   }>;
@@ -89,13 +90,19 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Anchor on startDate if we had one, otherwise estimated start, then add the
-// payment terms days. Pure function so the live preview stays in sync.
-function previewDueDate(estimated: string, terms: number | ""): string {
-  if (!estimated || terms === "" || isNaN(Number(terms))) return "";
-  const anchor = new Date(estimated);
+// Anchor on the best date available (actual start beats estimated) and
+// add `days`. Pure function so the live preview stays in sync with what
+// the server does on save.
+function previewFromAnchor(
+  actualStart: string,
+  estimatedStart: string,
+  days: number | "",
+): string {
+  const anchorStr = actualStart || estimatedStart;
+  if (!anchorStr || days === "" || isNaN(Number(days))) return "";
+  const anchor = new Date(anchorStr);
   if (isNaN(anchor.getTime())) return "";
-  anchor.setDate(anchor.getDate() + Number(terms));
+  anchor.setDate(anchor.getDate() + Number(days));
   return anchor.toISOString().slice(0, 10);
 }
 
@@ -141,6 +148,7 @@ export function PlacementDialog(props: Props) {
       feeAmount: job.clientFeeAmount || undefined,
       feeType: job.clientFeeType || undefined,
       paymentTerms: job.clientPaymentTerms ?? undefined,
+      guaranteePeriod: job.clientGuaranteePeriod ?? undefined,
     };
   }, [isCongrats, isEdit, props, selectedJobId]);
 
@@ -158,11 +166,13 @@ export function PlacementDialog(props: Props) {
       setFeeAmount(i.feeAmount != null ? String(i.feeAmount) : "");
       setFeeType(i.feeType || "PERCENTAGE");
       setPaymentTerms(i.paymentTerms ?? "");
-      setPaymentDueDate(isoDate(i.paymentDueDate));
-      // If the recruiter manually set the due date in the past, we want
-      // the edit form to respect that — flag it as "touched" so the
-      // useEffect below doesn't recompute it away.
-      setPaymentDueDateTouched(true);
+      const initialDue = isoDate(i.paymentDueDate);
+      setPaymentDueDate(initialDue);
+      // Only respect a previously-saved due date — if the placement was
+      // skipped on creation, the field is empty and we want the live
+      // preview to fill it from start + terms as the recruiter completes
+      // the form.
+      setPaymentDueDateTouched(Boolean(initialDue));
       setGuaranteePeriod(i.guaranteePeriod ?? 90);
       setNotes(i.notes || "");
       setInvoiceStatus(i.invoiceStatus || "DRAFT");
@@ -187,8 +197,12 @@ export function PlacementDialog(props: Props) {
   // has manually edited the date field.
   useEffect(() => {
     if (paymentDueDateTouched) return;
-    setPaymentDueDate(previewDueDate(estimatedStartDate, paymentTerms));
-  }, [estimatedStartDate, paymentTerms, paymentDueDateTouched]);
+    setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, paymentTerms));
+  }, [startDate, estimatedStartDate, paymentTerms, paymentDueDateTouched]);
+
+  // Live preview of when the guarantee expires. Read-only — server
+  // computes the persisted value on save with the same logic.
+  const guaranteeExpiryPreview = previewFromAnchor(startDate, estimatedStartDate, guaranteePeriod);
 
   function close() {
     props.onOpenChange(false);
@@ -459,7 +473,7 @@ export function PlacementDialog(props: Props) {
                   }}
                 />
                 <p className="text-[10px] text-gray-400">
-                  Auto: estimated start + payment terms. Editable.
+                  Auto: actual start (if set) or estimated start + payment terms. Editable.
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -475,6 +489,15 @@ export function PlacementDialog(props: Props) {
                     setGuaranteePeriod(v === "" ? "" : Number(v));
                   }}
                 />
+                {guaranteeExpiryPreview ? (
+                  <p className="text-[10px] text-gray-400">
+                    Expires {guaranteeExpiryPreview}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-gray-400">
+                    Expiry shows once start date is filled.
+                  </p>
+                )}
               </div>
             </div>
 

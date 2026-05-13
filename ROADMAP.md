@@ -84,7 +84,8 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [x] JD + Additional Documents persistidos (PR #11)
 - [x] "Auto-filled document" hint oculto hasta que subas algo
 - [x] Eliminar tab "Client Portal Users"
-- [ ] **Payment terms + guarantee a nivel Cliente** (días de cobro desde fecha de comienzo + garantía) — los campos viven en Placement, no se heredan del Cliente
+- [~] **Payment terms + guarantee a nivel Cliente** — `Client.defaultPaymentTerms` y `Client.defaultGuaranteePeriod` ya viven en el schema y se pueden setear al crear/editar el cliente (solo Recruiting). Auto-fill al crear placement (congrats desde kanban o manual desde /placements) + en edit mode. Preview live de guarantee expiry y payment due date en el form. Bug del recompute del payment due en edit arreglado (solo respeta valor existente, si está vacío recomputa).
+- [ ] **Salario Bruto / Neto en Argentina** — opción de tipo de salario (bruto vs neto, con el aporte ~ 17%) cuando el cliente es Argentino. Detectar AR por algún flag del cliente o por currency ARS. Útil para reporting más adelante.
 - [~] Invitar / sacar portal users desde detail del cliente — falta verificar flow de remove
 
 ## 🟡 Import

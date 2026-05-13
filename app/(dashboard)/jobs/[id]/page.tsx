@@ -1147,6 +1147,7 @@ export default function JobDetailPage() {
                 feeAmount: job.feeAmount ? String(job.feeAmount) : undefined,
                 feeType: (job.feeType as "PERCENTAGE" | "FLAT") || undefined,
                 paymentTerms: job.client?.defaultPaymentTerms ?? undefined,
+                guaranteePeriod: job.client?.defaultGuaranteePeriod ?? undefined,
               }}
               onSuccess={() => {
                 setPendingPlacement(null);

@@ -28,6 +28,7 @@ export async function GET() {
             defaultPaymentTerms: true,
             defaultFeeAmount: true,
             defaultFeeType: true,
+            defaultGuaranteePeriod: true,
           },
         },
       },
@@ -40,6 +41,7 @@ export async function GET() {
       clientId: j.client.id,
       clientName: j.client.name,
       clientPaymentTerms: j.client.defaultPaymentTerms ?? null,
+      clientGuaranteePeriod: j.client.defaultGuaranteePeriod ?? null,
       clientFeeAmount: j.feeAmount?.toString() ?? j.client.defaultFeeAmount?.toString() ?? null,
       clientFeeType: (j.feeType ?? j.client.defaultFeeType) as "PERCENTAGE" | "FLAT" | null,
     }));
