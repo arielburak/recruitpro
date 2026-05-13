@@ -48,8 +48,8 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [x] Rename "Contacted" → "Internal Review"
 - [x] Modal de confirmación al compartir con copy "Are you sure..." y botón "Share with Client"
 - [~] Share gated a "moviendo a Submitted" (no valida que el source sea Internal Review específicamente — probablemente OK)
-- [ ] **Cambiar stage desde la lista de Jobs** sin entrar a la búsqueda (dropdown inline)
-- [ ] **List view (Notion-style)** de candidatos además del Kanban
+- [ ] **Cambiar stage desde la lista de Jobs** sin entrar a la búsqueda (dropdown inline) — *resuelto parcial: en `/jobs/[id]` la List view tiene dropdown por row; falta llevarlo al global `/jobs` si lo querés también*
+- [~] **List view (Notion-style)** de candidatos además del Kanban — toggle `Kanban / List` en `/jobs/[id]`. Mismas transiciones (share dialog en Submitted, placement en Placed, interview en Interviewing). Cada row: candidato + contact + dropdown de stage + share toggle + activity counters + remove.
 - [ ] Desde candidato: ver búsquedas activas + cambiar stage **inline** (hoy se ven las submissions pero no hay selector)
 - [ ] **Notas a nivel candidato** (independientes del job) — el schema soporta `Comment.candidateId` pero la UI no las surface
 - [ ] **Chat dual**: por job (internal + cliente) + por candidato (internal + cliente) — schema soporta, falta verificar wiring completo
