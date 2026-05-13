@@ -1214,11 +1214,17 @@ export default function JobDetailPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Salary Range</Label>
-                        <Input
-                          value={editForm.salary}
-                          onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
-                          placeholder="$150K - $180K"
-                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                            $
+                          </span>
+                          <Input
+                            value={editForm.salary}
+                            onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
+                            placeholder="150K - 180K"
+                            className="pl-7"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Currency</Label>

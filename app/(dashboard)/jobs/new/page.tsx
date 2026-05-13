@@ -250,23 +250,20 @@ function NewJobContent() {
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
         setDescriptionFromDoc(true);
-        // Always overwrite structured fields with the parsed JD — the document
-        // is the source of truth, regardless of whatever the user typed before.
+        // Heuristic title extraction is noisy enough that overwriting the
+        // recruiter's typed title causes more pain than it saves. Trust the
+        // user — only fill location/workMode (which the regex extractors
+        // hit reliably).
         if (data.fields) {
-          if (data.fields.title) {
-            setTitle(data.fields.title);
-            setTitleFromDoc(true);
-          }
           if (data.fields.location) setLocation(data.fields.location);
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
         setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
 
-        // If both identifiers are known after parsing, check duplicates
-        // right away so the recruiter sees the warning without having to
-        // manually re-focus the title field.
-        if (data.fields?.title && selectedClientId) {
-          void checkJobDuplicate({ title: data.fields.title });
+        // If the user already typed a title, run duplicate check now that
+        // the client is selected and we have the parsed JD context.
+        if (title.trim() && selectedClientId) {
+          void checkJobDuplicate({ title: title.trim() });
         }
       } else if (data.error) {
         setParseStatus(`Could not extract text: ${data.error}`);
@@ -551,7 +548,12 @@ function NewJobContent() {
               </div>
               <div className="space-y-2">
                 <Label>Salary Range</Label>
-                <Input name="salary" placeholder="$150K - $180K" />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                    $
+                  </span>
+                  <Input name="salary" placeholder="150K - 180K" className="pl-7" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Currency</Label>
