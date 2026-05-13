@@ -66,6 +66,7 @@ export function QuickInterviewDialog({
   const [meetingLink, setMeetingLink] = useState("");
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
+  const [notifyCandidate, setNotifyCandidate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -93,6 +94,7 @@ export function QuickInterviewDialog({
           timezone: TIMEZONE,
           notes: notes || undefined,
           platform: "custom",
+          notifyAttendees: notifyCandidate,
         }),
       });
       if (!res.ok) {
@@ -120,9 +122,14 @@ export function QuickInterviewDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <p className="text-xs text-gray-500">
-            {candidateName} · {submission.job.title}
-          </p>
+          <div>
+            <p className="text-xs text-gray-500">
+              {candidateName} · {submission.job.title}
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Internal ATS record. No emails sent unless you tick the option at the bottom.
+            </p>
+          </div>
 
           {/* Type picker */}
           <div className="space-y-1.5">
@@ -249,14 +256,33 @@ export function QuickInterviewDialog({
             />
           </div>
 
+          {/* Opt-in email send. Off by default — recruiter usually just
+              wants the ATS record. When ticked, the API will email the
+              calendar invite to the candidate after saving. */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={notifyCandidate}
+              onChange={(e) => setNotifyCandidate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm text-gray-900">Also email a calendar invite to the candidate</p>
+              <p className="text-[11px] text-gray-500">
+                Off by default. Leave unchecked if the candidate already got
+                the invite somewhere else (your inbox, the client&apos;s system).
+              </p>
+            </div>
+          </label>
+
           {error && (
             <div className="bg-red-50 text-red-600 text-xs p-2 rounded">{error}</div>
           )}
 
           <p className="text-[11px] text-gray-400">
-            Need to assign interviewers or auto-create a Google Meet?
-            Open <span className="font-medium">/calendar</span> after this — you can edit
-            from there.
+            Need to assign interviewers, invite client contacts, or auto-create
+            a Google Meet? Open <span className="font-medium">/calendar</span> after this
+            — you can edit from there.
           </p>
         </div>
 
@@ -273,7 +299,7 @@ export function QuickInterviewDialog({
             disabled={submitting}
             className="bg-indigo-600 hover:bg-indigo-700"
           >
-            {submitting ? "Scheduling..." : "Schedule"}
+            {submitting ? "Saving..." : notifyCandidate ? "Save & send invite" : "Save to ATS"}
           </Button>
         </div>
       </DialogContent>
