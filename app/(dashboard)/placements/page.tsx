@@ -89,23 +89,59 @@ export default function PlacementsPage() {
     setShowNewDialog(true);
   }
 
-  // Calculate revenue this quarter
+  // Calculate revenue this quarter — bucketed by currency so a mixed-
+  // currency book of business doesn't get summed into a meaningless
+  // single number. We don't normalize to USD; the recruiter sees a line
+  // per currency present in the data.
   const now = new Date();
   const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
   const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0);
-  const revenueThisQuarter = placements
-    .filter((p) => {
+
+  function placementCurrency(p: any): string {
+    return p.currency || p.job?.currency || "USD";
+  }
+
+  function bucketByCurrency(filtered: any[]): Record<string, number> {
+    const buckets: Record<string, number> = {};
+    for (const p of filtered) {
+      const c = placementCurrency(p);
+      buckets[c] = (buckets[c] || 0) + (Number(p.feeAmount) || 0);
+    }
+    return buckets;
+  }
+
+  const revenueByCurrency = bucketByCurrency(
+    placements.filter((p) => {
       const d = new Date(p.createdAt);
       return d >= quarterStart && d <= quarterEnd;
-    })
-    .reduce((sum, p) => sum + (Number(p.feeAmount) || 0), 0);
+    }),
+  );
 
-  const paidThisQuarter = placements
-    .filter((p) => {
+  const paidByCurrency = bucketByCurrency(
+    placements.filter((p) => {
       const d = new Date(p.createdAt);
       return d >= quarterStart && d <= quarterEnd && p.invoiceStatus === "PAID";
-    })
-    .reduce((sum, p) => sum + (Number(p.feeAmount) || 0), 0);
+    }),
+  );
+
+  // Pick a primary currency for the "headline" number — the largest bucket,
+  // falling back to USD when there's no data. Other currencies render
+  // as a secondary line so the recruiter sees them too.
+  function primary(buckets: Record<string, number>): { currency: string; amount: number } {
+    const entries = Object.entries(buckets);
+    if (entries.length === 0) return { currency: "USD", amount: 0 };
+    entries.sort(([, a], [, b]) => b - a);
+    return { currency: entries[0][0], amount: entries[0][1] };
+  }
+
+  function secondaries(buckets: Record<string, number>, primaryCcy: string) {
+    return Object.entries(buckets).filter(([c]) => c !== primaryCcy);
+  }
+
+  const revenuePrimary = primary(revenueByCurrency);
+  const revenueSecondaries = secondaries(revenueByCurrency, revenuePrimary.currency);
+  const paidPrimary = primary(paidByCurrency);
+  const paidSecondaries = secondaries(paidByCurrency, paidPrimary.currency);
 
   if (loading) {
     return (
@@ -164,6 +200,7 @@ export default function PlacementsPage() {
             estimatedStartDate: editingPlacement.estimatedStartDate,
             startDate: editingPlacement.startDate,
             agreedSalary: editingPlacement.salary,
+            currency: editingPlacement.currency ?? editingPlacement.job?.currency ?? "USD",
             feeAmount: editingPlacement.feeAmount,
             feeType: editingPlacement.feeType,
             paymentTerms: editingPlacement.paymentTerms,
@@ -183,7 +220,9 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* Revenue stats */}
+      {/* Revenue stats — primary line is the largest currency bucket;
+          other currencies surface below in smaller text so a mixed book
+          (USD + ARS, e.g.) doesn't get misrepresented as one number. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-5">
@@ -191,11 +230,18 @@ export default function PlacementsPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100">
                 <DollarSign className="h-5 w-5 text-indigo-600" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-gray-500">Revenue This Quarter</p>
                 <p className="text-2xl font-bold text-indigo-600">
-                  {formatCurrency(revenueThisQuarter)}
+                  {formatCurrency(revenuePrimary.amount, revenuePrimary.currency)}
                 </p>
+                {revenueSecondaries.length > 0 && (
+                  <p className="text-[11px] text-gray-400 truncate">
+                    {revenueSecondaries
+                      .map(([c, amt]) => formatCurrency(amt, c))
+                      .join(" · ")}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -206,11 +252,18 @@ export default function PlacementsPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
                 <DollarSign className="h-5 w-5 text-green-600" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-gray-500">Collected This Quarter</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {formatCurrency(paidThisQuarter)}
+                  {formatCurrency(paidPrimary.amount, paidPrimary.currency)}
                 </p>
+                {paidSecondaries.length > 0 && (
+                  <p className="text-[11px] text-gray-400 truncate">
+                    {paidSecondaries
+                      .map(([c, amt]) => formatCurrency(amt, c))
+                      .join(" · ")}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -261,7 +314,7 @@ export default function PlacementsPage() {
                         {p.startDate ? formatDate(p.startDate) : "-"}
                       </TableCell>
                       <TableCell>
-                        {p.feeAmount ? formatCurrency(Number(p.feeAmount), p.job?.currency || "USD") : "-"}
+                        {p.feeAmount ? formatCurrency(Number(p.feeAmount), p.currency || p.job?.currency || "USD") : "-"}
                       </TableCell>
                       <TableCell>
                         <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>

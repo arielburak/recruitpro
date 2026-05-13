@@ -2,6 +2,15 @@
 
 > **Foco MVP**: optimizar el flujo de la **firma de reclutamiento** (el que paga). Client portal: tiene que funcionar bien y verse lindo, pero secundario. Landing y marketing al final.
 
+## 🧭 Principios transversales del ATS
+
+Aplicarse a cualquier feature nueva o existente:
+
+1. **Auto-fill obsesivo**. Si el dato ya vive en otra parte del ATS (cliente, búsqueda, candidato, descripción), no se lo pidas al usuario. Pre-rellenalo y dejalo editable.
+2. **Diferenciar Recruiting vs Staff Aug**. Recruiting cliente = terms a nivel cliente (fee, payment terms, garantía, currency). Staff Aug cliente = terms a nivel JOB (cada búsqueda negocia los suyos; client.default* quedan null). La cadena de fallback siempre es `job → client → default`.
+3. **Default geográfico**: target principal son recruiters de US, default everywhere es USD; permitir override.
+4. **Visualmente prolijo, ágil, óptimo para el usuario**. Menos clicks, menos campos en blanco, menos pantallas que rebotar.
+
 **Convenciones**
 - `- [x]` hecho + confirmado funcionando por el usuario
 - `- [~]` implementado en staging, **pendiente que vos verifiques**

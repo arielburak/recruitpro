@@ -12,12 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User } from "lucide-react";
+import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
 type FormDefaults = {
   estimatedStartDate?: string; // ISO yyyy-mm-dd
   agreedSalary?: string;
+  currency?: string; // ISO 4217 code, e.g. USD / ARS
   feeAmount?: string;
   feeType?: "PERCENTAGE" | "FLAT";
   paymentTerms?: number; // days
@@ -48,6 +50,7 @@ type ManualProps = {
     clientName: string;
     candidateDesiredSalary?: string | null;
     candidateSalaryCurrency?: string | null;
+    jobCurrency?: string | null;
     clientPaymentTerms?: number | null;
     clientGuaranteePeriod?: number | null;
     clientFeeAmount?: string | null;
@@ -73,6 +76,7 @@ type EditProps = {
     estimatedStartDate?: string | null;
     startDate?: string | null;
     agreedSalary?: string | number | null;
+    currency?: string | null;
     feeAmount?: string | number | null;
     feeType?: "PERCENTAGE" | "FLAT" | null;
     paymentTerms?: number | null;
@@ -124,6 +128,10 @@ export function PlacementDialog(props: Props) {
   const [estimatedStartDate, setEstimatedStartDate] = useState("");
   const [startDate, setStartDate] = useState(""); // edit mode only
   const [agreedSalary, setAgreedSalary] = useState("");
+  // ISO 4217 currency code. Falls back to USD by default — the most common
+  // case for our target market (US recruiting firms) — and gets overridden
+  // by the job/client default when the dialog opens.
+  const [currency, setCurrency] = useState<string>("USD");
   const [feeAmount, setFeeAmount] = useState("");
   const [feeType, setFeeType] = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
   const [paymentTerms, setPaymentTerms] = useState<number | "">("");
@@ -145,6 +153,7 @@ export function PlacementDialog(props: Props) {
     return {
       estimatedStartDate: todayIso(),
       agreedSalary: job.candidateDesiredSalary || undefined,
+      currency: job.jobCurrency || job.candidateSalaryCurrency || undefined,
       feeAmount: job.clientFeeAmount || undefined,
       feeType: job.clientFeeType || undefined,
       paymentTerms: job.clientPaymentTerms ?? undefined,
@@ -163,6 +172,7 @@ export function PlacementDialog(props: Props) {
       setEstimatedStartDate(isoDate(i.estimatedStartDate));
       setStartDate(isoDate(i.startDate));
       setAgreedSalary(i.agreedSalary != null ? String(i.agreedSalary) : "");
+      setCurrency(i.currency || "USD");
       setFeeAmount(i.feeAmount != null ? String(i.feeAmount) : "");
       setFeeType(i.feeType || "PERCENTAGE");
       setPaymentTerms(i.paymentTerms ?? "");
@@ -180,6 +190,7 @@ export function PlacementDialog(props: Props) {
       setEstimatedStartDate(activeDefaults?.estimatedStartDate || todayIso());
       setStartDate("");
       setAgreedSalary(activeDefaults?.agreedSalary || "");
+      setCurrency(activeDefaults?.currency || "USD");
       setFeeAmount(activeDefaults?.feeAmount || "");
       setFeeType(activeDefaults?.feeType || "PERCENTAGE");
       setPaymentTerms(activeDefaults?.paymentTerms ?? 30);
@@ -275,6 +286,7 @@ export function PlacementDialog(props: Props) {
     const payload: Record<string, unknown> = {
       estimatedStartDate: estimatedStartDate || null,
       salary: agreedSalary ? Number(agreedSalary) : null,
+      currency: currency || "USD",
       feeAmount: feeAmount ? Number(feeAmount) : null,
       ...(feeType === "PERCENTAGE"
         ? { feePercentage: feeAmount ? Number(feeAmount) : null }
@@ -411,29 +423,49 @@ export function PlacementDialog(props: Props) {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-salary">Agreed salary</Label>
-                <Input
-                  id="placement-salary"
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="0"
-                  value={agreedSalary}
-                  onChange={(e) => setAgreedSalary(e.target.value)}
+                <Label className="text-xs">Currency</Label>
+                <CurrencyPicker
+                  compact
+                  value={currency}
+                  onChange={setCurrency}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Fee</Label>
-                <div className="flex gap-1.5">
+                <Label className="text-xs" htmlFor="placement-salary">Agreed salary</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                    {getCurrency(currency)?.symbol || "$"}
+                  </span>
                   <Input
+                    id="placement-salary"
                     type="number"
                     inputMode="decimal"
                     placeholder="0"
-                    value={feeAmount}
-                    onChange={(e) => setFeeAmount(e.target.value)}
+                    className="pl-7"
+                    value={agreedSalary}
+                    onChange={(e) => setAgreedSalary(e.target.value)}
                   />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fee</Label>
+                <div className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                      {feeType === "FLAT" ? (getCurrency(currency)?.symbol || "$") : "%"}
+                    </span>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="pl-7"
+                      value={feeAmount}
+                      onChange={(e) => setFeeAmount(e.target.value)}
+                    />
+                  </div>
                   <select
                     value={feeType}
                     onChange={(e) => setFeeType(e.target.value as "PERCENTAGE" | "FLAT")}
@@ -444,6 +476,9 @@ export function PlacementDialog(props: Props) {
                   </select>
                 </div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-terms">Payment terms (days)</Label>
                 <Input
@@ -457,24 +492,6 @@ export function PlacementDialog(props: Props) {
                     setPaymentTerms(v === "" ? "" : Number(v));
                   }}
                 />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
-                <Input
-                  id="placement-due"
-                  type="date"
-                  value={paymentDueDate}
-                  onChange={(e) => {
-                    setPaymentDueDate(e.target.value);
-                    setPaymentDueDateTouched(true);
-                  }}
-                />
-                <p className="text-[10px] text-gray-400">
-                  Auto: actual start (if set) or estimated start + payment terms. Editable.
-                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-guarantee">Guarantee (days)</Label>
@@ -499,6 +516,22 @@ export function PlacementDialog(props: Props) {
                   </p>
                 )}
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
+              <Input
+                id="placement-due"
+                type="date"
+                value={paymentDueDate}
+                onChange={(e) => {
+                  setPaymentDueDate(e.target.value);
+                  setPaymentDueDateTouched(true);
+                }}
+              />
+              <p className="text-[10px] text-gray-400">
+                Auto: actual start (if set) or estimated start + payment terms. Editable.
+              </p>
             </div>
 
             {isEdit && (

@@ -262,6 +262,13 @@ model Job {
   currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
+  // Optional per-job override of the client's defaultPaymentTerms /
+  // defaultGuaranteePeriod. Used heavily for Staff Aug clients where
+  // every search negotiates its own terms (client.default* are null).
+  // Recruiting jobs usually leave these null and inherit from the
+  // client. Placement fallback chain: job.* ?? client.default*.
+  paymentTerms   Int?
+  guaranteePeriod Int?
   salary         String?
   location       String?
   workMode       String    @default("ON_SITE")
@@ -603,6 +610,12 @@ model Placement {
   feeAmount           Decimal?
   feePercentage       Decimal?
   salary              Decimal?
+  // Optional currency override. Falls back to job.currency at display time
+  // when null — most placements just inherit the search's currency, but
+  // we keep this column so a placement closed in a different currency
+  // (e.g. ARS contract on a USD-default client) can be represented
+  // faithfully without rewriting the job.
+  currency            String?
   // paymentTerms is the number of days between startDate (or estimated)
   // and when the agency expects to be paid. paymentDueDate is the
   // resolved date — kept on the row so reporting doesn't have to compute it.
