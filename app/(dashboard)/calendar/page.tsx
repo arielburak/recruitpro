@@ -1083,7 +1083,7 @@ function CreateInterviewModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPurpose("CLIENT")}
+                  onClick={() => { setPurpose("CLIENT"); setNotifyAttendees(false); }}
                   className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-center group"
                 >
                   <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
@@ -1091,7 +1091,7 @@ function CreateInterviewModal({
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Client Interview</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">Coordinate interview with the hiring company</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Log an interview between the candidate and the client (no emails sent)</p>
                   </div>
                 </button>
               </div>
@@ -1506,24 +1506,35 @@ function CreateInterviewModal({
             <Textarea rows={3} placeholder="Interview agenda, preparation notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          {/* Notify toggle — off by default so this form behaves like a
-              ledger. Tick to actually fire the calendar-invite emails to
-              the candidate and any selected client contacts. */}
-          <label className="flex items-start gap-2.5 cursor-pointer pt-1">
-            <input
-              type="checkbox"
-              checked={notifyAttendees}
-              onChange={(e) => setNotifyAttendees(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div>
-              <p className="text-sm text-gray-900">Send calendar invite by email</p>
-              <p className="text-[11px] text-gray-500">
-                Off by default — saves as an ATS record only. Tick to email the candidate
-                {selectedClientContacts.length > 0 ? " and the selected client contacts" : ""} a calendar invite.
-              </p>
+          {/* Notify toggle — only meaningful for Candidate Call interviews
+              (the recruiter wants to coordinate directly with the
+              candidate). Client Interviews are ATS-only by definition: the
+              client already runs that meeting, we just want it on the
+              recruiter's tracking ledger. */}
+          {purpose === "CANDIDATE" ? (
+            <label className="flex items-start gap-2.5 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={notifyAttendees}
+                onChange={(e) => setNotifyAttendees(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div>
+                <p className="text-sm text-gray-900">Send calendar invite by email</p>
+                <p className="text-[11px] text-gray-500">
+                  Off by default — saves as an ATS record only. Tick to email the candidate a calendar invite.
+                </p>
+              </div>
+            </label>
+          ) : (
+            <div className="flex items-start gap-2.5 pt-1 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded px-3 py-2">
+              <CheckCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                Client interviews save as an internal ATS record. No emails are sent — the
+                client coordinates the meeting on their side.
+              </span>
             </div>
-          </label>
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t">
