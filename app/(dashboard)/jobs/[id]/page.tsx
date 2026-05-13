@@ -15,6 +15,7 @@ import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, F
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
+import { SubmissionsListView } from "@/components/pipeline/submissions-list-view";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
@@ -161,6 +162,7 @@ export default function JobDetailPage() {
   // Edit mode state
   const [editing, setEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("pipeline");
+  const [pipelineView, setPipelineView] = useState<"kanban" | "list">("kanban");
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -1055,15 +1057,52 @@ export default function JobDetailPage() {
         </TabsList>
 
         <TabsContent value="pipeline">
-          <KanbanBoard
-            stages={job.stages}
-            submissions={job.submissions}
-            onMove={moveSubmission}
-            onToggleShare={toggleShare}
-            onRemove={removeSubmission}
-            clientName={job.client?.name}
-            jobTitle={job.title}
-          />
+          {/* View toggle — Kanban for visual triage, List for fast
+              stage changes and scanning many candidates at once. Same
+              data + same transitions (onMove fires the share /
+              placement / interview dialogs either way). */}
+          <div className="flex justify-end mb-3">
+            <div className="inline-flex rounded-md border bg-white p-0.5">
+              {([
+                { v: "kanban", label: "Kanban" },
+                { v: "list", label: "List" },
+              ] as const).map(({ v, label }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setPipelineView(v)}
+                  className={`px-3 py-1 text-xs font-medium rounded ${
+                    pipelineView === v
+                      ? "bg-indigo-600 text-white"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {pipelineView === "kanban" ? (
+            <KanbanBoard
+              stages={job.stages}
+              submissions={job.submissions}
+              onMove={moveSubmission}
+              onToggleShare={toggleShare}
+              onRemove={removeSubmission}
+              clientName={job.client?.name}
+              jobTitle={job.title}
+            />
+          ) : (
+            <SubmissionsListView
+              stages={job.stages}
+              submissions={job.submissions}
+              onMove={moveSubmission}
+              onToggleShare={toggleShare}
+              onRemove={removeSubmission}
+              clientName={job.client?.name}
+              jobTitle={job.title}
+            />
+          )}
           {pendingShareMove && (
             <ShareCandidateDialog
               open={true}
