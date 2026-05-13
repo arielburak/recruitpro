@@ -306,10 +306,10 @@ export default function ClientDetailPage() {
                     ) : <p className="text-sm text-gray-900">—</p>}
                   </div>
                 </div>
-                {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency) && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Default Fee Terms</p>
-                    <div className="flex items-center gap-3 text-sm">
+                {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency || client.defaultPaymentTerms != null || client.defaultGuaranteePeriod != null) && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Default Fee Terms</p>
+                    <div className="flex items-center gap-3 text-sm flex-wrap">
                       <span className="font-medium">
                         {client.defaultFeeType === "FLAT" ? "Flat Fee" : "Percentage"}
                         {client.defaultFeeAmount ? `: ${Number(client.defaultFeeAmount)}${client.defaultFeeType === "PERCENTAGE" ? "%" : ""}` : ""}
@@ -317,6 +317,25 @@ export default function ClientDetailPage() {
                       <span className="text-gray-400">·</span>
                       <span>{client.defaultCurrency || "USD"}</span>
                     </div>
+                    {(client.defaultPaymentTerms != null || client.defaultGuaranteePeriod != null) && (
+                      <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
+                        {client.defaultPaymentTerms != null && (
+                          <span>
+                            <span className="text-gray-400">Payment terms:</span>{" "}
+                            <span className="font-medium">{client.defaultPaymentTerms} days</span>
+                          </span>
+                        )}
+                        {client.defaultPaymentTerms != null && client.defaultGuaranteePeriod != null && (
+                          <span className="text-gray-300">·</span>
+                        )}
+                        {client.defaultGuaranteePeriod != null && (
+                          <span>
+                            <span className="text-gray-400">Guarantee:</span>{" "}
+                            <span className="font-medium">{client.defaultGuaranteePeriod} days</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 {client.notes && (
