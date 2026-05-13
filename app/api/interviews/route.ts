@@ -72,6 +72,12 @@ export async function POST(request: Request) {
       interviewerIds,
       clientContactIds,
       platform,
+      // When false, skip sending the candidate + client-contact invite
+      // emails — the interview is recorded in the ATS only. Defaults to
+      // true so existing callers (/calendar form) keep their current
+      // behavior. The kanban "schedule on drop" flow opts out: that
+      // dialog is for tracking, not for inviting.
+      notifyAttendees = true,
     } = body;
 
     if (!title || !startTime || !endTime || !candidateId || !jobId || !submissionId) {
@@ -240,7 +246,13 @@ export async function POST(request: Request) {
       organizationId: ctx.organizationId,
     });
 
-    // Send invite emails
+    // Send invite emails — gated on notifyAttendees so the kanban
+    // "log interview" flow can register the event without spamming the
+    // candidate. The /calendar create form keeps the default (true).
+    if (!notifyAttendees) {
+      return NextResponse.json(interview, { status: 201 });
+    }
+
     const start = new Date(startTime);
     const end = new Date(endTime);
     const emailDateOpts = {

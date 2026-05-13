@@ -212,7 +212,10 @@ function NewCandidatePage() {
 
       const parsed = await res.json();
 
-      // Auto-fill form fields with parsed data
+      // Auto-fill form fields with parsed data. Current Title and Current
+      // Company are noisy from the CV (the parser regularly picks up an
+      // old role or a school as the "current company"), so we skip them —
+      // recruiter types those manually.
       setFormValues((prev) => ({
         ...prev,
         firstName: parsed.firstName || prev.firstName,
@@ -221,8 +224,6 @@ function NewCandidatePage() {
         phone: parsed.phone || prev.phone,
         linkedIn: parsed.linkedIn || prev.linkedIn,
         location: parsed.location || prev.location,
-        currentTitle: parsed.currentTitle || prev.currentTitle,
-        currentCompany: parsed.currentCompany || prev.currentCompany,
         summary: parsed.summary || prev.summary,
       }));
 

@@ -379,7 +379,13 @@ export default function CandidateDetailPage() {
             candidate.documents?.map((doc: any) => (
               <Card key={doc.id}>
                 <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <a
+                    href={`/api/documents/${doc.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 min-w-0 flex-1 rounded-md -m-1 p-1 hover:bg-gray-50 transition-colors"
+                    title="Open file"
+                  >
                     <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
                       <FileText className="h-5 w-5 text-indigo-600" />
                     </div>
@@ -391,10 +397,10 @@ export default function CandidateDetailPage() {
                         {formatBytes(doc.size)} · {formatDate(doc.createdAt)}
                       </p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  </a>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-3">
                     <a
-                      href={`/api/documents/${doc.id}`}
+                      href={`/api/documents/${doc.id}?download=1`}
                       download
                       className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
                       title="Download"

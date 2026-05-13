@@ -1,249 +1,196 @@
 # RecruitingATS — Roadmap
 
-> Hoja madre de los puntos que faltan. Se actualiza acá cuando (a) tildamos algo que hicimos o (b) sumamos un item nuevo que se nos ocurre.
+> **Foco MVP**: optimizar el flujo de la **firma de reclutamiento** (el que paga). Client portal: tiene que funcionar bien y verse lindo, pero secundario. Landing y marketing al final.
 
 **Convenciones**
-- `- [ ]` pendiente · `- [x]` hecho
-- Solo se tilda cuando el usuario da el OK que funciona. Sin notas extra, solo el tick.
-- Prioridades: **P0** = pre-launch · **P1** = primer dólar · **P2** = retención · 🧹 = housekeeping
-- Si una decisión de producto falta tomarse, vive en **Decisiones pendientes** al final
+- `- [x]` hecho + confirmado funcionando por el usuario
+- `- [~]` implementado en staging, **pendiente que vos verifiques**
+- `- [ ]` pendiente / parcial / falta
+- Si dice "(parcial)" arriba del bullet, está empezado pero le falta algo concreto
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-04-22
+**Última actualización**: 2026-05-13
 
 ---
 
-## 🔴 P0 — Pre-launch (antes de abrir trials públicos)
+## 🎯 Round 1 — Items 22/4 (los últimos del video)
 
-### Credibilidad de landing
-- [ ] Sacar testimonios inventados (Jessica Torres, David Chen). Dejar sección vacía o "Early access"
-- [ ] Sacar claim SOC 2 del forgot-password y copy
-- [ ] Sacar métricas en cero ("0 recruiting firms served")
-- [x] ~~Sacar "Free forever" y rebalancear pricing con trial + plan pago~~
-- [ ] Reemplazar color naranja de validación de email por paleta del ATS
-- [ ] Mejorar copy de landing (textos más honestos, sin mentiras)
-- [ ] Destacar la sección de "Math" en la landing
+- [~] Parser **no pisa Job Title** al parsear JD — extracción de title removida del autofill (location + workMode siguen autocompletando)
+- [~] Parser **no pisa Current Title / Current Company** al parsear CV — removidos del autofill
+- [~] **"Share with Client" mueve el candidato a Submitted** automáticamente — server-side: si el stage actual es anterior a Submitted, lo avanza al sharear
+- [~] Salary range con `$` como **prefijo visual** del input (en /jobs/new y /jobs/[id] edit)
+- [ ] Parser mejorado para JDs formato "Close Up" — *pendiente: mandame un ejemplo para tunear*
+- [x] Notifications history panel (campana con popover y "Mark all read")
+- [~] **Placeholder del PhoneInput**: contar `#` del template y emitir exacto esa cantidad de dígitos. Fix universal — afecta a todos los lugares que usan PhoneInput (candidates, clients, contacts, jobs).
+- [~] **Parser CV: detectar prefijo de país** — strip paréntesis del prefijo (`(+54)` → `+54`) + inferencia por location del CV (Argentina/Brasil/etc → dial code). PhoneInput defensivo acepta `(+54) ...` también si llega así desde otro lado.
+- [~] **Archivos clickeables**: click en el icono o el nombre del archivo (candidatos + jobs JD + Additional Documents) abre el archivo en nueva pestaña. Botón de download sigue forzando descarga via `?download=1`. Cambio del API: `Content-Disposition: inline` por default, `attachment` con query param.
+- [~] **Kanban drag instantáneo**: optimistic update en `persistMove`. La card se mueve visualmente al instante; la PATCH y el refetch corren en background. Si falla, rollback al estado anterior.
 
-### Auth & email transaccional
-- [ ] **Microsoft OAuth**: configurar App Registration en Azure Entra ID y cargar `AZURE_AD_CLIENT_ID` + `AZURE_AD_CLIENT_SECRET` en `.env` + Vercel (Prod + Preview)
-- [ ] Email verification en `/register` (obligatoria apenas se loguea)
-- [ ] Integrar Resend o Postmark para email transaccional
-- [ ] Templates de email: welcome, reset password, verification, client invite, feedback notification
-- [ ] Welcome email automático al registrarse + capturar a base de marketing
-- [ ] Revisar/rehacer el mail de Welcome (copy + CTA + tracking)
-- [ ] **Un solo login unificado** — mismo `/login` sirve Client Portal y Agency Workspace (detecta tenant del user)
-- [ ] En `/signin` y `/signup (Start Free Trial)` mostrar selector "Agency Workspace" vs "Client Portal", con copy en el lado cliente tipo *"You already pay a fee — no need to pay for the ATS"*
-- [ ] Sacar "Sign in with Microsoft" del Free Trial (dejar Google + email/password)
+## 🟦 Estados de las búsquedas (JobStatus)
 
-### Onboarding — primera experiencia
-- [ ] Signup obligatorio: **industry** + **company size** (dropdowns)
-- [ ] Prefijo de teléfono default por geo-IP (AR → +54, US → +1, etc.) — override manual siempre disponible
-- [ ] Volver a mostrar el **nombre de la empresa** debajo del logo "Recruiting ATS" en el header
-- [ ] Banner destacado durante la **primera semana** (solo agencia) promoviendo "Migrar desde tu ATS actual" → CTA a flow de import
-- [ ] Apollo: trackear logins + eventos clave del onboarding y pushearlos a sequences de mail (seguimiento automatizado al usuario)
-- [ ] ~~Loom de onboarding autoplay al primer login~~ → **DIFERIDO** al final (junto con Calendly-like y landing polish)
+Hoy: DB tiene 5 (`OPEN`, `ACTIVE`, `ON_HOLD`, `FILLED`, `CLOSED`) pero en la práctica se usan 2 (todo cae en OPEN o ACTIVE).
 
-### Workflows core
-- [ ] **Client → Firm invite**: cuando cliente invita una recruiting firm, obligarla a loguearse/registrarse
-- [ ] **Dropdown Staff Augmentation vs Recruiting** al crear cliente
-  - [ ] Si es Staff Aug → no fee type (depende de cada búsqueda)
-  - [ ] Si es Recruiting → terms completos (fee + garantía + fechas de cobro)
-- [ ] **Alerta de candidato duplicado** (por cliente, match nombre+apellido, con opción "crear igual")
-- [ ] **Alerta de job order duplicado** (por cliente, con opción override)
-- [x] ~~Stages estándar — NO personalizados~~ (decisión tomada con Ari)
+- [ ] **Repensar el set de statuses** — definir qué estados realmente son útiles para el flujo de la firma. Candidatos a evaluar:
+  - `DRAFT` (intake recibido, no se arrancó a sourcear)
+  - `OPEN` / `ACTIVE` (activa, sourceando) — ¿se justifican dos o un solo "Active" alcanza?
+  - `ON_HOLD` (pausada por cliente)
+  - `FILLED` (placement hecho, no hay seats abiertos)
+  - `CANCELLED` (cliente bajó la búsqueda)
+  - `LOST` (la perdimos vs competencia) — útil para reporting
+- [ ] **Agregar selector de status al create form** — hoy nacen siempre OPEN. Para clientes que firman búsquedas que arrancan ON_HOLD o DRAFT.
+- [ ] **Diferencia OPEN vs ACTIVE clarificada o eliminada** — si quedan ambos, que tengan semántica distinta. Si no, mergear.
+- [ ] **Transiciones automáticas**: al hacer un Placement → ¿auto-FILLED? Al ON_HOLD → ¿notificar al cliente?
 
-### Onboarding + trial
-- [ ] Wizard de onboarding 3 pasos: crear primer job + primer candidato + invitar primer cliente
-- [ ] Downgrade automático al vencer trial (sin esto usan gratis para siempre)
+Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pendientes" si necesitamos charlarlo con Ari.*
 
-### Agency workspace — UX core (sesión 21/4)
+## 🔴 Pipeline / Stages / Share workflow (lado firma)
 
-**Clients / contactos**
-- [ ] Sacar el campo "Main contact" del formulario de creación de cliente; elegir el main contact después, desde la lista de contactos del cliente (botón "Set as main")
-- [ ] Sacar "contact" + "email" + cualquier referencia a main contact de la **view de client** y del **intake form**
-- [ ] Eliminar la tab "Client Portal Users" — invitar al portal se hace desde **Contacts** (más limpio y directo)
-- [ ] Edición inline **solo con el ícono lápiz** — click en el medio del campo no entra a editar (ej: email de contacto)
-- [ ] Eliminar el apartado **Deals**
-- [ ] Al crear cliente, sumar sección **Attachments**
-- [ ] "Auto-filled document" NO aparece de antemano; recién aparece cuando efectivamente subo un documento
+- [x] Rename "Contacted" → "Internal Review"
+- [x] Modal de confirmación al compartir con copy "Are you sure..." y botón "Share with Client"
+- [~] Share gated a "moviendo a Submitted" (no valida que el source sea Internal Review específicamente — probablemente OK)
+- [ ] **Cambiar stage desde la lista de Jobs** sin entrar a la búsqueda (dropdown inline) — *resuelto parcial: en `/jobs/[id]` la List view tiene dropdown por row; falta llevarlo al global `/jobs` si lo querés también*
+- [~] **List view (Notion-style)** de candidatos además del Kanban — toggle `Kanban / List` en `/jobs/[id]`. Mismas transiciones (share dialog en Submitted, placement en Placed, interview en Interviewing). Cada row: candidato + contact + dropdown de stage + share toggle + activity counters + remove.
+- [ ] Desde candidato: ver búsquedas activas + cambiar stage **inline** (hoy se ven las submissions pero no hay selector)
+- [ ] **Notas a nivel candidato** (independientes del job) — el schema soporta `Comment.candidateId` pero la UI no las surface
+- [ ] **Chat dual**: por job (internal + cliente) + por candidato (internal + cliente) — schema soporta, falta verificar wiring completo
 
-**Jobs / búsquedas**
-- [ ] Diferenciar **acceso al portal** vs **acceso a la búsqueda**: tres contactos pueden estar en el portal pero yo solo invito a uno a la búsqueda
-- [ ] Al crear una búsqueda para un cliente con contactos ya en el portal → **sugerir** (no auto-invitar) a quiénes sumar
-- [ ] Flow "Invite Contact" en búsqueda: lista de contactos ya en el portal + opción "crear uno nuevo". Crear uno nuevo por esta vía lo deja persistido en los contactos del cliente + le manda invite al portal + a la búsqueda
-- [ ] Persistir **JD + Additional Documents** en el ATS (hoy parsea pero no deja archivo descargable ni registro accesible)
+## 🟠 Placements + Interviews + Calendar
 
-**Pipeline / candidatos**
-- [ ] Rename stage **Contacted → Internal Review**
-- [ ] Refuerzo del share workflow: candidato agregado a una JD NO se comparte con el cliente automáticamente
-- [ ] Share habilitado solo al arrastrar a **Submitted** o al apretar share desde Internal Review → Submitted; botón llamado **"Share with Client"**
-- [ ] Confirm modal al compartir (*"Are you sure you want to send this profile to the client?"*)
-- [ ] Cambiar stage de un candidato **desde la lista de Jobs** sin entrar a la búsqueda (dropdown rápido, refleja el pipeline)
-- [ ] **List view** (tipo Notion) además del pipeline; en list view el cambio de stage es un dropdown, el pipeline queda como vista visual
-- [ ] Desde la info del candidato, mostrar las **búsquedas activas** en las que está y permitir cambiar el stage desde ahí
-- [ ] **Notas del candidato**: independientes del job (notas internas del candidato) + notas específicas por búsqueda
-- [ ] **Chat por búsqueda**: general interno + con el cliente
-- [ ] **Chat por candidato**: interno + con el cliente (misma lógica dual)
+- [~] Modal "Congratulations" al marcar Placed
+- [~] Form pre-fill (salary, start date, terms, fecha cobro)
+- [~] Manual placement create desde `/placements`
+- [~] **Editar placement existente** desde `/placements`: rows clickeables abren `PlacementDialog mode="edit"`. Hidrata todos los campos + agrega `Actual start date` (anchor de garantía) y `Invoice status` (Draft/Sent/Paid) que no existen al crear. PUT a `/api/placements/[id]`. Cubre el flow "Skip / Complete later" del kanban.
+- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
+- [~] **`/calendar` modal full**: mismo toggle "Save to ATS" vs "Save & send invite". Default = ledger interno (sin mails). Tick = mails al candidato + client contacts.
+- [~] **Client Interview purpose = registro forzado** (sin mails). El toggle de email solo aparece para "Candidate Call" (donde el recruiter coordina con el candidato directamente). Para Client Interview salta un nota: "Client interviews save as an internal ATS record. No emails sent — the client coordinates the meeting on their side."
+- [ ] **Vista agregada de interviews por job** (lista + calendar)
+- [ ] **Click en día → desglose** del día (interviews + first days + fechas de cobro de placements)
+- [ ] **Upload PDFs / archivos a meetings** (tipo Outlook invites) — schema no tiene attachments
+- [ ] Color-code candidato vs cliente en calendar (hoy solo por status)
+- [ ] **Placements feed al calendar** (timeline integrado)
+- [ ] Calendly-like: candidato elige slot del calendar del recruiter — **diferido**
 
-**Placements**
-- [ ] Al marcar un candidato como **Placed** saltar modal "Congratulations! 🎉 As a next step, please complete the placement info" con botones `Skip / Complete later` y `Fill form`
-- [ ] Form de placement pre-llenado: agreed salary (del job/candidate), estimated start date, payment terms (del cliente), fecha de cobro calculada, todo editable
-- [ ] Permitir crear placement **manual** desde `/placements`
+## 🟢 Clients / Contacts / JD documents
 
-**Interviews**
-- [ ] Al mover un candidato a **Interview** (desde pipeline, list view o info del candidato) saltar modal "Crear evento en calendar" con el mismo form del create manual
-- [ ] Vista agregada de interviews: lista de todas las entrevistas del job (internas + con cliente) + vista calendario
+- [x] Quitar "Main contact" del create form del cliente
+- [x] "Set as main" en lista de contactos
+- [x] Main contact aparece en `/contacts`
+- [x] Sacar Deals
+- [x] Attachments al crear cliente
+- [x] Edit inline solo con pencil icon
+- [x] Dropdown Recruiting / Staff Aug al crear cliente
+- [x] Fee type lockea formato $/%
+- [x] Currency dropdown (50+ monedas)
+- [x] JD + Additional Documents persistidos (PR #11)
+- [x] "Auto-filled document" hint oculto hasta que subas algo
+- [x] Eliminar tab "Client Portal Users"
+- [~] **Payment terms + guarantee a nivel Cliente** — `Client.defaultPaymentTerms` y `Client.defaultGuaranteePeriod` ya viven en el schema y se pueden setear al crear/editar el cliente (solo Recruiting). Auto-fill al crear placement (congrats desde kanban o manual desde /placements) + en edit mode. Preview live de guarantee expiry y payment due date en el form. Bug del recompute del payment due en edit arreglado (solo respeta valor existente, si está vacío recomputa).
+- [ ] **Salario Bruto / Neto en Argentina** — opción de tipo de salario (bruto vs neto, con el aporte ~ 17%) cuando el cliente es Argentino. Detectar AR por algún flag del cliente o por currency ARS. Útil para reporting más adelante.
+- [~] Invitar / sacar portal users desde detail del cliente — falta verificar flow de remove
 
-**Scheduling (último del bloque, investigar antes)**
-- [ ] Calendly-like: permitir al candidato elegir slot del calendar del recruiter. Investigar feasibility; la parte cliente se complica, por ahora solo candidato
+## 🟡 Import
 
-**Import**
-- [ ] UI de **mapeo de columnas** al importar cualquier cosa
-- [ ] Soportar CSV (`.csv`), Excel (`.xlsx`, `.xls`), TSV (`.tsv`) — los tres imprescindibles
-- [ ] Sacar "LinkedIn Import"
-- [ ] Sacar referencias a Bullhorn y competencia en el flow de import
+- [x] Soportar CSV
+- [x] Soportar Excel `.xlsx` / `.xls`
+- [x] Soportar TSV
+- [ ] **UI de mapeo de columnas** al importar — hoy solo hint text
+- [ ] **Sacar LinkedIn Import** — sigue la ruta `/api/import/linkedin` + refs en candidates/new y marketing
+- [ ] **Sacar refs a Bullhorn** en flow de import + FAQ marketing
+- [ ] **Banner primera semana** (solo agencia) promoviendo "Migrar desde otro ATS" → CTA al import
 
-### Client portal — UX core (sesión 21/4)
+## 🔵 Auth / Onboarding / Email
 
-**Dashboard / navegación**
-- [ ] "Firms engaged" **interactivo**: click → detalle de las firmas o navegación a lista
-- [ ] **Sacar "Assigned Recruiter"** — el cliente no tiene que saber quién labura la búsqueda (ya tiene un POC)
-- [ ] **Back to home** desde el client portal (breadcrumb / botón claro)
+- [x] Login con Google funcionando (lado agencia)
+- [x] Microsoft eliminado completo (PR #19)
+- [x] Login unificado con portal selector (Agency vs Client)
+- [x] Copy "You already pay a fee — no need to pay for the ATS" en lado cliente
+- [x] Industry + company size obligatorios en signup
+- [x] Welcome email automático al registrarse
+- [x] Sacar "Free forever" (5-day trial)
+- [x] Nombre de empresa en header
+- [~] Stages estándar (no personalizados) — decisión + migración hecha
+- [ ] **Email verification al registrarse** (hoy auto-login sin verificar)
+- [ ] **Phone prefix por geo-IP** (AR → +54, US → +1)
+- [ ] **Google OAuth en client portal** (hoy solo invite)
+- [ ] Revisar/rehacer copy + CTA del Welcome email
+- [ ] **Apollo: trackear logins + onboarding events** → push a sequences (cero rastro hoy)
+- [ ] Loom onboarding autoplay — **diferido**
 
-**Team / accesos**
-- [ ] Al invitar member, si el email ya existe como contacto del cliente → sugerir *"¿Agregar al usuario existente?"*; si no, permitir crearlo
-- [ ] "Your Team" queda general, pero al crear una JO elegir **cuáles de esos members tienen acceso a esta búsqueda**
-- [ ] **Deshacer invites**: hoy queda en historial para siempre, hace falta cancelar
-- [ ] Al compartir una descripción, pedir **solo el email** — no obligar a buscar por empresa. Cuando el invitee se loguea la primera vez, ahí se le pide el nombre de la empresa (enriquecimiento)
+## 🟣 Client portal
 
-**Jobs / candidatos**
-- [ ] Renombrar "Candidates in Assigned Firms" → **Rejected** (para cuando la agencia rechaza el invite que compartió el cliente)
-- [ ] Cliente solo **ve** el status del candidato, no lo puede modificar
-- [ ] **List view** además del pipeline
-- [ ] Chat por búsqueda (interno + con la agencia) y chat por candidato (interno + con la agencia) — replicar estructura de la agencia
-- [ ] **Sacar el calendar** del client portal (replica del lado agencia, por ahora no aplica)
+- [x] "Back to home" desde client portal
+- [x] Sacar "Assigned Recruiter"
+- [x] Rename "Candidates in Assigned Firms" → "Rejected"
+- [x] List view de candidatos
+- [x] Chat dual interno / con agencia (`CLIENT_INTERNAL` + `CLIENT_VISIBLE`)
+- [x] File download arreglado (PR #26)
+- [x] "Mora" matchea "Morabits" en autocomplete de firmas (PR #26)
+- [ ] **"Firms engaged" widget interactivo** — stat existe, no clickeable
+- [ ] **Cliente solo VE status, no modifica** — hay un stage selector que tal vez no debería; revisar
+- [ ] **Invitar member: chequear si email ya es contacto del cliente** y sugerir "agregar existente"
+- [ ] **Per-JO member access** (hoy el team es global; al crear JO elegir quién accede)
+- [ ] **Deshacer / cancelar invites** — hoy quedan en historial para siempre
+- [ ] Share JD pidiendo **solo email** (no empresa) — enriquecer al primer login
+- [x] **Sacar el calendar del client portal** — no había route ni componente; el cliente nunca tuvo calendar. Confirmado en auditoría.
+- [ ] Bugs diferidos PR #26 (sin repro):
+  - Candidato linkeado a búsqueda no aparece en solapa
+  - Click sobre job en /candidates rompe la página
 
-**Bugs / polish**
-- [ ] Archivos: upload funciona, **download no** → fixear
-- [ ] Candidato linkeado a una búsqueda **no aparece** en la solapa de esa búsqueda — arreglar la sincronización
-- [ ] En Candidates, click sobre un job rompe la página → fixear navegación
-- [ ] Autocomplete de firmas: buscar "Mora" no matchea "Morabits" (ya aceptada) — arreglar partial match
+## ⚠️ Decisiones pendientes
 
----
-
-## 🟡 P1 — Primer dólar cobrado
-
-### Billing
-- [ ] Stripe checkout end-to-end ($15 Solo / $19 Team)
-- [ ] Customer portal (cambiar plan, seats, invoices)
-- [ ] Webhooks Stripe (cambiar plan en DB al pagar/cancelar/fallar)
-- [ ] Dunning (email de reintento si falla el pago)
-- [ ] Seat management (admin invita team, roles admin/recruiter/viewer, sync con Stripe)
-- [ ] Cálculo de comisiones para el equipo (parametrizable por recruiter)
-- [ ] Billing tab en client portal **(depende de: decisión "¿cobrar a hiring companies?")**
-
-### Terms comerciales + reporting base
-- [ ] Payment terms + guarantee en Recruiting clients (días de cobro desde fecha de comienzo, garantía)
-- [ ] Fechas de cobro + first day + garantía visibles juntos en job/placement
-- [ ] Currency con dropdown tipo phone prefix (pesos / USD mínimo)
-
-### QA de features ya implementadas
-- [ ] Tirarle 50 CVs reales al parser y medir accuracy; si <85%, evaluar cambiar modelo
-- [ ] Verificar que drag-and-drop del pipeline persiste en DB (no solo state) + undo
-- [ ] Verificar RBAC: cliente ve SOLO su shortlist, no toda la DB
-
-### Calendar completo
-- [ ] Click en día → desglose: interviews + first days + fechas de cobro de placements
-- [ ] Upload de archivos a meetings (como Outlook invites)
-- [ ] Color-coded meetings: candidato vs cliente; internal vs external en client portal (verificar lo que ya quedó)
-
-### Migración
-- [ ] CSV import masivo de candidatos (columnas: name, email, phone, company, title, notes)
-- [ ] Sumar soporte Excel (`.xlsx`, `.xls`) y TSV (`.tsv`) al flow de import (ver mapeo de columnas en P0)
+- [x] Trial: con/sin credit card → **con CC**, 5 días
+- [x] Stages: estándar (no personalizados, decisión con Ari)
+- [ ] Qué métricas mostrar primero en reporting
+- [ ] Definición completa de qué campos cambian entre Staff Aug y Recruiting (para el dropdown)
+- [ ] **¿Cobrar a las hiring companies también?** → si sí, habilitar Billing tab en client portal
+- [ ] Referral scheme: qué incentivo damos (crédito sub / cash / otro)
 
 ---
 
-## 🟢 P2 — Retención y diferenciación (30-60 días post-launch)
+## ⏳ Diferido (al final, sin prioridad MVP)
 
-- [ ] **Reporting serio**: revenue esperado, placements timeline, cashflow, comisiones, performance por recruiter
-- [ ] Currency con API real-time de tipo de cambio (para reporting más útil)
-- [ ] **Chrome extension para LinkedIn** (1-click add candidate) — killer feature vs Bullhorn/Loxo
+### 🟤 Landing (queda último, no le damos bola ahora)
+
+- [x] Sacar "Free forever"
+- [x] Sacar SOC 2 del forgot-password
+- [ ] Sacar testimonio Sarah Mitchell del panel de login
+- [ ] Sacar testimonios inventados (Jessica Torres, David Chen) si quedan
+- [ ] Sacar métricas en cero ("0 recruiting firms served") si quedan
+- [ ] Reemplazar color naranja de validación de email por paleta ATS
+- [ ] Mejorar copy de landing (sin mentiras)
+- [ ] Destacar sección "Math"
+
+### 🔭 Futuro (P1 / P2)
+
+- [ ] Stripe checkout end-to-end ($15 Solo / $19 Team) + customer portal + webhooks + dunning
+- [ ] Seat management + comisiones parametrizables por recruiter
+- [ ] Currency con API real-time de tipo de cambio
+- [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
+- [ ] Verificar drag-and-drop pipeline persiste en DB (no solo state) + undo
+- [ ] Verificar RBAC: cliente solo ve su shortlist
+- [ ] **Reporting serio**: revenue esperado, placements timeline, cashflow, comisiones, performance
+- [ ] **Chrome extension para LinkedIn** (1-click add candidate)
 - [ ] Import desde LinkedIn, Indeed, otros portales
-- [ ] Gmail / Outlook sync real de threads con candidates
-- [ ] **Microsoft Teams integration** — ⏸️ ON HOLD. Código shipped (connect/disconnect + auto-create meeting en calendar). Bloqueado esperando tenant Microsoft propio. Plan acordado: arrancar M365 Business Basic trial ($0 por 30 días, cancelar auto-renewal apenas entres al admin center), verificar `recruitingats.com` en el tenant (con TXT en GoDaddy), App Registration + 4 redirect URIs + secret + Graph permissions, pegar env vars en Vercel. ~30 min de trabajo. Company name del tenant = "Alphabridge Partners", subdomain = `recruitingats.onmicrosoft.com`.
-- [ ] Tracking específico para Outsourcing / Staff Aug (métricas propias del modelo)
-- [ ] Copilot alerts: "Búsqueda X sin candidatos hace Y días", ambos lados
-- [ ] Referral scheme (ambos lados: recruiter→recruiter, cliente→cliente)
+- [ ] Gmail / Outlook sync real
+- [ ] Copilot alerts: "Búsqueda X sin candidatos hace Y días" (ambos lados)
 - [ ] Shareable public link a shortlist (cliente read-only sin cuenta)
-- [ ] Filtro de salary range por moneda
-- [ ] Revisar y pulir chat client ↔ staffing (polish)
-- [ ] Nombre corto/abreviado de la empresa en header además del logo
+- [ ] **Microsoft Teams integration** — ⏸️ ON HOLD esperando tenant Microsoft propio
 
----
+### 🧹 Housekeeping
 
-## 🧹 Housekeeping
-
-- [ ] `sitemap.xml` + `robots.txt` (hoy 404)
-- [ ] Meta descriptions decentes por ruta
-- [ ] Status page público (Better Stack / Upptime)
-- [ ] Página `/changelog` o `/whats-new`
-- [ ] Sentry para error tracking
-- [ ] PostHog o Plausible para analytics (eventos: signup, onboarding_complete, first_job_created, first_candidate_added, first_client_invited, checkout_started, checkout_completed, churn)
-- [ ] Tests automáticos mínimos (smoke: signup → create job → add candidate → assign stage → create placement)
-- [ ] Issue/PR templates en GitHub
-- [ ] Decidir: `app.recruitingats.com` subdominio aparte o quedarse con `/app/*`
-
----
-
-## ⚠️ Decisiones pendientes (bloquean dev hasta que las tomemos)
-
-- [x] ~~Trial: con o sin credit card?~~ → **con CC**, 5 días (commit `eeeb661`) (doc recomienda sin CC para MVP)
-- [ ] Qué métricas mostrar primero en reporting?
-- [ ] Referral scheme: qué incentivo damos? (crédito en suscripción / cash / otro)
-- [ ] Definición completa de qué campos cambian entre Staff Aug y Recruiting (necesario para el dropdown de cliente)
-- [ ] Logo abbreviation: qué mostramos cuando la empresa no cargó logo? (iniciales / placeholder / nada)
-- [ ] Responder las 5 preguntas técnicas que Ari dejó abiertas en el doc (trial/Stripe %, parser model+cost, drag-drop persistencia, RBAC, tests)
-- [ ] **¿Cobrar a las hiring companies también?** (aún no decidido). Si sí → habilitar tab Billing en el client portal + definir pricing model separado. Si no → el client portal queda gratis.
-
----
-
-## ✅ Hecho esta semana (2026-04-13 → 2026-04-17)
-
-Marcado para referencia. Está todo en `git log origin/staging --since="2026-04-13"`.
-
-- [x] ~~Password toggle (ver password al escribir)~~ · ✅ 2026-04-13
-- [x] ~~JD upload + documentos adicionales al job~~ · ✅ 2026-04-14
-- [x] ~~Client portal con misma lógica de parsing/calendar/work mode que staffing~~ · ✅ 2026-04-15
-- [x] ~~JD parse sobreescribe siempre title / location / work arrangement~~ · ✅ 2026-04-17
-- [x] ~~Fee type locks format (% / $)~~ · ✅ 2026-04-17
-- [x] ~~Phone prefix con dropdown de país~~ · ✅ 2026-04-14
-- [x] ~~R wordmark + favicon + logo upload por empresa~~ · ✅ 2026-04-17
-- [x] ~~Workspace badge con logo + nombre en ambos portales~~ · ✅ 2026-04-17
-- [x] ~~Invite / remove portal users desde client detail~~ · ✅ 2026-04-13
-- [x] ~~Main contact aparece en /contacts~~ · ✅ 2026-04-16
-- [x] ~~Google OAuth funcionando~~ · ✅ semana previa
-- [x] ~~Privacy + Terms pages~~ · ✅ 2026-04-16
-- [x] ~~Currency picker searchable~~ · ✅ 2026-04-17
-- [x] ~~Calendar con purpose selector (candidate vs client)~~ · ✅ 2026-04-15
-- [x] ~~Notificaciones in-app bidireccionales + email Slack-style~~ · ✅ 2026-04-16
-- [x] ~~Chat bidireccional (internal + shared tabs) con notificaciones~~ · ✅ 2026-04-16
-- [x] ~~Client-owned candidate pipeline + share workflow~~ · ✅ 2026-04-16
-- [x] ~~Greenhouse-style candidates view en client portal~~ · ✅ 2026-04-16
-- [x] ~~Roles Admin/User simplificados (antes había recruiter/manager)~~ · ✅ 2026-04-16
-- [x] ~~Notion-style multi-select filters en Jobs y Candidates~~ · ✅ 2026-04-15
-- [x] ~~Add Candidate inline create mode (modal de job detail)~~ · ✅ 2026-04-17
-- [x] ~~Client portal OAuth (Google + Microsoft botones) con contexto vía cookie~~
-- [x] ~~Settings unificado con tabs (Profile + Integrations + Team + Organization + Billing) en ambos portales~~
-- [x] ~~Pricing two-tier: Solo $15/seat, Team $19/seat (2–10)~~
-- [x] ~~Pipeline stages unificados (9 stages canónicos en firm + client portal)~~
-- [x] ~~OAuth sign-ups fuerzan a ingresar company name real~~
-- [x] ~~Stage filter en firm portal candidates~~ · ✅ 2026-04-17
+- [ ] `sitemap.xml` + `robots.txt`
+- [ ] Meta descriptions decentes
+- [ ] Sentry para errores
+- [ ] PostHog o Plausible para analytics
+- [ ] Tests automáticos mínimos (smoke)
+- [ ] Issue/PR templates GitHub
+- [ ] Decidir `app.recruitingats.com` subdominio vs `/app/*`
 
 ---
 
 ## Cómo trabajamos esta hoja
 
-1. Cuando terminamos algo, lo movemos a "Hecho" con fecha.
-2. Cuando se te ocurre algo nuevo, lo agregás en el bloque de prioridad que te parezca (o en "Decisiones pendientes" si hay que decidir algo primero).
-3. Si una decisión de producto bloquea una tarea, la linkeo con `(depende de: decisión X)`.
-4. Cada sesión, al empezar, reviso qué cambió en `git log` desde la última actualización y si detecto algo de la lista que se resolvió, lo tildo solo y te aviso.
+1. Cada item que cae se mueve a `[~]` (implementado, falta tu verificación) o `[x]` (confirmado).
+2. Cuando vos testeás y confirmás, pasa de `[~]` a `[x]`.
+3. Items nuevos van al bloque que corresponda. Si requiere decisión de producto, va a "Decisiones pendientes".
+4. Landing y marketing quedan al final hasta que vos digas lo contrario.

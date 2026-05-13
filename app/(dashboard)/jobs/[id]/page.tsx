@@ -15,8 +15,10 @@ import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, F
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
+import { SubmissionsListView } from "@/components/pipeline/submissions-list-view";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -160,6 +162,7 @@ export default function JobDetailPage() {
   // Edit mode state
   const [editing, setEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("pipeline");
+  const [pipelineView, setPipelineView] = useState<"kanban" | "list">("kanban");
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -387,13 +390,46 @@ export default function JobDetailPage() {
     submission: any;
   } | null>(null);
 
+  // Pending interview scheduling triggered by moving a candidate into
+  // "Interviewing". Unlike the placement flow, the stage move happens
+  // up-front (the candidate IS at Interviewing now) and the dialog is
+  // just for filling out the calendar event. Skip = move stays, just
+  // no event scheduled yet.
+  const [pendingInterview, setPendingInterview] = useState<{
+    submission: any;
+  } | null>(null);
+
   async function persistMove(submissionId: string, stageId: string) {
-    await fetch(`/api/submissions/${submissionId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stageId }),
-    });
-    fetchJob();
+    // Optimistic update — flip the card to the new column locally before
+    // the network round-trip resolves so the recruiter sees the result
+    // instantly instead of staring at the old position for ~500-1500 ms.
+    // We snapshot the prior state so we can roll back if the PATCH fails.
+    const previous = job;
+    setJob((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            submissions: prev.submissions.map((s: any) =>
+              s.id === submissionId ? { ...s, stageId } : s,
+            ),
+          }
+        : prev,
+    );
+
+    try {
+      const res = await fetch(`/api/submissions/${submissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId }),
+      });
+      if (!res.ok) throw new Error("Move failed");
+      // Re-fetch to pick up server-side side effects (activity log,
+      // clientStageId on first share, sharedAt, etc.). The card already
+      // looks right, so this refresh is invisible to the user.
+      fetchJob();
+    } catch {
+      setJob(previous);
+    }
   }
 
   async function moveSubmission(submissionId: string, stageId: string) {
@@ -402,6 +438,7 @@ export default function JobDetailPage() {
     const movingToSubmitted = target?.name === "Submitted";
     const notYetShared = submission && !submission.isSharedWithClient;
     const movingToPlaced = target?.name === "Placed";
+    const movingToInterviewing = target?.name === "Interviewing";
 
     if (movingToSubmitted && notYetShared) {
       setPendingShareMove({ submission, stageId });
@@ -416,6 +453,14 @@ export default function JobDetailPage() {
     }
 
     await persistMove(submissionId, stageId);
+
+    // Interviewing: stage flip first (above), then prompt to schedule.
+    // Skip-friendly — closing the dialog leaves the candidate at the
+    // Interviewing stage without a calendar event, which the recruiter
+    // can add later from /calendar.
+    if (movingToInterviewing && submission) {
+      setPendingInterview({ submission });
+    }
   }
 
   async function sendClientInvite(e: React.FormEvent) {
@@ -1012,15 +1057,52 @@ export default function JobDetailPage() {
         </TabsList>
 
         <TabsContent value="pipeline">
-          <KanbanBoard
-            stages={job.stages}
-            submissions={job.submissions}
-            onMove={moveSubmission}
-            onToggleShare={toggleShare}
-            onRemove={removeSubmission}
-            clientName={job.client?.name}
-            jobTitle={job.title}
-          />
+          {/* View toggle — Kanban for visual triage, List for fast
+              stage changes and scanning many candidates at once. Same
+              data + same transitions (onMove fires the share /
+              placement / interview dialogs either way). */}
+          <div className="flex justify-end mb-3">
+            <div className="inline-flex rounded-md border bg-white p-0.5">
+              {([
+                { v: "kanban", label: "Kanban" },
+                { v: "list", label: "List" },
+              ] as const).map(({ v, label }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setPipelineView(v)}
+                  className={`px-3 py-1 text-xs font-medium rounded ${
+                    pipelineView === v
+                      ? "bg-indigo-600 text-white"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {pipelineView === "kanban" ? (
+            <KanbanBoard
+              stages={job.stages}
+              submissions={job.submissions}
+              onMove={moveSubmission}
+              onToggleShare={toggleShare}
+              onRemove={removeSubmission}
+              clientName={job.client?.name}
+              jobTitle={job.title}
+            />
+          ) : (
+            <SubmissionsListView
+              stages={job.stages}
+              submissions={job.submissions}
+              onMove={moveSubmission}
+              onToggleShare={toggleShare}
+              onRemove={removeSubmission}
+              clientName={job.client?.name}
+              jobTitle={job.title}
+            />
+          )}
           {pendingShareMove && (
             <ShareCandidateDialog
               open={true}
@@ -1065,9 +1147,31 @@ export default function JobDetailPage() {
                 feeAmount: job.feeAmount ? String(job.feeAmount) : undefined,
                 feeType: (job.feeType as "PERCENTAGE" | "FLAT") || undefined,
                 paymentTerms: job.client?.defaultPaymentTerms ?? undefined,
+                guaranteePeriod: job.client?.defaultGuaranteePeriod ?? undefined,
               }}
               onSuccess={() => {
                 setPendingPlacement(null);
+                fetchJob();
+              }}
+            />
+          )}
+          {pendingInterview && (
+            <QuickInterviewDialog
+              open={true}
+              onOpenChange={(open) => {
+                if (!open) setPendingInterview(null);
+              }}
+              submission={{
+                id: pendingInterview.submission.id,
+                candidateId: pendingInterview.submission.candidateId,
+                candidate: {
+                  firstName: pendingInterview.submission.candidate.firstName,
+                  lastName: pendingInterview.submission.candidate.lastName,
+                },
+                job: { id: job.id, title: job.title },
+              }}
+              onScheduled={() => {
+                setPendingInterview(null);
                 fetchJob();
               }}
             />
@@ -1214,11 +1318,17 @@ export default function JobDetailPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Salary Range</Label>
-                        <Input
-                          value={editForm.salary}
-                          onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
-                          placeholder="$150K - $180K"
-                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                            $
+                          </span>
+                          <Input
+                            value={editForm.salary}
+                            onChange={(e) => setEditForm({ ...editForm, salary: e.target.value })}
+                            placeholder="150K - 180K"
+                            className="pl-7"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Currency</Label>
@@ -1282,15 +1392,21 @@ export default function JobDetailPage() {
                 if (jdDoc) {
                   return (
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-indigo-500" />
-                        <div>
+                      <a
+                        href={`/api/documents/${jdDoc.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 min-w-0 flex-1 rounded-md -m-1 p-1 hover:bg-gray-100 transition-colors"
+                        title="Open file"
+                      >
+                        <FileText className="h-5 w-5 text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
                           <p className="text-sm font-medium truncate max-w-xs">{jdDoc.name}</p>
                           <p className="text-xs text-gray-400">{formatBytes(jdDoc.size)} · {formatDate(jdDoc.createdAt)}</p>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <a href={`/api/documents/${jdDoc.id}`} download>
+                      </a>
+                      <div className="flex items-center gap-1 ml-2">
+                        <a href={`/api/documents/${jdDoc.id}?download=1`} download>
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
                         <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
@@ -1325,15 +1441,21 @@ export default function JobDetailPage() {
             <CardContent className="space-y-3">
               {job.documents?.filter((d: any) => d.category === "ADDITIONAL").map((doc: any) => (
                 <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-indigo-500" />
-                    <div>
+                  <a
+                    href={`/api/documents/${doc.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 min-w-0 flex-1 rounded-md -m-1 p-1 hover:bg-gray-100 transition-colors"
+                    title="Open file"
+                  >
+                    <FileText className="h-5 w-5 text-indigo-500 shrink-0" />
+                    <div className="min-w-0">
                       <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
                       <p className="text-xs text-gray-400">{formatBytes(doc.size)} · {formatDate(doc.createdAt)}</p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <a href={`/api/documents/${doc.id}`} download>
+                  </a>
+                  <div className="flex items-center gap-1 ml-2">
+                    <a href={`/api/documents/${doc.id}?download=1`} download>
                       <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                     </a>
                     <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
