@@ -162,7 +162,9 @@ function parsePhone(value: string): { prefix: string; number: string } {
   if (!value) {
     return { prefix: detectBrowserDialCode() ?? "+54", number: "" };
   }
-  const trimmed = value.trim();
+  // Accept LATAM-style "(+54) 11..." too — drop the parens around a
+  // leading country code so the prefix-detection below kicks in.
+  const trimmed = value.trim().replace(/^\((\+\d{1,4})\)\s*/, "$1 ");
 
   // Try to match a known country code at the start
   if (trimmed.startsWith("+")) {

@@ -75,7 +75,12 @@ function parseResumeText(text: string, fileName?: string): Record<string, any> {
   if (emailMatch) result.email = emailMatch[0];
 
   // --- Phone ---
-  const phoneMatch = text.match(
+  // CVs in LATAM often write the country code wrapped in parens — "(+54)
+  // 11 3143-2490". The regex below skips paren-wrapped prefixes (the
+  // outer `\(?` only allows them around the area code, not the country
+  // code), so we strip those parens before matching.
+  const phoneText = text.replace(/\((\+\d{1,4})\)/g, "$1");
+  const phoneMatch = phoneText.match(
     /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\s*\d{3,4}[-.\s]?\s*\d{4}/
   );
   if (phoneMatch) result.phone = phoneMatch[0].trim();
@@ -97,6 +102,24 @@ function parseResumeText(text: string, fileName?: string): Record<string, any> {
 
   // --- Location ---
   extractLocation(lines, result);
+
+  // --- Phone country inference ---
+  // If we got a phone but no country code came along, derive it from
+  // signals in the CV. Order: explicit country name (location text or
+  // anywhere in the doc) → AR-specific city/province hint → US state
+  // abbreviation. Skips the browser-locale fallback that PhoneInput
+  // does, so a US recruiter parsing an AR candidate's CV gets +54, not
+  // +1.
+  if (result.phone && !/^\+/.test(result.phone)) {
+    const signalText = `${result.location || ""}\n${text.slice(0, 1500)}`;
+    const dialFromCountry = inferDialCodeFromText(signalText);
+    let inferred: string | null = dialFromCountry;
+    if (!inferred && AR_HINTS.test(signalText)) inferred = "+54";
+    if (!inferred && US_HINTS.test(result.location || "")) inferred = "+1";
+    if (inferred) {
+      result.phone = `${inferred} ${result.phone}`;
+    }
+  }
 
   // --- Current Title & Company ---
   // Broadened heading patterns — covers the typical variants in EN + ES.
@@ -370,6 +393,52 @@ const KNOWN_LOCATIONS = /\b(Buenos Aires|CABA|Capital Federal|C\.A\.B\.A|Córdob
 const US_STATES = /\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 
 const AR_PROVINCES = /\b(Buenos Aires|CABA|Capital Federal|Córdoba|Santa Fe|Mendoza|Tucumán|Entre Ríos|Salta|Misiones|Chaco|Corrientes|Santiago del Estero|San Juan|Jujuy|Río Negro|Neuquén|Formosa|Chubut|San Luis|Catamarca|La Rioja|La Pampa|Santa Cruz|Tierra del Fuego)\b/i;
+
+// Country-name patterns → E.164 dial code. Used to recover the phone
+// prefix when the regex didn't capture one (e.g. CVs that write the
+// prefix in parens "(+54)" or omit it entirely). Ordered with multi-word
+// matches first so "United States" wins over "States" elsewhere. Spanish
+// and English variants both covered.
+const COUNTRY_DIAL_CODES: Array<{ pattern: RegExp; code: string }> = [
+  { pattern: /\b(?:argentin[ao]?)\b/i, code: "+54" },
+  { pattern: /\b(?:united\s*states|estados\s*unidos|\bU\.?S\.?A\.?\b|\bUSA?\b)\b/i, code: "+1" },
+  { pattern: /\b(?:brasil|brazil)\b/i, code: "+55" },
+  { pattern: /\b(?:chile)\b/i, code: "+56" },
+  { pattern: /\b(?:colombia)\b/i, code: "+57" },
+  { pattern: /\b(?:m[eé]xico|mexico)\b/i, code: "+52" },
+  { pattern: /\b(?:per[uú]|peru)\b/i, code: "+51" },
+  { pattern: /\b(?:uruguay)\b/i, code: "+598" },
+  { pattern: /\b(?:paraguay)\b/i, code: "+595" },
+  { pattern: /\b(?:bolivia)\b/i, code: "+591" },
+  { pattern: /\b(?:ecuador)\b/i, code: "+593" },
+  { pattern: /\b(?:venezuela)\b/i, code: "+58" },
+  { pattern: /\b(?:united\s*kingdom|england|inglaterra|\bUK\b|gran\s*breta[ñn]a)\b/i, code: "+44" },
+  { pattern: /\b(?:espa[ñn]a|spain)\b/i, code: "+34" },
+  { pattern: /\b(?:france|francia)\b/i, code: "+33" },
+  { pattern: /\b(?:germany|deutschland|alemania)\b/i, code: "+49" },
+  { pattern: /\b(?:italy|italia)\b/i, code: "+39" },
+  { pattern: /\b(?:portugal)\b/i, code: "+351" },
+  { pattern: /\b(?:netherlands|holanda|pa[ií]ses\s*bajos)\b/i, code: "+31" },
+  { pattern: /\b(?:switzerland|suiza)\b/i, code: "+41" },
+  { pattern: /\b(?:australia)\b/i, code: "+61" },
+  { pattern: /\b(?:japan|jap[oó]n)\b/i, code: "+81" },
+  { pattern: /\b(?:china)\b/i, code: "+86" },
+  { pattern: /\b(?:india)\b/i, code: "+91" },
+  { pattern: /\b(?:israel)\b/i, code: "+972" },
+  { pattern: /\b(?:united\s*arab\s*emirates|emiratos\s*[aá]rabes\s*unidos|\bUAE\b)\b/i, code: "+971" },
+];
+
+function inferDialCodeFromText(text: string): string | null {
+  for (const { pattern, code } of COUNTRY_DIAL_CODES) {
+    if (pattern.test(text)) return code;
+  }
+  return null;
+}
+
+// AR provinces / "CABA" / "Buenos Aires" in the location alone are a
+// strong-enough signal even when "Argentina" isn't spelled out.
+const AR_HINTS = /\b(CABA|Capital Federal|Buenos Aires|C\.A\.B\.A|Córdoba|Rosario|Mendoza|Tucumán|Santa Fe|Salta|Mar del Plata|La Plata)\b/i;
+const US_HINTS = US_STATES;
 
 /**
  * Extract location with multiple strategies, prioritizing the header area.
