@@ -440,10 +440,10 @@ function Features() {
       ),
     },
     {
-      tab: "AI Parsing",
+      tab: "Smart Parsing",
       icon: Sparkles,
-      title: "AI-powered resume parsing",
-      desc: "Upload a resume (PDF, DOCX, TXT) and watch the form auto-fill. Name, email, phone, skills, experience — extracted in seconds. Also import directly from LinkedIn.",
+      title: "Smart resume parsing",
+      desc: "Upload a resume (PDF, DOCX, TXT) and watch the form auto-fill. Name, email, phone, skills, experience — extracted in seconds using pattern matching. Also import directly from LinkedIn.",
       bullets: ["PDF, DOCX, TXT support", "Skills & experience extraction", "LinkedIn profile import", "Bulk import from any ATS"],
       mockup: (
         <div className="space-y-3">
@@ -607,7 +607,7 @@ function TwoSides() {
                   { icon: Building2, text: "Client & deal management CRM" },
                   { icon: Send, text: "Shareable candidate shortlists" },
                   { icon: DollarSign, text: "Placement & fee tracking" },
-                  { icon: Sparkles, text: "AI resume parsing & bulk import" },
+                  { icon: Sparkles, text: "Smart resume parsing & bulk import" },
                   { icon: Inbox, text: "Incoming job requests from clients" },
                   { icon: BarChart3, text: "Dashboard with charts & insights" },
                 ].map(({ icon: Icon, text }) => (
@@ -634,7 +634,7 @@ function TwoSides() {
 function HowItWorks() {
   const steps = [
     { num: "01", title: "Sign up in 2 minutes", desc: "Create your firm, invite your team, set up your default pipeline stages.", icon: Zap, color: "from-indigo-500 to-violet-500" },
-    { num: "02", title: "Add your data", desc: "Import candidates from CSV, parse resumes with AI, or add manually. Set up clients and open searches.", icon: Upload, color: "from-blue-500 to-indigo-500" },
+    { num: "02", title: "Add your data", desc: "Import candidates from CSV, auto-fill from resume uploads, or add manually. Set up clients and open searches.", icon: Upload, color: "from-blue-500 to-indigo-500" },
     { num: "03", title: "Work your pipeline", desc: "Drag candidates through stages. Share shortlists with clients. Collect real-time feedback.", icon: MousePointerClick, color: "from-violet-500 to-purple-500" },
     { num: "04", title: "Close placements", desc: "Track fees, record placements, and grow revenue. Analytics show you what&apos;s working.", icon: CircleDollarSign, color: "from-emerald-500 to-teal-500" },
   ];
@@ -677,7 +677,7 @@ function Comparison() {
   const feats = [
     "Visual Kanban pipeline",
     "Client collaboration portal",
-    "AI resume parsing",
+    "Smart resume parsing",
     "Client marketplace (incoming jobs)",
     "Placement & fee tracking",
     "Team roles & permissions",
@@ -774,7 +774,7 @@ function Pricing() {
     "Unlimited candidates & jobs",
     "Visual drag-and-drop pipeline",
     "Client collaboration portal",
-    "AI resume parsing",
+    "Smart resume parsing",
     "Client marketplace access",
     "Placement & fee tracking",
     "Bulk import & export",
