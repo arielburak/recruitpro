@@ -388,12 +388,36 @@ export default function JobDetailPage() {
   } | null>(null);
 
   async function persistMove(submissionId: string, stageId: string) {
-    await fetch(`/api/submissions/${submissionId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stageId }),
-    });
-    fetchJob();
+    // Optimistic update — flip the card to the new column locally before
+    // the network round-trip resolves so the recruiter sees the result
+    // instantly instead of staring at the old position for ~500-1500 ms.
+    // We snapshot the prior state so we can roll back if the PATCH fails.
+    const previous = job;
+    setJob((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            submissions: prev.submissions.map((s: any) =>
+              s.id === submissionId ? { ...s, stageId } : s,
+            ),
+          }
+        : prev,
+    );
+
+    try {
+      const res = await fetch(`/api/submissions/${submissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId }),
+      });
+      if (!res.ok) throw new Error("Move failed");
+      // Re-fetch to pick up server-side side effects (activity log,
+      // clientStageId on first share, sharedAt, etc.). The card already
+      // looks right, so this refresh is invisible to the user.
+      fetchJob();
+    } catch {
+      setJob(previous);
+    }
   }
 
   async function moveSubmission(submissionId: string, stageId: string) {
