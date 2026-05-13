@@ -21,6 +21,7 @@
 - [~] Salary range con `$` como **prefijo visual** del input (en /jobs/new y /jobs/[id] edit)
 - [ ] Parser mejorado para JDs formato "Close Up" — *pendiente: mandame un ejemplo para tunear*
 - [x] Notifications history panel (campana con popover y "Mark all read")
+- [~] **Placeholder del PhoneInput**: contar `#` del template y emitir exacto esa cantidad de dígitos. Fix universal — afecta a todos los lugares que usan PhoneInput (candidates, clients, contacts, jobs).
 
 ## 🔴 Pipeline / Stages / Share workflow (lado firma)
 
