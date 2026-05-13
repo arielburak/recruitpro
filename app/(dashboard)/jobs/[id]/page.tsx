@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -387,6 +388,15 @@ export default function JobDetailPage() {
     submission: any;
   } | null>(null);
 
+  // Pending interview scheduling triggered by moving a candidate into
+  // "Interviewing". Unlike the placement flow, the stage move happens
+  // up-front (the candidate IS at Interviewing now) and the dialog is
+  // just for filling out the calendar event. Skip = move stays, just
+  // no event scheduled yet.
+  const [pendingInterview, setPendingInterview] = useState<{
+    submission: any;
+  } | null>(null);
+
   async function persistMove(submissionId: string, stageId: string) {
     // Optimistic update — flip the card to the new column locally before
     // the network round-trip resolves so the recruiter sees the result
@@ -426,6 +436,7 @@ export default function JobDetailPage() {
     const movingToSubmitted = target?.name === "Submitted";
     const notYetShared = submission && !submission.isSharedWithClient;
     const movingToPlaced = target?.name === "Placed";
+    const movingToInterviewing = target?.name === "Interviewing";
 
     if (movingToSubmitted && notYetShared) {
       setPendingShareMove({ submission, stageId });
@@ -440,6 +451,14 @@ export default function JobDetailPage() {
     }
 
     await persistMove(submissionId, stageId);
+
+    // Interviewing: stage flip first (above), then prompt to schedule.
+    // Skip-friendly — closing the dialog leaves the candidate at the
+    // Interviewing stage without a calendar event, which the recruiter
+    // can add later from /calendar.
+    if (movingToInterviewing && submission) {
+      setPendingInterview({ submission });
+    }
   }
 
   async function sendClientInvite(e: React.FormEvent) {
@@ -1092,6 +1111,27 @@ export default function JobDetailPage() {
               }}
               onSuccess={() => {
                 setPendingPlacement(null);
+                fetchJob();
+              }}
+            />
+          )}
+          {pendingInterview && (
+            <QuickInterviewDialog
+              open={true}
+              onOpenChange={(open) => {
+                if (!open) setPendingInterview(null);
+              }}
+              submission={{
+                id: pendingInterview.submission.id,
+                candidateId: pendingInterview.submission.candidateId,
+                candidate: {
+                  firstName: pendingInterview.submission.candidate.firstName,
+                  lastName: pendingInterview.submission.candidate.lastName,
+                },
+                job: { id: job.id, title: job.title },
+              }}
+              onScheduled={() => {
+                setPendingInterview(null);
                 fetchJob();
               }}
             />
