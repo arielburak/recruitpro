@@ -821,6 +821,13 @@ function CreateInterviewModal({
   // Interview purpose
   const [purpose, setPurpose] = useState<"CANDIDATE" | "CLIENT" | null>(null);
 
+  // Notify mode: false = ATS-only record (no emails fire), true = full
+  // invite path (candidate + client contacts get the calendar invite).
+  // Default off — recruiters mostly use this view as a tracking ledger
+  // for interviews that are already scheduled elsewhere. They opt in
+  // when they actually need to invite people.
+  const [notifyAttendees, setNotifyAttendees] = useState(false);
+
   // Form state
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(defaultDate ? defaultDate.toISOString().split("T")[0] : "");
@@ -1025,6 +1032,7 @@ function CreateInterviewModal({
           notes: notes || undefined,
           interviewerIds: selectedInterviewers.length > 0 ? selectedInterviewers : undefined,
           clientContactIds: selectedClientContacts.length > 0 ? selectedClientContacts : undefined,
+          notifyAttendees,
         }),
       });
 
@@ -1482,7 +1490,7 @@ function CreateInterviewModal({
                       </option>
                     ))}
                   </select>
-                  {selectedClientContacts.length > 0 && (
+                  {selectedClientContacts.length > 0 && notifyAttendees && (
                     <p className="text-xs text-amber-600">
                       {selectedClientContacts.length} contact{selectedClientContacts.length > 1 ? "s" : ""} will receive an interview invite email.
                     </p>
@@ -1498,11 +1506,30 @@ function CreateInterviewModal({
             <Textarea rows={3} placeholder="Interview agenda, preparation notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
+          {/* Notify toggle — off by default so this form behaves like a
+              ledger. Tick to actually fire the calendar-invite emails to
+              the candidate and any selected client contacts. */}
+          <label className="flex items-start gap-2.5 cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={notifyAttendees}
+              onChange={(e) => setNotifyAttendees(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm text-gray-900">Send calendar invite by email</p>
+              <p className="text-[11px] text-gray-500">
+                Off by default — saves as an ATS record only. Tick to email the candidate
+                {selectedClientContacts.length > 0 ? " and the selected client contacts" : ""} a calendar invite.
+              </p>
+            </div>
+          </label>
+
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving || !selectedCandidate || !selectedSubmissionId}>
-              {saving ? "Scheduling..." : "Schedule Interview"}
+              {saving ? "Saving..." : notifyAttendees ? "Save & send invite" : "Save to ATS"}
             </Button>
           </div>
 

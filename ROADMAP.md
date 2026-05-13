@@ -60,6 +60,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [~] Form pre-fill (salary, start date, terms, fecha cobro)
 - [~] Manual placement create desde `/placements`
 - [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
+- [~] **`/calendar` modal full**: mismo toggle "Save to ATS" vs "Save & send invite". Default = ledger interno (sin mails). Tick = mails al candidato + client contacts.
 - [ ] **Vista agregada de interviews por job** (lista + calendar)
 - [ ] **Click en día → desglose** del día (interviews + first days + fechas de cobro de placements)
 - [ ] **Upload PDFs / archivos a meetings** (tipo Outlook invites) — schema no tiene attachments
@@ -127,7 +128,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [ ] **Per-JO member access** (hoy el team es global; al crear JO elegir quién accede)
 - [ ] **Deshacer / cancelar invites** — hoy quedan en historial para siempre
 - [ ] Share JD pidiendo **solo email** (no empresa) — enriquecer al primer login
-- [ ] **Sacar el calendar** del client portal (replica innecesaria)
+- [x] **Sacar el calendar del client portal** — no había route ni componente; el cliente nunca tuvo calendar. Confirmado en auditoría.
 - [ ] Bugs diferidos PR #26 (sin repro):
   - Candidato linkeado a búsqueda no aparece en solapa
   - Click sobre job en /candidates rompe la página
