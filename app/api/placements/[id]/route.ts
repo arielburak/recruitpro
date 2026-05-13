@@ -50,6 +50,7 @@ export async function PUT(
       feeAmount,
       feePercentage,
       salary,
+      currency,
       invoiceStatus,
       paymentTerms,
       paymentDueDate,
@@ -113,6 +114,7 @@ export async function PUT(
         ...(feeAmount !== undefined && { feeAmount }),
         ...(feePercentage !== undefined && { feePercentage }),
         ...(salary !== undefined && { salary }),
+        ...(currency !== undefined && { currency }),
         ...(invoiceStatus !== undefined && { invoiceStatus }),
         ...(paymentTerms !== undefined && { paymentTerms }),
         ...(paymentDueDate !== undefined && {

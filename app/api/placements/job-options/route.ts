@@ -19,12 +19,16 @@ export async function GET() {
       select: {
         id: true,
         title: true,
+        currency: true,
         feeAmount: true,
         feeType: true,
+        paymentTerms: true,
+        guaranteePeriod: true,
         client: {
           select: {
             id: true,
             name: true,
+            defaultCurrency: true,
             defaultPaymentTerms: true,
             defaultFeeAmount: true,
             defaultFeeType: true,
@@ -35,13 +39,18 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
+    // Fallback chain (per request: Recruiting clients use client-level
+    // defaults, Staff Aug jobs override on the job since the client's
+    // defaults are intentionally null). The resolved values fall through
+    // job → client → null.
     const options = jobs.map((j) => ({
       id: j.id,
       title: j.title,
       clientId: j.client.id,
       clientName: j.client.name,
-      clientPaymentTerms: j.client.defaultPaymentTerms ?? null,
-      clientGuaranteePeriod: j.client.defaultGuaranteePeriod ?? null,
+      jobCurrency: j.currency ?? j.client.defaultCurrency ?? "USD",
+      clientPaymentTerms: j.paymentTerms ?? j.client.defaultPaymentTerms ?? null,
+      clientGuaranteePeriod: j.guaranteePeriod ?? j.client.defaultGuaranteePeriod ?? null,
       clientFeeAmount: j.feeAmount?.toString() ?? j.client.defaultFeeAmount?.toString() ?? null,
       clientFeeType: (j.feeType ?? j.client.defaultFeeType) as "PERCENTAGE" | "FLAT" | null,
     }));

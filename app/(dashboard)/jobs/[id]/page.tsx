@@ -1146,8 +1146,10 @@ export default function JobDetailPage() {
                   : undefined,
                 feeAmount: job.feeAmount ? String(job.feeAmount) : undefined,
                 feeType: (job.feeType as "PERCENTAGE" | "FLAT") || undefined,
-                paymentTerms: job.client?.defaultPaymentTerms ?? undefined,
-                guaranteePeriod: job.client?.defaultGuaranteePeriod ?? undefined,
+                // Fallback chain: job-level (Staff Aug overrides) → client default → undefined.
+                paymentTerms: job.paymentTerms ?? job.client?.defaultPaymentTerms ?? undefined,
+                guaranteePeriod: job.guaranteePeriod ?? job.client?.defaultGuaranteePeriod ?? undefined,
+                currency: job.currency ?? job.client?.defaultCurrency ?? "USD",
               }}
               onSuccess={() => {
                 setPendingPlacement(null);
