@@ -26,6 +26,23 @@
 - [~] **Archivos clickeables**: click en el icono o el nombre del archivo (candidatos + jobs JD + Additional Documents) abre el archivo en nueva pestaña. Botón de download sigue forzando descarga via `?download=1`. Cambio del API: `Content-Disposition: inline` por default, `attachment` con query param.
 - [~] **Kanban drag instantáneo**: optimistic update en `persistMove`. La card se mueve visualmente al instante; la PATCH y el refetch corren en background. Si falla, rollback al estado anterior.
 
+## 🟦 Estados de las búsquedas (JobStatus)
+
+Hoy: DB tiene 5 (`OPEN`, `ACTIVE`, `ON_HOLD`, `FILLED`, `CLOSED`) pero en la práctica se usan 2 (todo cae en OPEN o ACTIVE).
+
+- [ ] **Repensar el set de statuses** — definir qué estados realmente son útiles para el flujo de la firma. Candidatos a evaluar:
+  - `DRAFT` (intake recibido, no se arrancó a sourcear)
+  - `OPEN` / `ACTIVE` (activa, sourceando) — ¿se justifican dos o un solo "Active" alcanza?
+  - `ON_HOLD` (pausada por cliente)
+  - `FILLED` (placement hecho, no hay seats abiertos)
+  - `CANCELLED` (cliente bajó la búsqueda)
+  - `LOST` (la perdimos vs competencia) — útil para reporting
+- [ ] **Agregar selector de status al create form** — hoy nacen siempre OPEN. Para clientes que firman búsquedas que arrancan ON_HOLD o DRAFT.
+- [ ] **Diferencia OPEN vs ACTIVE clarificada o eliminada** — si quedan ambos, que tengan semántica distinta. Si no, mergear.
+- [ ] **Transiciones automáticas**: al hacer un Placement → ¿auto-FILLED? Al ON_HOLD → ¿notificar al cliente?
+
+Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pendientes" si necesitamos charlarlo con Ari.*
+
 ## 🔴 Pipeline / Stages / Share workflow (lado firma)
 
 - [x] Rename "Contacted" → "Internal Review"
@@ -42,7 +59,7 @@
 - [~] Modal "Congratulations" al marcar Placed
 - [~] Form pre-fill (salary, start date, terms, fecha cobro)
 - [~] Manual placement create desde `/placements`
-- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Schedule = POST a `/api/interviews`. Para fields avanzados (interviewers, Google Meet auto-create) ir a /calendar.
+- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
 - [ ] **Vista agregada de interviews por job** (lista + calendar)
 - [ ] **Click en día → desglose** del día (interviews + first days + fechas de cobro de placements)
 - [ ] **Upload PDFs / archivos a meetings** (tipo Outlook invites) — schema no tiene attachments
