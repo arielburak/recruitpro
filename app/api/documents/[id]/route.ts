@@ -5,7 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -34,11 +34,19 @@ export async function GET(
       return NextResponse.json({ error: "Blob not found" }, { status: 404 });
     }
 
+    // Default to `inline` so PDFs/images render in a new browser tab when
+    // the user clicks the file row. Callers that want a hard download
+    // (the download icon button) opt in with `?download=1`, which sets
+    // Content-Disposition: attachment.
+    const url = new URL(request.url);
+    const forceDownload = url.searchParams.get("download") === "1";
+    const disposition = forceDownload ? "attachment" : "inline";
+
     return new NextResponse(blobResult.stream, {
       status: 200,
       headers: {
         "Content-Type": blobResult.blob.contentType || "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(document.name)}"`,
+        "Content-Disposition": `${disposition}; filename="${encodeURIComponent(document.name)}"`,
         "Content-Length": blobResult.blob.size.toString(),
       },
     });

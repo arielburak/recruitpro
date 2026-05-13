@@ -1288,15 +1288,21 @@ export default function JobDetailPage() {
                 if (jdDoc) {
                   return (
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-indigo-500" />
-                        <div>
+                      <a
+                        href={`/api/documents/${jdDoc.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 min-w-0 flex-1 rounded-md -m-1 p-1 hover:bg-gray-100 transition-colors"
+                        title="Open file"
+                      >
+                        <FileText className="h-5 w-5 text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
                           <p className="text-sm font-medium truncate max-w-xs">{jdDoc.name}</p>
                           <p className="text-xs text-gray-400">{formatBytes(jdDoc.size)} · {formatDate(jdDoc.createdAt)}</p>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <a href={`/api/documents/${jdDoc.id}`} download>
+                      </a>
+                      <div className="flex items-center gap-1 ml-2">
+                        <a href={`/api/documents/${jdDoc.id}?download=1`} download>
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
                         <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
@@ -1331,15 +1337,21 @@ export default function JobDetailPage() {
             <CardContent className="space-y-3">
               {job.documents?.filter((d: any) => d.category === "ADDITIONAL").map((doc: any) => (
                 <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-indigo-500" />
-                    <div>
+                  <a
+                    href={`/api/documents/${doc.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 min-w-0 flex-1 rounded-md -m-1 p-1 hover:bg-gray-100 transition-colors"
+                    title="Open file"
+                  >
+                    <FileText className="h-5 w-5 text-indigo-500 shrink-0" />
+                    <div className="min-w-0">
                       <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
                       <p className="text-xs text-gray-400">{formatBytes(doc.size)} · {formatDate(doc.createdAt)}</p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <a href={`/api/documents/${doc.id}`} download>
+                  </a>
+                  <div className="flex items-center gap-1 ml-2">
+                    <a href={`/api/documents/${doc.id}?download=1`} download>
                       <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                     </a>
                     <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
