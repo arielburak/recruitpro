@@ -61,6 +61,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [~] Manual placement create desde `/placements`
 - [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
 - [~] **`/calendar` modal full**: mismo toggle "Save to ATS" vs "Save & send invite". Default = ledger interno (sin mails). Tick = mails al candidato + client contacts.
+- [~] **Client Interview purpose = registro forzado** (sin mails). El toggle de email solo aparece para "Candidate Call" (donde el recruiter coordina con el candidato directamente). Para Client Interview salta un nota: "Client interviews save as an internal ATS record. No emails sent — the client coordinates the meeting on their side."
 - [ ] **Vista agregada de interviews por job** (lista + calendar)
 - [ ] **Click en día → desglose** del día (interviews + first days + fechas de cobro de placements)
 - [ ] **Upload PDFs / archivos a meetings** (tipo Outlook invites) — schema no tiene attachments
