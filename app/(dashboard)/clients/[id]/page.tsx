@@ -57,6 +57,8 @@ export default function ClientDetailPage() {
     defaultCurrency: "USD",
     defaultFeeType: "PERCENTAGE",
     defaultFeeAmount: "" as string | number,
+    defaultPaymentTerms: "" as string | number,
+    defaultGuaranteePeriod: "" as string | number,
   });
 
   function startEditClient() {
@@ -69,6 +71,8 @@ export default function ClientDetailPage() {
       defaultCurrency: client.defaultCurrency || "USD",
       defaultFeeType: client.defaultFeeType || "PERCENTAGE",
       defaultFeeAmount: client.defaultFeeAmount ? Number(client.defaultFeeAmount) : "",
+      defaultPaymentTerms: client.defaultPaymentTerms ?? "",
+      defaultGuaranteePeriod: client.defaultGuaranteePeriod ?? "",
     });
     setEditingClient(true);
   }
@@ -90,6 +94,14 @@ export default function ClientDetailPage() {
           defaultFeeAmount:
             isRecruiting && clientForm.defaultFeeAmount
               ? Number(clientForm.defaultFeeAmount)
+              : null,
+          defaultPaymentTerms:
+            isRecruiting && clientForm.defaultPaymentTerms !== ""
+              ? Number(clientForm.defaultPaymentTerms)
+              : null,
+          defaultGuaranteePeriod:
+            isRecruiting && clientForm.defaultGuaranteePeriod !== ""
+              ? Number(clientForm.defaultGuaranteePeriod)
               : null,
         }),
       });
@@ -388,6 +400,30 @@ export default function ClientDetailPage() {
                             onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
                           />
                         </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Payment terms (days)</Label>
+                        <Input
+                          className="h-9"
+                          type="number"
+                          min={0}
+                          placeholder="30"
+                          value={clientForm.defaultPaymentTerms}
+                          onChange={(e) => setClientForm({ ...clientForm, defaultPaymentTerms: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Guarantee period (days)</Label>
+                        <Input
+                          className="h-9"
+                          type="number"
+                          min={0}
+                          placeholder="90"
+                          value={clientForm.defaultGuaranteePeriod}
+                          onChange={(e) => setClientForm({ ...clientForm, defaultGuaranteePeriod: e.target.value })}
+                        />
                       </div>
                     </div>
                   </div>

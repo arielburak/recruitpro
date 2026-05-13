@@ -18,6 +18,8 @@ export const clientSchema = z.object({
   defaultCurrency: z.string().optional().nullable(),
   defaultFeeType: z.string().optional().nullable(),
   defaultFeeAmount: z.number().optional().nullable(),
+  defaultPaymentTerms: z.number().int().optional().nullable(),
+  defaultGuaranteePeriod: z.number().int().optional().nullable(),
 });
 
 export type ClientFormData = z.infer<typeof clientSchema>;

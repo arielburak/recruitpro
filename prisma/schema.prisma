@@ -127,6 +127,10 @@ model Client {
   // Default invoice payment terms in days (e.g. 30 = "Net 30"). Used as the
   // pre-filled value when creating a placement for this client.
   defaultPaymentTerms Int?     @default(30)
+  // Default guarantee period in days (e.g. 90 = three-month guarantee). The
+  // recruiter agrees this once with the client and it pre-fills every
+  // placement form for jobs at this client.
+  defaultGuaranteePeriod Int?  @default(90)
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
   organizationId String?

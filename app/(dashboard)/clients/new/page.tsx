@@ -69,6 +69,8 @@ function NewClientContent() {
     notes: "",
     defaultCurrency: "USD",
     defaultFeeAmount: "",
+    defaultPaymentTerms: "30",
+    defaultGuaranteePeriod: "90",
   });
   // Attachments staged before the client exists. We can't upload until
   // we have a clientId from the POST response, so they live in memory
@@ -174,6 +176,14 @@ function NewClientContent() {
         defaultFeeAmount:
           isRecruiting && formValues.defaultFeeAmount
             ? Number(formValues.defaultFeeAmount)
+            : null,
+        defaultPaymentTerms:
+          isRecruiting && formValues.defaultPaymentTerms
+            ? Number(formValues.defaultPaymentTerms)
+            : null,
+        defaultGuaranteePeriod:
+          isRecruiting && formValues.defaultGuaranteePeriod
+            ? Number(formValues.defaultGuaranteePeriod)
             : null,
       }),
     });
@@ -411,7 +421,7 @@ function NewClientContent() {
             {engagementType === "RECRUITING" ? (
               <div className="border-t pt-4 mt-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Default Fee Terms</h3>
-                <p className="text-xs text-gray-400 mb-3">These terms will auto-fill when creating a Job Order for this client.</p>
+                <p className="text-xs text-gray-400 mb-3">These terms will auto-fill when creating a Job Order or Placement for this client.</p>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>Currency</Label>
@@ -450,6 +460,30 @@ function NewClientContent() {
                         onChange={(e) => updateField("defaultFeeAmount", e.target.value)}
                       />
                     </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div className="space-y-2">
+                    <Label>Payment terms (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="30"
+                      value={formValues.defaultPaymentTerms}
+                      onChange={(e) => updateField("defaultPaymentTerms", e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Days from start date to invoice due (Net 30 = 30).</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Guarantee period (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="90"
+                      value={formValues.defaultGuaranteePeriod}
+                      onChange={(e) => updateField("defaultGuaranteePeriod", e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Replacement window after the candidate starts.</p>
                   </div>
                 </div>
               </div>
