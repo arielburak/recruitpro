@@ -55,7 +55,35 @@ type ManualProps = {
   onSuccess?: () => void;
 };
 
-type Props = CongratsProps | ManualProps;
+// Edit mode: open an existing placement and back-fill any of the fields
+// the recruiter skipped (or fix what they entered before). Covers the
+// "Skip / Complete later" flow — a near-empty placement gets created
+// when the recruiter dismisses the congrats dialog, and this is how
+// they finish it.
+type EditProps = {
+  mode: "edit";
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  placementId: string;
+  candidateName: string;
+  jobTitle: string;
+  clientName?: string;
+  initial: {
+    estimatedStartDate?: string | null;
+    startDate?: string | null;
+    agreedSalary?: string | number | null;
+    feeAmount?: string | number | null;
+    feeType?: "PERCENTAGE" | "FLAT" | null;
+    paymentTerms?: number | null;
+    paymentDueDate?: string | null;
+    guaranteePeriod?: number | null;
+    notes?: string | null;
+    invoiceStatus?: "DRAFT" | "SENT" | "PAID";
+  };
+  onSuccess?: () => void;
+};
+
+type Props = CongratsProps | ManualProps | EditProps;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -73,9 +101,10 @@ function previewDueDate(estimated: string, terms: number | ""): string {
 
 export function PlacementDialog(props: Props) {
   const isCongrats = props.mode === "congrats";
+  const isEdit = props.mode === "edit";
 
-  // Two-step flow only matters in the congrats variant — in manual mode we
-  // jump straight to the form because there is nothing to "skip".
+  // Two-step flow only matters in the congrats variant — in manual / edit
+  // mode we jump straight to the form because there is nothing to "skip".
   const [step, setStep] = useState<"intro" | "form">(isCongrats ? "intro" : "form");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -86,6 +115,7 @@ export function PlacementDialog(props: Props) {
 
   // Form fields — controlled so the live due-date preview stays accurate.
   const [estimatedStartDate, setEstimatedStartDate] = useState("");
+  const [startDate, setStartDate] = useState(""); // edit mode only
   const [agreedSalary, setAgreedSalary] = useState("");
   const [feeAmount, setFeeAmount] = useState("");
   const [feeType, setFeeType] = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
@@ -94,10 +124,13 @@ export function PlacementDialog(props: Props) {
   const [paymentDueDateTouched, setPaymentDueDateTouched] = useState(false);
   const [guaranteePeriod, setGuaranteePeriod] = useState<number | "">(90);
   const [notes, setNotes] = useState("");
+  const [invoiceStatus, setInvoiceStatus] = useState<"DRAFT" | "SENT" | "PAID">("DRAFT");
 
   // Resolve which "defaults" object to apply. Manual mode picks defaults off
   // the selected job; congrats mode uses the static defaults the caller passed.
+  // Edit mode bypasses this entirely and hydrates from props.initial below.
   const activeDefaults: FormDefaults | undefined = useMemo(() => {
+    if (isEdit) return undefined;
     if (isCongrats) return props.defaults;
     if (!selectedJobId) return undefined;
     const job = props.jobOptions.find((j) => j.id === selectedJobId);
@@ -109,24 +142,46 @@ export function PlacementDialog(props: Props) {
       feeType: job.clientFeeType || undefined,
       paymentTerms: job.clientPaymentTerms ?? undefined,
     };
-  }, [isCongrats, props, selectedJobId]);
+  }, [isCongrats, isEdit, props, selectedJobId]);
 
-  // Hydrate the form whenever the dialog opens with new defaults, or the
-  // selected job changes (manual mode).
+  // Hydrate the form whenever the dialog opens. Edit mode pulls from
+  // props.initial (the existing placement record); the other two modes
+  // pull from activeDefaults.
   useEffect(() => {
     if (!props.open) return;
-    setEstimatedStartDate(activeDefaults?.estimatedStartDate || todayIso());
-    setAgreedSalary(activeDefaults?.agreedSalary || "");
-    setFeeAmount(activeDefaults?.feeAmount || "");
-    setFeeType(activeDefaults?.feeType || "PERCENTAGE");
-    setPaymentTerms(activeDefaults?.paymentTerms ?? 30);
-    setGuaranteePeriod(activeDefaults?.guaranteePeriod ?? 90);
-    setNotes(activeDefaults?.notes || "");
-    setPaymentDueDateTouched(false);
+    if (isEdit) {
+      const i = props.initial;
+      const isoDate = (v: string | null | undefined) => (v ? v.slice(0, 10) : "");
+      setEstimatedStartDate(isoDate(i.estimatedStartDate));
+      setStartDate(isoDate(i.startDate));
+      setAgreedSalary(i.agreedSalary != null ? String(i.agreedSalary) : "");
+      setFeeAmount(i.feeAmount != null ? String(i.feeAmount) : "");
+      setFeeType(i.feeType || "PERCENTAGE");
+      setPaymentTerms(i.paymentTerms ?? "");
+      setPaymentDueDate(isoDate(i.paymentDueDate));
+      // If the recruiter manually set the due date in the past, we want
+      // the edit form to respect that — flag it as "touched" so the
+      // useEffect below doesn't recompute it away.
+      setPaymentDueDateTouched(true);
+      setGuaranteePeriod(i.guaranteePeriod ?? 90);
+      setNotes(i.notes || "");
+      setInvoiceStatus(i.invoiceStatus || "DRAFT");
+    } else {
+      setEstimatedStartDate(activeDefaults?.estimatedStartDate || todayIso());
+      setStartDate("");
+      setAgreedSalary(activeDefaults?.agreedSalary || "");
+      setFeeAmount(activeDefaults?.feeAmount || "");
+      setFeeType(activeDefaults?.feeType || "PERCENTAGE");
+      setPaymentTerms(activeDefaults?.paymentTerms ?? 30);
+      setGuaranteePeriod(activeDefaults?.guaranteePeriod ?? 90);
+      setNotes(activeDefaults?.notes || "");
+      setInvoiceStatus("DRAFT");
+      setPaymentDueDateTouched(false);
+    }
     setError("");
     setStep(isCongrats ? "intro" : "form");
-    if (!isCongrats) setSelectedJobId("");
-  }, [props.open, activeDefaults, isCongrats]);
+    if (props.mode === "manual") setSelectedJobId("");
+  }, [props, activeDefaults, isCongrats, isEdit]);
 
   // Live recompute paymentDueDate from the anchor + terms unless the user
   // has manually edited the date field.
@@ -151,6 +206,33 @@ export function PlacementDialog(props: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Failed to create placement");
+        setSubmitting(false);
+        return false;
+      }
+      props.onSuccess?.();
+      close();
+      return true;
+    } catch {
+      setError("Something went wrong");
+      setSubmitting(false);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function putPlacement(placementId: string, payload: Record<string, unknown>) {
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/placements/${placementId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Failed to update placement");
         setSubmitting(false);
         return false;
       }
@@ -191,16 +273,27 @@ export function PlacementDialog(props: Props) {
 
     if (props.mode === "congrats") {
       payload.submissionId = props.submissionId;
-    } else {
-      const job = props.jobOptions.find((j) => j.id === selectedJobId);
-      if (!job) {
-        setError("Pick a job first");
-        return;
-      }
-      payload.jobId = job.id;
-      payload.clientId = job.clientId;
+      await postPlacement(payload);
+      return;
     }
 
+    if (props.mode === "edit") {
+      // Edit can additionally touch actual startDate and invoiceStatus —
+      // fields that don't make sense on create.
+      payload.startDate = startDate || null;
+      payload.invoiceStatus = invoiceStatus;
+      await putPlacement(props.placementId, payload);
+      return;
+    }
+
+    // Manual create
+    const job = props.jobOptions.find((j) => j.id === selectedJobId);
+    if (!job) {
+      setError("Pick a job first");
+      return;
+    }
+    payload.jobId = job.id;
+    payload.clientId = job.clientId;
     await postPlacement(payload);
   }
 
@@ -216,6 +309,8 @@ export function PlacementDialog(props: Props) {
               </>
             ) : isCongrats ? (
               <>Placement details</>
+            ) : isEdit ? (
+              <>Edit placement</>
             ) : (
               <>New placement</>
             )}
@@ -261,10 +356,10 @@ export function PlacementDialog(props: Props) {
           </div>
         )}
 
-        {/* Step 2 — form (also entry point for manual mode) */}
+        {/* Step 2 — form (also entry point for manual / edit modes) */}
         {(step === "form" || !isCongrats) && (
           <div className="space-y-4">
-            {!isCongrats && (
+            {props.mode === "manual" && (
               <div className="space-y-2">
                 <Label className="text-xs">Job</Label>
                 <select
@@ -282,7 +377,7 @@ export function PlacementDialog(props: Props) {
               </div>
             )}
 
-            {isCongrats && (
+            {(isCongrats || isEdit) && (
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 flex items-center gap-3">
                 <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                 <span className="font-medium text-gray-900 truncate">{props.candidateName}</span>
@@ -383,6 +478,38 @@ export function PlacementDialog(props: Props) {
               </div>
             </div>
 
+            {isEdit && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs" htmlFor="placement-actual-start">Actual start date</Label>
+                  <Input
+                    id="placement-actual-start"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                  <p className="text-[10px] text-gray-400">
+                    Fill when the candidate has actually started. Anchors the guarantee.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs" htmlFor="placement-invoice-status">Invoice status</Label>
+                  <select
+                    id="placement-invoice-status"
+                    value={invoiceStatus}
+                    onChange={(e) =>
+                      setInvoiceStatus(e.target.value as "DRAFT" | "SENT" | "PAID")
+                    }
+                    className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="SENT">Sent</option>
+                    <option value="PAID">Paid</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label className="text-xs" htmlFor="placement-notes">Notes (optional)</Label>
               <Textarea
@@ -407,10 +534,10 @@ export function PlacementDialog(props: Props) {
               </Button>
               <Button
                 onClick={handleSubmitForm}
-                disabled={submitting || (!isCongrats && !selectedJobId)}
+                disabled={submitting || (props.mode === "manual" && !selectedJobId)}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
-                {submitting ? "Saving..." : "Save placement"}
+                {submitting ? "Saving..." : isEdit ? "Save changes" : "Save placement"}
               </Button>
             </div>
           </div>

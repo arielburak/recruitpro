@@ -58,6 +58,7 @@ export default function PlacementsPage() {
   const [error, setError] = useState("");
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
+  const [editingPlacement, setEditingPlacement] = useState<any | null>(null);
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -144,6 +145,40 @@ export default function PlacementsPage() {
         onSuccess={reloadPlacements}
       />
 
+      {editingPlacement && (
+        <PlacementDialog
+          mode="edit"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setEditingPlacement(null);
+          }}
+          placementId={editingPlacement.id}
+          candidateName={
+            editingPlacement.submission?.candidate
+              ? `${editingPlacement.submission.candidate.firstName} ${editingPlacement.submission.candidate.lastName}`
+              : "Candidate"
+          }
+          jobTitle={editingPlacement.job?.title || "—"}
+          clientName={editingPlacement.client?.name}
+          initial={{
+            estimatedStartDate: editingPlacement.estimatedStartDate,
+            startDate: editingPlacement.startDate,
+            agreedSalary: editingPlacement.salary,
+            feeAmount: editingPlacement.feeAmount,
+            feeType: editingPlacement.feeType,
+            paymentTerms: editingPlacement.paymentTerms,
+            paymentDueDate: editingPlacement.paymentDueDate,
+            guaranteePeriod: editingPlacement.guaranteePeriod,
+            notes: editingPlacement.notes,
+            invoiceStatus: editingPlacement.invoiceStatus,
+          }}
+          onSuccess={() => {
+            setEditingPlacement(null);
+            reloadPlacements();
+          }}
+        />
+      )}
+
       {error && (
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
@@ -214,7 +249,11 @@ export default function PlacementsPage() {
                   const expired = isExpired(guaranteeExpiry);
 
                   return (
-                    <TableRow key={p.id}>
+                    <TableRow
+                      key={p.id}
+                      onClick={() => setEditingPlacement(p)}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
                       <TableCell className="font-medium">{candidateName}</TableCell>
                       <TableCell>{p.job?.title || "-"}</TableCell>
                       <TableCell>{p.client?.name || "-"}</TableCell>
