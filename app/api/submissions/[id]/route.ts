@@ -18,7 +18,7 @@ export async function PATCH(
       include: {
         job: { select: { id: true, organizationId: true, title: true, clientId: true } },
         candidate: { select: { firstName: true, lastName: true } },
-        stage: { select: { name: true } },
+        stage: { select: { name: true, order: true } },
       },
     });
 
@@ -41,6 +41,21 @@ export async function PATCH(
         // Sharing for the first time (or re-sharing after unshare)
         updateData.sharedAt = new Date();
 
+        // Auto-advance to "Submitted" if the candidate is still in an
+        // earlier stage (Sourced / Internal Review). Sharing IS the act of
+        // submitting to the client, so the agency-side pipeline should
+        // reflect that. If the recruiter is already past Submitted (e.g.,
+        // Interviewing) we leave the stage alone.
+        if (!body.stageId) {
+          const submittedStage = await prisma.pipelineStage.findFirst({
+            where: { jobId: submission.job.id, name: "Submitted" },
+            select: { id: true, order: true },
+          });
+          if (submittedStage && submission.stage.order < submittedStage.order) {
+            updateData.stageId = submittedStage.id;
+          }
+        }
+
         // Auto-assign clientStage to the first stage if not set
         if (!submission.clientStageId && submission.job.clientId) {
           const firstStage = await prisma.clientPipelineStage.findFirst({
@@ -60,10 +75,11 @@ export async function PATCH(
       data: updateData,
     });
 
-    // Log stage change
-    if (body.stageId) {
+    // Log stage change — covers both explicit moves (body.stageId) and the
+    // implicit advance to "Submitted" we trigger from the share toggle.
+    if (updateData.stageId) {
       const newStage = await prisma.pipelineStage.findUnique({
-        where: { id: body.stageId },
+        where: { id: updateData.stageId },
       });
       await logActivity({
         action: "submission.stage_changed",
