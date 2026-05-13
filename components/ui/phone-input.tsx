@@ -91,12 +91,19 @@ function formatPhoneNumber(value: string, prefix: string): string {
 }
 
 /**
- * Build an example placeholder for a given prefix by running the
- * formatter on a canned digit sequence. Keeps the hint in sync with the
- * format automatically whenever PHONE_FORMATS grows.
+ * Build an example placeholder for a given prefix. Counts the digit
+ * slots in the template and emits exactly that many sequential digits,
+ * so the example fits the format instead of spilling extra digits past
+ * the template (which was rendering "12 3456-7890123456" for AR).
  */
 function examplePlaceholder(prefix: string): string {
-  return formatPhoneNumber("1234567890123456", prefix);
+  const template = PHONE_FORMATS[prefix];
+  if (!template) return "1234567890";
+  const digitCount = (template.match(/#/g) || []).length;
+  const digits = Array.from({ length: digitCount }, (_, i) =>
+    String((i + 1) % 10),
+  ).join("");
+  return formatPhoneNumber(digits, prefix);
 }
 
 // Map ISO-3166-2 country code → dial code we know about. Used to derive a
