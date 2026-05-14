@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User } from "lucide-react";
-import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
@@ -78,6 +78,7 @@ type EditProps = {
     agreedSalary?: string | number | null;
     currency?: string | null;
     feeAmount?: string | number | null;
+    feePercentage?: string | number | null;
     feeType?: "PERCENTAGE" | "FLAT" | null;
     paymentTerms?: number | null;
     paymentDueDate?: string | null;
@@ -132,7 +133,13 @@ export function PlacementDialog(props: Props) {
   // case for our target market (US recruiting firms) — and gets overridden
   // by the job/client default when the dialog opens.
   const [currency, setCurrency] = useState<string>("USD");
-  const [feeAmount, setFeeAmount] = useState("");
+  // Fee uses a single input value whose meaning flips with feeType:
+  //   - PERCENTAGE: feeInput is the % (e.g. 15) and the real fee in $
+  //     is computed as salary × % / 100 on save.
+  //   - FLAT: feeInput is the fee in $ directly.
+  // This avoids the old bug where the percentage value (15) was being
+  // saved into feeAmount and showed up as "$15" in the placements list.
+  const [feeInput, setFeeInput] = useState("");
   const [feeType, setFeeType] = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
   const [paymentTerms, setPaymentTerms] = useState<number | "">("");
   const [paymentDueDate, setPaymentDueDate] = useState("");
@@ -173,8 +180,27 @@ export function PlacementDialog(props: Props) {
       setStartDate(isoDate(i.startDate));
       setAgreedSalary(i.agreedSalary != null ? String(i.agreedSalary) : "");
       setCurrency(i.currency || "USD");
-      setFeeAmount(i.feeAmount != null ? String(i.feeAmount) : "");
-      setFeeType(i.feeType || "PERCENTAGE");
+      // Infer feeType from the stored values since Placement doesn't
+      // persist the type directly: feePercentage set → PERCENTAGE; else
+      // feeAmount with no percentage → FLAT; else fall back to whatever
+      // the caller passed (or default to PERCENTAGE for empty rows).
+      const inferredType: "PERCENTAGE" | "FLAT" =
+        i.feeType ||
+        (i.feePercentage != null
+          ? "PERCENTAGE"
+          : i.feeAmount != null
+            ? "FLAT"
+            : "PERCENTAGE");
+      // For PERCENTAGE we show the percent; for FLAT the $ amount.
+      // Legacy fallback to feeAmount when feePercentage is missing
+      // covers rows from before this fix (where the percent was
+      // mistakenly stored into feeAmount).
+      const initialFee =
+        inferredType === "PERCENTAGE"
+          ? (i.feePercentage ?? i.feeAmount)
+          : i.feeAmount;
+      setFeeInput(initialFee != null ? String(initialFee) : "");
+      setFeeType(inferredType);
       setPaymentTerms(i.paymentTerms ?? "");
       const initialDue = isoDate(i.paymentDueDate);
       setPaymentDueDate(initialDue);
@@ -191,7 +217,10 @@ export function PlacementDialog(props: Props) {
       setStartDate("");
       setAgreedSalary(activeDefaults?.agreedSalary || "");
       setCurrency(activeDefaults?.currency || "USD");
-      setFeeAmount(activeDefaults?.feeAmount || "");
+      // activeDefaults.feeAmount semantically follows feeType — for
+      // Recruiting it's the agreed %, for Staff Aug (FLAT jobs) it's
+      // the agreed flat fee. We just bind it to the single input.
+      setFeeInput(activeDefaults?.feeAmount || "");
       setFeeType(activeDefaults?.feeType || "PERCENTAGE");
       setPaymentTerms(activeDefaults?.paymentTerms ?? 30);
       setGuaranteePeriod(activeDefaults?.guaranteePeriod ?? 90);
@@ -283,14 +312,30 @@ export function PlacementDialog(props: Props) {
   }
 
   async function handleSubmitForm() {
+    // Resolve fee depending on feeType.
+    // PERCENTAGE: store the % in feePercentage, compute the real $ from
+    //   salary × % / 100 and store it in feeAmount. If salary is empty
+    //   we leave feeAmount null — better to show "—" than a misleading 0.
+    // FLAT: feeAmount is the input directly; feePercentage stays null.
+    const feeInputNum = feeInput ? Number(feeInput) : null;
+    const salaryNum = agreedSalary ? Number(agreedSalary) : null;
+    let resolvedFeeAmount: number | null = null;
+    let resolvedFeePercentage: number | null = null;
+    if (feeInputNum != null) {
+      if (feeType === "PERCENTAGE") {
+        resolvedFeePercentage = feeInputNum;
+        resolvedFeeAmount = salaryNum != null ? (salaryNum * feeInputNum) / 100 : null;
+      } else {
+        resolvedFeeAmount = feeInputNum;
+      }
+    }
+
     const payload: Record<string, unknown> = {
       estimatedStartDate: estimatedStartDate || null,
-      salary: agreedSalary ? Number(agreedSalary) : null,
+      salary: salaryNum,
       currency: currency || "USD",
-      feeAmount: feeAmount ? Number(feeAmount) : null,
-      ...(feeType === "PERCENTAGE"
-        ? { feePercentage: feeAmount ? Number(feeAmount) : null }
-        : {}),
+      feeAmount: resolvedFeeAmount,
+      feePercentage: resolvedFeePercentage,
       paymentTerms: paymentTerms === "" ? null : Number(paymentTerms),
       paymentDueDate: paymentDueDate || null,
       guaranteePeriod: guaranteePeriod === "" ? 90 : Number(guaranteePeriod),
@@ -462,8 +507,8 @@ export function PlacementDialog(props: Props) {
                       inputMode="decimal"
                       placeholder="0"
                       className="pl-7"
-                      value={feeAmount}
-                      onChange={(e) => setFeeAmount(e.target.value)}
+                      value={feeInput}
+                      onChange={(e) => setFeeInput(e.target.value)}
                     />
                   </div>
                   <select
@@ -475,6 +520,21 @@ export function PlacementDialog(props: Props) {
                     <option value="FLAT">flat</option>
                   </select>
                 </div>
+                {feeType === "PERCENTAGE" && feeInput && (
+                  agreedSalary ? (
+                    <p className="text-[10px] text-gray-500">
+                      = {formatCurrencyValue(
+                        (Number(agreedSalary) * Number(feeInput)) / 100,
+                        currency,
+                      )}
+                      {" "}of {formatCurrencyValue(Number(agreedSalary), currency)} annual
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-amber-600">
+                      Fill the agreed salary to see the resolved fee amount.
+                    </p>
+                  )
+                )}
               </div>
             </div>
 
