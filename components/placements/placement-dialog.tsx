@@ -239,7 +239,11 @@ export function PlacementDialog(props: Props) {
           : i.feeAmount;
       setFeeInput(initialFee != null ? String(initialFee) : "");
       setFeeType(inferredType);
-      setPaymentTerms(i.paymentTerms ?? "");
+      // Default to 30 (same as manual / congrats modes) when the
+      // placement was created without payment terms — keeps the live
+      // preview of Payment due working out of the box instead of
+      // sitting blank because the multiplier is missing.
+      setPaymentTerms(i.paymentTerms ?? 30);
       const initialDue = isoDate(i.paymentDueDate);
       setPaymentDueDate(initialDue);
       // Only respect a previously-saved due date — if the placement was
