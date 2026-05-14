@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PartyPopper, ArrowRight, Building2, User, X } from "lucide-react";
+import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
@@ -722,13 +722,19 @@ export function PlacementDialog(props: Props) {
                     </div>
                   ) : (
                     <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                       <Input
-                        placeholder="Search by name, email, or company…"
+                        placeholder={
+                          selectedJobId
+                            ? "Search candidates on this job…"
+                            : "Search by name, email, or company…"
+                        }
                         value={candidateSearch}
                         onChange={(e) => setCandidateSearch(e.target.value)}
                         onFocus={() => candidateResults.length > 0 && setCandidateDropdownOpen(true)}
-                        className="text-sm"
+                        className="text-sm pl-8 pr-8"
                       />
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                       {candidateDropdownOpen && (
                         <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
                           {candidateResults.length === 0 && !searchingCandidates ? (
