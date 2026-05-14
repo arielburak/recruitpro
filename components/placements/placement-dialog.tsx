@@ -916,32 +916,36 @@ export function PlacementDialog(props: Props) {
                     <option value="FLAT">flat</option>
                   </select>
                 </div>
-                {feeType === "PERCENTAGE" && feeInput && (
-                  agreedSalary ? (
-                    (() => {
-                      const monthly = Number(agreedSalary);
-                      const annual = salaryPeriod === "MONTHLY" ? monthly * 12 : monthly;
-                      const fee = (annual * Number(feeInput)) / 100;
-                      return (
-                        <p className="text-[10px] text-gray-500">
-                          = {formatCurrencyValue(fee, currency)}{" "}
-                          of {formatCurrencyValue(annual, currency)} annual
-                          {salaryPeriod === "MONTHLY" && (
-                            <span className="text-gray-400">
-                              {" "}({formatCurrencyValue(monthly, currency)} × 12)
-                            </span>
-                          )}
-                        </p>
-                      );
-                    })()
-                  ) : (
-                    <p className="text-[10px] text-amber-600">
-                      Fill the agreed salary to see the resolved fee amount.
-                    </p>
-                  )
-                )}
               </div>
             </div>
+
+            {/* Fee calc preview — full-width below the salary + fee row so
+                long numbers (e.g. ARS multipliers) don't bust the grid
+                column they used to live inside. */}
+            {feeType === "PERCENTAGE" && feeInput && (
+              agreedSalary ? (
+                (() => {
+                  const monthly = Number(agreedSalary);
+                  const annual = salaryPeriod === "MONTHLY" ? monthly * 12 : monthly;
+                  const fee = (annual * Number(feeInput)) / 100;
+                  return (
+                    <p className="text-[10px] text-gray-500 -mt-2">
+                      Fee = {formatCurrencyValue(fee, currency)}{" "}
+                      <span className="text-gray-400">
+                        ({Number(feeInput)}% of {formatCurrencyValue(annual, currency)} annual
+                        {salaryPeriod === "MONTHLY" &&
+                          ` · ${formatCurrencyValue(monthly, currency)} × 12`}
+                        )
+                      </span>
+                    </p>
+                  );
+                })()
+              ) : (
+                <p className="text-[10px] text-amber-600 -mt-2">
+                  Fill the agreed salary to see the resolved fee amount.
+                </p>
+              )
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
