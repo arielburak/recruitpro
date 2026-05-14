@@ -281,8 +281,18 @@ export function PlacementDialog(props: Props) {
     }
     setError("");
     setStep(isCongrats ? "intro" : "form");
-    if (props.mode === "manual") setSelectedJobId("");
   }, [props, activeDefaults, isCongrats, isEdit]);
+
+  // Reset the job picker ONLY when the dialog transitions to open.
+  // Lives in its own effect so picking a job (which mutates
+  // activeDefaults via the useMemo above) doesn't trip the main
+  // hydration effect into clearing the just-selected job — that was
+  // why "select a job" snapped back to blank.
+  useEffect(() => {
+    if (props.mode === "manual" && props.open) {
+      setSelectedJobId("");
+    }
+  }, [props.open, props.mode]);
 
   // Live recompute paymentDueDate from the anchor + terms unless the
   // user has manually edited the date field. The touched flag is reset
