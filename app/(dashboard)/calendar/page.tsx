@@ -2222,7 +2222,7 @@ function MilestoneDetailCard({
           )}
           {placement.startDate && (
             <div className="flex items-center justify-between">
-              <span className="text-gray-400">Actual start</span>
+              <span className="text-gray-400">Starting date</span>
               <span className="font-medium text-gray-900">
                 {new Date(placement.startDate).toLocaleDateString()}
               </span>

@@ -818,7 +818,7 @@ export function PlacementDialog(props: Props) {
             {isEdit && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs" htmlFor="placement-actual-start">Actual start date</Label>
+                  <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
                   <Input
                     id="placement-actual-start"
                     type="date"
@@ -826,7 +826,7 @@ export function PlacementDialog(props: Props) {
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                   <p className="text-[10px] text-gray-400">
-                    Fill when the candidate has actually started. Anchors the guarantee.
+                    Fill once the candidate starts. Anchors the guarantee.
                   </p>
                 </div>
                 <div className="space-y-1.5">
