@@ -16,16 +16,32 @@ import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/u
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
+type SalaryPeriod = "MONTHLY" | "ANNUAL";
+
 type FormDefaults = {
   estimatedStartDate?: string; // ISO yyyy-mm-dd
   agreedSalary?: string;
   currency?: string; // ISO 4217 code, e.g. USD / ARS
+  salaryPeriod?: SalaryPeriod;
   feeAmount?: string;
   feeType?: "PERCENTAGE" | "FLAT";
   paymentTerms?: number; // days
   guaranteePeriod?: number; // days
   notes?: string;
 };
+
+// LATAM currencies where salaries are typically quoted monthly. For
+// everything else (USD, EUR, GBP, etc.) we default the placement form
+// to annual since that's the convention in those markets. Always
+// overrideable via the toggle.
+const MONTHLY_DEFAULT_CURRENCIES = new Set([
+  "ARS", "BRL", "CLP", "COP", "MXN", "PEN", "UYU", "PYG", "BOB", "VEF",
+]);
+
+function defaultSalaryPeriod(currency: string | undefined | null): SalaryPeriod {
+  if (currency && MONTHLY_DEFAULT_CURRENCIES.has(currency)) return "MONTHLY";
+  return "ANNUAL";
+}
 
 type CongratsProps = {
   mode: "congrats";
@@ -77,6 +93,7 @@ type EditProps = {
     startDate?: string | null;
     agreedSalary?: string | number | null;
     currency?: string | null;
+    salaryPeriod?: SalaryPeriod | null;
     feeAmount?: string | number | null;
     feePercentage?: string | number | null;
     feeType?: "PERCENTAGE" | "FLAT" | null;
@@ -133,6 +150,7 @@ export function PlacementDialog(props: Props) {
   // case for our target market (US recruiting firms) — and gets overridden
   // by the job/client default when the dialog opens.
   const [currency, setCurrency] = useState<string>("USD");
+  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>("ANNUAL");
   // Fee uses a single input value whose meaning flips with feeType:
   //   - PERCENTAGE: feeInput is the % (e.g. 15) and the real fee in $
   //     is computed as salary × % / 100 on save.
@@ -179,7 +197,9 @@ export function PlacementDialog(props: Props) {
       setEstimatedStartDate(isoDate(i.estimatedStartDate));
       setStartDate(isoDate(i.startDate));
       setAgreedSalary(i.agreedSalary != null ? String(i.agreedSalary) : "");
-      setCurrency(i.currency || "USD");
+      const editCurrency = i.currency || "USD";
+      setCurrency(editCurrency);
+      setSalaryPeriod(i.salaryPeriod || defaultSalaryPeriod(editCurrency));
       // Infer feeType from the stored values since Placement doesn't
       // persist the type directly: feePercentage set → PERCENTAGE; else
       // feeAmount with no percentage → FLAT; else fall back to whatever
@@ -216,7 +236,9 @@ export function PlacementDialog(props: Props) {
       setEstimatedStartDate(activeDefaults?.estimatedStartDate || todayIso());
       setStartDate("");
       setAgreedSalary(activeDefaults?.agreedSalary || "");
-      setCurrency(activeDefaults?.currency || "USD");
+      const newCurrency = activeDefaults?.currency || "USD";
+      setCurrency(newCurrency);
+      setSalaryPeriod(activeDefaults?.salaryPeriod || defaultSalaryPeriod(newCurrency));
       // activeDefaults.feeAmount semantically follows feeType — for
       // Recruiting it's the agreed %, for Staff Aug (FLAT jobs) it's
       // the agreed flat fee. We just bind it to the single input.
@@ -314,17 +336,25 @@ export function PlacementDialog(props: Props) {
   async function handleSubmitForm() {
     // Resolve fee depending on feeType.
     // PERCENTAGE: store the % in feePercentage, compute the real $ from
-    //   salary × % / 100 and store it in feeAmount. If salary is empty
-    //   we leave feeAmount null — better to show "—" than a misleading 0.
+    //   the candidate's ANNUAL salary × % / 100 and store it in
+    //   feeAmount. When salaryPeriod=MONTHLY we multiply by 12 first
+    //   (this is the common LATAM convention — salaries quoted monthly,
+    //   recruiting fees calculated against the annual).
     // FLAT: feeAmount is the input directly; feePercentage stays null.
     const feeInputNum = feeInput ? Number(feeInput) : null;
     const salaryNum = agreedSalary ? Number(agreedSalary) : null;
+    const annualSalary =
+      salaryNum != null
+        ? salaryPeriod === "MONTHLY"
+          ? salaryNum * 12
+          : salaryNum
+        : null;
     let resolvedFeeAmount: number | null = null;
     let resolvedFeePercentage: number | null = null;
     if (feeInputNum != null) {
       if (feeType === "PERCENTAGE") {
         resolvedFeePercentage = feeInputNum;
-        resolvedFeeAmount = salaryNum != null ? (salaryNum * feeInputNum) / 100 : null;
+        resolvedFeeAmount = annualSalary != null ? (annualSalary * feeInputNum) / 100 : null;
       } else {
         resolvedFeeAmount = feeInputNum;
       }
@@ -334,6 +364,7 @@ export function PlacementDialog(props: Props) {
       estimatedStartDate: estimatedStartDate || null,
       salary: salaryNum,
       currency: currency || "USD",
+      salaryPeriod,
       feeAmount: resolvedFeeAmount,
       feePercentage: resolvedFeePercentage,
       paymentTerms: paymentTerms === "" ? null : Number(paymentTerms),
@@ -480,20 +511,41 @@ export function PlacementDialog(props: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-salary">Agreed salary</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                    {getCurrency(currency)?.symbol || "$"}
-                  </span>
-                  <Input
-                    id="placement-salary"
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="pl-7"
-                    value={agreedSalary}
-                    onChange={(e) => setAgreedSalary(e.target.value)}
-                  />
+                <div className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                      {getCurrency(currency)?.symbol || "$"}
+                    </span>
+                    <Input
+                      id="placement-salary"
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="pl-7"
+                      value={agreedSalary}
+                      onChange={(e) => setAgreedSalary(e.target.value)}
+                    />
+                  </div>
+                  <div className="inline-flex rounded-md border bg-white p-0.5 shrink-0">
+                    {(["MONTHLY", "ANNUAL"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setSalaryPeriod(p)}
+                        className={`px-2 py-1 text-[11px] font-medium rounded ${
+                          salaryPeriod === p
+                            ? "bg-indigo-600 text-white"
+                            : "text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {p === "MONTHLY" ? "/mo" : "/yr"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                <p className="text-[10px] text-gray-400">
+                  Fee % is calculated against the annual salary{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Fee</Label>
@@ -522,13 +574,22 @@ export function PlacementDialog(props: Props) {
                 </div>
                 {feeType === "PERCENTAGE" && feeInput && (
                   agreedSalary ? (
-                    <p className="text-[10px] text-gray-500">
-                      = {formatCurrencyValue(
-                        (Number(agreedSalary) * Number(feeInput)) / 100,
-                        currency,
-                      )}
-                      {" "}of {formatCurrencyValue(Number(agreedSalary), currency)} annual
-                    </p>
+                    (() => {
+                      const monthly = Number(agreedSalary);
+                      const annual = salaryPeriod === "MONTHLY" ? monthly * 12 : monthly;
+                      const fee = (annual * Number(feeInput)) / 100;
+                      return (
+                        <p className="text-[10px] text-gray-500">
+                          = {formatCurrencyValue(fee, currency)}{" "}
+                          of {formatCurrencyValue(annual, currency)} annual
+                          {salaryPeriod === "MONTHLY" && (
+                            <span className="text-gray-400">
+                              {" "}({formatCurrencyValue(monthly, currency)} × 12)
+                            </span>
+                          )}
+                        </p>
+                      );
+                    })()
                   ) : (
                     <p className="text-[10px] text-amber-600">
                       Fill the agreed salary to see the resolved fee amount.
