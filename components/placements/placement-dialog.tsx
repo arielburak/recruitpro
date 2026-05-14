@@ -273,8 +273,12 @@ export function PlacementDialog(props: Props) {
     if (props.mode === "manual") setSelectedJobId("");
   }, [props, activeDefaults, isCongrats, isEdit]);
 
-  // Live recompute paymentDueDate from the anchor + terms unless the user
-  // has manually edited the date field.
+  // Live recompute paymentDueDate from the anchor + terms unless the
+  // user has manually edited the date field. The touched flag is reset
+  // to false in the onChange handlers of the source inputs (start
+  // date, estimated start, payment terms) so any explicit edit there
+  // triggers a fresh recompute — but a manual override of payment due
+  // itself persists across the session.
   useEffect(() => {
     if (paymentDueDateTouched) return;
     setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, paymentTerms));
@@ -655,7 +659,7 @@ export function PlacementDialog(props: Props) {
                   id="placement-est-start"
                   type="date"
                   value={estimatedStartDate}
-                  onChange={(e) => setEstimatedStartDate(e.target.value)}
+                  onChange={(e) => { setEstimatedStartDate(e.target.value); setPaymentDueDateTouched(false); }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -771,6 +775,7 @@ export function PlacementDialog(props: Props) {
                   onChange={(e) => {
                     const v = e.target.value;
                     setPaymentTerms(v === "" ? "" : Number(v));
+                    setPaymentDueDateTouched(false);
                   }}
                 />
               </div>
@@ -823,7 +828,7 @@ export function PlacementDialog(props: Props) {
                     id="placement-actual-start"
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => { setStartDate(e.target.value); setPaymentDueDateTouched(false); }}
                   />
                   <p className="text-[10px] text-gray-400">
                     Fill once the candidate starts. Anchors the guarantee.
