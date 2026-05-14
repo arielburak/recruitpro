@@ -254,20 +254,46 @@ export default function CalendarPage() {
     });
   }
 
-  function milestoneLabel(ms: Milestone): string {
+  function milestoneCandidateName(ms: Milestone): string {
     const candidate = ms.placement.submission?.candidate;
-    const name = candidate
-      ? `${candidate.firstName} ${candidate.lastName?.charAt(0) || ""}.`
-      : "Candidate";
-    if (ms.kind === "first_day") return `Start · ${name}`;
-    if (ms.kind === "payment_due") return `Pay · ${name}`;
-    return `Guarantee · ${name}`;
+    if (!candidate) return "Candidate";
+    return `${candidate.firstName} ${candidate.lastName?.charAt(0) || ""}.`;
   }
 
-  function milestoneClassNames(kind: MilestoneKind): string {
-    if (kind === "first_day") return "bg-emerald-50 text-emerald-700 hover:bg-emerald-100";
-    if (kind === "payment_due") return "bg-amber-50 text-amber-700 hover:bg-amber-100";
-    return "bg-rose-50 text-rose-700 hover:bg-rose-100";
+  function milestoneClient(ms: Milestone): string {
+    return ms.placement.client?.name || "";
+  }
+
+  function milestoneKindLabel(kind: MilestoneKind): string {
+    if (kind === "first_day") return "First day";
+    if (kind === "payment_due") return "Payment due";
+    return "Guarantee expires";
+  }
+
+  // Two-line chip: small uppercase kind label on top, candidate · client
+  // below in the same color but lighter weight. Subtle background +
+  // matching left border accent reads more like a typical pro
+  // calendar event than a flat colored pill.
+  function milestoneClassNames(kind: MilestoneKind): { wrapper: string; label: string; meta: string } {
+    if (kind === "first_day") {
+      return {
+        wrapper: "bg-emerald-50 hover:bg-emerald-100 border-l-2 border-emerald-500",
+        label: "text-emerald-800",
+        meta: "text-emerald-700",
+      };
+    }
+    if (kind === "payment_due") {
+      return {
+        wrapper: "bg-amber-50 hover:bg-amber-100 border-l-2 border-amber-500",
+        label: "text-amber-800",
+        meta: "text-amber-700",
+      };
+    }
+    return {
+      wrapper: "bg-rose-50 hover:bg-rose-100 border-l-2 border-rose-500",
+      label: "text-rose-800",
+      meta: "text-rose-700",
+    };
   }
 
   function prevMonth() { setCurrentDate(new Date(year, month - 1, 1)); }
@@ -483,21 +509,33 @@ export default function CalendarPage() {
                             {formatTime(iv.startTime)} {iv.candidate.firstName} {iv.candidate.lastName.charAt(0)}.
                           </button>
                         ))}
-                        {milestonesToShow.map((ms, i) => (
-                          <button
-                            key={`${ms.placement.id}-${ms.kind}-${i}`}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedInterview(null);
-                              setSelectedMilestone(ms);
-                            }}
-                            className={`block w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${milestoneClassNames(ms.kind)}`}
-                            title={milestoneLabel(ms)}
-                          >
-                            {milestoneLabel(ms)}
-                          </button>
-                        ))}
+                        {milestonesToShow.map((ms, i) => {
+                          const styles = milestoneClassNames(ms.kind);
+                          const candidate = milestoneCandidateName(ms);
+                          const client = milestoneClient(ms);
+                          const meta = client ? `${candidate} · ${client}` : candidate;
+                          const kindLabel = milestoneKindLabel(ms.kind);
+                          return (
+                            <button
+                              key={`${ms.placement.id}-${ms.kind}-${i}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedInterview(null);
+                                setSelectedMilestone(ms);
+                              }}
+                              className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
+                              title={`${kindLabel} · ${meta}`}
+                            >
+                              <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {kindLabel}
+                              </p>
+                              <p className={`text-[10px] truncate ${styles.meta}`}>
+                                {meta}
+                              </p>
+                            </button>
+                          );
+                        })}
                         {overflow > 0 && (
                           <p className="text-[10px] text-gray-400 px-1">+{overflow} more</p>
                         )}
