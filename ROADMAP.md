@@ -173,7 +173,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 
 - [ ] Stripe checkout end-to-end ($15 Solo / $19 Team) + customer portal + webhooks + dunning
 - [ ] Seat management + comisiones parametrizables por recruiter
-- [ ] Currency con API real-time de tipo de cambio
+- [~] **Currency con API real-time de tipo de cambio** — `/placements` Revenue card ya normaliza a USD via open.er-api.com (free, no-auth, 24h cache en localStorage). Pendiente: mover el fetch a server-side y cachear en DB para no spammear desde cada browser.
 - [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
 - [ ] Verificar drag-and-drop pipeline persiste en DB (no solo state) + undo
 - [ ] Verificar RBAC: cliente solo ve su shortlist

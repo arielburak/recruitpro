@@ -15,6 +15,7 @@ import {
 import { Trophy, DollarSign, Plus } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { fetchUsdRates, convertToUsd } from "@/lib/exchange-rates";
 
 type JobOption = {
   id: string;
@@ -59,6 +60,7 @@ export default function PlacementsPage() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
   const [editingPlacement, setEditingPlacement] = useState<any | null>(null);
+  const [usdRates, setUsdRates] = useState<Record<string, number> | null>(null);
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -75,6 +77,9 @@ export default function PlacementsPage() {
 
   useEffect(() => {
     reloadPlacements();
+    // Fire-and-forget — page renders the per-currency breakdown if rates
+    // don't show up; the USD-normalized headline only appears once they do.
+    fetchUsdRates().then(setUsdRates).catch(() => setUsdRates(null));
   }, []);
 
   function openNewDialog() {
@@ -89,10 +94,11 @@ export default function PlacementsPage() {
     setShowNewDialog(true);
   }
 
-  // Calculate revenue this quarter — bucketed by currency so a mixed-
-  // currency book of business doesn't get summed into a meaningless
-  // single number. We don't normalize to USD; the recruiter sees a line
-  // per currency present in the data.
+  // Revenue this quarter — bucketed by the placement's currency. We
+  // normalize to USD using the open.er-api.com rates so the recruiter
+  // sees one headline number across a mixed-currency book. Per-currency
+  // amounts surface below as a sanity check so the conversion is
+  // auditable at a glance.
   const now = new Date();
   const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
   const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0);
@@ -101,47 +107,32 @@ export default function PlacementsPage() {
     return p.currency || p.job?.currency || "USD";
   }
 
-  function bucketByCurrency(filtered: any[]): Record<string, number> {
-    const buckets: Record<string, number> = {};
-    for (const p of filtered) {
-      const c = placementCurrency(p);
-      buckets[c] = (buckets[c] || 0) + (Number(p.feeAmount) || 0);
+  const quarterPlacements = placements.filter((p) => {
+    const d = new Date(p.createdAt);
+    return d >= quarterStart && d <= quarterEnd;
+  });
+
+  const revenueByCurrency: Record<string, number> = {};
+  for (const p of quarterPlacements) {
+    const c = placementCurrency(p);
+    revenueByCurrency[c] = (revenueByCurrency[c] || 0) + (Number(p.feeAmount) || 0);
+  }
+
+  // Sum normalized to USD. If a currency is missing from the rates
+  // table (rare) we fall back to leaving it out of the USD total and
+  // surfacing it in `unconverted` so the recruiter knows.
+  let revenueUsd = 0;
+  const unconverted: Array<[string, number]> = [];
+  for (const [ccy, amount] of Object.entries(revenueByCurrency)) {
+    const usd = convertToUsd(amount, ccy, usdRates);
+    if (usd != null) {
+      revenueUsd += usd;
+    } else if (ccy !== "USD") {
+      unconverted.push([ccy, amount]);
     }
-    return buckets;
   }
-
-  const revenueByCurrency = bucketByCurrency(
-    placements.filter((p) => {
-      const d = new Date(p.createdAt);
-      return d >= quarterStart && d <= quarterEnd;
-    }),
-  );
-
-  const paidByCurrency = bucketByCurrency(
-    placements.filter((p) => {
-      const d = new Date(p.createdAt);
-      return d >= quarterStart && d <= quarterEnd && p.invoiceStatus === "PAID";
-    }),
-  );
-
-  // Pick a primary currency for the "headline" number — the largest bucket,
-  // falling back to USD when there's no data. Other currencies render
-  // as a secondary line so the recruiter sees them too.
-  function primary(buckets: Record<string, number>): { currency: string; amount: number } {
-    const entries = Object.entries(buckets);
-    if (entries.length === 0) return { currency: "USD", amount: 0 };
-    entries.sort(([, a], [, b]) => b - a);
-    return { currency: entries[0][0], amount: entries[0][1] };
-  }
-
-  function secondaries(buckets: Record<string, number>, primaryCcy: string) {
-    return Object.entries(buckets).filter(([c]) => c !== primaryCcy);
-  }
-
-  const revenuePrimary = primary(revenueByCurrency);
-  const revenueSecondaries = secondaries(revenueByCurrency, revenuePrimary.currency);
-  const paidPrimary = primary(paidByCurrency);
-  const paidSecondaries = secondaries(paidByCurrency, paidPrimary.currency);
+  const currencyCount = Object.keys(revenueByCurrency).length;
+  const breakdownEntries = Object.entries(revenueByCurrency);
 
   if (loading) {
     return (
@@ -222,55 +213,66 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* Revenue stats — primary line is the largest currency bucket;
-          other currencies surface below in smaller text so a mixed book
-          (USD + ARS, e.g.) doesn't get misrepresented as one number. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100">
-                <DollarSign className="h-5 w-5 text-indigo-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-gray-500">Revenue This Quarter</p>
-                <p className="text-2xl font-bold text-indigo-600">
-                  {formatCurrency(revenuePrimary.amount, revenuePrimary.currency)}
-                </p>
-                {revenueSecondaries.length > 0 && (
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {revenueSecondaries
-                      .map(([c, amt]) => formatCurrency(amt, c))
-                      .join(" · ")}
-                  </p>
-                )}
-              </div>
+      {/* Revenue this quarter — normalized to USD when we have rates,
+          with the per-currency breakdown shown below for auditability. */}
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 shrink-0">
+              <DollarSign className="h-5 w-5 text-indigo-600" />
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <DollarSign className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-gray-500">Collected This Quarter</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatCurrency(paidPrimary.amount, paidPrimary.currency)}
-                </p>
-                {paidSecondaries.length > 0 && (
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {paidSecondaries
-                      .map(([c, amt]) => formatCurrency(amt, c))
-                      .join(" · ")}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-gray-500">Revenue This Quarter</p>
+              {usdRates ? (
+                <>
+                  <p className="text-2xl font-bold text-indigo-600">
+                    {formatCurrency(revenueUsd, "USD")}
                   </p>
-                )}
-              </div>
+                  {currencyCount > 1 && breakdownEntries.length > 0 && (
+                    <p className="text-[11px] text-gray-400 truncate">
+                      ≈ {breakdownEntries
+                        .map(([c, amt]) => formatCurrency(amt, c))
+                        .join(" · ")} converted at today&apos;s rates
+                    </p>
+                  )}
+                  {currencyCount === 1 && breakdownEntries[0]?.[0] !== "USD" && (
+                    <p className="text-[11px] text-gray-400 truncate">
+                      = {formatCurrency(breakdownEntries[0][1], breakdownEntries[0][0])} converted
+                    </p>
+                  )}
+                  {unconverted.length > 0 && (
+                    <p className="text-[11px] text-amber-600 truncate">
+                      Couldn&apos;t convert: {unconverted
+                        .map(([c, amt]) => formatCurrency(amt, c))
+                        .join(" · ")}
+                    </p>
+                  )}
+                </>
+              ) : (
+                // Fallback while rates load (or if the fetch fails):
+                // show the per-currency breakdown raw so the recruiter
+                // sees their numbers anyway.
+                <>
+                  {breakdownEntries.length === 0 ? (
+                    <p className="text-2xl font-bold text-indigo-600">
+                      {formatCurrency(0, "USD")}
+                    </p>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {breakdownEntries.map(([c, amt]) => (
+                        <p key={c} className="text-lg font-semibold text-indigo-600">
+                          {formatCurrency(amt, c)}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-gray-400">Loading conversion rates…</p>
+                </>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {placements.length === 0 ? (
         <Card>
