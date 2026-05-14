@@ -187,11 +187,19 @@ export function PlacementDialog(props: Props) {
   // Resolve which "defaults" object to apply. Manual mode picks defaults off
   // the selected job; congrats mode uses the static defaults the caller passed.
   // Edit mode bypasses this entirely and hydrates from props.initial below.
+  // IMPORTANT: deps deliberately don't include `props` (the whole object,
+  // which is a new reference on every parent render). Including it caused
+  // the hydration useEffect below to re-run on every parent re-render
+  // (e.g. when exchange rates resolved in /placements/page.tsx),
+  // wiping the user's in-flight form edits. Closure-captured props is
+  // fine here because the parent doesn't reshape the props mid-edit.
   const activeDefaults: FormDefaults | undefined = useMemo(() => {
     if (isEdit) return undefined;
     if (isCongrats) return props.defaults;
     if (!selectedJobId) return undefined;
-    const job = props.jobOptions.find((j) => j.id === selectedJobId);
+    const job = props.mode === "manual"
+      ? props.jobOptions.find((j) => j.id === selectedJobId)
+      : undefined;
     if (!job) return undefined;
     return {
       estimatedStartDate: todayIso(),
@@ -202,7 +210,8 @@ export function PlacementDialog(props: Props) {
       paymentTerms: job.clientPaymentTerms ?? undefined,
       guaranteePeriod: job.clientGuaranteePeriod ?? undefined,
     };
-  }, [isCongrats, isEdit, props, selectedJobId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCongrats, isEdit, selectedJobId]);
 
   // Hydrate the form whenever the dialog opens. Edit mode pulls from
   // props.initial (the existing placement record); the other two modes
@@ -281,7 +290,16 @@ export function PlacementDialog(props: Props) {
     }
     setError("");
     setStep(isCongrats ? "intro" : "form");
-  }, [props, activeDefaults, isCongrats, isEdit]);
+    // IMPORTANT: `props` is deliberately NOT in the deps. The parent
+    // recreates the props object on every render (most commonly when
+    // /placements/page.tsx's usdRates state resolves async), and
+    // including the full props here was causing this useEffect to fire
+    // on every parent render — re-hydrating the form and wiping the
+    // user's in-flight edits. We use closure-captured props.initial /
+    // props.defaults, which are correct as long as the parent doesn't
+    // swap out the placement being edited mid-dialog (it doesn't).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDefaults, isCongrats, isEdit, props.open]);
 
   // Reset the job picker ONLY when the dialog transitions to open.
   // Lives in its own effect so picking a job (which mutates
