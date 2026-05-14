@@ -616,6 +616,12 @@ model Placement {
   // (e.g. ARS contract on a USD-default client) can be represented
   // faithfully without rewriting the job.
   currency            String?
+  // How to interpret the `salary` value. Recruiting fees are always
+  // calculated against the candidate's ANNUAL salary, but recruiters in
+  // some markets (LATAM especially) quote and store the salary as a
+  // monthly figure. When MONTHLY, the fee calc multiplies by 12 before
+  // applying the percentage. Default ANNUAL keeps the US-friendly path.
+  salaryPeriod        String?         @default("ANNUAL")
   // paymentTerms is the number of days between startDate (or estimated)
   // and when the agency expects to be paid. paymentDueDate is the
   // resolved date — kept on the row so reporting doesn't have to compute it.
