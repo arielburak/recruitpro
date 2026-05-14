@@ -220,7 +220,19 @@ export function PlacementDialog(props: Props) {
     if (!props.open) return;
     if (isEdit) {
       const i = props.initial;
-      const isoDate = (v: string | null | undefined) => (v ? v.slice(0, 10) : "");
+      // Defensively coerce dates to YYYY-MM-DD strings — Prisma usually
+      // serializes DateTime as ISO strings via fetch().json(), but if a
+      // caller ever hands us a Date object directly we don't want
+      // slice() to blow up and silently leave the date empty.
+      const isoDate = (v: string | Date | null | undefined): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v.slice(0, 10);
+        try {
+          return v.toISOString().slice(0, 10);
+        } catch {
+          return "";
+        }
+      };
       setEstimatedStartDate(isoDate(i.estimatedStartDate));
       setStartDate(isoDate(i.startDate));
       setAgreedSalary(i.agreedSalary != null ? String(i.agreedSalary) : "");
