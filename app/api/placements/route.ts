@@ -54,6 +54,7 @@ export async function POST(request: Request) {
       submissionId,
       jobId: rawJobId,
       clientId: rawClientId,
+      candidateId: rawCandidateId,
       estimatedStartDate,
       startDate,
       feeAmount,
@@ -71,6 +72,12 @@ export async function POST(request: Request) {
     let clientId: string | undefined;
     let candidateLabel = "candidate";
     let jobTitle = "job";
+    // Final submissionId stored on the placement. Starts from the body
+    // (existing submission-anchored flow) and is filled in by the manual
+    // path when a candidateId is provided — we either find an existing
+    // submission for (candidate, job) or create one server-side so the
+    // placement is always tied to a pipeline row.
+    let placementSubmissionId: string | undefined = submissionId;
 
     if (submissionId) {
       // Submission-anchored placement (pipeline drag-to-Placed flow).
@@ -101,8 +108,11 @@ export async function POST(request: Request) {
       candidateLabel = `${submission.candidate.firstName} ${submission.candidate.lastName}`;
       jobTitle = submission.job.title;
     } else {
-      // Manual placement (no submission — recruiter is back-filling history
-      // or recording a placement that started outside the pipeline).
+      // Manual placement (recruiter is back-filling history or recording
+      // a placement that started outside the pipeline). Job + client are
+      // required; candidate is now also required from the dialog, and
+      // when provided we link the placement to a pipeline submission
+      // (creating it if there's no existing one).
       if (!rawJobId || !rawClientId) {
         return NextResponse.json(
           { error: "Either submissionId, or jobId + clientId, is required" },
@@ -125,6 +135,60 @@ export async function POST(request: Request) {
       jobId = job.id;
       clientId = job.clientId;
       jobTitle = job.title;
+
+      if (rawCandidateId) {
+        const candidate = await prisma.candidate.findFirst({
+          where: { id: rawCandidateId, organizationId: ctx.organizationId },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        if (!candidate) {
+          return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+        }
+        candidateLabel = `${candidate.firstName} ${candidate.lastName}`;
+
+        let submission = await prisma.candidateSubmission.findFirst({
+          where: { candidateId: candidate.id, jobId: job.id },
+          select: { id: true },
+        });
+        if (!submission) {
+          // Seed the new submission at the job's first stage. We'll flip
+          // it to "Placed" below, in the same block that handles the
+          // existing-submission path.
+          const firstStage = await prisma.pipelineStage.findFirst({
+            where: { jobId: job.id },
+            orderBy: { order: "asc" },
+            select: { id: true },
+          });
+          if (!firstStage) {
+            return NextResponse.json(
+              { error: "Job has no pipeline stages — can't place this candidate." },
+              { status: 500 }
+            );
+          }
+          submission = await prisma.candidateSubmission.create({
+            data: {
+              candidateId: candidate.id,
+              jobId: job.id,
+              stageId: firstStage.id,
+              submittedBy: ctx.userId,
+            },
+            select: { id: true },
+          });
+        }
+
+        // Each submission can have at most one placement.
+        const existing = await prisma.placement.findUnique({
+          where: { submissionId: submission.id },
+        });
+        if (existing) {
+          return NextResponse.json(
+            { error: "This candidate already has a placement on this job." },
+            { status: 409 }
+          );
+        }
+
+        placementSubmissionId = submission.id;
+      }
     }
 
     const gp = guaranteePeriod ?? 90;
@@ -145,7 +209,7 @@ export async function POST(request: Request) {
 
     const placement = await prisma.placement.create({
       data: {
-        submissionId: submissionId || null,
+        submissionId: placementSubmissionId || null,
         jobId: jobId!,
         clientId: clientId!,
         organizationId: ctx.organizationId,
@@ -164,15 +228,17 @@ export async function POST(request: Request) {
       },
     });
 
-    // For submission-anchored placements, also flip the submission to the
-    // canonical "Placed" stage so the pipeline matches the placement record.
-    if (submissionId) {
+    // Flip the linked submission to the canonical "Placed" stage so the
+    // pipeline matches the placement record. Covers both paths now:
+    //   - kanban-anchored placements (submissionId from body)
+    //   - manual placements where we found/created the submission above
+    if (placementSubmissionId) {
       const placedStage = await prisma.pipelineStage.findFirst({
         where: { jobId: jobId!, name: "Placed" },
       });
       if (placedStage) {
         await prisma.candidateSubmission.update({
-          where: { id: submissionId },
+          where: { id: placementSubmissionId },
           data: { stageId: placedStage.id },
         });
       }
