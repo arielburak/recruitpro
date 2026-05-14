@@ -324,16 +324,13 @@ export function PlacementDialog(props: Props) {
     }
   }, [props.open, props.mode]);
 
-  // Live recompute paymentDueDate from the anchor + terms unless the
-  // user has manually edited the date field. The touched flag is reset
-  // to false in the onChange handlers of the source inputs (start
-  // date, estimated start, payment terms) so any explicit edit there
-  // triggers a fresh recompute — but a manual override of payment due
-  // itself persists across the session.
-  useEffect(() => {
-    if (paymentDueDateTouched) return;
-    setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, paymentTerms));
-  }, [startDate, estimatedStartDate, paymentTerms, paymentDueDateTouched]);
+  // No live-preview useEffect for paymentDueDate — it caused a race
+  // condition with the hydration step on dialog open (the effect
+  // captured stale initial state and overwrote the hydrated computed
+  // value with ""). Instead, paymentDueDate is computed inline in
+  // hydration AND in each source input's onChange handler. Touched
+  // flag still gates manual overrides, but it's set/reset
+  // explicitly at those touch points.
 
   // Candidate search (manual mode only). Two trigger paths:
   //   - typing → debounced search, fires after 250 ms.
@@ -892,7 +889,15 @@ export function PlacementDialog(props: Props) {
                   id="placement-est-start"
                   type="date"
                   value={estimatedStartDate}
-                  onChange={(e) => { setEstimatedStartDate(e.target.value); setPaymentDueDateTouched(false); }}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEstimatedStartDate(v);
+                    setPaymentDueDateTouched(false);
+                    // Inline recompute: avoids the race the useEffect-based
+                    // version had on first render, and keeps the field
+                    // visibly in sync with whatever the user just typed.
+                    setPaymentDueDate(previewFromAnchor(startDate, v, paymentTerms));
+                  }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -1011,8 +1016,10 @@ export function PlacementDialog(props: Props) {
                   value={paymentTerms}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setPaymentTerms(v === "" ? "" : Number(v));
+                    const newTerms = v === "" ? "" : Number(v);
+                    setPaymentTerms(newTerms);
                     setPaymentDueDateTouched(false);
+                    setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, newTerms));
                   }}
                 />
               </div>
@@ -1065,7 +1072,12 @@ export function PlacementDialog(props: Props) {
                     id="placement-actual-start"
                     type="date"
                     value={startDate}
-                    onChange={(e) => { setStartDate(e.target.value); setPaymentDueDateTouched(false); }}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setStartDate(v);
+                      setPaymentDueDateTouched(false);
+                      setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
+                    }}
                   />
                   <p className="text-[10px] text-gray-400">
                     Fill once the candidate starts. Anchors the guarantee.
