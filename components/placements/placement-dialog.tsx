@@ -401,7 +401,7 @@ export function PlacementDialog(props: Props) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isCongrats && step === "intro" ? (
@@ -511,22 +511,22 @@ export function PlacementDialog(props: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-salary">Agreed salary</Label>
-                <div className="flex gap-1.5">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                      {getCurrency(currency)?.symbol || "$"}
-                    </span>
-                    <Input
-                      id="placement-salary"
-                      type="number"
-                      inputMode="decimal"
-                      placeholder="0"
-                      className="pl-7"
-                      value={agreedSalary}
-                      onChange={(e) => setAgreedSalary(e.target.value)}
-                    />
-                  </div>
-                  <div className="inline-flex rounded-md border bg-white p-0.5 shrink-0">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                    {getCurrency(currency)?.symbol || "$"}
+                  </span>
+                  <Input
+                    id="placement-salary"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="pl-7"
+                    value={agreedSalary}
+                    onChange={(e) => setAgreedSalary(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="inline-flex rounded-md border bg-white p-0.5">
                     {(["MONTHLY", "ANNUAL"] as const).map((p) => (
                       <button
                         key={p}
@@ -542,10 +542,10 @@ export function PlacementDialog(props: Props) {
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] text-gray-400 text-right">
+                    Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
+                  </p>
                 </div>
-                <p className="text-[10px] text-gray-400">
-                  Fee % is calculated against the annual salary{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}.
-                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Fee</Label>
