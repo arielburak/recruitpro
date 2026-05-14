@@ -120,21 +120,35 @@ export default function PlacementsPage() {
     return p.currency || p.job?.currency || "USD";
   }
 
+  // The date a placement "belongs to" for revenue reporting. We anchor
+  // on the actual start date when the candidate has already started,
+  // fall back to the estimated start when not, and only fall back to
+  // the record's createdAt as a last resort. This is what the recruiter
+  // expects when they edit a placement's date — the row should move to
+  // the right Q immediately, not stay pinned to whenever they happened
+  // to click "New placement".
+  function placementDate(p: any): Date {
+    if (p.startDate) return new Date(p.startDate);
+    if (p.estimatedStartDate) return new Date(p.estimatedStartDate);
+    return new Date(p.createdAt);
+  }
+
   // Placements that fall in the selected period. Drives BOTH the
   // Revenue card and the table below, so the recruiter sees a
   // matching view across both.
   const filteredPlacements = placements.filter((p) => {
-    const d = new Date(p.createdAt);
+    const d = placementDate(p);
     return d >= periodStart && d <= periodEnd;
   });
 
   // Alias kept readable for the bucketing logic below.
   const quarterPlacements = filteredPlacements;
 
-  // Year dropdown options — derived from the actual data plus the
-  // current year, so the recruiter only sees years that make sense.
+  // Year dropdown options — derived from each placement's effective
+  // date (same anchor as the filter) plus the current year, so the
+  // recruiter only sees years that make sense.
   const placementYears = new Set<number>(
-    placements.map((p) => new Date(p.createdAt).getFullYear()),
+    placements.map((p) => placementDate(p).getFullYear()),
   );
   placementYears.add(today.getFullYear());
   const yearOptions = Array.from(placementYears).sort((a, b) => b - a);
