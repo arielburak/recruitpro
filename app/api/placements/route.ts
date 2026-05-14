@@ -192,8 +192,16 @@ export async function POST(request: Request) {
     }
 
     const gp = guaranteePeriod ?? 90;
-    const startDateValue = startDate ? new Date(startDate) : null;
+    const explicitStartDate = startDate ? new Date(startDate) : null;
     const estimatedValue = estimatedStartDate ? new Date(estimatedStartDate) : null;
+    // When the caller only sends `estimatedStartDate` (the create-time
+    // dialog asks for one date), promote it to `startDate` too. The
+    // recruiter usually means "this is when the candidate is starting"
+    // and the planned vs. confirmed distinction only matters later in
+    // the placement's life, where the edit dialog still exposes both
+    // fields separately for cases where the actual start ends up
+    // differing from the original estimate.
+    const startDateValue = explicitStartDate ?? estimatedValue;
 
     const guaranteeExpiry = startDateValue
       ? (() => {
