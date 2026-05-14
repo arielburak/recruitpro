@@ -3,6 +3,7 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { extractJobFields } from "@/lib/extract-job-fields";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([
@@ -132,10 +133,19 @@ export async function POST(
       }
 
       if (parsedText.trim()) {
-        await prisma.job.update({
-          where: { id },
-          data: { description: parsedText.trim() },
-        });
+        // Re-parse: refresh the description and any structured fields the
+        // extractor can pull out of the new JD. Title is intentionally
+        // skipped (heuristic is too noisy, and the recruiter has usually
+        // typed the canonical title by hand). If the extractor doesn't
+        // find a value, leave the existing one alone — never blank a
+        // field on re-parse.
+        const fields = extractJobFields(parsedText);
+        const update: { description: string; location?: string; workMode?: string } = {
+          description: parsedText.trim(),
+        };
+        if (fields.location) update.location = fields.location;
+        if (fields.workMode) update.workMode = fields.workMode;
+        await prisma.job.update({ where: { id }, data: update });
       }
     }
 

@@ -225,21 +225,25 @@ export default function JobDetailPage() {
   const fetchJob = useCallback(async () => {
     const res = await fetch(`/api/jobs/${params.id}`);
     if (res.ok) {
-      setJob(await res.json());
+      const data = await res.json();
+      setJob(data);
+      setLoading(false);
+      return data;
     } else {
       const data = await res.json().catch(() => ({}));
       // If this is a ClientJob ID with an accepted engagement, redirect to the real job
       if (res.status === 307 && data.redirect) {
         router.replace(data.redirect);
-        return;
+        return null;
       }
       // If this is a ClientJob with a pending engagement, redirect to engagements
       if (data.error === "pending_engagement") {
         router.replace("/engagements");
-        return;
+        return null;
       }
     }
     setLoading(false);
+    return null;
   }, [params.id, router]);
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
@@ -579,7 +583,18 @@ export default function JobDetailPage() {
             alert("Document uploaded but no text could be extracted from the file.");
           }
         }
-        fetchJob();
+        const fresh = await fetchJob();
+        // If the recruiter is mid-edit, refresh the editable copy of the
+        // fields the re-parse may have rewritten so they see the new
+        // values without having to cancel + reopen the form.
+        if (editing && category === "JOB_DESCRIPTION" && fresh) {
+          setEditForm((prev) => ({
+            ...prev,
+            description: fresh.description || "",
+            location: fresh.location || prev.location,
+            workMode: fresh.workMode || prev.workMode,
+          }));
+        }
       }
     } catch {
       alert("Upload failed");
@@ -1370,9 +1385,30 @@ export default function JobDetailPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Description</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Description</Label>
+                        <label className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border cursor-pointer transition-colors ${uploadingJD ? "opacity-50 pointer-events-none border-gray-200 text-gray-400" : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"}`}>
+                          <Upload className="h-3 w-3" />
+                          {uploadingJD ? "Re-parsing..." : "Re-parse from new file"}
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.txt"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (!confirm("Re-parsing will replace the description, and update Location / Work Arrangement if found in the new file. Continue?")) {
+                                e.target.value = "";
+                                return;
+                              }
+                              uploadJobDocument(file, "JOB_DESCRIPTION");
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
                       <Textarea
-                        rows={6}
+                        rows={editForm.description ? 14 : 6}
                         value={editForm.description}
                         onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                         placeholder="Job description, requirements..."
