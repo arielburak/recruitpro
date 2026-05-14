@@ -62,14 +62,12 @@ export default function PlacementsPage() {
   const [editingPlacement, setEditingPlacement] = useState<any | null>(null);
   const [usdRates, setUsdRates] = useState<Record<string, number> | null>(null);
 
-  // Revenue filter — defaults to the current year + quarter so the
-  // recruiter sees today's number on page load. They can scope to any
-  // year/quarter that has data via the dropdowns on the card.
+  // Revenue filter — defaults to the full current year ("ALL" quarters)
+  // since the recruiter usually wants the headline number for the year
+  // and drills down to a specific Q only when asked.
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
-  const [selectedQuarter, setSelectedQuarter] = useState<1 | 2 | 3 | 4>(
-    (Math.floor(today.getMonth() / 3) + 1) as 1 | 2 | 3 | 4,
-  );
+  const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -103,22 +101,35 @@ export default function PlacementsPage() {
     setShowNewDialog(true);
   }
 
-  // Revenue this quarter — bucketed by the placement's currency. We
-  // normalize to USD using the open.er-api.com rates so the recruiter
-  // sees one headline number across a mixed-currency book. Per-currency
-  // amounts surface below as a sanity check so the conversion is
-  // auditable at a glance.
-  const quarterStart = new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
-  const quarterEnd = new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+  // Revenue for the selected period — bucketed by the placement's
+  // currency, then normalized to USD using the open.er-api.com rates so
+  // the recruiter sees one headline number across a mixed-currency
+  // book. Per-currency amounts surface below as a sanity check so the
+  // conversion is auditable at a glance.
+  // Date range resolves Year + Quarter; "ALL" means the full year.
+  const periodStart =
+    selectedQuarter === "ALL"
+      ? new Date(selectedYear, 0, 1)
+      : new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
+  const periodEnd =
+    selectedQuarter === "ALL"
+      ? new Date(selectedYear, 12, 0, 23, 59, 59)
+      : new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
 
   function placementCurrency(p: any): string {
     return p.currency || p.job?.currency || "USD";
   }
 
-  const quarterPlacements = placements.filter((p) => {
+  // Placements that fall in the selected period. Drives BOTH the
+  // Revenue card and the table below, so the recruiter sees a
+  // matching view across both.
+  const filteredPlacements = placements.filter((p) => {
     const d = new Date(p.createdAt);
-    return d >= quarterStart && d <= quarterEnd;
+    return d >= periodStart && d <= periodEnd;
   });
+
+  // Alias kept readable for the bucketing logic below.
+  const quarterPlacements = filteredPlacements;
 
   // Year dropdown options — derived from the actual data plus the
   // current year, so the recruiter only sees years that make sense.
@@ -232,83 +243,101 @@ export default function PlacementsPage() {
       {/* Revenue for the selected Year + Quarter — normalized to USD
           when we have rates, with the per-currency breakdown shown
           below for auditability. */}
-      <Card>
-        <CardContent className="p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 shrink-0">
-              <DollarSign className="h-5 w-5 text-indigo-600" />
+      <Card className="overflow-hidden">
+        <div className="border-b bg-gray-50/60 px-5 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-600 shrink-0">
+              <DollarSign className="h-4 w-4 text-white" />
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm text-gray-500">Revenue</p>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="h-7 px-2 rounded border border-gray-200 bg-white text-xs"
-                >
-                  {yearOptions.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedQuarter}
-                  onChange={(e) => setSelectedQuarter(Number(e.target.value) as 1 | 2 | 3 | 4)}
-                  className="h-7 px-2 rounded border border-gray-200 bg-white text-xs"
-                >
-                  <option value={1}>Q1</option>
-                  <option value={2}>Q2</option>
-                  <option value={3}>Q3</option>
-                  <option value={4}>Q4</option>
-                </select>
-              </div>
-              {usdRates ? (
-                <>
-                  <p className="text-2xl font-bold text-indigo-600">
-                    {formatCurrency(revenueUsd, "USD")}
-                  </p>
-                  {currencyCount > 1 && breakdownEntries.length > 0 && (
-                    <p className="text-[11px] text-gray-400 truncate">
-                      ≈ {breakdownEntries
-                        .map(([c, amt]) => formatCurrency(amt, c))
-                        .join(" · ")} converted at today&apos;s rates
-                    </p>
-                  )}
-                  {currencyCount === 1 && breakdownEntries[0]?.[0] !== "USD" && (
-                    <p className="text-[11px] text-gray-400 truncate">
-                      = {formatCurrency(breakdownEntries[0][1], breakdownEntries[0][0])} converted
-                    </p>
-                  )}
-                  {unconverted.length > 0 && (
-                    <p className="text-[11px] text-amber-600 truncate">
-                      Couldn&apos;t convert: {unconverted
+            <p className="text-sm font-semibold text-gray-700">Revenue</p>
+            <span className="text-xs text-gray-400">
+              · {selectedYear}{selectedQuarter === "ALL" ? "" : ` Q${selectedQuarter}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="h-8 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              aria-label="Year"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <select
+              value={selectedQuarter}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
+              }}
+              className="h-8 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              aria-label="Quarter"
+            >
+              <option value="ALL">All quarters</option>
+              <option value={1}>Q1</option>
+              <option value={2}>Q2</option>
+              <option value={3}>Q3</option>
+              <option value={4}>Q4</option>
+            </select>
+          </div>
+        </div>
+        <CardContent className="p-5">
+          {usdRates ? (
+            <div className="space-y-1.5">
+              <p className="text-4xl font-bold text-indigo-600 tracking-tight">
+                {formatCurrency(revenueUsd, "USD")}
+              </p>
+              <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                <span className="font-medium">
+                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
+                </span>
+                {breakdownEntries.length > 0 && (
+                  <>
+                    <span className="text-gray-300">·</span>
+                    <span className="text-gray-400">
+                      {breakdownEntries
                         .map(([c, amt]) => formatCurrency(amt, c))
                         .join(" · ")}
-                    </p>
-                  )}
-                </>
-              ) : (
-                // Fallback while rates load (or if the fetch fails):
-                // show the per-currency breakdown raw so the recruiter
-                // sees their numbers anyway.
-                <>
-                  {breakdownEntries.length === 0 ? (
-                    <p className="text-2xl font-bold text-indigo-600">
-                      {formatCurrency(0, "USD")}
-                    </p>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {breakdownEntries.map(([c, amt]) => (
-                        <p key={c} className="text-lg font-semibold text-indigo-600">
-                          {formatCurrency(amt, c)}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-[11px] text-gray-400">Loading conversion rates…</p>
-                </>
+                    </span>
+                  </>
+                )}
+              </div>
+              {unconverted.length > 0 && (
+                <p className="text-[11px] text-amber-600">
+                  Couldn&apos;t convert: {unconverted
+                    .map(([c, amt]) => formatCurrency(amt, c))
+                    .join(" · ")}
+                </p>
               )}
             </div>
-          </div>
+          ) : (
+            // Fallback while rates load (or if the fetch fails): show
+            // the per-currency breakdown raw so the recruiter sees their
+            // numbers anyway.
+            <div className="space-y-1.5">
+              {breakdownEntries.length === 0 ? (
+                <p className="text-4xl font-bold text-indigo-600 tracking-tight">
+                  {formatCurrency(0, "USD")}
+                </p>
+              ) : (
+                <div className="space-y-0.5">
+                  {breakdownEntries.map(([c, amt]) => (
+                    <p key={c} className="text-2xl font-bold text-indigo-600 tracking-tight">
+                      {formatCurrency(amt, c)}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="font-medium">
+                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
+                </span>
+                <span className="text-gray-300">·</span>
+                <span className="text-gray-400">Loading conversion rates…</span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -317,6 +346,25 @@ export default function PlacementsPage() {
           <CardContent className="p-12 text-center">
             <Trophy className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">No placements yet. Placements are created when candidates are placed on jobs.</p>
+          </CardContent>
+        </Card>
+      ) : filteredPlacements.length === 0 ? (
+        <Card>
+          <CardContent className="p-10 text-center">
+            <Trophy className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-500">
+              No placements in {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedYear(today.getFullYear());
+                setSelectedQuarter("ALL");
+              }}
+              className="mt-3 text-xs text-indigo-600 hover:underline"
+            >
+              Reset to {today.getFullYear()} · all quarters
+            </button>
           </CardContent>
         </Card>
       ) : (
@@ -335,7 +383,7 @@ export default function PlacementsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {placements.map((p) => {
+                {filteredPlacements.map((p) => {
                   const candidateName = p.submission?.candidate
                     ? `${p.submission.candidate.firstName} ${p.submission.candidate.lastName}`
                     : "Unknown";
