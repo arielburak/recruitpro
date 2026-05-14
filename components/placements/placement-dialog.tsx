@@ -307,9 +307,10 @@ export function PlacementDialog(props: Props) {
 
   // Candidate search (manual mode only). Debounced — fires after 250ms
   // of typing, hits /api/candidates with the search term, populates the
-  // dropdown. Empty search → empty list (we never preload — keeps the
-  // initial dialog render fast and lets the recruiter narrow down by
-  // typing).
+  // dropdown. When a job is already selected we cascade the filter
+  // server-side via ?jobId= so the recruiter only sees candidates that
+  // already have a submission on that job. With no job, search is
+  // global and we resolve job(s) on click.
   useEffect(() => {
     if (props.mode !== "manual") return;
     if (!props.open) return;
@@ -321,9 +322,13 @@ export function PlacementDialog(props: Props) {
     setSearchingCandidates(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `/api/candidates?search=${encodeURIComponent(candidateSearch)}&limit=8&mine=false`,
-        );
+        const params = new URLSearchParams({
+          search: candidateSearch,
+          limit: "8",
+          mine: "false",
+        });
+        if (selectedJobId) params.set("jobId", selectedJobId);
+        const res = await fetch(`/api/candidates?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
           const list = (data.candidates || []) as CandidateOption[];
@@ -337,7 +342,73 @@ export function PlacementDialog(props: Props) {
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [candidateSearch, props.mode, props.open]);
+  }, [candidateSearch, props.mode, props.open, selectedJobId]);
+
+  // When the user picks a candidate without a job already selected, we
+  // peek at the candidate's active submissions:
+  //   - 1 job        → auto-select that job, set the candidate, done.
+  //   - 2+ jobs      → stash in pendingJobChoice so the UI can render
+  //                    an inline "which one of these jobs?" picker.
+  //   - 0 jobs       → just set the candidate; user picks from the Job
+  //                    dropdown above; server will create a submission
+  //                    server-side once they save.
+  type PendingJobChoice = {
+    candidate: CandidateOption;
+    submissions: Array<{
+      id: string;
+      jobId: string;
+      jobTitle: string;
+      clientName: string;
+    }>;
+  };
+  const [pendingJobChoice, setPendingJobChoice] = useState<PendingJobChoice | null>(null);
+
+  async function pickCandidate(c: CandidateOption) {
+    setCandidateDropdownOpen(false);
+    setCandidateSearch("");
+
+    // Job already known — accept the candidate as-is. The search already
+    // filtered to candidates on that job, so we trust this.
+    if (selectedJobId) {
+      setSelectedCandidate(c);
+      return;
+    }
+
+    // No job yet — fetch the candidate to see their active submissions.
+    try {
+      const res = await fetch(`/api/candidates/${c.id}`);
+      if (!res.ok) {
+        // Fallback: just set the candidate; user can pick a job manually.
+        setSelectedCandidate(c);
+        return;
+      }
+      const full = await res.json();
+      // Surface only submissions whose job is in the dialog's jobOptions
+      // (these are open, non-closed jobs — same set the Job dropdown
+      // offers). Avoids steering the recruiter at a closed search.
+      const knownJobIds = new Set(props.mode === "manual" ? props.jobOptions.map((j) => j.id) : []);
+      const subs: PendingJobChoice["submissions"] = (full.submissions || [])
+        .filter((s: any) => knownJobIds.has(s.job?.id))
+        .map((s: any) => ({
+          id: s.id,
+          jobId: s.job.id,
+          jobTitle: s.job.title,
+          clientName: s.job.client?.name || "",
+        }));
+
+      if (subs.length === 1) {
+        setSelectedJobId(subs[0].jobId);
+        setSelectedCandidate(c);
+      } else if (subs.length >= 2) {
+        setPendingJobChoice({ candidate: c, submissions: subs });
+      } else {
+        // No active submissions — accept candidate, user picks job.
+        setSelectedCandidate(c);
+      }
+    } catch {
+      setSelectedCandidate(c);
+    }
+  }
 
   // Reset candidate picker when the dialog opens fresh.
   useEffect(() => {
@@ -560,7 +631,20 @@ export function PlacementDialog(props: Props) {
                   <Label className="text-xs">Job</Label>
                   <select
                     value={selectedJobId}
-                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    onChange={(e) => {
+                      const newJobId = e.target.value;
+                      setSelectedJobId(newJobId);
+                      // Clear candidate selection / pending picker — the new
+                      // job's submission list might not include the candidate
+                      // we had selected. Recruiter re-picks from the now-
+                      // narrowed list.
+                      if (newJobId !== selectedJobId) {
+                        setSelectedCandidate(null);
+                        setPendingJobChoice(null);
+                        setCandidateSearch("");
+                        setCandidateResults([]);
+                      }
+                    }}
                     className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <option value="">Select a job…</option>
@@ -573,7 +657,47 @@ export function PlacementDialog(props: Props) {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Candidate</Label>
-                  {selectedCandidate ? (
+                  {pendingJobChoice ? (
+                    <div className="border border-amber-200 bg-amber-50 rounded-md p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {pendingJobChoice.candidate.firstName} {pendingJobChoice.candidate.lastName}
+                          </p>
+                          <p className="text-[11px] text-amber-700">
+                            On {pendingJobChoice.submissions.length} active jobs. Pick the one this placement is for:
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPendingJobChoice(null)}
+                          className="text-gray-400 hover:text-red-500 p-1"
+                          aria-label="Cancel"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        {pendingJobChoice.submissions.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedJobId(s.jobId);
+                              setSelectedCandidate(pendingJobChoice.candidate);
+                              setPendingJobChoice(null);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded bg-white border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-xs"
+                          >
+                            <span className="font-medium text-gray-900">{s.jobTitle}</span>
+                            {s.clientName && (
+                              <span className="text-gray-500"> · {s.clientName}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : selectedCandidate ? (
                     <div className="flex items-center justify-between gap-2 p-2.5 bg-indigo-50 border border-indigo-100 rounded-md">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
@@ -624,11 +748,7 @@ export function PlacementDialog(props: Props) {
                               <button
                                 key={c.id}
                                 type="button"
-                                onClick={() => {
-                                  setSelectedCandidate(c);
-                                  setCandidateDropdownOpen(false);
-                                  setCandidateSearch("");
-                                }}
+                                onClick={() => { void pickCandidate(c); }}
                                 className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition-colors border-b last:border-b-0"
                               >
                                 <p className="text-sm font-medium text-gray-900 truncate">
