@@ -1072,14 +1072,14 @@ export default function JobDetailPage() {
         </TabsList>
 
         <TabsContent value="pipeline">
-          {/* View toggle — Kanban for visual triage, List for fast
+          {/* View toggle — Board for visual triage, List for fast
               stage changes and scanning many candidates at once. Same
               data + same transitions (onMove fires the share /
               placement / interview dialogs either way). */}
           <div className="flex justify-end mb-3">
             <div className="inline-flex rounded-md border bg-white p-0.5">
               {([
-                { v: "kanban", label: "Kanban" },
+                { v: "kanban", label: "Board" },
                 { v: "list", label: "List" },
               ] as const).map(({ v, label }) => (
                 <button
