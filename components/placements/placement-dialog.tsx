@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PartyPopper, ArrowRight, Building2, User } from "lucide-react";
+import { PartyPopper, ArrowRight, Building2, User, X } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
@@ -166,6 +166,24 @@ export function PlacementDialog(props: Props) {
   const [notes, setNotes] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState<"DRAFT" | "SENT" | "PAID">("DRAFT");
 
+  // Manual-mode candidate picker. The recruiter has to choose an
+  // existing candidate — if there are none, the empty state in the
+  // dropdown nudges them to /candidates/new instead of letting them
+  // submit an orphan placement.
+  type CandidateOption = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    currentTitle: string | null;
+    currentCompany: string | null;
+  };
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateResults, setCandidateResults] = useState<CandidateOption[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateOption | null>(null);
+  const [candidateDropdownOpen, setCandidateDropdownOpen] = useState(false);
+  const [searchingCandidates, setSearchingCandidates] = useState(false);
+
   // Resolve which "defaults" object to apply. Manual mode picks defaults off
   // the selected job; congrats mode uses the static defaults the caller passed.
   // Edit mode bypasses this entirely and hydrates from props.initial below.
@@ -261,6 +279,51 @@ export function PlacementDialog(props: Props) {
     if (paymentDueDateTouched) return;
     setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, paymentTerms));
   }, [startDate, estimatedStartDate, paymentTerms, paymentDueDateTouched]);
+
+  // Candidate search (manual mode only). Debounced — fires after 250ms
+  // of typing, hits /api/candidates with the search term, populates the
+  // dropdown. Empty search → empty list (we never preload — keeps the
+  // initial dialog render fast and lets the recruiter narrow down by
+  // typing).
+  useEffect(() => {
+    if (props.mode !== "manual") return;
+    if (!props.open) return;
+    if (candidateSearch.trim().length === 0) {
+      setCandidateResults([]);
+      setCandidateDropdownOpen(false);
+      return;
+    }
+    setSearchingCandidates(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/candidates?search=${encodeURIComponent(candidateSearch)}&limit=8&mine=false`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const list = (data.candidates || []) as CandidateOption[];
+          setCandidateResults(list);
+          setCandidateDropdownOpen(true);
+        }
+      } catch {
+        // ignore — recruiter will see "No matches" and the new-candidate link
+      } finally {
+        setSearchingCandidates(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [candidateSearch, props.mode, props.open]);
+
+  // Reset candidate picker when the dialog opens fresh.
+  useEffect(() => {
+    if (!props.open) return;
+    if (props.mode === "manual") {
+      setSelectedCandidate(null);
+      setCandidateSearch("");
+      setCandidateResults([]);
+      setCandidateDropdownOpen(false);
+    }
+  }, [props.open, props.mode]);
 
   // Live preview of when the guarantee expires. Read-only — server
   // computes the persisted value on save with the same logic.
@@ -394,8 +457,13 @@ export function PlacementDialog(props: Props) {
       setError("Pick a job first");
       return;
     }
+    if (!selectedCandidate) {
+      setError("Pick a candidate first");
+      return;
+    }
     payload.jobId = job.id;
     payload.clientId = job.clientId;
+    payload.candidateId = selectedCandidate.id;
     await postPlacement(payload);
   }
 
@@ -462,21 +530,113 @@ export function PlacementDialog(props: Props) {
         {(step === "form" || !isCongrats) && (
           <div className="space-y-4">
             {props.mode === "manual" && (
-              <div className="space-y-2">
-                <Label className="text-xs">Job</Label>
-                <select
-                  value={selectedJobId}
-                  onChange={(e) => setSelectedJobId(e.target.value)}
-                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  <option value="">Select a job…</option>
-                  {props.jobOptions.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.title} — {j.clientName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs">Job</Label>
+                  <select
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
+                    <option value="">Select a job…</option>
+                    {props.jobOptions.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.title} — {j.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Candidate</Label>
+                  {selectedCandidate ? (
+                    <div className="flex items-center justify-between gap-2 p-2.5 bg-indigo-50 border border-indigo-100 rounded-md">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {selectedCandidate.firstName} {selectedCandidate.lastName}
+                        </p>
+                        {(selectedCandidate.currentTitle || selectedCandidate.currentCompany) && (
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {[selectedCandidate.currentTitle, selectedCandidate.currentCompany]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCandidate(null)}
+                        className="text-gray-400 hover:text-red-500 p-1"
+                        aria-label="Clear candidate"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Input
+                        placeholder="Search by name, email, or company…"
+                        value={candidateSearch}
+                        onChange={(e) => setCandidateSearch(e.target.value)}
+                        onFocus={() => candidateResults.length > 0 && setCandidateDropdownOpen(true)}
+                        className="text-sm"
+                      />
+                      {candidateDropdownOpen && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                          {candidateResults.length === 0 && !searchingCandidates ? (
+                            <div className="px-3 py-3 text-center">
+                              <p className="text-xs text-gray-500">No candidates match &ldquo;{candidateSearch}&rdquo;.</p>
+                              <a
+                                href="/candidates/new"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-indigo-600 hover:underline"
+                              >
+                                Add a new candidate
+                              </a>
+                            </div>
+                          ) : (
+                            candidateResults.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCandidate(c);
+                                  setCandidateDropdownOpen(false);
+                                  setCandidateSearch("");
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-indigo-50 transition-colors border-b last:border-b-0"
+                              >
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {c.firstName} {c.lastName}
+                                </p>
+                                {(c.currentTitle || c.currentCompany || c.email) && (
+                                  <p className="text-[11px] text-gray-500 truncate">
+                                    {[c.currentTitle, c.currentCompany, c.email]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </p>
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        Don&apos;t see them?{" "}
+                        <a
+                          href="/candidates/new"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:underline"
+                        >
+                          Add a new candidate
+                        </a>{" "}
+                        and come back.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {(isCongrats || isEdit) && (
@@ -711,7 +871,7 @@ export function PlacementDialog(props: Props) {
               </Button>
               <Button
                 onClick={handleSubmitForm}
-                disabled={submitting || (props.mode === "manual" && !selectedJobId)}
+                disabled={submitting || (props.mode === "manual" && (!selectedJobId || !selectedCandidate))}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {submitting ? "Saving..." : isEdit ? "Save changes" : "Save placement"}
