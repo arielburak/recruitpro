@@ -299,12 +299,21 @@ export default function PlacementsPage() {
         <CardContent className="p-5">
           {usdRates ? (
             <div className="space-y-1.5">
-              <p className="text-4xl font-bold text-indigo-600 tracking-tight">
-                {formatCurrency(revenueUsd, "USD")}
-              </p>
-              <p className="text-xs text-gray-500 font-medium">
-                {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
-              </p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-4xl font-bold text-indigo-600 tracking-tight">
+                  {formatCurrency(revenueUsd, "USD")}
+                </p>
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  USD
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                <span className="font-medium">
+                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
+                </span>
+                <span className="text-gray-300">·</span>
+                <span className="text-gray-400">Rows show each placement&apos;s local currency.</span>
+              </div>
               {unconverted.length > 0 && (
                 <p className="text-[11px] text-amber-600">
                   Couldn&apos;t convert: {unconverted
