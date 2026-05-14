@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { formatDistanceToNow } from "date-fns";
 import {
   Share2,
   CheckCircle2,
   MessageSquare,
   Star,
   X,
-  MoreVertical,
   Mail,
   Phone,
+  ChevronDown,
 } from "lucide-react";
 import { ShareCandidateDialog } from "./share-candidate-dialog";
 
 // Notion-style list view of a job's pipeline. Same data and same
-// transitions as the kanban — `onMove` runs through `moveSubmission`,
+// transitions as the board — `onMove` runs through `moveSubmission`,
 // which fires the share / placement / interview dialogs on the
 // relevant stage changes. The list is denser, lets the recruiter
 // scan + change stages with a dropdown instead of dragging across
@@ -102,7 +103,7 @@ export function SubmissionsListView({
               <th className="text-left px-4 py-2 font-medium">Candidate</th>
               <th className="text-left px-4 py-2 font-medium">Contact</th>
               <th className="text-left px-4 py-2 font-medium">Stage</th>
-              <th className="text-left px-4 py-2 font-medium">Client</th>
+              <th className="text-left px-4 py-2 font-medium">Visible to client</th>
               <th className="text-left px-4 py-2 font-medium">Activity</th>
               <th className="text-right px-4 py-2 font-medium w-8"></th>
             </tr>
@@ -171,25 +172,37 @@ export function SubmissionsListView({
                     </select>
                   </td>
 
-                  {/* Client share status */}
+                  {/* Visibility to client: binary state up front, share
+                      timestamp + client's stage are secondary details
+                      revealed in the popover so the column never reads
+                      like another internal stage. */}
                   <td className="px-4 py-2.5">
                     <div className="relative inline-block">
                       {isShared ? (
                         <button
                           onClick={() => handleShareClick(s)}
                           className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100"
+                          title={s.sharedAt ? `Shared on ${new Date(s.sharedAt).toLocaleString()}` : "Shared with client"}
                         >
                           <CheckCircle2 className="h-3 w-3" />
-                          {s.clientStage?.name || "Shared"}
-                          <MoreVertical className="h-3 w-3 ml-0.5 text-green-500" />
+                          <span>
+                            Shared
+                            {s.sharedAt && (
+                              <>
+                                {" · "}
+                                {formatDistanceToNow(new Date(s.sharedAt), { addSuffix: false })} ago
+                              </>
+                            )}
+                          </span>
+                          <ChevronDown className="h-3 w-3 ml-0.5 text-green-500" />
                         </button>
                       ) : (
                         <button
                           onClick={() => handleShareClick(s)}
-                          className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-gray-50 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
                         >
                           <Share2 className="h-3 w-3" />
-                          Share
+                          Share with client
                         </button>
                       )}
                       {menuOpenFor === s.id && isShared && (
@@ -198,7 +211,24 @@ export function SubmissionsListView({
                             className="fixed inset-0 z-10"
                             onClick={() => setMenuOpenFor(null)}
                           />
-                          <div className="absolute right-0 top-7 z-20 bg-white border rounded-lg shadow-lg py-1 w-40">
+                          <div className="absolute right-0 top-7 z-20 bg-white border rounded-lg shadow-lg py-2 w-56">
+                            {s.sharedAt && (
+                              <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Shared</p>
+                                <p className="text-xs text-gray-700">{new Date(s.sharedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</p>
+                              </div>
+                            )}
+                            {s.clientStage && (
+                              <div className="px-3 pb-2 mb-1 border-b border-gray-100">
+                                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Client's stage</p>
+                                <p
+                                  className="text-xs font-medium"
+                                  style={{ color: s.clientStage.color }}
+                                >
+                                  {s.clientStage.name}
+                                </p>
+                              </div>
+                            )}
                             <button
                               onClick={() => handleUnshare(s)}
                               className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
