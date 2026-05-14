@@ -461,7 +461,12 @@ export function PlacementDialog(props: Props) {
 
   async function handleDeletePlacement() {
     if (props.mode !== "edit") return;
-    if (!confirm("Delete this placement? This cannot be undone.")) return;
+    if (
+      !confirm(
+        "Delete this placement? The candidate will move back to the previous stage on the pipeline. This cannot be undone."
+      )
+    )
+      return;
     setSubmitting(true);
     setError("");
     try {
