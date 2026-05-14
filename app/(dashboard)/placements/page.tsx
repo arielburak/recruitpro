@@ -302,21 +302,9 @@ export default function PlacementsPage() {
               <p className="text-4xl font-bold text-indigo-600 tracking-tight">
                 {formatCurrency(revenueUsd, "USD")}
               </p>
-              <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                <span className="font-medium">
-                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
-                </span>
-                {breakdownEntries.length > 0 && (
-                  <>
-                    <span className="text-gray-300">·</span>
-                    <span className="text-gray-400">
-                      {breakdownEntries
-                        .map(([c, amt]) => formatCurrency(amt, c))
-                        .join(" · ")}
-                    </span>
-                  </>
-                )}
-              </div>
+              <p className="text-xs text-gray-500 font-medium">
+                {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
+              </p>
               {unconverted.length > 0 && (
                 <p className="text-[11px] text-amber-600">
                   Couldn&apos;t convert: {unconverted
@@ -418,7 +406,23 @@ export default function PlacementsPage() {
                         {p.startDate ? formatDate(p.startDate) : "-"}
                       </TableCell>
                       <TableCell>
-                        {p.feeAmount ? formatCurrency(Number(p.feeAmount), p.currency || p.job?.currency || "USD") : "-"}
+                        {p.feeAmount ? (() => {
+                          const ccy = p.currency || p.job?.currency || "USD";
+                          const amount = Number(p.feeAmount);
+                          const local = formatCurrency(amount, ccy);
+                          if (ccy === "USD") return <span>{local}</span>;
+                          const usd = convertToUsd(amount, ccy, usdRates);
+                          return (
+                            <div className="leading-tight">
+                              <p className="font-medium">{local}</p>
+                              {usd != null && (
+                                <p className="text-[11px] text-gray-400">
+                                  ≈ {formatCurrency(usd, "USD")}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })() : "-"}
                       </TableCell>
                       <TableCell>
                         <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>
