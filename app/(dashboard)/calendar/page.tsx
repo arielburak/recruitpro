@@ -176,6 +176,11 @@ export default function CalendarPage() {
   const [placements, setPlacements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
+  const [selectedMilestone, setSelectedMilestone] = useState<{
+    kind: "first_day" | "payment_due" | "guarantee_expiry";
+    date: Date;
+    placement: any;
+  } | null>(null);
 
   // Create modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -468,7 +473,7 @@ export default function CalendarPage() {
                           <button
                             key={iv.id}
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setSelectedInterview(iv); }}
+                            onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedInterview(iv); }}
                             className={`w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
                               iv.status === "CANCELLED" ? "bg-red-50 text-red-600 line-through"
                               : iv.status === "COMPLETED" ? "bg-green-50 text-green-700"
@@ -479,15 +484,19 @@ export default function CalendarPage() {
                           </button>
                         ))}
                         {milestonesToShow.map((ms, i) => (
-                          <Link
+                          <button
                             key={`${ms.placement.id}-${ms.kind}-${i}`}
-                            href="/placements"
-                            onClick={(e) => e.stopPropagation()}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedInterview(null);
+                              setSelectedMilestone(ms);
+                            }}
                             className={`block w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${milestoneClassNames(ms.kind)}`}
                             title={milestoneLabel(ms)}
                           >
                             {milestoneLabel(ms)}
-                          </Link>
+                          </button>
                         ))}
                         {overflow > 0 && (
                           <p className="text-[10px] text-gray-400 px-1">+{overflow} more</p>
@@ -503,6 +512,12 @@ export default function CalendarPage() {
 
         {/* Sidebar */}
         <div className="space-y-4">
+          {selectedMilestone && (
+            <MilestoneDetailCard
+              milestone={selectedMilestone}
+              onClose={() => setSelectedMilestone(null)}
+            />
+          )}
           {selectedInterview && (<>
             <Card className="border-indigo-200">
               <CardContent className="p-4 space-y-3">
@@ -835,7 +850,7 @@ export default function CalendarPage() {
               ) : (
                 <div className="space-y-2">
                   {upcoming.map((iv) => (
-                    <button key={iv.id} type="button" onClick={() => setSelectedInterview(iv)}
+                    <button key={iv.id} type="button" onClick={() => { setSelectedMilestone(null); setSelectedInterview(iv); }}
                       className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
                         selectedInterview?.id === iv.id ? "border-indigo-300 bg-indigo-50" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
                       }`}>
@@ -2122,4 +2137,144 @@ function EditInterviewModal({
       </div>
     </div>
   );
+}
+
+// ─── Placement Milestone detail (sidebar) ───
+
+function MilestoneDetailCard({
+  milestone,
+  onClose,
+}: {
+  milestone: {
+    kind: "first_day" | "payment_due" | "guarantee_expiry";
+    date: Date;
+    placement: any;
+  };
+  onClose: () => void;
+}) {
+  const { kind, date, placement } = milestone;
+  const candidate = placement.submission?.candidate;
+  const candidateName = candidate
+    ? `${candidate.firstName} ${candidate.lastName}`
+    : "Candidate";
+  const jobTitle = placement.job?.title || "Job";
+  const clientName = placement.client?.name || "Client";
+  const currency = placement.currency || placement.job?.currency || "USD";
+  const accent =
+    kind === "first_day"
+      ? { border: "border-emerald-200", text: "text-emerald-700", bg: "bg-emerald-50" }
+      : kind === "payment_due"
+        ? { border: "border-amber-200", text: "text-amber-700", bg: "bg-amber-50" }
+        : { border: "border-rose-200", text: "text-rose-700", bg: "bg-rose-50" };
+  const headline =
+    kind === "first_day"
+      ? "First day"
+      : kind === "payment_due"
+        ? "Payment due"
+        : "Guarantee expires";
+
+  return (
+    <Card className={accent.border}>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className={`text-[10px] font-semibold uppercase tracking-wider ${accent.text}`}>
+              {headline}
+            </p>
+            <h3 className="font-semibold text-sm text-gray-900">{candidateName}</h3>
+            <p className="text-xs text-gray-500">{jobTitle} · {clientName}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-0.5"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className={`rounded-md ${accent.bg} px-3 py-2 text-xs ${accent.text} font-medium`}>
+          {date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+        </div>
+
+        <div className="space-y-1 text-xs text-gray-600">
+          {placement.salary != null && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Agreed salary</span>
+              <span className="font-medium text-gray-900">
+                {formatCurrencyValueLocal(Number(placement.salary), currency)}
+                {placement.salaryPeriod === "MONTHLY" && (
+                  <span className="text-gray-400"> /mo</span>
+                )}
+              </span>
+            </div>
+          )}
+          {placement.feeAmount != null && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Fee</span>
+              <span className="font-medium text-gray-900">
+                {formatCurrencyValueLocal(Number(placement.feeAmount), currency)}
+                {placement.feePercentage != null && (
+                  <span className="text-gray-400"> ({Number(placement.feePercentage)}%)</span>
+                )}
+              </span>
+            </div>
+          )}
+          {placement.startDate && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Actual start</span>
+              <span className="font-medium text-gray-900">
+                {new Date(placement.startDate).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+          {placement.paymentDueDate && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Payment due</span>
+              <span className="font-medium text-gray-900">
+                {new Date(placement.paymentDueDate).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+          {placement.guaranteeExpiry && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Guarantee expiry</span>
+              <span className="font-medium text-gray-900">
+                {new Date(placement.guaranteeExpiry).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+          {placement.invoiceStatus && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Invoice</span>
+              <Badge variant="secondary" className="text-[10px]">
+                {placement.invoiceStatus}
+              </Badge>
+            </div>
+          )}
+        </div>
+
+        <Link
+          href="/placements"
+          className="block w-full text-center text-xs font-medium px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+        >
+          Open in placements
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Light-weight currency formatter for the milestone card — same shape
+// as the placements page so the visual hierarchy carries over.
+function formatCurrencyValueLocal(value: number, code: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${code} ${value.toLocaleString()}`;
+  }
 }
