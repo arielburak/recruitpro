@@ -243,13 +243,20 @@ export function PlacementDialog(props: Props) {
       // placement was created without payment terms — keeps the live
       // preview of Payment due working out of the box instead of
       // sitting blank because the multiplier is missing.
-      setPaymentTerms(i.paymentTerms ?? 30);
+      const resolvedTerms = i.paymentTerms ?? 30;
+      setPaymentTerms(resolvedTerms);
       const initialDue = isoDate(i.paymentDueDate);
-      setPaymentDueDate(initialDue);
-      // Only respect a previously-saved due date — if the placement was
-      // skipped on creation, the field is empty and we want the live
-      // preview to fill it from start + terms as the recruiter completes
-      // the form.
+      // Hydrate Payment due directly here: use the saved value if there
+      // is one, otherwise compute it inline from the start + terms.
+      // Setting it in the hydration step avoids effect-ordering races
+      // that were leaving the field empty on edit-open even when start
+      // and terms were present.
+      const computedDue = initialDue
+        || previewFromAnchor(isoDate(i.startDate), isoDate(i.estimatedStartDate), resolvedTerms);
+      setPaymentDueDate(computedDue);
+      // Manual override flag mirrors whether the placement was saved
+      // with a paymentDueDate. A saved value sticks; computed-from-
+      // anchors gets re-computed on start/terms edits.
       setPaymentDueDateTouched(Boolean(initialDue));
       setGuaranteePeriod(i.guaranteePeriod ?? 90);
       setNotes(i.notes || "");
