@@ -296,6 +296,31 @@ export default function CalendarPage() {
     };
   }
 
+  // Same two-line treatment as milestone chips so interview events sit
+  // visually alongside placement events on the grid. Indigo for the
+  // default scheduled state, green for completed, red for cancelled.
+  function interviewClassNames(status: string): { wrapper: string; label: string; meta: string } {
+    if (status === "CANCELLED") {
+      return {
+        wrapper: "bg-red-50 hover:bg-red-100 border-l-2 border-red-500",
+        label: "text-red-800",
+        meta: "text-red-700",
+      };
+    }
+    if (status === "COMPLETED") {
+      return {
+        wrapper: "bg-green-50 hover:bg-green-100 border-l-2 border-green-500",
+        label: "text-green-800",
+        meta: "text-green-700",
+      };
+    }
+    return {
+      wrapper: "bg-indigo-50 hover:bg-indigo-100 border-l-2 border-indigo-500",
+      label: "text-indigo-800",
+      meta: "text-indigo-700",
+    };
+  }
+
   function prevMonth() { setCurrentDate(new Date(year, month - 1, 1)); }
   function nextMonth() { setCurrentDate(new Date(year, month + 1, 1)); }
   function goToday() { setCurrentDate(new Date()); }
@@ -495,20 +520,30 @@ export default function CalendarPage() {
                         </button>
                       </div>
                       <div className="space-y-0.5">
-                        {interviewsToShow.map((iv) => (
-                          <button
-                            key={iv.id}
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedInterview(iv); }}
-                            className={`w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${
-                              iv.status === "CANCELLED" ? "bg-red-50 text-red-600 line-through"
-                              : iv.status === "COMPLETED" ? "bg-green-50 text-green-700"
-                              : "bg-indigo-50 text-indigo-700"
-                            } hover:opacity-80`}
-                          >
-                            {formatTime(iv.startTime)} {iv.candidate.firstName} {iv.candidate.lastName.charAt(0)}.
-                          </button>
-                        ))}
+                        {interviewsToShow.map((iv) => {
+                          const styles = interviewClassNames(iv.status);
+                          const candidateName = `${iv.candidate.firstName} ${iv.candidate.lastName.charAt(0)}.`;
+                          const jobTitle = iv.job.title;
+                          const meta = jobTitle ? `${candidateName} · ${jobTitle}` : candidateName;
+                          const time = formatTime(iv.startTime);
+                          const typeLabel = TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type;
+                          return (
+                            <button
+                              key={iv.id}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedInterview(iv); }}
+                              className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
+                              title={`${time} · ${typeLabel} · ${meta}`}
+                            >
+                              <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {time} · {typeLabel}
+                              </p>
+                              <p className={`text-[10px] truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
+                                {meta}
+                              </p>
+                            </button>
+                          );
+                        })}
                         {milestonesToShow.map((ms, i) => {
                           const styles = milestoneClassNames(ms.kind);
                           const candidate = milestoneCandidateName(ms);
