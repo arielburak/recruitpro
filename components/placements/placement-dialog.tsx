@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PartyPopper, ArrowRight, Building2, User, X, Search } from "lucide-react";
+import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
@@ -305,16 +305,18 @@ export function PlacementDialog(props: Props) {
     setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, paymentTerms));
   }, [startDate, estimatedStartDate, paymentTerms, paymentDueDateTouched]);
 
-  // Candidate search (manual mode only). Debounced — fires after 250ms
-  // of typing, hits /api/candidates with the search term, populates the
-  // dropdown. When a job is already selected we cascade the filter
-  // server-side via ?jobId= so the recruiter only sees candidates that
-  // already have a submission on that job. With no job, search is
-  // global and we resolve job(s) on click.
+  // Candidate search (manual mode only). Two trigger paths:
+  //   - typing → debounced search, fires after 250 ms.
+  //   - job selected with empty search → preload the whole list of
+  //     candidates on that job so the chevron-open shows the roster
+  //     without forcing the recruiter to type something first.
   useEffect(() => {
     if (props.mode !== "manual") return;
     if (!props.open) return;
-    if (candidateSearch.trim().length === 0) {
+    const hasSearch = candidateSearch.trim().length > 0;
+    // Nothing to fetch — no job context AND no search text. Keep the
+    // dropdown closed and bail.
+    if (!hasSearch && !selectedJobId) {
       setCandidateResults([]);
       setCandidateDropdownOpen(false);
       return;
@@ -323,24 +325,25 @@ export function PlacementDialog(props: Props) {
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams({
-          search: candidateSearch,
-          limit: "8",
+          // Bigger list when we're scoping to a job, since the
+          // recruiter expects to see the full roster, not paginate.
+          limit: selectedJobId ? "50" : "8",
           mine: "false",
         });
+        if (hasSearch) params.set("search", candidateSearch);
         if (selectedJobId) params.set("jobId", selectedJobId);
         const res = await fetch(`/api/candidates?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
           const list = (data.candidates || []) as CandidateOption[];
           setCandidateResults(list);
-          setCandidateDropdownOpen(true);
         }
       } catch {
         // ignore — recruiter will see "No matches" and the new-candidate link
       } finally {
         setSearchingCandidates(false);
       }
-    }, 250);
+    }, hasSearch ? 250 : 0);
     return () => clearTimeout(timer);
   }, [candidateSearch, props.mode, props.open, selectedJobId]);
 
@@ -726,19 +729,49 @@ export function PlacementDialog(props: Props) {
                       <Input
                         placeholder={
                           selectedJobId
-                            ? "Search candidates on this job…"
+                            ? "Search or click to see all on this job…"
                             : "Search by name, email, or company…"
                         }
                         value={candidateSearch}
-                        onChange={(e) => setCandidateSearch(e.target.value)}
-                        onFocus={() => candidateResults.length > 0 && setCandidateDropdownOpen(true)}
-                        className="text-sm pl-9"
+                        onChange={(e) => {
+                          setCandidateSearch(e.target.value);
+                          setCandidateDropdownOpen(true);
+                        }}
+                        onFocus={() => {
+                          if (candidateResults.length > 0 || selectedJobId) {
+                            setCandidateDropdownOpen(true);
+                          }
+                        }}
+                        className={`text-sm pl-9 ${selectedJobId ? "pr-9" : ""}`}
                       />
+                      {selectedJobId && (
+                        <button
+                          type="button"
+                          onClick={() => setCandidateDropdownOpen((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded"
+                          aria-label="Toggle candidate list"
+                        >
+                          <ChevronDown
+                            className={`h-4 w-4 transition-transform ${candidateDropdownOpen ? "rotate-180" : ""}`}
+                          />
+                        </button>
+                      )}
                       {candidateDropdownOpen && (
-                        <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                        <>
+                          {/* Click-outside scrim closes the dropdown without
+                              swallowing focus from the input itself. */}
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setCandidateDropdownOpen(false)}
+                          />
+                          <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
                           {candidateResults.length === 0 && !searchingCandidates ? (
                             <div className="px-3 py-3 text-center">
-                              <p className="text-xs text-gray-500">No candidates match &ldquo;{candidateSearch}&rdquo;.</p>
+                              <p className="text-xs text-gray-500">
+                                {candidateSearch
+                                  ? `No candidates match "${candidateSearch}".`
+                                  : "No candidates on this job yet."}
+                              </p>
                               <a
                                 href="/candidates/new"
                                 target="_blank"
@@ -769,7 +802,8 @@ export function PlacementDialog(props: Props) {
                               </button>
                             ))
                           )}
-                        </div>
+                          </div>
+                        </>
                       )}
                       <p className="text-[10px] text-gray-400 mt-1">
                         Don&apos;t see them?{" "}
