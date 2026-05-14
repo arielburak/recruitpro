@@ -62,6 +62,15 @@ export default function PlacementsPage() {
   const [editingPlacement, setEditingPlacement] = useState<any | null>(null);
   const [usdRates, setUsdRates] = useState<Record<string, number> | null>(null);
 
+  // Revenue filter — defaults to the current year + quarter so the
+  // recruiter sees today's number on page load. They can scope to any
+  // year/quarter that has data via the dropdowns on the card.
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+  const [selectedQuarter, setSelectedQuarter] = useState<1 | 2 | 3 | 4>(
+    (Math.floor(today.getMonth() / 3) + 1) as 1 | 2 | 3 | 4,
+  );
+
   function reloadPlacements() {
     fetch("/api/placements")
       .then((r) => r.json())
@@ -99,9 +108,8 @@ export default function PlacementsPage() {
   // sees one headline number across a mixed-currency book. Per-currency
   // amounts surface below as a sanity check so the conversion is
   // auditable at a glance.
-  const now = new Date();
-  const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-  const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0);
+  const quarterStart = new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
+  const quarterEnd = new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
 
   function placementCurrency(p: any): string {
     return p.currency || p.job?.currency || "USD";
@@ -111,6 +119,14 @@ export default function PlacementsPage() {
     const d = new Date(p.createdAt);
     return d >= quarterStart && d <= quarterEnd;
   });
+
+  // Year dropdown options — derived from the actual data plus the
+  // current year, so the recruiter only sees years that make sense.
+  const placementYears = new Set<number>(
+    placements.map((p) => new Date(p.createdAt).getFullYear()),
+  );
+  placementYears.add(today.getFullYear());
+  const yearOptions = Array.from(placementYears).sort((a, b) => b - a);
 
   const revenueByCurrency: Record<string, number> = {};
   for (const p of quarterPlacements) {
@@ -213,8 +229,9 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* Revenue this quarter — normalized to USD when we have rates,
-          with the per-currency breakdown shown below for auditability. */}
+      {/* Revenue for the selected Year + Quarter — normalized to USD
+          when we have rates, with the per-currency breakdown shown
+          below for auditability. */}
       <Card>
         <CardContent className="p-5">
           <div className="flex items-center gap-3">
@@ -222,7 +239,28 @@ export default function PlacementsPage() {
               <DollarSign className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-500">Revenue This Quarter</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm text-gray-500">Revenue</p>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="h-7 px-2 rounded border border-gray-200 bg-white text-xs"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedQuarter}
+                  onChange={(e) => setSelectedQuarter(Number(e.target.value) as 1 | 2 | 3 | 4)}
+                  className="h-7 px-2 rounded border border-gray-200 bg-white text-xs"
+                >
+                  <option value={1}>Q1</option>
+                  <option value={2}>Q2</option>
+                  <option value={3}>Q3</option>
+                  <option value={4}>Q4</option>
+                </select>
+              </div>
               {usdRates ? (
                 <>
                   <p className="text-2xl font-bold text-indigo-600">
