@@ -439,10 +439,13 @@ export default function JobDetailPage() {
   async function moveSubmission(submissionId: string, stageId: string) {
     const target = job?.stages?.find((s: any) => s.id === stageId);
     const submission = job?.submissions?.find((s: any) => s.id === submissionId);
+    const currentStage = job?.stages?.find((s: any) => s.id === submission?.stageId);
     const movingToSubmitted = target?.name === "Submitted";
     const notYetShared = submission && !submission.isSharedWithClient;
     const movingToPlaced = target?.name === "Placed";
     const movingToInterviewing = target?.name === "Interviewing";
+    const leavingPlaced =
+      currentStage?.name === "Placed" && target?.name !== "Placed";
 
     if (movingToSubmitted && notYetShared) {
       setPendingShareMove({ submission, stageId });
@@ -454,6 +457,17 @@ export default function JobDetailPage() {
     if (movingToPlaced && submission && !submission.placement) {
       setPendingPlacement({ submission });
       return;
+    }
+
+    // Inverse direction: leaving "Placed" should not leave an orphan
+    // placement around. Server enforces the cascade, but we warn the
+    // recruiter first since the placement carries salary / fee /
+    // payment terms data they may not want to lose silently.
+    if (leavingPlaced && submission?.placement) {
+      const ok = window.confirm(
+        `This candidate has a placement record. Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
+      );
+      if (!ok) return;
     }
 
     await persistMove(submissionId, stageId);

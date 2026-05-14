@@ -30,6 +30,28 @@ export async function PATCH(
     if (body.stageId) updateData.stageId = body.stageId;
     if (body.notes !== undefined) updateData.notes = body.notes;
 
+    // If the recruiter is moving the submission OUT of "Placed", the
+    // linked placement record (if any) goes too. Placements only make
+    // sense for candidates still at Placed; leaving an orphan record
+    // would show stale revenue in /placements and a ghost in the
+    // candidate's history. The client side prompts for confirmation
+    // before sending the PATCH; here we just enforce the invariant.
+    let deletedPlacementId: string | null = null;
+    if (
+      updateData.stageId &&
+      updateData.stageId !== submission.stageId &&
+      submission.stage.name === "Placed"
+    ) {
+      const linkedPlacement = await prisma.placement.findUnique({
+        where: { submissionId: id },
+        select: { id: true },
+      });
+      if (linkedPlacement) {
+        await prisma.placement.delete({ where: { id: linkedPlacement.id } });
+        deletedPlacementId = linkedPlacement.id;
+      }
+    }
+
     const isTogglingShare = body.isSharedWithClient !== undefined;
     const wasShared = submission.isSharedWithClient;
     const willBeShared = isTogglingShare ? !!body.isSharedWithClient : wasShared;
@@ -86,6 +108,15 @@ export async function PATCH(
         description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${newStage?.name}" in "${submission.job.title}"`,
         userId: ctx.userId,
         candidateId: submission.candidateId,
+        organizationId: ctx.organizationId,
+      });
+    }
+
+    if (deletedPlacementId) {
+      await logActivity({
+        action: "PLACEMENT_DELETED",
+        description: `Placement removed because ${submission.candidate.firstName} ${submission.candidate.lastName} was moved out of "Placed"`,
+        userId: ctx.userId,
         organizationId: ctx.organizationId,
       });
     }

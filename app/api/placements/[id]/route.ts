@@ -152,11 +152,55 @@ export async function DELETE(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    const deleted = await prisma.placement.deleteMany({
+    // Pull the placement first — we need submissionId + jobId to roll
+    // back the linked submission's stage out of "Placed" so the board
+    // doesn't keep showing the candidate there after the placement is
+    // gone. (Placements + submissions are intentionally a 1-1 record;
+    // losing one but not the other leaves an inconsistent UI.)
+    const placement = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
+      select: { id: true, submissionId: true, jobId: true },
     });
 
-    if (deleted.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (placement.submissionId) {
+      const submission = await prisma.candidateSubmission.findUnique({
+        where: { id: placement.submissionId },
+        select: { id: true, stage: { select: { name: true } } },
+      });
+
+      // Only rewrite the stage if the submission still sits at "Placed".
+      // If the recruiter already moved them somewhere else, respect that.
+      if (submission && submission.stage.name === "Placed") {
+        // Prefer "Offered" — the natural step right before "Placed" in
+        // the default pipeline, so the rollback feels like an undo. If
+        // the job's pipeline has been customised and "Offered" isn't
+        // there, fall back to the highest-order non-terminal stage
+        // (which is whatever sits right before Placed in this job).
+        const rollback =
+          (await prisma.pipelineStage.findFirst({
+            where: { jobId: placement.jobId, name: "Offered" },
+            select: { id: true },
+          })) ||
+          (await prisma.pipelineStage.findFirst({
+            where: {
+              jobId: placement.jobId,
+              name: { notIn: ["Placed", "Lost", "Rejected"] },
+            },
+            orderBy: { order: "desc" },
+            select: { id: true },
+          }));
+        if (rollback) {
+          await prisma.candidateSubmission.update({
+            where: { id: submission.id },
+            data: { stageId: rollback.id },
+          });
+        }
+      }
+    }
+
+    await prisma.placement.delete({ where: { id } });
 
     await logActivity({
       action: "PLACEMENT_DELETED",
