@@ -250,20 +250,26 @@ function NewJobContent() {
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
         setDescriptionFromDoc(true);
-        // Heuristic title extraction is noisy enough that overwriting the
-        // recruiter's typed title causes more pain than it saves. Trust the
-        // user — only fill location/workMode (which the regex extractors
-        // hit reliably).
+        // On the create flow the recruiter explicitly uploaded a JD —
+        // treat the document as the source of truth for everything the
+        // extractor can pull out, including the title, even if there
+        // was already a value in the field. (Edit-mode re-parse still
+        // skips title — that's a different intent.)
         if (data.fields) {
+          if (data.fields.title) {
+            setTitle(data.fields.title);
+            setTitleFromDoc(true);
+          }
           if (data.fields.location) setLocation(data.fields.location);
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
         setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
 
-        // If the user already typed a title, run duplicate check now that
-        // the client is selected and we have the parsed JD context.
-        if (title.trim() && selectedClientId) {
-          void checkJobDuplicate({ title: title.trim() });
+        // Run the duplicate check against whatever title we now have
+        // (parsed or typed), as long as a client is selected.
+        const titleForCheck = (data.fields?.title || title).trim();
+        if (titleForCheck && selectedClientId) {
+          void checkJobDuplicate({ title: titleForCheck });
         }
       } else if (data.error) {
         setParseStatus(`Could not extract text: ${data.error}`);
@@ -423,33 +429,45 @@ function NewJobContent() {
               <Label>Client *</Label>
               <input type="hidden" name="clientId" value={selectedClientId} />
               <div ref={clientRef} className="relative">
-                {selectedClient && !clientDropdownOpen ? (
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-9 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder="Search clients..."
+                  value={clientDropdownOpen ? clientSearch : selectedClient?.name || ""}
+                  onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
+                  onFocus={() => {
+                    if (!clientDropdownOpen) {
+                      setClientSearch("");
+                      setClientDropdownOpen(true);
+                    }
+                  }}
+                />
+                {selectedClientId && !clientDropdownOpen && (
                   <button
                     type="button"
-                    onClick={() => { setClientDropdownOpen(true); setClientSearch(""); }}
-                    className="flex items-center justify-between w-full border rounded-md px-3 py-2 text-sm text-left bg-background hover:bg-gray-50 transition-colors"
+                    aria-label="Clear client"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedClientId("");
+                      setClientSearch("");
+                      setCurrency("USD");
+                      setFeeType("PERCENTAGE");
+                      setFeeAmount("");
+                      setTermsAutoFilled(false);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
                   >
-                    <span className="font-medium">{selectedClient.name}</span>
-                    <X className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setSelectedClientId(""); setClientSearch(""); setCurrency("USD"); setFeeType("PERCENTAGE"); setFeeAmount(""); setTermsAutoFilled(false); }} />
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Search clients..."
-                      value={clientSearch}
-                      onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
-                      onFocus={() => setClientDropdownOpen(true)}
-                      autoFocus={clientDropdownOpen}
-                    />
-                  </div>
                 )}
                 {clientDropdownOpen && (
                   <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
-                    {filteredClients.length === 0 && !clientSearch.trim() && (
-                      <div className="px-3 py-2 text-sm text-gray-500">No clients yet</div>
+                    {filteredClients.length === 0 && !clientSearch.trim() && clients.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-gray-500">No clients yet — add one below.</div>
+                    )}
+                    {filteredClients.length === 0 && clientSearch.trim() && (
+                      <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
                     )}
                     {filteredClients.map((c) => (
                       <button
@@ -462,18 +480,20 @@ function NewJobContent() {
                         {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
                       </button>
                     ))}
-                    {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) && (
-                      <button
-                        type="button"
-                        onClick={() => goCreateClient(clientSearch)}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>
-                          Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client
-                        </span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => goCreateClient(clientSearch)}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>
+                        {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) ? (
+                          <>Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client</>
+                        ) : (
+                          <>Add a new client</>
+                        )}
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
