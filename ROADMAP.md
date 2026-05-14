@@ -33,7 +33,7 @@ Aplicarse a cualquier feature nueva o existente:
 - [~] **Placeholder del PhoneInput**: contar `#` del template y emitir exacto esa cantidad de dígitos. Fix universal — afecta a todos los lugares que usan PhoneInput (candidates, clients, contacts, jobs).
 - [~] **Parser CV: detectar prefijo de país** — strip paréntesis del prefijo (`(+54)` → `+54`) + inferencia por location del CV (Argentina/Brasil/etc → dial code). PhoneInput defensivo acepta `(+54) ...` también si llega así desde otro lado.
 - [~] **Archivos clickeables**: click en el icono o el nombre del archivo (candidatos + jobs JD + Additional Documents) abre el archivo en nueva pestaña. Botón de download sigue forzando descarga via `?download=1`. Cambio del API: `Content-Disposition: inline` por default, `attachment` con query param.
-- [~] **Kanban drag instantáneo**: optimistic update en `persistMove`. La card se mueve visualmente al instante; la PATCH y el refetch corren en background. Si falla, rollback al estado anterior.
+- [~] **Board drag instantáneo**: optimistic update en `persistMove`. La card se mueve visualmente al instante; la PATCH y el refetch corren en background. Si falla, rollback al estado anterior.
 
 ## 🟦 Estados de las búsquedas (JobStatus)
 
@@ -58,7 +58,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [x] Modal de confirmación al compartir con copy "Are you sure..." y botón "Share with Client"
 - [~] Share gated a "moviendo a Submitted" (no valida que el source sea Internal Review específicamente — probablemente OK)
 - [ ] **Cambiar stage desde la lista de Jobs** sin entrar a la búsqueda (dropdown inline) — *resuelto parcial: en `/jobs/[id]` la List view tiene dropdown por row; falta llevarlo al global `/jobs` si lo querés también*
-- [~] **List view (Notion-style)** de candidatos además del Kanban — toggle `Kanban / List` en `/jobs/[id]`. Mismas transiciones (share dialog en Submitted, placement en Placed, interview en Interviewing). Cada row: candidato + contact + dropdown de stage + share toggle + activity counters + remove.
+- [~] **List view (Notion-style)** de candidatos además del Board — toggle `Board / List` en `/jobs/[id]`. Mismas transiciones (share dialog en Submitted, placement en Placed, interview en Interviewing). Cada row: candidato + contact + dropdown de stage + share toggle + activity counters + remove.
 - [ ] Desde candidato: ver búsquedas activas + cambiar stage **inline** (hoy se ven las submissions pero no hay selector)
 - [ ] **Notas a nivel candidato** (independientes del job) — el schema soporta `Comment.candidateId` pero la UI no las surface
 - [ ] **Chat dual**: por job (internal + cliente) + por candidato (internal + cliente) — schema soporta, falta verificar wiring completo
@@ -68,8 +68,8 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [~] Modal "Congratulations" al marcar Placed
 - [~] Form pre-fill (salary, start date, terms, fecha cobro)
 - [~] Manual placement create desde `/placements`
-- [~] **Editar placement existente** desde `/placements`: rows clickeables abren `PlacementDialog mode="edit"`. Hidrata todos los campos + agrega `Actual start date` (anchor de garantía) y `Invoice status` (Draft/Sent/Paid) que no existen al crear. PUT a `/api/placements/[id]`. Cubre el flow "Skip / Complete later" del kanban.
-- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el kanban. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
+- [~] **Editar placement existente** desde `/placements`: rows clickeables abren `PlacementDialog mode="edit"`. Hidrata todos los campos + agrega `Actual start date` (anchor de garantía) y `Invoice status` (Draft/Sent/Paid) que no existen al crear. PUT a `/api/placements/[id]`. Cubre el flow "Skip / Complete later" del board.
+- [~] **Interview stage → modal para crear evento en calendar** — `QuickInterviewDialog` salta al mover a Interviewing en el board. Form lean (type/date/time/duration/link o location/notes). Skip = stage queda movido sin evento. Save to ATS = POST a `/api/interviews` **sin mandar mail** (registro interno). Checkbox opt-in si querés que sí mande invite al candidato. Para fields avanzados (interviewers, Google Meet auto-create, client contacts) ir a /calendar.
 - [~] **`/calendar` modal full**: mismo toggle "Save to ATS" vs "Save & send invite". Default = ledger interno (sin mails). Tick = mails al candidato + client contacts.
 - [~] **Client Interview purpose = registro forzado** (sin mails). El toggle de email solo aparece para "Candidate Call" (donde el recruiter coordina con el candidato directamente). Para Client Interview salta un nota: "Client interviews save as an internal ATS record. No emails sent — the client coordinates the meeting on their side."
 - [ ] **Vista agregada de interviews por job** (lista + calendar)
@@ -93,7 +93,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [x] JD + Additional Documents persistidos (PR #11)
 - [x] "Auto-filled document" hint oculto hasta que subas algo
 - [x] Eliminar tab "Client Portal Users"
-- [~] **Payment terms + guarantee a nivel Cliente** — `Client.defaultPaymentTerms` y `Client.defaultGuaranteePeriod` ya viven en el schema y se pueden setear al crear/editar el cliente (solo Recruiting). Auto-fill al crear placement (congrats desde kanban o manual desde /placements) + en edit mode. Preview live de guarantee expiry y payment due date en el form. Bug del recompute del payment due en edit arreglado (solo respeta valor existente, si está vacío recomputa).
+- [~] **Payment terms + guarantee a nivel Cliente** — `Client.defaultPaymentTerms` y `Client.defaultGuaranteePeriod` ya viven en el schema y se pueden setear al crear/editar el cliente (solo Recruiting). Auto-fill al crear placement (congrats desde board o manual desde /placements) + en edit mode. Preview live de guarantee expiry y payment due date en el form. Bug del recompute del payment due en edit arreglado (solo respeta valor existente, si está vacío recomputa).
 - [ ] **Salario Bruto / Neto en Argentina** — opción de tipo de salario (bruto vs neto, con el aporte ~ 17%) cuando el cliente es Argentino. Detectar AR por algún flag del cliente o por currency ARS. Útil para reporting más adelante.
 - [~] Invitar / sacar portal users desde detail del cliente — falta verificar flow de remove
 
