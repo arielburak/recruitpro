@@ -173,6 +173,7 @@ type TeamMember = {
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [placements, setPlacements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
 
@@ -200,6 +201,19 @@ export default function CalendarPage() {
     fetchInterviews();
   }, [year, month]);
 
+  // Placements are fetched once per mount — we render their milestones
+  // (first day, payment due, guarantee expiry) on top of interviews so
+  // the recruiter has one place to see everything that's happening
+  // around their placed candidates. No date-range filter on the fetch
+  // because the placements API is small enough that pulling all of
+  // them and filtering in-memory beats threading another range param.
+  useEffect(() => {
+    fetch("/api/placements")
+      .then((r) => r.json())
+      .then((data) => setPlacements(Array.isArray(data) ? data : []))
+      .catch(() => setPlacements([]));
+  }, []);
+
   async function fetchInterviews() {
     setLoading(true);
     try {
@@ -209,6 +223,46 @@ export default function CalendarPage() {
       if (res.ok) setInterviews(await res.json());
     } catch { /* silent */ }
     setLoading(false);
+  }
+
+  // Placement milestones derived from the loaded placements. Three
+  // kinds per placement, each only emitted when the underlying date
+  // exists — so a placement with no actual startDate yet won't put a
+  // "first day" pill on the wrong square.
+  type MilestoneKind = "first_day" | "payment_due" | "guarantee_expiry";
+  type Milestone = { kind: MilestoneKind; date: Date; placement: any };
+
+  const milestones: Milestone[] = (() => {
+    const out: Milestone[] = [];
+    for (const p of placements) {
+      if (p.startDate) out.push({ kind: "first_day", date: new Date(p.startDate), placement: p });
+      if (p.paymentDueDate) out.push({ kind: "payment_due", date: new Date(p.paymentDueDate), placement: p });
+      if (p.guaranteeExpiry) out.push({ kind: "guarantee_expiry", date: new Date(p.guaranteeExpiry), placement: p });
+    }
+    return out;
+  })();
+
+  function getMilestonesForDay(day: number, m: number, y: number) {
+    return milestones.filter((ms) => {
+      const d = ms.date;
+      return d.getDate() === day && d.getMonth() === m && d.getFullYear() === y;
+    });
+  }
+
+  function milestoneLabel(ms: Milestone): string {
+    const candidate = ms.placement.submission?.candidate;
+    const name = candidate
+      ? `${candidate.firstName} ${candidate.lastName?.charAt(0) || ""}.`
+      : "Candidate";
+    if (ms.kind === "first_day") return `Start · ${name}`;
+    if (ms.kind === "payment_due") return `Pay · ${name}`;
+    return `Guarantee · ${name}`;
+  }
+
+  function milestoneClassNames(kind: MilestoneKind): string {
+    if (kind === "first_day") return "bg-emerald-50 text-emerald-700 hover:bg-emerald-100";
+    if (kind === "payment_due") return "bg-amber-50 text-amber-700 hover:bg-amber-100";
+    return "bg-rose-50 text-rose-700 hover:bg-rose-100";
   }
 
   function prevMonth() { setCurrentDate(new Date(year, month - 1, 1)); }
@@ -370,7 +424,20 @@ export default function CalendarPage() {
               <div className="grid grid-cols-7 border-t border-l">
                 {calendarDays.map((cd, idx) => {
                   const dayInterviews = getInterviewsForDay(cd.day, cd.month, cd.year);
+                  const dayMilestones = getMilestonesForDay(cd.day, cd.month, cd.year);
                   const todayHighlight = isToday(cd.day, cd.month, cd.year);
+                  // Interviews + milestones share the same 3-row cap so
+                  // the calendar grid doesn't grow unevenly. Interviews
+                  // win the top slot — they're the time-sensitive
+                  // "show up at 3pm" event; milestones are date-only
+                  // reminders.
+                  const totalEvents = dayInterviews.length + dayMilestones.length;
+                  const interviewsToShow = dayInterviews.slice(0, 3);
+                  const milestonesToShow = dayMilestones.slice(
+                    0,
+                    Math.max(0, 3 - interviewsToShow.length),
+                  );
+                  const overflow = totalEvents - interviewsToShow.length - milestonesToShow.length;
 
                   return (
                     <div
@@ -397,7 +464,7 @@ export default function CalendarPage() {
                         </button>
                       </div>
                       <div className="space-y-0.5">
-                        {dayInterviews.slice(0, 3).map((iv) => (
+                        {interviewsToShow.map((iv) => (
                           <button
                             key={iv.id}
                             type="button"
@@ -411,8 +478,19 @@ export default function CalendarPage() {
                             {formatTime(iv.startTime)} {iv.candidate.firstName} {iv.candidate.lastName.charAt(0)}.
                           </button>
                         ))}
-                        {dayInterviews.length > 3 && (
-                          <p className="text-[10px] text-gray-400 px-1">+{dayInterviews.length - 3} more</p>
+                        {milestonesToShow.map((ms, i) => (
+                          <Link
+                            key={`${ms.placement.id}-${ms.kind}-${i}`}
+                            href="/placements"
+                            onClick={(e) => e.stopPropagation()}
+                            className={`block w-full text-left text-[10px] leading-tight px-1 py-0.5 rounded truncate ${milestoneClassNames(ms.kind)}`}
+                            title={milestoneLabel(ms)}
+                          >
+                            {milestoneLabel(ms)}
+                          </Link>
+                        ))}
+                        {overflow > 0 && (
+                          <p className="text-[10px] text-gray-400 px-1">+{overflow} more</p>
                         )}
                       </div>
                     </div>
