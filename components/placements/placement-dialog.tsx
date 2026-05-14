@@ -432,6 +432,29 @@ export function PlacementDialog(props: Props) {
     props.onOpenChange(false);
   }
 
+  async function handleDeletePlacement() {
+    if (props.mode !== "edit") return;
+    if (!confirm("Delete this placement? This cannot be undone.")) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/placements/${props.placementId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to delete placement");
+        setSubmitting(false);
+        return;
+      }
+      props.onSuccess?.();
+      close();
+    } catch {
+      setError("Something went wrong");
+      setSubmitting(false);
+    }
+  }
+
   async function postPlacement(payload: Record<string, unknown>) {
     setSubmitting(true);
     setError("");
@@ -1050,21 +1073,35 @@ export function PlacementDialog(props: Props) {
               <div className="bg-red-50 text-red-600 text-xs p-2 rounded">{error}</div>
             )}
 
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={isCongrats ? () => setStep("intro") : close}
-                disabled={submitting}
-              >
-                {isCongrats ? "Back" : "Cancel"}
-              </Button>
-              <Button
-                onClick={handleSubmitForm}
-                disabled={submitting || (props.mode === "manual" && (!selectedJobId || !selectedCandidate))}
-                className="bg-emerald-600 hover:bg-emerald-700"
+            <div className="flex items-center justify-between gap-2">
+              {isEdit ? (
+                <Button
+                  variant="ghost"
+                  onClick={handleDeletePlacement}
+                  disabled={submitting}
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  Delete placement
+                </Button>
+              ) : (
+                <span />
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={isCongrats ? () => setStep("intro") : close}
+                  disabled={submitting}
+                >
+                  {isCongrats ? "Back" : "Cancel"}
+                </Button>
+                <Button
+                  onClick={handleSubmitForm}
+                  disabled={submitting || (props.mode === "manual" && (!selectedJobId || !selectedCandidate))}
+                  className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {submitting ? "Saving..." : isEdit ? "Save changes" : "Save placement"}
               </Button>
+              </div>
             </div>
           </div>
         )}
