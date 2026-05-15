@@ -634,6 +634,14 @@ model Placement {
   // monthly figure. When MONTHLY, the fee calc multiplies by 12 before
   // applying the percentage. Default ANNUAL keeps the US-friendly path.
   salaryPeriod        String?         @default("ANNUAL")
+  // Gross vs net interpretation of the `salary` value. Argentina (and
+  // a few other LATAM markets) quotes either depending on context —
+  // candidates often negotiate take-home (NET), employers think in
+  // gross. Recruiting fees are calculated against the GROSS figure,
+  // so when NET is stored we convert via the AR payroll ratio
+  // (~17% worker contributions → gross = net / 0.83) at fee-calc
+  // time. Default BRUTO keeps the US-friendly path.
+  salaryKind          SalaryKind      @default(BRUTO)
   // paymentTerms is the number of days between startDate (or estimated)
   // and when the agency expects to be paid. paymentDueDate is the
   // resolved date — kept on the row so reporting doesn't have to compute it.
@@ -663,6 +671,11 @@ enum InvoiceStatus {
   DRAFT
   SENT
   PAID
+}
+
+enum SalaryKind {
+  BRUTO   // gross — what the employer pays before payroll deductions
+  NETO    // net — what the candidate takes home after worker contributions
 }
 
 // ─── CLIENT JOBS (posted by clients directly) ───

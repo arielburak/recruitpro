@@ -102,6 +102,23 @@ export const JOB_STATUS_COLORS: Record<string, string> = {
   CLOSED: "bg-gray-100 text-gray-800",
 };
 
+// AR payroll: worker pays ~17% in contributions (Jubilación 11% +
+// Ley 19032 / PAMI 3% + Obra Social 3%). So gross × 0.83 = net,
+// and net / 0.83 = gross. Used to normalise a NETO salary back to
+// BRUTO before fees are calculated.
+export const AR_NET_TO_GROSS = 1 / 0.83;
+
+// Currencies where the Bruto/Neto toggle is shown on the Placement
+// form. ARS is the obvious case; if other LATAM markets need it
+// later just add them here. Other currencies hide the toggle and
+// default the placement to BRUTO so US-flow users don't see a knob
+// they don't need.
+export const SALARY_KIND_CURRENCIES = new Set(["ARS"]);
+
+export function netToGross(net: number): number {
+  return net * AR_NET_TO_GROSS;
+}
+
 export const WORK_ARRANGEMENT_LABELS: Record<string, string> = {
   ON_SITE: "On-site",
   REMOTE: "Remote",
