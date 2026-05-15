@@ -191,6 +191,25 @@ export default function JobsPage() {
     setJobs(jobs.filter((j) => j.id !== id));
   }
 
+  // Inline status change from the list. Optimistic update, rollback on
+  // failure — the row is just a status badge so the recruiter doesn't
+  // need to drop into the job detail just to flip Open → On Hold.
+  async function changeStatus(id: string, status: string) {
+    const previous = jobs;
+    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status } : j)));
+    try {
+      const res = await fetch(`/api/jobs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+    } catch {
+      setJobs(previous);
+      alert("Couldn't update status. Try again.");
+    }
+  }
+
   // Extract unique filter options with counts
   const filterOptions = useMemo(() => {
     const statuses = new Map<string, number>();
@@ -411,9 +430,24 @@ export default function JobsPage() {
                   <p className="text-sm text-gray-500 truncate">{j.client.name}</p>
                 </div>
                 <div>
-                  <Badge className={`${JOB_STATUS_COLORS[j.status]} text-[10px] px-1.5 py-0`}>
-                    {JOB_STATUS_LABELS[j.status]}
-                  </Badge>
+                  {/* Inline status — coloured to match the badge so the
+                      list still scans like before, but you can change
+                      it without leaving the page. preventDefault +
+                      stopPropagation so the row Link doesn't fire when
+                      the recruiter clicks the dropdown. */}
+                  <select
+                    value={j.status}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
+                    className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
+                    aria-label={`Status for ${j.title}`}
+                  >
+                    {Object.entries(JOB_STATUS_LABELS).map(([value, label]) => (
+                      <option key={value} value={value} className="bg-white text-gray-900">
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <Badge className={`${WORK_ARRANGEMENT_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
