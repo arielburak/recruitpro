@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
+import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -36,6 +37,15 @@ export default function CandidateDetailPage() {
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  // Mirrors the board's pendingShareMove: when the recruiter changes
+  // the stage to "Submitted" from this surface and the candidate
+  // hasn't been shared with the client yet, we open the same Share
+  // confirmation dialog instead of silently moving the stage. After
+  // the share goes through, persistStageChange completes the move.
+  const [pendingShareMove, setPendingShareMove] = useState<{
+    submission: any;
+    stageId: string;
+  } | null>(null);
 
   useEffect(() => {
     fetchCandidate();
@@ -78,11 +88,15 @@ export default function CandidateDetailPage() {
 
   // Inline stage change from the Jobs tab. We mirror the heavy guards
   // from /jobs/[id] moveSubmission for transitions that have side
-  // effects: leaving "Placed" deletes the linked placement (server-
-  // side enforces it; we just confirm here so salary/fee data doesn't
-  // disappear silently). Constructive transitions (to Submitted,
-  // Placed, Interviewing) are allowed as plain stage flips here —
-  // creating placements / sharing / scheduling interviews still lives
+  // effects:
+  //   - Leaving "Placed" deletes the linked placement (server-side
+  //     enforces it; we just confirm here so salary/fee data doesn't
+  //     disappear silently).
+  //   - Moving to "Submitted" without having shared the candidate
+  //     yet opens the same share dialog the board uses, so the act
+  //     of submitting to the client is never accidental.
+  // Placed / Interviewing as constructive transitions still flip
+  // plainly here — creating placements / scheduling interviews lives
   // on the job page where the recruiter has full context.
   async function changeSubmissionStage(submission: any, newStageId: string) {
     if (newStageId === submission.stageId) return;
@@ -95,8 +109,22 @@ export default function CandidateDetailPage() {
       );
       if (!ok) return;
     }
+
+    // Gate Submitted on the share confirmation when not yet shared.
+    // The dialog handles the PATCH that flips isSharedWithClient + the
+    // client notification + the share email; the stage move runs in
+    // its onShared callback below.
+    if (newStage?.name === "Submitted" && !submission.isSharedWithClient) {
+      setPendingShareMove({ submission, stageId: newStageId });
+      return;
+    }
+
+    await persistStageChange(submission.id, newStageId);
+  }
+
+  async function persistStageChange(submissionId: string, newStageId: string) {
     try {
-      const res = await fetch(`/api/submissions/${submission.id}`, {
+      const res = await fetch(`/api/submissions/${submissionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stageId: newStageId }),
@@ -579,6 +607,34 @@ export default function CandidateDetailPage() {
         onClose={() => setShowAssignDialog(false)}
         onAssigned={fetchCandidate}
       />
+
+      {pendingShareMove && (
+        <ShareCandidateDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingShareMove(null);
+          }}
+          submission={{
+            id: pendingShareMove.submission.id,
+            candidate: {
+              firstName: candidate.firstName,
+              lastName: candidate.lastName,
+              currentTitle: candidate.currentTitle,
+            },
+            job: {
+              title: pendingShareMove.submission.job.title,
+              client: pendingShareMove.submission.job.client
+                ? { name: pendingShareMove.submission.job.client.name }
+                : null,
+            },
+          }}
+          onShared={async () => {
+            const move = pendingShareMove;
+            setPendingShareMove(null);
+            if (move) await persistStageChange(move.submission.id, move.stageId);
+          }}
+        />
+      )}
     </div>
   );
 }
