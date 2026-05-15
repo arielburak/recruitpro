@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Video, Phone, MapPin, CalendarDays } from "lucide-react";
+import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -20,26 +20,7 @@ import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dial
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
-
-// Small inline maps for the new Interviews tab — same lookups the
-// candidate page uses. Kept here to avoid widening the import surface
-// of /jobs/[id], which is already a big page.
-const INTERVIEW_TYPE_LABEL: Record<string, string> = {
-  VIDEO: "Video Call",
-  PHONE: "Phone",
-  IN_PERSON: "In Person",
-};
-const INTERVIEW_TYPE_ICON: Record<string, typeof Video> = {
-  VIDEO: Video,
-  PHONE: Phone,
-  IN_PERSON: MapPin,
-};
-const INTERVIEW_STATUS_BG: Record<string, string> = {
-  SCHEDULED: "bg-blue-50 text-blue-700",
-  COMPLETED: "bg-green-50 text-green-700",
-  CANCELLED: "bg-red-50 text-red-700",
-  NO_SHOW: "bg-gray-100 text-gray-600",
-};
+import { InterviewsList } from "@/components/interviews/interviews-list";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -1252,104 +1233,11 @@ export default function JobDetailPage() {
               Schedule interview
             </Button>
           </div>
-          {job.interviews?.length ? (
-            <div className="space-y-2">
-              {job.interviews.map((iv: any) => {
-                const start = new Date(iv.startTime);
-                const dateLabel = start.toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                });
-                const timeLabel = start.toLocaleTimeString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                });
-                const Icon = INTERVIEW_TYPE_ICON[iv.type as keyof typeof INTERVIEW_TYPE_ICON] || Video;
-                return (
-                  <Card
-                    key={iv.id}
-                    className="hover:shadow-md hover:border-indigo-200 transition cursor-pointer"
-                    onClick={() => setEditingInterview(iv)}
-                  >
-                    <CardContent className="p-4 flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div
-                          className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${
-                            INTERVIEW_STATUS_BG[iv.status as keyof typeof INTERVIEW_STATUS_BG] ||
-                            "bg-gray-50 text-gray-500"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium text-sm truncate">
-                              {iv.title || INTERVIEW_TYPE_LABEL[iv.type as keyof typeof INTERVIEW_TYPE_LABEL] || iv.type}
-                            </p>
-                            <Badge
-                              className={INTERVIEW_STATUS_BG[iv.status as keyof typeof INTERVIEW_STATUS_BG] || "bg-gray-100 text-gray-700"}
-                            >
-                              {iv.status}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            <CalendarDays className="inline h-3 w-3 mr-1 -mt-0.5" />
-                            {dateLabel} · {timeLabel}
-                          </p>
-                          {iv.candidate && (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              With{" "}
-                              <Link
-                                href={`/candidates/${iv.candidate.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-indigo-600 hover:underline"
-                              >
-                                {iv.candidate.firstName} {iv.candidate.lastName}
-                              </Link>
-                            </p>
-                          )}
-                          {iv.notes && (
-                            <p className="text-sm text-gray-600 mt-2 line-clamp-3 whitespace-pre-wrap">
-                              {iv.notes}
-                            </p>
-                          )}
-                          {(iv.meetingLink || iv.location) && (
-                            <p className="text-xs text-gray-400 mt-1 truncate">
-                              {iv.meetingLink ? (
-                                <a
-                                  href={iv.meetingLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="hover:text-indigo-600 inline-flex items-center gap-1"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                  Join link
-                                </a>
-                              ) : (
-                                <span className="inline-flex items-center gap-1">
-                                  <MapPin className="h-3 w-3" />
-                                  {iv.location}
-                                </span>
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="p-8 text-center text-gray-500">
-                No interviews scheduled yet.
-              </CardContent>
-            </Card>
-          )}
+          <InterviewsList
+            interviews={job.interviews || []}
+            attendeeKind="candidate"
+            onRowClick={setEditingInterview}
+          />
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
