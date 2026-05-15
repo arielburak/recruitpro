@@ -26,7 +26,23 @@ export async function GET(
                 title: true,
                 id: true,
                 clientId: true,
-                client: { select: { name: true } },
+                // Fee/terms/currency surface on the candidate page so
+                // the Placement dialog can prefill exactly the way the
+                // board flow does. Fallback chain at use time: job →
+                // client defaults → undefined.
+                feeAmount: true,
+                feeType: true,
+                currency: true,
+                paymentTerms: true,
+                guaranteePeriod: true,
+                client: {
+                  select: {
+                    name: true,
+                    defaultPaymentTerms: true,
+                    defaultGuaranteePeriod: true,
+                    defaultCurrency: true,
+                  },
+                },
                 // Stages of the job's pipeline so the candidate page can
                 // render an inline stage selector for each submission.
                 stages: {
