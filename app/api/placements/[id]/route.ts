@@ -52,6 +52,7 @@ export async function PUT(
       salary,
       currency,
       salaryPeriod,
+      salaryKind,
       invoiceStatus,
       paymentTerms,
       paymentDueDate,
@@ -117,6 +118,7 @@ export async function PUT(
         ...(salary !== undefined && { salary }),
         ...(currency !== undefined && { currency }),
         ...(salaryPeriod !== undefined && { salaryPeriod }),
+        ...(salaryKind !== undefined && { salaryKind }),
         ...(invoiceStatus !== undefined && { invoiceStatus }),
         ...(paymentTerms !== undefined && { paymentTerms }),
         ...(paymentDueDate !== undefined && {

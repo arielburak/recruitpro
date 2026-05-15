@@ -234,6 +234,7 @@ export default function PlacementsPage() {
             agreedSalary: editingPlacement.salary,
             currency: editingPlacement.currency ?? editingPlacement.job?.currency ?? "USD",
             salaryPeriod: editingPlacement.salaryPeriod,
+            salaryKind: editingPlacement.salaryKind,
             feeAmount: editingPlacement.feeAmount,
             feePercentage: editingPlacement.feePercentage,
             feeType: editingPlacement.feeType,

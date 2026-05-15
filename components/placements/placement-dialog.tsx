@@ -13,16 +13,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
+import { AR_NET_TO_GROSS, SALARY_KIND_CURRENCIES } from "@/lib/constants";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
 type SalaryPeriod = "MONTHLY" | "ANNUAL";
+type SalaryKind = "BRUTO" | "NETO";
 
 type FormDefaults = {
   estimatedStartDate?: string; // ISO yyyy-mm-dd
   agreedSalary?: string;
   currency?: string; // ISO 4217 code, e.g. USD / ARS
   salaryPeriod?: SalaryPeriod;
+  salaryKind?: SalaryKind;
   feeAmount?: string;
   feeType?: "PERCENTAGE" | "FLAT";
   paymentTerms?: number; // days
@@ -94,6 +97,7 @@ type EditProps = {
     agreedSalary?: string | number | null;
     currency?: string | null;
     salaryPeriod?: SalaryPeriod | null;
+    salaryKind?: SalaryKind | null;
     feeAmount?: string | number | null;
     feePercentage?: string | number | null;
     feeType?: "PERCENTAGE" | "FLAT" | null;
@@ -151,6 +155,11 @@ export function PlacementDialog(props: Props) {
   // by the job/client default when the dialog opens.
   const [currency, setCurrency] = useState<string>("USD");
   const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>("ANNUAL");
+  // Gross vs net interpretation of the salary input. Only surfaced
+  // for AR (and any future market in SALARY_KIND_CURRENCIES); other
+  // markets always store BRUTO so US-flow users don't see a knob
+  // that doesn't apply.
+  const [salaryKind, setSalaryKind] = useState<SalaryKind>("BRUTO");
   // Fee uses a single input value whose meaning flips with feeType:
   //   - PERCENTAGE: feeInput is the % (e.g. 15) and the real fee in $
   //     is computed as salary × % / 100 on save.
@@ -239,6 +248,7 @@ export function PlacementDialog(props: Props) {
       const editCurrency = i.currency || "USD";
       setCurrency(editCurrency);
       setSalaryPeriod(i.salaryPeriod || defaultSalaryPeriod(editCurrency));
+      setSalaryKind((i.salaryKind as SalaryKind) || "BRUTO");
       // Infer feeType from the stored values since Placement doesn't
       // persist the type directly: feePercentage set → PERCENTAGE; else
       // feeAmount with no percentage → FLAT; else fall back to whatever
@@ -289,6 +299,7 @@ export function PlacementDialog(props: Props) {
       const newCurrency = activeDefaults?.currency || "USD";
       setCurrency(newCurrency);
       setSalaryPeriod(activeDefaults?.salaryPeriod || defaultSalaryPeriod(newCurrency));
+      setSalaryKind(activeDefaults?.salaryKind || "BRUTO");
       // activeDefaults.feeAmount semantically follows feeType — for
       // Recruiting it's the agreed %, for Staff Aug (FLAT jobs) it's
       // the agreed flat fee. We just bind it to the single input.
@@ -566,12 +577,22 @@ export function PlacementDialog(props: Props) {
           ? salaryNum * 12
           : salaryNum
         : null;
+    // Fees are calculated against the GROSS annual salary. When the
+    // recruiter recorded a net (Neto) figure for AR, normalise back
+    // to gross via the AR payroll ratio before applying the
+    // percentage. The salary stored on the placement keeps the
+    // original entered value + salaryKind so the row reads back the
+    // way the recruiter typed it.
+    const grossForFee =
+      annualSalary != null && salaryKind === "NETO"
+        ? annualSalary * AR_NET_TO_GROSS
+        : annualSalary;
     let resolvedFeeAmount: number | null = null;
     let resolvedFeePercentage: number | null = null;
     if (feeInputNum != null) {
       if (feeType === "PERCENTAGE") {
         resolvedFeePercentage = feeInputNum;
-        resolvedFeeAmount = annualSalary != null ? (annualSalary * feeInputNum) / 100 : null;
+        resolvedFeeAmount = grossForFee != null ? (grossForFee * feeInputNum) / 100 : null;
       } else {
         resolvedFeeAmount = feeInputNum;
       }
@@ -582,6 +603,7 @@ export function PlacementDialog(props: Props) {
       salary: salaryNum,
       currency: currency || "USD",
       salaryPeriod,
+      salaryKind,
       feeAmount: resolvedFeeAmount,
       feePercentage: resolvedFeePercentage,
       paymentTerms: paymentTerms === "" ? null : Number(paymentTerms),
@@ -951,8 +973,34 @@ export function PlacementDialog(props: Props) {
                   </div>
                   <p className="text-[10px] text-gray-400 text-right">
                     Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
+                    {salaryKind === "NETO" ? " · grossed up" : ""}
                   </p>
                 </div>
+                {SALARY_KIND_CURRENCIES.has(currency) && (
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex rounded-md border bg-white p-0.5">
+                      {(["BRUTO", "NETO"] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setSalaryKind(k)}
+                          className={`px-2 py-1 text-[11px] font-medium rounded ${
+                            salaryKind === k
+                              ? "bg-indigo-600 text-white"
+                              : "text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {k === "BRUTO" ? "Bruto" : "Neto"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400">
+                      {salaryKind === "NETO"
+                        ? "Take-home — fee uses gross (÷ 0.83)"
+                        : "Gross — fee uses this figure directly"}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Fee</Label>
@@ -990,14 +1038,16 @@ export function PlacementDialog(props: Props) {
                 (() => {
                   const monthly = Number(agreedSalary);
                   const annual = salaryPeriod === "MONTHLY" ? monthly * 12 : monthly;
-                  const fee = (annual * Number(feeInput)) / 100;
+                  const gross = salaryKind === "NETO" ? annual * AR_NET_TO_GROSS : annual;
+                  const fee = (gross * Number(feeInput)) / 100;
                   return (
                     <p className="text-[10px] text-gray-500 -mt-2">
                       Fee = {formatCurrencyValue(fee, currency)}{" "}
                       <span className="text-gray-400">
-                        ({Number(feeInput)}% of {formatCurrencyValue(annual, currency)} annual
+                        ({Number(feeInput)}% of {formatCurrencyValue(gross, currency)} annual
                         {salaryPeriod === "MONTHLY" &&
                           ` · ${formatCurrencyValue(monthly, currency)} × 12`}
+                        {salaryKind === "NETO" && " · grossed up from neto"}
                         )
                       </span>
                     </p>
