@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Star,
   Send,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { FEATURES } from "@/lib/feature-flags";
@@ -180,6 +181,14 @@ export default function CalendarPage() {
     kind: "first_day" | "payment_due" | "guarantee_expiry";
     date: Date;
     placement: any;
+  } | null>(null);
+  // Day-detail sidebar: clicking a day cell (or the "+N more" badge)
+  // opens a panel with every event of that day, since the per-cell
+  // chips cap at 3 to keep the grid readable.
+  const [selectedDay, setSelectedDay] = useState<{
+    day: number;
+    month: number;
+    year: number;
   } | null>(null);
 
   // Create modal state
@@ -500,7 +509,19 @@ export default function CalendarPage() {
                       key={idx}
                       className={`group min-h-[100px] border-r border-b p-1 cursor-pointer transition-colors ${
                         cd.isCurrentMonth ? "bg-white hover:bg-indigo-50/30" : "bg-gray-50/50"
+                      } ${
+                        selectedDay &&
+                        selectedDay.day === cd.day &&
+                        selectedDay.month === cd.month &&
+                        selectedDay.year === cd.year
+                          ? "ring-2 ring-inset ring-indigo-300 bg-indigo-50/40"
+                          : ""
                       }`}
+                      onClick={() => {
+                        setSelectedInterview(null);
+                        setSelectedMilestone(null);
+                        setSelectedDay({ day: cd.day, month: cd.month, year: cd.year });
+                      }}
                       onDoubleClick={() => openCreate(cd.day, cd.month, cd.year)}
                     >
                       <div className="flex items-center justify-between mb-0.5">
@@ -531,7 +552,7 @@ export default function CalendarPage() {
                             <button
                               key={iv.id}
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedInterview(iv); }}
+                              onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedDay(null); setSelectedInterview(iv); }}
                               className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
                               title={`${time} · ${typeLabel} · ${meta}`}
                             >
@@ -557,6 +578,7 @@ export default function CalendarPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedInterview(null);
+                                setSelectedDay(null);
                                 setSelectedMilestone(ms);
                               }}
                               className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
@@ -572,7 +594,18 @@ export default function CalendarPage() {
                           );
                         })}
                         {overflow > 0 && (
-                          <p className="text-[10px] text-gray-400 px-1">+{overflow} more</p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedInterview(null);
+                              setSelectedMilestone(null);
+                              setSelectedDay({ day: cd.day, month: cd.month, year: cd.year });
+                            }}
+                            className="text-[10px] text-gray-500 hover:text-indigo-600 px-1 text-left"
+                          >
+                            +{overflow} more
+                          </button>
                         )}
                       </div>
                     </div>
@@ -585,6 +618,141 @@ export default function CalendarPage() {
 
         {/* Sidebar */}
         <div className="space-y-4">
+          {selectedDay && (() => {
+            const dayInterviews = getInterviewsForDay(
+              selectedDay.day,
+              selectedDay.month,
+              selectedDay.year,
+            ).sort(
+              (a, b) =>
+                new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+            );
+            const dayMilestones = getMilestonesForDay(
+              selectedDay.day,
+              selectedDay.month,
+              selectedDay.year,
+            );
+            const total = dayInterviews.length + dayMilestones.length;
+            const dateLabel = new Date(
+              selectedDay.year,
+              selectedDay.month,
+              selectedDay.day,
+            ).toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            });
+            return (
+              <Card className="border-indigo-200">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-sm">{dateLabel}</h3>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {total === 0
+                          ? "No events scheduled"
+                          : `${total} event${total === 1 ? "" : "s"}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() =>
+                          openCreate(
+                            selectedDay.day,
+                            selectedDay.month,
+                            selectedDay.year,
+                          )
+                        }
+                        className="text-gray-400 hover:text-indigo-600 p-0.5 rounded hover:bg-indigo-50"
+                        title="Schedule on this day"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setSelectedDay(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {total === 0 ? (
+                    <p className="text-xs text-gray-400 py-4 text-center">
+                      Click + to schedule an interview on this day.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {dayInterviews.map((iv) => {
+                        const styles = interviewClassNames(iv.status);
+                        const Icon =
+                          TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon ||
+                          Video;
+                        return (
+                          <button
+                            key={iv.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDay(null);
+                              setSelectedMilestone(null);
+                              setSelectedInterview(iv);
+                            }}
+                            className={`flex w-full items-start gap-2 text-left rounded-r px-2 py-1.5 hover:opacity-90 ${styles.wrapper}`}
+                          >
+                            <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${styles.label}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {formatTime(iv.startTime)} ·{" "}
+                                {TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type}
+                              </p>
+                              <p className={`text-xs truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
+                                {iv.candidate.firstName} {iv.candidate.lastName}
+                                {iv.job?.title && (
+                                  <span className="text-gray-400"> · {iv.job.title}</span>
+                                )}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {dayMilestones.map((ms, i) => {
+                        const styles = milestoneClassNames(ms.kind);
+                        const candidate = milestoneCandidateName(ms);
+                        const client = milestoneClient(ms);
+                        const kindLabel = milestoneKindLabel(ms.kind);
+                        return (
+                          <button
+                            key={`${ms.placement.id}-${ms.kind}-${i}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDay(null);
+                              setSelectedInterview(null);
+                              setSelectedMilestone(ms);
+                            }}
+                            className={`flex w-full items-start gap-2 text-left rounded-r px-2 py-1.5 hover:opacity-90 ${styles.wrapper}`}
+                          >
+                            <CalendarIcon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${styles.label}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {kindLabel}
+                              </p>
+                              <p className={`text-xs truncate ${styles.meta}`}>
+                                {candidate}
+                                {client && (
+                                  <span className="text-gray-400"> · {client}</span>
+                                )}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
           {selectedMilestone && (
             <MilestoneDetailCard
               milestone={selectedMilestone}
