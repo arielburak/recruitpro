@@ -259,6 +259,12 @@ model Job {
   title          String
   description    String?
   status         JobStatus @default(OPEN)
+  // Number of seats the client signed for on this search. The
+  // placement flow uses it to decide when to auto-flip status to
+  // FILLED: a single-seat job goes to FILLED as soon as one
+  // placement is created, while multi-seat jobs stay Active until
+  // every seat is placed. Defaults to 1 — the typical agency search.
+  openings       Int       @default(1)
   currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
@@ -303,6 +309,12 @@ enum JobStatus {
   ACTIVE
   ON_HOLD
   FILLED
+  CANCELLED
+  LOST
+  // Kept only so legacy rows that still have CLOSED type-check.
+  // New saves can't write it (see lib/validations/job.ts and the
+  // PATCH allowlist) — recruiters flip legacy CLOSED rows to one
+  // of the active statuses via the inline dropdown on /jobs.
   CLOSED
 }
 

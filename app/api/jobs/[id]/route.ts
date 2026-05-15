@@ -184,12 +184,18 @@ export async function DELETE(
 // (the global /jobs list uses this to change a job's status from the
 // row dropdown without sending the full form payload). PUT continues
 // to be the full-form save path used by the job-edit UI.
+// Statuses the PATCH endpoint will accept for inline edits. CLOSED is
+// intentionally absent — it's a legacy value kept in the DB enum only
+// so existing rows render; new saves can't write it. Recruiters
+// migrate any leftover CLOSED rows by flipping them to one of these
+// six via the inline dropdown.
 const ALLOWED_STATUSES = new Set([
   "OPEN",
   "ACTIVE",
   "ON_HOLD",
   "FILLED",
-  "CLOSED",
+  "CANCELLED",
+  "LOST",
 ]);
 
 export async function PATCH(
