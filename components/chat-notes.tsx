@@ -20,8 +20,15 @@ interface MentionUser {
 interface ChatNotesProps {
   comments: any[];
   candidateId?: string;
-  submissionId: string;
+  // submissionId is required for the per-job chat (the canonical
+  // use). When absent we treat the box as candidate-level: posts
+  // only carry `candidateId`, the CLIENT_VISIBLE tab is hidden
+  // because there's no client context to share with at this scope.
+  submissionId?: string;
   onCommentAdded: () => void;
+  // Visual override — candidate-level notes usually live above the
+  // per-job chat and don't need the full chat height.
+  heightClass?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -95,9 +102,13 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded, heightClass }: ChatNotesProps) {
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
+  // Candidate-level scope means there's no client to share with, so
+  // we lock to the INTERNAL tab and don't render the CLIENT_VISIBLE
+  // one at all.
+  const candidateScope = !submissionId && !!candidateId;
   const [activeTab, setActiveTab] = useState<"INTERNAL" | "CLIENT_VISIBLE">("INTERNAL");
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -219,7 +230,8 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
-          submissionId,
+          submissionId: submissionId || undefined,
+          candidateId: candidateScope ? candidateId : undefined,
           type: activeTab,
           mentions: mentions.map((m) => m.id),
         }),
@@ -249,46 +261,59 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-[400px] border border-gray-200 rounded-lg bg-white overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
-        <button
-          onClick={() => setActiveTab("INTERNAL")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
-            activeTab === "INTERNAL"
-              ? "border-indigo-600 text-indigo-600 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-          }`}
-        >
+    <div className={`flex flex-col ${heightClass || "h-[400px]"} border border-gray-200 rounded-lg bg-white overflow-hidden`}>
+      {/* Tab bar — candidate-scope chats only have INTERNAL, so we
+          render a thinner header instead of the full tab strip. */}
+      {candidateScope ? (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0 text-xs font-medium text-gray-500">
           <Lock className="h-3.5 w-3.5" />
-          Internal Team
+          Internal candidate notes
           {internalCount > 0 && (
-            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              activeTab === "INTERNAL" ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-600"
-            }`}>
+            <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-gray-200 text-gray-600">
               {internalCount}
             </span>
           )}
-        </button>
-        <button
-          onClick={() => setActiveTab("CLIENT_VISIBLE")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
-            activeTab === "CLIENT_VISIBLE"
-              ? "border-emerald-600 text-emerald-600 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-          }`}
-        >
-          <Globe className="h-3.5 w-3.5" />
-          Shared with Client
-          {clientCount > 0 && (
-            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-            }`}>
-              {clientCount}
-            </span>
-          )}
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
+          <button
+            onClick={() => setActiveTab("INTERNAL")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
+              activeTab === "INTERNAL"
+                ? "border-indigo-600 text-indigo-600 bg-white"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Internal Team
+            {internalCount > 0 && (
+              <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                activeTab === "INTERNAL" ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-600"
+              }`}>
+                {internalCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("CLIENT_VISIBLE")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
+              activeTab === "CLIENT_VISIBLE"
+                ? "border-emerald-600 text-emerald-600 bg-white"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            Shared with Client
+            {clientCount > 0 && (
+              <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+              }`}>
+                {clientCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
