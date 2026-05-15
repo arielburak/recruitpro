@@ -179,3 +179,53 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// Partial update path for inline edits that only touch a single field
+// (the global /jobs list uses this to change a job's status from the
+// row dropdown without sending the full form payload). PUT continues
+// to be the full-form save path used by the job-edit UI.
+const ALLOWED_STATUSES = new Set([
+  "OPEN",
+  "ACTIVE",
+  "ON_HOLD",
+  "FILLED",
+  "CLOSED",
+]);
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getOrgContext();
+    const { id } = await params;
+    const body = await request.json();
+
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const data: any = {};
+    if (typeof body.status === "string") {
+      if (!ALLOWED_STATUSES.has(body.status)) {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+      }
+      data.status = body.status;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+    }
+
+    const updated = await prisma.job.updateMany({
+      where: { id, organizationId: ctx.organizationId },
+      data,
+    });
+
+    if (updated.count === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
