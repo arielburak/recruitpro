@@ -27,6 +27,8 @@ import {
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
+import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -45,6 +47,15 @@ export default function CandidateDetailPage() {
   const [pendingShareMove, setPendingShareMove] = useState<{
     submission: any;
     stageId: string;
+  } | null>(null);
+  // Same idea for Placed (open the PlacementDialog) and Interviewing
+  // (open the QuickInterviewDialog). Pulls the dialogs from the board
+  // so the UX is identical regardless of which surface fired the move.
+  const [pendingPlacement, setPendingPlacement] = useState<{
+    submission: any;
+  } | null>(null);
+  const [pendingInterview, setPendingInterview] = useState<{
+    submission: any;
   } | null>(null);
 
   useEffect(() => {
@@ -116,6 +127,23 @@ export default function CandidateDetailPage() {
     // its onShared callback below.
     if (newStage?.name === "Submitted" && !submission.isSharedWithClient) {
       setPendingShareMove({ submission, stageId: newStageId });
+      return;
+    }
+
+    // Placed → open PlacementDialog (congrats mode). The dialog flips
+    // the stage to Placed server-side as part of creating the
+    // placement record, so we don't PATCH the stage here.
+    if (newStage?.name === "Placed" && !submission.placement) {
+      setPendingPlacement({ submission });
+      return;
+    }
+
+    // Interviewing → flip the stage first, then prompt to schedule.
+    // Closing the dialog leaves the candidate at Interviewing with
+    // no event; they can add one later from /calendar.
+    if (newStage?.name === "Interviewing") {
+      await persistStageChange(submission.id, newStageId);
+      setPendingInterview({ submission });
       return;
     }
 
@@ -632,6 +660,72 @@ export default function CandidateDetailPage() {
             const move = pendingShareMove;
             setPendingShareMove(null);
             if (move) await persistStageChange(move.submission.id, move.stageId);
+          }}
+        />
+      )}
+
+      {pendingPlacement && (
+        <PlacementDialog
+          mode="congrats"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingPlacement(null);
+          }}
+          submissionId={pendingPlacement.submission.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          jobTitle={pendingPlacement.submission.job.title}
+          clientName={pendingPlacement.submission.job.client?.name}
+          defaults={{
+            agreedSalary: candidate.desiredSalary
+              ? String(candidate.desiredSalary)
+              : undefined,
+            feeAmount: pendingPlacement.submission.job.feeAmount
+              ? String(pendingPlacement.submission.job.feeAmount)
+              : undefined,
+            feeType:
+              (pendingPlacement.submission.job.feeType as "PERCENTAGE" | "FLAT") ||
+              undefined,
+            paymentTerms:
+              pendingPlacement.submission.job.paymentTerms ??
+              pendingPlacement.submission.job.client?.defaultPaymentTerms ??
+              undefined,
+            guaranteePeriod:
+              pendingPlacement.submission.job.guaranteePeriod ??
+              pendingPlacement.submission.job.client?.defaultGuaranteePeriod ??
+              undefined,
+            currency:
+              pendingPlacement.submission.job.currency ??
+              pendingPlacement.submission.job.client?.defaultCurrency ??
+              "USD",
+          }}
+          onSuccess={() => {
+            setPendingPlacement(null);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {pendingInterview && (
+        <QuickInterviewDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingInterview(null);
+          }}
+          submission={{
+            id: pendingInterview.submission.id,
+            candidateId: candidate.id,
+            candidate: {
+              firstName: candidate.firstName,
+              lastName: candidate.lastName,
+            },
+            job: {
+              id: pendingInterview.submission.job.id,
+              title: pendingInterview.submission.job.title,
+            },
+          }}
+          onScheduled={() => {
+            setPendingInterview(null);
+            fetchCandidate();
           }}
         />
       )}
