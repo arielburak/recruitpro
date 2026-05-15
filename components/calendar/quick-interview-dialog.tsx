@@ -299,7 +299,7 @@ export function QuickInterviewDialog({
             disabled={submitting}
             className="bg-indigo-600 hover:bg-indigo-700"
           >
-            {submitting ? "Saving..." : notifyCandidate ? "Save & send invite" : "Save to ATS"}
+            {submitting ? "Saving..." : notifyCandidate ? "Save & send invite" : "Save"}
           </Button>
         </div>
       </DialogContent>
