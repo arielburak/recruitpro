@@ -21,8 +21,24 @@ export async function GET(
         documents: true,
         submissions: {
           include: {
-            job: { select: { title: true, id: true, clientId: true, client: { select: { name: true } } } },
-            stage: { select: { name: true, color: true } },
+            job: {
+              select: {
+                title: true,
+                id: true,
+                clientId: true,
+                client: { select: { name: true } },
+                // Stages of the job's pipeline so the candidate page can
+                // render an inline stage selector for each submission.
+                stages: {
+                  select: { id: true, name: true, color: true, order: true },
+                  orderBy: { order: "asc" },
+                },
+              },
+            },
+            stage: { select: { id: true, name: true, color: true } },
+            // Linked placement (if any). The candidate page warns before
+            // leaving Placed because that deletes the placement.
+            placement: { select: { id: true } },
             ratings: {
               select: { score: true, feedback: true, clientUser: { select: { name: true } } },
             },
