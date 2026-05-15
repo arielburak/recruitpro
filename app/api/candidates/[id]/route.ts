@@ -89,6 +89,27 @@ export async function GET(
           take: 20,
           include: { user: { select: { name: true } } },
         },
+        // Interview history per candidate. The candidate page surfaces
+        // this as a dedicated tab so the recruiter can see every
+        // session a candidate sat through across jobs, not just the
+        // current stage. Reverse-chronological is the order the
+        // recruiter usually scans in ("when was the last one?").
+        interviews: {
+          orderBy: { startTime: "desc" },
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            type: true,
+            status: true,
+            notes: true,
+            meetingLink: true,
+            location: true,
+            timezone: true,
+            job: { select: { id: true, title: true } },
+          },
+        },
       },
     });
 
