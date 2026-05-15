@@ -17,7 +17,17 @@ export async function GET(request: NextRequest) {
     const end = searchParams.get("end");
     const status = searchParams.get("status");
 
-    const where: any = { organizationId: ctx.organizationId };
+    // The calendar is a per-user view: each recruiter only sees the
+    // interviews they own (createdBy) or were invited to as an
+    // interviewer. The full org-wide list lives elsewhere (e.g. the
+    // job-level Interviews tab) where that wider scope makes sense.
+    const where: any = {
+      organizationId: ctx.organizationId,
+      OR: [
+        { createdBy: ctx.userId },
+        { interviewers: { some: { userId: ctx.userId } } },
+      ],
+    };
 
     if (start && end) {
       where.startTime = {

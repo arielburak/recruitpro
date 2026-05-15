@@ -497,17 +497,22 @@ export default function CalendarPage() {
                   // "show up at 3pm" event; milestones are date-only
                   // reminders.
                   const totalEvents = dayInterviews.length + dayMilestones.length;
-                  const interviewsToShow = dayInterviews.slice(0, 3);
+                  // Show up to 6 chips per day before collapsing the rest
+                  // behind "+N more". Cells are sized to fit that many
+                  // comfortably; if it's still not enough, the day-detail
+                  // sidebar covers the full list.
+                  const CELL_CAP = 6;
+                  const interviewsToShow = dayInterviews.slice(0, CELL_CAP);
                   const milestonesToShow = dayMilestones.slice(
                     0,
-                    Math.max(0, 3 - interviewsToShow.length),
+                    Math.max(0, CELL_CAP - interviewsToShow.length),
                   );
                   const overflow = totalEvents - interviewsToShow.length - milestonesToShow.length;
 
                   return (
                     <div
                       key={idx}
-                      className={`group min-h-[100px] border-r border-b p-1 cursor-pointer transition-colors ${
+                      className={`group min-h-[170px] border-r border-b p-1 cursor-pointer transition-colors ${
                         cd.isCurrentMonth ? "bg-white hover:bg-indigo-50/30" : "bg-gray-50/50"
                       } ${
                         selectedDay &&
