@@ -23,8 +23,6 @@ import {
   Download,
   X,
   Plus,
-  Video,
-  CalendarDays,
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
@@ -32,26 +30,7 @@ import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dial
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
-
-// Small local maps for the Interviews tab. Kept inline rather than
-// importing the calendar's TYPE_OPTIONS to avoid pulling its full
-// icon set into this page.
-const INTERVIEW_TYPE_LABEL: Record<string, string> = {
-  VIDEO: "Video Call",
-  PHONE: "Phone",
-  IN_PERSON: "In Person",
-};
-const INTERVIEW_TYPE_ICON: Record<string, typeof Video> = {
-  VIDEO: Video,
-  PHONE: Phone,
-  IN_PERSON: MapPin,
-};
-const INTERVIEW_STATUS_BG: Record<string, string> = {
-  SCHEDULED: "bg-blue-50 text-blue-700",
-  COMPLETED: "bg-green-50 text-green-700",
-  CANCELLED: "bg-red-50 text-red-700",
-  NO_SHOW: "bg-gray-100 text-gray-600",
-};
+import { InterviewsList } from "@/components/interviews/interviews-list";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -664,102 +643,11 @@ export default function CandidateDetailPage() {
               Schedule interview
             </Button>
           </div>
-          {candidate.interviews?.length ? (
-            <div className="space-y-2">
-              {candidate.interviews.map((iv: any) => {
-                const start = new Date(iv.startTime);
-                const dateLabel = start.toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                });
-                const timeLabel = start.toLocaleTimeString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                });
-                const Icon = INTERVIEW_TYPE_ICON[iv.type as keyof typeof INTERVIEW_TYPE_ICON] || Video;
-                return (
-                  <Card
-                    key={iv.id}
-                    className="hover:shadow-md hover:border-indigo-200 transition cursor-pointer"
-                    onClick={() => setEditingInterview(iv)}
-                  >
-                    <CardContent className="p-4 flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div
-                          className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${
-                            INTERVIEW_STATUS_BG[iv.status as keyof typeof INTERVIEW_STATUS_BG] ||
-                            "bg-gray-50 text-gray-500"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium text-sm truncate">{iv.title || INTERVIEW_TYPE_LABEL[iv.type as keyof typeof INTERVIEW_TYPE_LABEL] || iv.type}</p>
-                            <Badge
-                              className={INTERVIEW_STATUS_BG[iv.status as keyof typeof INTERVIEW_STATUS_BG] || "bg-gray-100 text-gray-700"}
-                            >
-                              {iv.status}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            <CalendarDays className="inline h-3 w-3 mr-1 -mt-0.5" />
-                            {dateLabel} · {timeLabel}
-                          </p>
-                          {iv.job && (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              For{" "}
-                              <Link
-                                href={`/jobs/${iv.job.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-indigo-600 hover:underline"
-                              >
-                                {iv.job.title}
-                              </Link>
-                            </p>
-                          )}
-                          {iv.notes && (
-                            <p className="text-sm text-gray-600 mt-2 line-clamp-3 whitespace-pre-wrap">
-                              {iv.notes}
-                            </p>
-                          )}
-                          {(iv.meetingLink || iv.location) && (
-                            <p className="text-xs text-gray-400 mt-1 truncate">
-                              {iv.meetingLink ? (
-                                <a
-                                  href={iv.meetingLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="hover:text-indigo-600 inline-flex items-center gap-1"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                  Join link
-                                </a>
-                              ) : (
-                                <span className="inline-flex items-center gap-1">
-                                  <MapPin className="h-3 w-3" />
-                                  {iv.location}
-                                </span>
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="p-8 text-center text-gray-500">
-                No interviews scheduled yet.
-              </CardContent>
-            </Card>
-          )}
+          <InterviewsList
+            interviews={candidate.interviews || []}
+            attendeeKind="job"
+            onRowClick={setEditingInterview}
+          />
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-2">
