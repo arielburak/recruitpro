@@ -31,7 +31,7 @@ import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
-import { CandidateInterviewDialog } from "@/components/candidates/candidate-interview-dialog";
+import { InterviewDialog } from "@/components/interviews/interview-dialog";
 
 // Small local maps for the Interviews tab. Kept inline rather than
 // importing the calendar's TYPE_OPTIONS to avoid pulling its full
@@ -880,18 +880,21 @@ export default function CandidateDetailPage() {
       )}
 
       {showCreateInterview && (
-        <CandidateInterviewDialog
+        <InterviewDialog
           mode="create"
           open={true}
           onOpenChange={(open) => {
             if (!open) setShowCreateInterview(false);
           }}
-          candidateId={candidate.id}
-          candidateName={`${candidate.firstName} ${candidate.lastName}`}
-          submissions={(candidate.submissions || []).map((s: any) => ({
-            id: s.id,
+          headerSubtitle={`${candidate.firstName} ${candidate.lastName}`}
+          defaultTitle={`Interview — ${candidate.firstName} ${candidate.lastName}`}
+          pickerLabel="Job"
+          pickerEmptyHint="Submit this candidate to a job first."
+          pickerOptions={(candidate.submissions || []).map((s: any) => ({
+            submissionId: s.id,
             candidateId: candidate.id,
-            job: { id: s.job.id, title: s.job.title },
+            jobId: s.job.id,
+            label: s.job.title,
           }))}
           onSaved={() => {
             setShowCreateInterview(false);
@@ -901,14 +904,13 @@ export default function CandidateDetailPage() {
       )}
 
       {editingInterview && (
-        <CandidateInterviewDialog
+        <InterviewDialog
           mode="edit"
           open={true}
           onOpenChange={(open) => {
             if (!open) setEditingInterview(null);
           }}
-          candidateId={candidate.id}
-          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          headerSubtitle={`${candidate.firstName} ${candidate.lastName} · ${editingInterview.job?.title || ""}`}
           interview={editingInterview}
           onSaved={() => {
             setEditingInterview(null);

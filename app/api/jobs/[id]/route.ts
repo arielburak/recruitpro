@@ -70,6 +70,26 @@ export async function GET(
             _count: { select: { comments: true, ratings: true } },
           },
         },
+        // Interviews for this job, chronological. The job page surfaces
+        // them in a dedicated tab so the recruiter can see the
+        // pipeline-to-meeting timeline in one place.
+        interviews: {
+          orderBy: { startTime: "asc" },
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            type: true,
+            status: true,
+            notes: true,
+            meetingLink: true,
+            location: true,
+            timezone: true,
+            submissionId: true,
+            candidate: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
       },
     });
 

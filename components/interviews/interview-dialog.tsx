@@ -13,15 +13,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar, Video, Phone, MapPin, Trash2 } from "lucide-react";
 
-// Schedule-or-edit interview dialog launched from the candidate page's
-// Interviews tab. Distinct from QuickInterviewDialog (which is the
-// board's stage-drop flow) because here:
-//   - The submission isn't always known — a candidate sitting on
-//     multiple jobs needs a picker before we can POST.
-//   - Editing has to expose `status`, the Cancelled / Completed /
-//     No-show state the recruiter flips after the fact.
-//   - There's no "Skip for now" — the trigger is an explicit button,
-//     not a stage move, so cancelling just closes the dialog.
+// Generic schedule-or-edit interview dialog used from both the
+// candidate page (picker = job) and the job page (picker = candidate).
+// The picker is the only thing that varies between surfaces, so the
+// caller passes a flat `pickerOptions` array + a label for the
+// picker. Internally the dialog resolves the picked option back to
+// (submissionId, candidateId, jobId) at POST time.
+//
+// In edit mode there is no picker — the interview already references
+// a candidate + job and those identities are fixed.
 
 type InterviewType = "VIDEO" | "PHONE" | "IN_PERSON";
 type InterviewStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
@@ -35,10 +35,11 @@ const STATUS_OPTIONS: { value: InterviewStatus; label: string }[] = [
   { value: "NO_SHOW", label: "No-show" },
 ];
 
-type SubmissionOption = {
-  id: string;
+export type InterviewPickerOption = {
+  submissionId: string;
   candidateId: string;
-  job: { id: string; title: string };
+  jobId: string;
+  label: string;
 };
 
 type ExistingInterview = {
@@ -52,7 +53,6 @@ type ExistingInterview = {
   meetingLink?: string | null;
   location?: string | null;
   timezone?: string | null;
-  job: { id: string; title: string };
 };
 
 type Props =
@@ -60,25 +60,23 @@ type Props =
       mode: "create";
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      candidateId: string;
-      candidateName: string;
-      submissions: SubmissionOption[];
+      headerSubtitle: string; // e.g. "Nicolás Cuello" or "Desarrollador Python"
+      defaultTitle: string;
+      pickerLabel: string; // e.g. "Job" or "Candidate"
+      pickerEmptyHint?: string;
+      pickerOptions: InterviewPickerOption[];
       onSaved?: () => void;
     }
   | {
       mode: "edit";
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      candidateId: string;
-      candidateName: string;
+      headerSubtitle: string;
       interview: ExistingInterview;
       onSaved?: () => void;
     };
 
 function toIsoDate(d: Date): string {
-  // Returns YYYY-MM-DD for a <input type="date"> in the local TZ so
-  // the recruiter doesn't see the previous day after a midnight
-  // round-trip through UTC.
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -107,7 +105,7 @@ function addMinutes(hhmm: string, mins: number): string {
   return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
 }
 
-export function CandidateInterviewDialog(props: Props) {
+export function InterviewDialog(props: Props) {
   const isEdit = props.mode === "edit";
   const initial = isEdit ? props.interview : null;
 
@@ -115,7 +113,7 @@ export function CandidateInterviewDialog(props: Props) {
   const initialEnd = initial ? new Date(initial.endTime) : null;
 
   const [title, setTitle] = useState(
-    initial?.title ?? `Interview — ${props.candidateName}`
+    initial?.title ?? (!isEdit ? props.defaultTitle : "")
   );
   const [type, setType] = useState<InterviewType>(initial?.type ?? "VIDEO");
   const [status, setStatus] = useState<InterviewStatus>(
@@ -134,13 +132,9 @@ export function CandidateInterviewDialog(props: Props) {
   const [location, setLocation] = useState(initial?.location ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
-  // Create-mode only: lock the dialog to a single submission when there's
-  // one job, otherwise let the recruiter pick which job the interview is
-  // for. The job picker drives both candidateId/submissionId/jobId on the
-  // POST.
-  const submissions = !isEdit ? props.submissions : [];
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string>(
-    !isEdit && submissions.length === 1 ? submissions[0].id : ""
+  const pickerOptions = !isEdit ? props.pickerOptions : [];
+  const [selectedPickerId, setSelectedPickerId] = useState<string>(
+    !isEdit && pickerOptions.length === 1 ? pickerOptions[0].submissionId : ""
   );
 
   const [notifyCandidate, setNotifyCandidate] = useState(false);
@@ -179,14 +173,14 @@ export function CandidateInterviewDialog(props: Props) {
           return;
         }
       } else {
-        if (!selectedSubmissionId) {
-          setError("Pick a job for this interview.");
+        if (!selectedPickerId) {
+          setError(`Pick a ${props.pickerLabel.toLowerCase()} for this interview.`);
           setSubmitting(false);
           return;
         }
-        const submission = submissions.find((s) => s.id === selectedSubmissionId);
-        if (!submission) {
-          setError("Submission not found.");
+        const option = pickerOptions.find((o) => o.submissionId === selectedPickerId);
+        if (!option) {
+          setError("Selection not found.");
           setSubmitting(false);
           return;
         }
@@ -198,9 +192,9 @@ export function CandidateInterviewDialog(props: Props) {
             startTime: startDT.toISOString(),
             endTime: endDT.toISOString(),
             type,
-            candidateId: submission.candidateId,
-            jobId: submission.job.id,
-            submissionId: submission.id,
+            candidateId: option.candidateId,
+            jobId: option.jobId,
+            submissionId: option.submissionId,
             meetingLink: type === "IN_PERSON" ? undefined : meetingLink || undefined,
             location: type === "IN_PERSON" ? location || undefined : undefined,
             timezone: TIMEZONE,
@@ -259,30 +253,29 @@ export function CandidateInterviewDialog(props: Props) {
 
         <div className="space-y-4 py-2">
           {isEdit ? (
-            <p className="text-xs text-gray-500">
-              {props.candidateName} · {initial!.job.title}
-            </p>
+            <p className="text-xs text-gray-500">{props.headerSubtitle}</p>
           ) : (
             <div className="space-y-1.5">
-              <Label className="text-xs">Job</Label>
-              {submissions.length === 0 ? (
+              <p className="text-xs text-gray-500">{props.headerSubtitle}</p>
+              <Label className="text-xs">{props.pickerLabel}</Label>
+              {pickerOptions.length === 0 ? (
                 <p className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Submit this candidate to a job first.
+                  {props.pickerEmptyHint || `No ${props.pickerLabel.toLowerCase()} options available.`}
                 </p>
-              ) : submissions.length === 1 ? (
+              ) : pickerOptions.length === 1 ? (
                 <p className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">
-                  {submissions[0].job.title}
+                  {pickerOptions[0].label}
                 </p>
               ) : (
                 <select
                   className="w-full border rounded-md px-2 py-1.5 text-sm bg-white"
-                  value={selectedSubmissionId}
-                  onChange={(e) => setSelectedSubmissionId(e.target.value)}
+                  value={selectedPickerId}
+                  onChange={(e) => setSelectedPickerId(e.target.value)}
                 >
-                  <option value="">Choose a job...</option>
-                  {submissions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.job.title}
+                  <option value="">Choose a {props.pickerLabel.toLowerCase()}...</option>
+                  {pickerOptions.map((o) => (
+                    <option key={o.submissionId} value={o.submissionId}>
+                      {o.label}
                     </option>
                   ))}
                 </select>
