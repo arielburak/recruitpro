@@ -166,8 +166,11 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // Multi-select filters
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  // Multi-select filters. Status defaults to Open + Active so the
+  // first thing the recruiter sees are the searches they're working
+  // on right now — closed / filled jobs are still reachable by
+  // clearing the filter (or toggling those statuses back in).
+  const [statusFilter, setStatusFilter] = useState<string[]>(["OPEN", "ACTIVE"]);
   const [workArrangementFilter, setWorkArrangementFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
