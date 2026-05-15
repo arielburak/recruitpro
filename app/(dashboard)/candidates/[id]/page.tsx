@@ -31,6 +31,7 @@ import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
+import { CandidateInterviewDialog } from "@/components/candidates/candidate-interview-dialog";
 
 // Small local maps for the Interviews tab. Kept inline rather than
 // importing the calendar's TYPE_OPTIONS to avoid pulling its full
@@ -79,6 +80,12 @@ export default function CandidateDetailPage() {
   const [pendingInterview, setPendingInterview] = useState<{
     submission: any;
   } | null>(null);
+  // Interviews tab — create-new and edit-existing both run through the
+  // same CandidateInterviewDialog. `showCreateInterview` opens it in
+  // create mode (with the candidate's submissions as the job picker);
+  // `editingInterview` opens it in edit mode pre-filled from the row.
+  const [showCreateInterview, setShowCreateInterview] = useState(false);
+  const [editingInterview, setEditingInterview] = useState<any | null>(null);
 
   useEffect(() => {
     fetchCandidate();
@@ -638,7 +645,25 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="interviews" className="space-y-2">
+        <TabsContent value="interviews" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              {candidate.interviews?.length || 0} total interview{candidate.interviews?.length === 1 ? "" : "s"}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => setShowCreateInterview(true)}
+              disabled={!candidate.submissions?.length}
+              title={
+                !candidate.submissions?.length
+                  ? "Submit the candidate to a job first."
+                  : undefined
+              }
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Schedule interview
+            </Button>
+          </div>
           {candidate.interviews?.length ? (
             <div className="space-y-2">
               {candidate.interviews.map((iv: any) => {
@@ -655,7 +680,11 @@ export default function CandidateDetailPage() {
                 });
                 const Icon = INTERVIEW_TYPE_ICON[iv.type as keyof typeof INTERVIEW_TYPE_ICON] || Video;
                 return (
-                  <Card key={iv.id}>
+                  <Card
+                    key={iv.id}
+                    className="hover:shadow-md hover:border-indigo-200 transition cursor-pointer"
+                    onClick={() => setEditingInterview(iv)}
+                  >
                     <CardContent className="p-4 flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3 min-w-0 flex-1">
                         <div
@@ -684,6 +713,7 @@ export default function CandidateDetailPage() {
                               For{" "}
                               <Link
                                 href={`/jobs/${iv.job.id}`}
+                                onClick={(e) => e.stopPropagation()}
                                 className="text-indigo-600 hover:underline"
                               >
                                 {iv.job.title}
@@ -702,6 +732,7 @@ export default function CandidateDetailPage() {
                                   href={iv.meetingLink}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
                                   className="hover:text-indigo-600 inline-flex items-center gap-1"
                                 >
                                   <ExternalLink className="h-3 w-3" />
@@ -843,6 +874,44 @@ export default function CandidateDetailPage() {
           }}
           onScheduled={() => {
             setPendingInterview(null);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {showCreateInterview && (
+        <CandidateInterviewDialog
+          mode="create"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setShowCreateInterview(false);
+          }}
+          candidateId={candidate.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          submissions={(candidate.submissions || []).map((s: any) => ({
+            id: s.id,
+            candidateId: candidate.id,
+            job: { id: s.job.id, title: s.job.title },
+          }))}
+          onSaved={() => {
+            setShowCreateInterview(false);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {editingInterview && (
+        <CandidateInterviewDialog
+          mode="edit"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setEditingInterview(null);
+          }}
+          candidateId={candidate.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          interview={editingInterview}
+          onSaved={() => {
+            setEditingInterview(null);
             fetchCandidate();
           }}
         />
