@@ -76,6 +76,42 @@ export default function CandidateDetailPage() {
     router.push("/candidates");
   }
 
+  // Inline stage change from the Jobs tab. We mirror the heavy guards
+  // from /jobs/[id] moveSubmission for transitions that have side
+  // effects: leaving "Placed" deletes the linked placement (server-
+  // side enforces it; we just confirm here so salary/fee data doesn't
+  // disappear silently). Constructive transitions (to Submitted,
+  // Placed, Interviewing) are allowed as plain stage flips here —
+  // creating placements / sharing / scheduling interviews still lives
+  // on the job page where the recruiter has full context.
+  async function changeSubmissionStage(submission: any, newStageId: string) {
+    if (newStageId === submission.stageId) return;
+    const newStage = submission.job.stages?.find((st: any) => st.id === newStageId);
+    const leavingPlaced =
+      submission.stage?.name === "Placed" && newStage?.name !== "Placed";
+    if (leavingPlaced && submission.placement) {
+      const ok = window.confirm(
+        `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
+      );
+      if (!ok) return;
+    }
+    try {
+      const res = await fetch(`/api/submissions/${submission.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId: newStageId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to change stage");
+        return;
+      }
+      await fetchCandidate();
+    } catch {
+      alert("Failed to change stage");
+    }
+  }
+
   async function uploadDocument(file: File) {
     setUploading(true);
     setUploadError("");
@@ -314,26 +350,49 @@ export default function CandidateDetailPage() {
             </Card>
           ) : (
             candidate.submissions?.map((sub: any) => (
-              <Link key={sub.id} href={`/jobs/${sub.job.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">{sub.job.title}</h3>
-                      <p className="text-sm text-gray-500">
-                        Submitted {formatDate(sub.createdAt)}
-                      </p>
-                    </div>
-                    <Badge
-                      style={{
-                        backgroundColor: sub.stage.color + "20",
-                        color: sub.stage.color,
-                      }}
-                    >
-                      {sub.stage.name}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              </Link>
+              <Card key={sub.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  {/* Job title + submitted date — keep the link to the
+                      job page so the recruiter can still drill in for
+                      the full pipeline / placement / interview UX. */}
+                  <Link
+                    href={`/jobs/${sub.job.id}`}
+                    className="flex-1 min-w-0 group"
+                  >
+                    <h3 className="font-medium group-hover:text-indigo-600 group-hover:underline truncate">
+                      {sub.job.title}
+                    </h3>
+                    {sub.job.client?.name && (
+                      <p className="text-xs text-gray-400">{sub.job.client.name}</p>
+                    )}
+                    <p className="text-sm text-gray-500">
+                      Submitted {formatDate(sub.createdAt)}
+                    </p>
+                  </Link>
+
+                  {/* Inline stage selector. Coloured to match the active
+                      stage so it reads like a badge at a glance, but
+                      stays a real <select> so the keyboard / a11y story
+                      is the same as the list view. */}
+                  <select
+                    value={sub.stageId}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      void changeSubmissionStage(sub, e.target.value);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
+                    aria-label={`Stage for ${sub.job.title}`}
+                  >
+                    {(sub.job.stages || []).map((st: any) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                </CardContent>
+              </Card>
             ))
           )}
         </TabsContent>
