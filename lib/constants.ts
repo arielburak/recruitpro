@@ -67,19 +67,38 @@ export const LEGACY_STAGE_ALIASES: Record<string, string> = {
   Contacted: "Internal Review",
 };
 
+// User-facing statuses recruiters can pick. Order matches the
+// flow: signed → working → outcome (positive or negative).
 export const JOB_STATUS_LABELS: Record<string, string> = {
   OPEN: "Open",
   ACTIVE: "Active",
   ON_HOLD: "On Hold",
   FILLED: "Filled",
+  CANCELLED: "Cancelled",
+  LOST: "Lost",
+  // Legacy — included so old rows still render, hidden from
+  // selectable options via JOB_STATUS_SELECTABLE below.
   CLOSED: "Closed",
 };
+
+// Subset that's offered in create / edit dropdowns. CLOSED is
+// rendered for legacy rows but you can't save a new job as CLOSED.
+export const JOB_STATUS_SELECTABLE: readonly string[] = [
+  "OPEN",
+  "ACTIVE",
+  "ON_HOLD",
+  "FILLED",
+  "CANCELLED",
+  "LOST",
+];
 
 export const JOB_STATUS_COLORS: Record<string, string> = {
   OPEN: "bg-blue-100 text-blue-800",
   ACTIVE: "bg-green-100 text-green-800",
   ON_HOLD: "bg-yellow-100 text-yellow-800",
   FILLED: "bg-purple-100 text-purple-800",
+  CANCELLED: "bg-red-100 text-red-800",
+  LOST: "bg-rose-100 text-rose-800",
   CLOSED: "bg-gray-100 text-gray-800",
 };
 

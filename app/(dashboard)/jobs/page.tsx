@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 // ─── Notion-style Multi-Select Filter ───
@@ -445,11 +445,19 @@ export default function JobsPage() {
                     className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
                     aria-label={`Status for ${j.title}`}
                   >
-                    {Object.entries(JOB_STATUS_LABELS).map(([value, label]) => (
+                    {JOB_STATUS_SELECTABLE.map((value) => (
                       <option key={value} value={value} className="bg-white text-gray-900">
-                        {label}
+                        {JOB_STATUS_LABELS[value]}
                       </option>
                     ))}
+                    {/* Render the legacy CLOSED option only when this
+                        specific row still has it — otherwise it stays
+                        out of the picker. Once you flip it, it's gone. */}
+                    {j.status === "CLOSED" && (
+                      <option value="CLOSED" className="bg-white text-gray-900">
+                        {JOB_STATUS_LABELS.CLOSED}
+                      </option>
+                    )}
                   </select>
                 </div>
                 <div>

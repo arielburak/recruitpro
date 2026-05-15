@@ -252,6 +252,28 @@ export async function POST(request: Request) {
       }
     }
 
+    // Auto-flip the JOB status to FILLED once every seat is placed.
+    // Single-opening searches (the common case) hit FILLED on the
+    // first placement; multi-opening searches stay Active until the
+    // last seat is filled. The recruiter can still override the
+    // status manually from the inline dropdown if they're searching
+    // for a guarantee replacement, etc.
+    const jobMeta = await prisma.job.findUnique({
+      where: { id: jobId! },
+      select: { openings: true, status: true },
+    });
+    if (jobMeta && jobMeta.status !== "FILLED") {
+      const placementsForJob = await prisma.placement.count({
+        where: { jobId: jobId!, organizationId: ctx.organizationId },
+      });
+      if (placementsForJob >= (jobMeta.openings || 1)) {
+        await prisma.job.update({
+          where: { id: jobId! },
+          data: { status: "FILLED" },
+        });
+      }
+    }
+
     await logActivity({
       action: "PLACEMENT_CREATED",
       description: `Placed ${candidateLabel} on ${jobTitle}`,

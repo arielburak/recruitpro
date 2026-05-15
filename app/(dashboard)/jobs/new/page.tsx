@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
+import { JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE } from "@/lib/constants";
 import Link from "next/link";
 
 type JobDuplicateMatch = {
@@ -68,6 +69,8 @@ function NewJobContent() {
   const [descriptionFromDoc, setDescriptionFromDoc] = useState(false);
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
+  const [status, setStatus] = useState("OPEN");
+  const [openings, setOpenings] = useState(1);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Fee terms state (auto-filled from client defaults)
@@ -296,6 +299,8 @@ function NewJobContent() {
         clientId: selectedClientId,
         location,
         workMode,
+        status,
+        openings,
         currency,
         salary: fd.get("salary"),
         feeType,
@@ -565,6 +570,29 @@ function NewJobContent() {
                   <option value="REMOTE">Remote</option>
                   <option value="HYBRID">Hybrid</option>
                 </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  {JOB_STATUS_SELECTABLE.map((v) => (
+                    <option key={v} value={v}>
+                      {JOB_STATUS_LABELS[v]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Openings</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={openings}
+                  onChange={(e) => setOpenings(Math.max(1, Number(e.target.value) || 1))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Salary Range</Label>

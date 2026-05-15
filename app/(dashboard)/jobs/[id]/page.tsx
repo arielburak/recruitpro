@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { SubmissionsListView } from "@/components/pipeline/submissions-list-view";
@@ -170,6 +170,7 @@ export default function JobDetailPage() {
     title: "",
     description: "",
     status: "OPEN",
+    openings: 1,
     location: "",
     workMode: "ON_SITE",
     salary: "",
@@ -185,6 +186,7 @@ export default function JobDetailPage() {
       title: job.title || "",
       description: job.description || "",
       status: job.status || "OPEN",
+      openings: job.openings ?? 1,
       location: job.location || "",
       workMode: job.workMode || "ON_SITE",
       salary: job.salary || "",
@@ -1351,10 +1353,31 @@ export default function JobDetailPage() {
                           value={editForm.status}
                           onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
                         >
-                          {Object.entries(JOB_STATUS_LABELS).map(([value, label]) => (
-                            <option key={value} value={value}>{label}</option>
+                          {JOB_STATUS_SELECTABLE.map((v) => (
+                            <option key={v} value={v}>{JOB_STATUS_LABELS[v]}</option>
                           ))}
+                          {/* Legacy CLOSED rows still need to render
+                              their current value. Only shown when the
+                              row was already CLOSED — once you flip it,
+                              the option disappears. */}
+                          {editForm.status === "CLOSED" && (
+                            <option value="CLOSED">{JOB_STATUS_LABELS.CLOSED}</option>
+                          )}
                         </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Openings</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={editForm.openings}
+                          onChange={(e) =>
+                            setEditForm({
+                              ...editForm,
+                              openings: Math.max(1, Number(e.target.value) || 1),
+                            })
+                          }
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
