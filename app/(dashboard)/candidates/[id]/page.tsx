@@ -93,10 +93,14 @@ export default function CandidateDetailPage() {
   }
 
   function getTotalCommentCount() {
-    return (candidate.submissions || []).reduce(
+    const perJob = (candidate.submissions || []).reduce(
       (sum: number, sub: any) => sum + (sub.comments?.length || 0),
       0
     );
+    const candidateLevel = (candidate.comments || []).filter(
+      (c: any) => !c.submissionId
+    ).length;
+    return perJob + candidateLevel;
   }
 
   async function deleteCandidate() {
@@ -547,15 +551,46 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="notes">
+        <TabsContent value="notes" className="space-y-6">
+          {/* Candidate-level notes — general info that applies across
+              all jobs the candidate is in (preferences, allergies to
+              remote, etc.). Stored on Comment.candidateId with
+              submissionId=null. */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">Candidate notes</h3>
+              <span className="text-xs text-gray-400">General · applies to every job</span>
+            </div>
+            <ChatNotes
+              comments={(candidate.comments || [])
+                .filter((c: any) => !c.submissionId)
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                )}
+              candidateId={candidate.id}
+              onCommentAdded={fetchCandidate}
+              heightClass="h-[260px]"
+            />
+          </div>
+
+          {/* Per-job notes — the legacy/main chat: tabs for Internal
+              + Client-visible, with a job picker when the candidate
+              sits on more than one. */}
           {candidate.submissions?.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-gray-500">
-                Assign this candidate to a job to start adding notes.
+                Assign this candidate to a job to start adding per-job notes.
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">Per-job notes</h3>
+                <span className="text-xs text-gray-400">
+                  Tied to a specific submission · Internal + Client-visible tabs
+                </span>
+              </div>
               {/* Job selector */}
               {candidate.submissions.length > 1 && (
                 <div className="flex gap-2 flex-wrap">
