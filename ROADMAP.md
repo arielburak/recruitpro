@@ -135,7 +135,7 @@ Decisión de producto pendiente: cuál es el set final. *Sumar a "Decisiones pen
 - [x] File download arreglado (PR #26)
 - [x] "Mora" matchea "Morabits" en autocomplete de firmas (PR #26)
 - [ ] **"Firms engaged" widget interactivo** — stat existe, no clickeable
-- [ ] **Cliente solo VE status, no modifica** — hay un stage selector que tal vez no debería; revisar
+- [x] **Cliente solo VE status, no modifica** — auditado: el client portal solo edita `clientStage` (su propia columna). El `stageId` interno de la firma no se escribe desde ninguna route de `/api/client-portal/` y `recruiterStage` no se renderiza en la UI del portal. Correcto by design.
 - [ ] **Invitar member: chequear si email ya es contacto del cliente** y sugerir "agregar existente"
 - [ ] **Per-JO member access** (hoy el team es global; al crear JO elegir quién accede)
 - [ ] **Deshacer / cancelar invites** — hoy quedan en historial para siempre
