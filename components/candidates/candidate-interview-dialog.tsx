@@ -496,7 +496,7 @@ export function CandidateInterviewDialog(props: Props) {
                 ? "Save changes"
                 : notifyCandidate
                 ? "Save & send invite"
-                : "Save to ATS"}
+                : "Save"}
             </Button>
           </div>
         </div>
