@@ -11,7 +11,6 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Badge } from "@/components/ui/badge";
 import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Calendar, Video, Plug, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import { FEATURES } from "@/lib/feature-flags";
 
 export default function StaffingProfilePage() {
   const { data: session, update: updateSession } = useSession();
@@ -277,8 +276,7 @@ export default function StaffingProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Integrations — hidden while Google OAuth verification is pending */}
-          {FEATURES.calendarIntegrations && (
+          {/* Integrations */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -380,7 +378,6 @@ export default function StaffingProfilePage() {
               </div>
             </CardContent>
           </Card>
-          )}
         </div>
 
         {/* Right Sidebar */}
