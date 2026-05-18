@@ -112,22 +112,6 @@ function LoginContent() {
             ))}
           </div>
         </div>
-
-        <div className="border-t border-white/20 pt-8">
-          <blockquote className="text-indigo-100 italic text-sm leading-relaxed">
-            &ldquo;Recruiting ATS cut our time-to-fill by 40%. The pipeline visibility alone
-            is worth it.&rdquo;
-          </blockquote>
-          <div className="mt-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-              SM
-            </div>
-            <div>
-              <p className="text-sm font-medium">Sarah Mitchell</p>
-              <p className="text-xs text-indigo-200">Director of Talent, Apex Recruiting</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Right Panel — form */}

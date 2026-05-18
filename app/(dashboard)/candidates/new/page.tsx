@@ -164,7 +164,9 @@ function NewCandidatePage() {
     }
   }
 
-  // Pre-fill from URL search params (LinkedIn import redirect)
+  // Pre-fill from URL search params — used by duplicate-detection
+  // redirects and any future bookmarklet/extension that drops a
+  // recruiter into the form with linkedIn / source pre-set.
   useEffect(() => {
     const linkedIn = searchParams.get("linkedIn");
     const source = searchParams.get("source");
