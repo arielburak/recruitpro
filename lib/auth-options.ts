@@ -144,6 +144,9 @@ export const authOptions: NextAuthOptions = {
               name: user.name || "User",
               passwordHash: "", // No password for OAuth users
               role: "ADMIN",
+              // Google already confirmed the address — no need to
+              // round-trip a verification email through the user.
+              emailVerifiedAt: new Date(),
             },
           },
         },

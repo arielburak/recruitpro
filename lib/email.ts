@@ -574,6 +574,31 @@ export async function sendCandidateFeedbackEmail({
   });
 }
 
+export async function sendEmailVerificationEmail({
+  to,
+  recipientName,
+  verifyUrl,
+}: {
+  to: string;
+  recipientName: string;
+  verifyUrl: string;
+}) {
+  const firstName = recipientName?.split(" ")[0] || recipientName;
+  const html = wrapTemplate(
+    `Verify your email`,
+    `<p>Hi ${firstName},</p>
+     <p>Thanks for signing up. Please confirm this email address belongs to you so we can keep your account secure.</p>
+     <p>This link expires in 24 hours.</p>`,
+    verifyUrl,
+    "Verify email"
+  );
+  return sendEmail({
+    to,
+    subject: `Verify your email — ${appName}`,
+    html,
+  });
+}
+
 export async function sendWelcomeEmail({
   to,
   recipientName,

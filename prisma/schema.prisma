@@ -41,6 +41,15 @@ model User {
   role           UserRole @default(USER)
   avatar         String?
   isActive       Boolean  @default(true)
+  // Email verification. Email/password signups land with all three
+  // nullable: verifiedAt becomes a timestamp once the token in the
+  // verification email is clicked. Google OAuth users skip the email
+  // round-trip — we set verifiedAt at user-creation time because
+  // Google has already verified the address. Token + expiry are
+  // cleared on success.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
