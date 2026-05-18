@@ -153,10 +153,8 @@ export const INDUSTRY_OPTIONS: string[] = [
 // Recruiting firm headcount bucket. Stored as the label so we don't need a
 // separate mapping table for reads.
 export const COMPANY_SIZE_OPTIONS: string[] = [
-  "Just me",
-  "2–5",
-  "6–10",
-  "11–25",
-  "26–50",
-  "50+",
+  "Under 10",
+  "10–50",
+  "50–200",
+  "200+",
 ];
