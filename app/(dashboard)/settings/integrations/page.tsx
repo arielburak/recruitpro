@@ -118,8 +118,7 @@ function IntegrationsContent() {
         </div>
       )}
 
-      {FEATURES.calendarIntegrations ? (
-        <Card>
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Video className="h-5 w-5" />
@@ -282,13 +281,6 @@ function IntegrationsContent() {
             )}
           </CardContent>
         </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-gray-500">
-            Calendar integrations are being finalized. You&apos;ll see them here shortly.
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

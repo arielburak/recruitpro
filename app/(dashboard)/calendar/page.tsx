@@ -69,14 +69,9 @@ const ALL_PLATFORM_OPTIONS = [
   { value: "none", label: "No Video", color: "text-gray-400", requiresIntegration: false },
 ];
 
-// When the calendar integration feature is off (e.g. while Google OAuth
-// verification is pending), hide options that require a native integration.
-// The Microsoft option is further gated on FEATURES.microsoftIntegration
-// so we don't show "Microsoft Teams" until the Azure tenant is configured.
-const PLATFORM_OPTIONS = (FEATURES.calendarIntegrations
-  ? ALL_PLATFORM_OPTIONS
-  : ALL_PLATFORM_OPTIONS.filter((p) => !p.requiresIntegration)
-).filter(
+// The Microsoft option is gated on FEATURES.microsoftIntegration so we
+// don't show "Microsoft Teams" until the Azure tenant is configured.
+const PLATFORM_OPTIONS = ALL_PLATFORM_OPTIONS.filter(
   (p) => !(("provider" in p) && p.provider === "microsoft" && !FEATURES.microsoftIntegration)
 );
 
@@ -1174,9 +1169,7 @@ function CreateInterviewModal({
   const [endTime, setEndTime] = useState("09:30");
   const [duration, setDuration] = useState(30);
   const [type, setType] = useState("VIDEO");
-  const [platform, setPlatform] = useState(
-    FEATURES.calendarIntegrations ? "google_meet" : "custom"
-  );
+  const [platform, setPlatform] = useState("google_meet");
   const [meetingLink, setMeetingLink] = useState("");
   const [location, setLocation] = useState("");
   const [timezone, setTimezone] = useState("America/Argentina/Buenos_Aires");
@@ -1215,22 +1208,20 @@ function CreateInterviewModal({
       .then((r) => r.json())
       .then((data) => setTeamMembers(data.users || []))
       .catch(() => {});
-    if (FEATURES.calendarIntegrations) {
-      fetch("/api/integrations/google/status")
-        .then((r) => r.json())
-        .then((data) => {
-          setGoogleConnected(data.connected || false);
-          setGoogleEmail(data.email || null);
-        })
-        .catch(() => {});
-      fetch("/api/integrations/microsoft/status")
-        .then((r) => r.json())
-        .then((data) => {
-          setMsConnected(data.connected || false);
-          setMsEmail(data.email || null);
-        })
-        .catch(() => {});
-    }
+    fetch("/api/integrations/google/status")
+      .then((r) => r.json())
+      .then((data) => {
+        setGoogleConnected(data.connected || false);
+        setGoogleEmail(data.email || null);
+      })
+      .catch(() => {});
+    fetch("/api/integrations/microsoft/status")
+      .then((r) => r.json())
+      .then((data) => {
+        setMsConnected(data.connected || false);
+        setMsEmail(data.email || null);
+      })
+      .catch(() => {});
   }, []);
 
   // Close dropdown on outside click
