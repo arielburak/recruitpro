@@ -6,6 +6,10 @@
 // Usage:
 //   npx tsx scripts/delete-test-account.ts user@example.com
 //
+// Reads DATABASE_URL from .env.local (or .env) so the script works
+// the same whether run from a Vercel-CLI-pulled env or a manually
+// pasted local file.
+//
 // What it deletes, in order (org-scoped FKs don't cascade, so we
 // walk the graph manually):
 //   1. All Comments, Activities, Notifications for the user
@@ -18,9 +22,21 @@
 // Wrapped in a transaction so partial failures don't leave half-
 // deleted state.
 
-import { prisma } from "../lib/prisma";
+import { config } from "dotenv";
+import path from "path";
+
+// tsx doesn't auto-load env files the way Next.js does — pull
+// them in explicitly before the dynamic prisma import so the
+// client picks up DATABASE_URL.
+config({ path: path.resolve(process.cwd(), ".env.local") });
+config({ path: path.resolve(process.cwd(), ".env") });
 
 async function main() {
+  // Dynamic import so DATABASE_URL is in process.env by the time
+  // the prisma client is constructed (static imports get hoisted
+  // above the config() calls otherwise).
+  const { prisma } = await import("../lib/prisma");
+
   const email = process.argv[2];
   if (!email) {
     console.error("Usage: npx tsx scripts/delete-test-account.ts <email>");
@@ -122,11 +138,10 @@ async function main() {
   });
 
   console.log(`Done. ${email} can register from scratch now.`);
+  await prisma.$disconnect();
 }
 
-main()
-  .catch((err) => {
-    console.error("Failed:", err);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch((err) => {
+  console.error("Failed:", err);
+  process.exit(1);
+});
