@@ -134,6 +134,7 @@ export const WORK_ARRANGEMENT_COLORS: Record<string, string> = {
 // Industry verticals a recruiting firm may focus on. Stored as the raw label
 // so it renders directly without an extra lookup.
 export const INDUSTRY_OPTIONS: string[] = [
+  "Recruitment & Staffing",
   "Technology & Engineering",
   "Finance & Banking",
   "Healthcare & Life Sciences",
