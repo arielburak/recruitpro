@@ -613,21 +613,29 @@ export async function sendWelcomeEmail({
   trialEndsAt?: Date;
 }) {
   const firstName = recipientName?.split(" ")[0] || recipientName;
+
+  // Deep-link to the specific create flows so the recruiter
+  // doesn't have to hunt for them. dashboardUrl is the full
+  // origin + /dashboard, so we strip the path and rebuild.
+  const origin = dashboardUrl.replace(/\/dashboard\/?$/, "");
+  const addClientUrl = `${origin}/clients/new`;
+  const addJobUrl = `${origin}/jobs/new`;
+  const inviteTeamUrl = `${origin}/settings/team`;
+
   const trialLine = trialEndsAt
-    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong> — no credit card needed.</p>`
+    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong>. We won't charge anything until it ends — cancel any time before then and you won't be billed.</p>`
     : "";
 
   const html = wrapTemplate(
-    `Welcome to ${appName}, ${firstName}`,
-    `<p>Thanks for signing up — <strong>${organizationName}</strong> is all set on ${appName}.</p>
+    `Welcome, ${firstName}`,
+    `<p><strong>${organizationName}</strong> is live on ${appName}. Here's the fastest path to your first placement:</p>
      ${trialLine}
-     <p>Three things to try first:</p>
-     <ul style="color: #4b5563; padding-left: 20px; line-height: 1.7;">
-       <li>Add your first client and post a job</li>
-       <li>Import candidates (CSV, resume parser, or manually)</li>
-       <li>Invite a teammate and start working the pipeline</li>
-     </ul>
-     <p>Everything lives in one place: your candidates, your clients, and the conversations with both.</p>`,
+     <ol style="color: #4b5563; padding-left: 20px; line-height: 1.9;">
+       <li><a href="${addClientUrl}" style="color: #4f46e5; font-weight: 600;">Add your first client</a> — set fee structure + payment terms once, reuse for every search.</li>
+       <li><a href="${addJobUrl}" style="color: #4f46e5; font-weight: 600;">Post your first job</a> — upload the JD and the parser fills the form for you.</li>
+       <li><a href="${inviteTeamUrl}" style="color: #4f46e5; font-weight: 600;">Invite a teammate</a> — collaborate on the same pipeline + share notes.</li>
+     </ol>
+     <p>Reply to this email if anything's confusing or missing — we read every message and ship fast.</p>`,
     dashboardUrl,
     "Open Dashboard"
   );
