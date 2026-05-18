@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/utils";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS, TRIAL_DAYS } from "@/lib/constants";
+import { sendWelcomeEmail } from "@/lib/email";
 
 const onboardingSchema = z.object({
   orgName: z.string().trim().min(2, "Company name must be at least 2 characters"),
@@ -44,6 +45,16 @@ export async function POST(request: Request) {
       }
     }
 
+    // First-time-onboarding moment for OAuth signups: email/password
+    // users already got their welcome email from /api/auth/register
+    // (org name was captured at that step). OAuth users land in
+    // /onboarding with a placeholder org and only "complete" signup
+    // here — so this is the right place to fire their welcome.
+    const isFirstOnboarding = org.needsOnboarding;
+    const trialEndsAt =
+      org.subscription?.trialEndsAt ||
+      new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
     await prisma.$transaction(async (tx) => {
       await tx.organization.update({
         where: { id: org.id },
@@ -62,12 +73,31 @@ export async function POST(request: Request) {
             organizationId: org.id,
             stripeCustomerId: `pending_${org.id}`,
             status: "TRIALING",
-            trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
+            trialEndsAt,
             seats: 1,
           },
         });
       }
     });
+
+    if (isFirstOnboarding) {
+      const fullUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { email: true, name: true },
+      });
+      if (fullUser) {
+        const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+        sendWelcomeEmail({
+          to: fullUser.email,
+          recipientName: fullUser.name,
+          organizationName: data.orgName,
+          dashboardUrl: `${origin}/dashboard`,
+          trialEndsAt,
+        }).catch((err) => {
+          console.error("[onboarding] welcome email failed:", err);
+        });
+      }
+    }
 
     return NextResponse.json({
       organizationId: org.id,
