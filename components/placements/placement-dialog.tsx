@@ -293,7 +293,9 @@ export function PlacementDialog(props: Props) {
       setNotes(i.notes || "");
       setInvoiceStatus(i.invoiceStatus || "DRAFT");
     } else {
-      setEstimatedStartDate(activeDefaults?.estimatedStartDate || todayIso());
+      const initEst = activeDefaults?.estimatedStartDate || todayIso();
+      const initTerms = activeDefaults?.paymentTerms ?? 30;
+      setEstimatedStartDate(initEst);
       setStartDate("");
       setAgreedSalary(activeDefaults?.agreedSalary || "");
       const newCurrency = activeDefaults?.currency || "USD";
@@ -305,10 +307,14 @@ export function PlacementDialog(props: Props) {
       // the agreed flat fee. We just bind it to the single input.
       setFeeInput(activeDefaults?.feeAmount || "");
       setFeeType(activeDefaults?.feeType || "PERCENTAGE");
-      setPaymentTerms(activeDefaults?.paymentTerms ?? 30);
+      setPaymentTerms(initTerms);
       setGuaranteePeriod(activeDefaults?.guaranteePeriod ?? 90);
       setNotes(activeDefaults?.notes || "");
       setInvoiceStatus("DRAFT");
+      // Belt-and-suspenders: don't rely on the live-recompute effect to
+      // populate the due date on first open — set it explicitly from the
+      // same anchor + terms the user is seeing.
+      setPaymentDueDate(previewFromAnchor("", initEst, initTerms));
       setPaymentDueDateTouched(false);
     }
     setError("");
@@ -1110,8 +1116,12 @@ export function PlacementDialog(props: Props) {
                 type="date"
                 value={paymentDueDate}
                 onChange={(e) => {
-                  setPaymentDueDate(e.target.value);
-                  setPaymentDueDateTouched(true);
+                  const v = e.target.value;
+                  setPaymentDueDate(v);
+                  // Clearing the field reverts to auto-mode so the next
+                  // edit to start / terms recomputes it. Only mark
+                  // "touched" when the user actually picked a date.
+                  setPaymentDueDateTouched(v !== "");
                 }}
               />
               <p className="text-[10px] text-gray-400">
