@@ -33,7 +33,19 @@ export async function POST(request: Request) {
     const baseUrl =
       process.env.NEXTAUTH_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    const portalUrl = `${baseUrl}/client-portal/login`;
+
+    // Deep-link target the email CTA points to. When sharing a specific
+    // job we want the recipient to land on that job (after switching
+    // Client membership if needed) — not the generic dashboard.
+    //
+    // The bouncer at /client-portal/go handles the Client switch + final
+    // redirect; passing it as ?callbackUrl= means it works regardless of
+    // whether the user is logged in already (login page resumes there)
+    // or needs to set a password first (set-password page also resumes).
+    const deepLinkPath = jobId
+      ? `/client-portal/go?clientId=${clientId}&jobId=${jobId}`
+      : "/client-portal/dashboard";
+    const portalUrl = `${baseUrl}/client-portal/login?callbackUrl=${encodeURIComponent(deepLinkPath)}`;
 
     // Get job title if sharing a specific job
     let jobTitle: string | undefined;
@@ -118,7 +130,12 @@ export async function POST(request: Request) {
         },
       });
 
-      const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(inviteEmail)}`;
+      // Forward the same deep-link target so a fresh user who sets a
+      // password from the email lands on the shared Job, not dashboard.
+      const setPasswordUrl =
+        `${baseUrl}/client-portal/set-password?token=${setPasswordToken}` +
+        `&email=${encodeURIComponent(inviteEmail)}` +
+        (jobId ? `&callbackUrl=${encodeURIComponent(deepLinkPath)}` : "");
 
       await sendClientSetPasswordEmail({
         to: inviteEmail,
@@ -145,7 +162,10 @@ export async function POST(request: Request) {
           type: "candidate_shared",
           title: notifTitle,
           body: notifBody,
-          link: "/client-portal/dashboard",
+          // Same-Client notification — recipient is already viewing this
+          // Client when they see the bell, so jump straight to the job
+          // (no Client switch needed).
+          link: jobId ? `/client-portal/jobs/${jobId}` : "/client-portal/dashboard",
         },
       });
     } catch (e) {
@@ -175,9 +195,15 @@ export async function POST(request: Request) {
             type: "candidate_shared",
             title: `${firmName} shared a new search at ${client.name}`,
             body: jobTitle
-              ? `Search: ${jobTitle}. Sign in as ${recipientName} at ${client.name} to review.`
-              : `Sign in as ${recipientName} at ${client.name} to review.`,
-            link: "/client-portal/dashboard",
+              ? `Search: ${jobTitle}. Click to switch to ${client.name} and review.`
+              : `Click to switch to ${client.name} and review.`,
+            // Cross-Client notification — route via /go so the cookie
+            // flips to the right Client before the Job page loads. If
+            // there's no jobId (raw portal invite) we still want the
+            // switch to land them on the right Client's dashboard.
+            link: jobId
+              ? `/client-portal/go?clientId=${client.id}&jobId=${jobId}`
+              : `/client-portal/go?clientId=${client.id}`,
           })),
         });
       }

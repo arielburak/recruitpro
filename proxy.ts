@@ -43,8 +43,16 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     const isClientPortal = pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal");
-    const loginUrl = isClientPortal ? "/client-portal/login" : "/login";
-    return NextResponse.redirect(new URL(loginUrl, request.url));
+    const loginPath = isClientPortal ? "/client-portal/login" : "/login";
+    const loginUrl = new URL(loginPath, request.url);
+    // Preserve the original destination so deep links survive the login
+    // detour — e.g. clicking a share email at /client-portal/go?clientId=...
+    // when not yet authed should resume on /go after sign-in, not dashboard.
+    if (pathname.startsWith("/client-portal") && pathname !== loginPath) {
+      const target = pathname + (request.nextUrl.search || "");
+      loginUrl.searchParams.set("callbackUrl", target);
+    }
+    return NextResponse.redirect(loginUrl);
   }
 
   // Shared API routes accessible to both staffing and client users
