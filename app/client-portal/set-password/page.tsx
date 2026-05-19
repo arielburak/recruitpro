@@ -99,7 +99,12 @@ function SetPasswordForm() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      // Honor ?callbackUrl= so a brand-new portal user clicking a
+      // share email lands directly on the Job they were invited to,
+      // not the generic dashboard.
+      const cb = searchParams.get("callbackUrl");
+      const safeCb = cb && cb.startsWith("/") && !cb.startsWith("//") ? cb : null;
+      window.location.href = safeCb || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);

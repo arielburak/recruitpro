@@ -124,13 +124,20 @@ function ClientPortalLoginInner() {
   const [clearingSession, setClearingSession] = useState(false);
 
   // If there's a client session already, go straight to dashboard
+  // (or honor ?callbackUrl= for share-email deep links).
   // If there's a staffing session, don't touch it — just warn the user
   // that they need to sign out of staffing first to log in as client
+  const callbackUrl = searchParams.get("callbackUrl");
+  // Only honor relative URLs to avoid open-redirect via callbackUrl.
+  const safeCallback =
+    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+      ? callbackUrl
+      : null;
   useEffect(() => {
     if (session?.user && (session.user as any).isClientUser) {
-      router.replace("/client-portal/dashboard");
+      router.replace(safeCallback || "/client-portal/dashboard");
     }
-  }, [session, router]);
+  }, [session, router, safeCallback]);
 
   const hasStaffingSession = !!(session?.user && !(session.user as any).isClientUser);
 
@@ -173,7 +180,7 @@ function ClientPortalLoginInner() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      window.location.href = safeCallback || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -244,7 +251,7 @@ function ClientPortalLoginInner() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      window.location.href = safeCallback || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -375,7 +382,7 @@ function ClientPortalLoginInner() {
                   type="button"
                   onClick={() => {
                     markClientOAuth();
-                    signIn("google", { callbackUrl: "/client-portal/dashboard" });
+                    signIn("google", { callbackUrl: safeCallback || "/client-portal/dashboard" });
                   }}
                   className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
                 >
