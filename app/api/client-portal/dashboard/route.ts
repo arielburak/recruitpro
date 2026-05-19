@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const ctx = await getClientContext();
 
-    const [client, jobs, totalCandidates, engagements] = await Promise.all([
+    const [client, clientJobs, agencyJobs, totalCandidates, engagements] = await Promise.all([
       prisma.client.findUnique({
         where: { id: ctx.clientId },
         select: { name: true, industry: true },
@@ -18,6 +18,31 @@ export async function GET() {
           engagements: {
             include: {
               organization: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      // Agency-created Jobs running under this same Client. These never
+      // landed in the portal before because the dashboard only listed
+      // ClientJob (jobs the hiring company posted themselves). When a
+      // recruiter creates a Job in /jobs/new under Client X, the
+      // ClientUsers of Client X had no surface to see it on — only the
+      // candidates that came out of it via /client-portal/candidates.
+      // Surface them as "Active Searches" so the hiring manager knows
+      // their recruiter is working on something.
+      prisma.job.findMany({
+        where: { clientId: ctx.clientId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          location: true,
+          createdAt: true,
+          organization: { select: { id: true, name: true } },
+          _count: {
+            select: {
+              submissions: { where: { isSharedWithClient: true } },
             },
           },
         },
@@ -44,9 +69,19 @@ export async function GET() {
 
     return NextResponse.json({
       client,
-      jobs,
+      jobs: clientJobs,
+      agencyJobs: agencyJobs.map((j) => ({
+        id: j.id,
+        title: j.title,
+        status: j.status,
+        location: j.location,
+        createdAt: j.createdAt,
+        firmName: j.organization?.name || null,
+        firmId: j.organization?.id || null,
+        candidatesShared: j._count.submissions,
+      })),
       stats: {
-        openJobs: jobs.filter((j) => j.status === "OPEN").length,
+        openJobs: clientJobs.filter((j) => j.status === "OPEN").length,
         totalCandidates,
         activeRecruiters: engagements,
       },

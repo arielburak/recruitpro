@@ -5,7 +5,8 @@ import { DEFAULT_STAGES } from "@/lib/constants";
 
 export async function POST(request: Request) {
   try {
-    const { companyName, name, title, email, password, industry, website } = await request.json();
+    const { companyName, name, title, email: rawEmail, password, industry, website } = await request.json();
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
     if (!email || !password || !name) {
       return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
 
     // Check if any ClientUser exists with this email
     const existingUsers = await prisma.clientUser.findMany({
-      where: { email },
+      where: { email: { equals: email, mode: "insensitive" } },
     });
 
     if (existingUsers.length > 0) {
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
 
       // User(s) exist without password (invited by recruiter) — set password on ALL of them
       await prisma.clientUser.updateMany({
-        where: { email, passwordHash: null },
+        where: { email: { equals: email, mode: "insensitive" }, passwordHash: null },
         data: { passwordHash, name, ...(title ? { title } : {}) },
       });
 

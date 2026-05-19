@@ -31,7 +31,7 @@ export async function getClientContext() {
 
   if (user?.email) {
     const cu = await prisma.clientUser.findFirst({
-      where: { email: user.email, isActive: true },
+      where: { email: { equals: user.email, mode: "insensitive" }, isActive: true },
       select: {
         id: true,
         clientId: true,
