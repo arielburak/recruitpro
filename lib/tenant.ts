@@ -1,6 +1,8 @@
 import { getServerSession } from "next-auth";
+import { cookies } from "next/headers";
 import { authOptions } from "./auth-options";
 import { prisma } from "./prisma";
+import { CLIENT_PORTAL_CLIENT_COOKIE } from "./client-portal-context";
 
 export async function getOrgContext() {
   const session = await getServerSession(authOptions);
@@ -30,16 +32,41 @@ export async function getClientContext() {
   let clientUser: { id: string; clientId: string; role: "ADMIN" | "USER"; name: string; client: { name: string } } | null = null;
 
   if (user?.email) {
-    const cu = await prisma.clientUser.findFirst({
-      where: { email: { equals: user.email, mode: "insensitive" }, isActive: true },
-      select: {
-        id: true,
-        clientId: true,
-        role: true,
-        name: true,
-        client: { select: { name: true } },
-      },
-    });
+    // Honor the Client switcher cookie when present — the user may have
+    // multiple ClientUser rows (one per Client) and the cookie tells us
+    // which one they're "currently viewing". Validated server-side by
+    // the (email, clientId) constraint, so a tampered cookie can't grant
+    // access to a Client the user isn't a member of.
+    const jar = await cookies();
+    const selectedClientId = jar.get(CLIENT_PORTAL_CLIENT_COOKIE)?.value || null;
+
+    const baseSelect = {
+      id: true,
+      clientId: true,
+      role: true,
+      name: true,
+      client: { select: { name: true } },
+    };
+
+    let cu = null as any;
+    if (selectedClientId) {
+      cu = await prisma.clientUser.findFirst({
+        where: {
+          email: { equals: user.email, mode: "insensitive" },
+          isActive: true,
+          clientId: selectedClientId,
+        },
+        select: baseSelect,
+      });
+    }
+    if (!cu) {
+      // Fallback: first matching ClientUser (used by single-membership
+      // users, and by multi-membership users who haven't switched yet).
+      cu = await prisma.clientUser.findFirst({
+        where: { email: { equals: user.email, mode: "insensitive" }, isActive: true },
+        select: baseSelect,
+      });
+    }
     if (cu) clientUser = cu as any;
   }
 
