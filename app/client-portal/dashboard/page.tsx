@@ -233,6 +233,29 @@ export default function ClientDashboardPage() {
   ];
 
   const hasJobs = data?.jobs && data.jobs.length > 0;
+  const hasAgencyJobs = (data?.agencyJobs?.length || 0) > 0;
+  const hasAnyJobs = hasJobs || hasAgencyJobs;
+
+  // Unified Jobs list. Two upstream sources:
+  //   - data.jobs        → ClientJob records the client posted themselves
+  //                        (with engagements / firm invites). Link to the
+  //                        ClientJob detail page so they can manage firms.
+  //   - data.agencyJobs  → Job records an agency runs ON BEHALF of the
+  //                        client. The ClientJob detail page can't render
+  //                        these, so they link to the filtered candidates
+  //                        view instead.
+  // We tag each row with a `_source` so the card knows which footer + link
+  // to render, and sort newest first across both sources.
+  const allJobs = hasAnyJobs
+    ? [
+        ...(data?.jobs || []).map((j: any) => ({ ...j, _source: "self" as const })),
+        ...(data?.agencyJobs || []).map((j: any) => ({ ...j, _source: "agency" as const })),
+      ].sort((a, b) => {
+        const at = new Date(a.createdAt || 0).getTime();
+        const bt = new Date(b.createdAt || 0).getTime();
+        return bt - at;
+      })
+    : [];
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -316,7 +339,7 @@ export default function ClientDashboardPage() {
       </div>
 
       {/* Quick Action / Empty State */}
-      {!hasJobs && (
+      {!hasAnyJobs && (
         <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 rounded-2xl p-8 text-white shadow-lg">
           <div className="flex items-start gap-4">
             <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
@@ -340,11 +363,26 @@ export default function ClientDashboardPage() {
         </div>
       )}
 
-      {/* Job Postings */}
-      {hasJobs && (
+      {/* Jobs — unified list of self-posted ClientJobs and agency-managed
+          Jobs. A small tag on each card identifies the source ("Posted by
+          you" vs "via Firm"); the card body / link target differ but the
+          visual layout is consistent so the section reads as one list. */}
+      {hasAnyJobs && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Your Job Postings</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Jobs</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {allJobs.length} total
+                {hasAgencyJobs && hasJobs ? (
+                  <> · {data.jobs.length} posted by you · {data.agencyJobs.length} from your recruiters</>
+                ) : hasAgencyJobs ? (
+                  <> · {data.agencyJobs.length} from your recruiters</>
+                ) : (
+                  <> · all posted by you</>
+                )}
+              </p>
+            </div>
             <Link href="/client-portal/jobs/new">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs">
                 <Plus className="h-3.5 w-3.5" />
@@ -354,18 +392,22 @@ export default function ClientDashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {data.jobs.map((job: any) => {
+            {allJobs.map((job: any) => {
+              const isAgency = job._source === "agency";
+              const detailHref = isAgency
+                ? `/client-portal/candidates?jobId=${job.id}`
+                : `/client-portal/jobs/${job.id}`;
               const accepted = job.engagements?.filter((e: any) => e.status === "ACCEPTED").length || 0;
               const pending = job.engagements?.filter((e: any) => e.status === "PENDING").length || 0;
               const total = job.engagements?.length || 0;
 
               return (
-                <Card key={job.id} className="border-0 shadow-sm hover:shadow-md transition-all group">
+                <Card key={`${job._source}-${job.id}`} className="border-0 shadow-sm hover:shadow-md transition-all group">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Link href={`/client-portal/jobs/${job.id}`}>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <Link href={detailHref}>
                             <h3 className="font-semibold text-gray-900 hover:text-emerald-600 transition">
                               {job.title}
                             </h3>
@@ -373,7 +415,7 @@ export default function ClientDashboardPage() {
                           <Badge
                             variant="secondary"
                             className={`text-[10px] ${
-                              job.status === "OPEN"
+                              job.status === "OPEN" || job.status === "ACTIVE"
                                 ? "bg-emerald-50 text-emerald-700"
                                 : job.status === "FILLED"
                                 ? "bg-blue-50 text-blue-700"
@@ -382,53 +424,79 @@ export default function ClientDashboardPage() {
                           >
                             {job.status}
                           </Badge>
+                          <span
+                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              isAgency
+                                ? "bg-violet-50 text-violet-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {isAgency
+                              ? job.firmName
+                                ? `via ${job.firmName}`
+                                : "via your recruiter"
+                              : "Posted by you"}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-3 flex-wrap">
                           {job.location && <span>{job.location}</span>}
                           {job.jobType && (
                             <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px]">{job.jobType}</span>
                           )}
                           {job.salaryRange && <span>{job.salaryRange}</span>}
-                          <span className="text-gray-400">Posted {formatDate(job.createdAt)}</span>
+                          {job.createdAt && (
+                            <span className="text-gray-400">Posted {formatDate(job.createdAt)}</span>
+                          )}
                         </div>
 
-                        {/* Engagement Summary */}
-                        {total > 0 && (
-                          <div className="flex items-center gap-4 text-xs">
-                            {accepted > 0 && (
-                              <div className="flex items-center gap-1 text-green-600">
-                                <CheckCircle className="h-3 w-3" />
-                                <span className="font-medium">{accepted} active</span>
+                        {isAgency ? (
+                          // Agency-managed: highlight the candidate share count
+                          // as the actionable signal (review them).
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                              <Users className="h-3 w-3" />
+                              {job.candidatesShared} candidate{job.candidatesShared === 1 ? "" : "s"} shared
+                            </span>
+                          </div>
+                        ) : (
+                          // Self-posted: engagement summary + firm badges.
+                          <>
+                            {total > 0 && (
+                              <div className="flex items-center gap-4 text-xs">
+                                {accepted > 0 && (
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    <CheckCircle className="h-3 w-3" />
+                                    <span className="font-medium">{accepted} active</span>
+                                  </div>
+                                )}
+                                {pending > 0 && (
+                                  <div className="flex items-center gap-1 text-amber-600">
+                                    <Clock className="h-3 w-3" />
+                                    <span className="font-medium">{pending} pending</span>
+                                  </div>
+                                )}
+                                <span className="text-gray-400">{total} firm{total !== 1 ? "s" : ""} invited</span>
                               </div>
                             )}
-                            {pending > 0 && (
-                              <div className="flex items-center gap-1 text-amber-600">
-                                <Clock className="h-3 w-3" />
-                                <span className="font-medium">{pending} pending</span>
+                            {job.engagements?.length > 0 && (
+                              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                {job.engagements.map((eng: any) => (
+                                  <div
+                                    key={eng.id}
+                                    className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${statusColor[eng.status]}`}
+                                  >
+                                    {statusIcon[eng.status]}
+                                    <span className="font-medium">{eng.organization.name}</span>
+                                  </div>
+                                ))}
                               </div>
                             )}
-                            <span className="text-gray-400">{total} firm{total !== 1 ? "s" : ""} invited</span>
-                          </div>
-                        )}
-
-                        {/* Firm Badges */}
-                        {job.engagements?.length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {job.engagements.map((eng: any) => (
-                              <div
-                                key={eng.id}
-                                className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${statusColor[eng.status]}`}
-                              >
-                                {statusIcon[eng.status]}
-                                <span className="font-medium">{eng.organization.name}</span>
-                              </div>
-                            ))}
-                          </div>
+                          </>
                         )}
                       </div>
 
-                      <Link href={`/client-portal/jobs/${job.id}`}>
+                      <Link href={detailHref}>
                         <Button variant="ghost" size="sm" className="gap-1 text-gray-400 group-hover:text-emerald-600 transition">
                           <Eye className="h-3.5 w-3.5" />
                           View
@@ -439,67 +507,6 @@ export default function ClientDashboardPage() {
                 </Card>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {/* Active Searches — agency-created Jobs running under this Client.
-          These are jobs your recruiter is working on for you (not jobs
-          you posted yourself). Each card links to the shared candidates
-          for that search. */}
-      {(data?.agencyJobs?.length || 0) > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">
-              Active Searches by Your Recruiters
-            </h2>
-            <span className="text-xs text-gray-400">
-              {data.agencyJobs.length} search{data.agencyJobs.length === 1 ? "" : "es"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {data.agencyJobs.map((aj: any) => (
-              <Link
-                key={aj.id}
-                href={`/client-portal/candidates?jobId=${aj.id}`}
-                className="block"
-              >
-                <Card className="border-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-emerald-600 transition">
-                            {aj.title}
-                          </h3>
-                          <Badge
-                            variant="secondary"
-                            className={`text-[10px] shrink-0 ${
-                              aj.status === "OPEN" || aj.status === "ACTIVE"
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {aj.status}
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] text-gray-500 truncate">
-                          {aj.firmName ? `via ${aj.firmName}` : "via your recruiter"}
-                          {aj.location ? ` · ${aj.location}` : ""}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-lg font-bold text-gray-900 leading-none">{aj.candidatesShared}</p>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mt-0.5">
-                          shared
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
           </div>
         </div>
       )}
