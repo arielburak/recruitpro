@@ -1,11 +1,21 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Home } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Home, ChevronDown, Check, Building2 } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
 import { useLogoUrl } from "@/components/logo-uploader";
+
+type Membership = {
+  clientUserId: string;
+  clientId: string;
+  clientName: string;
+  industry: string | null;
+  role: "ADMIN" | "USER";
+  isCurrent: boolean;
+};
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -20,6 +30,58 @@ export default function ClientPortalLayout({
   const showNav = !isPublicPage;
   // Only fetch the logo when the user is authenticated as a client user (avoids 401 on public pages)
   const clientLogo = useLogoUrl(showNav ? "/api/client-portal/logo" : "");
+
+  // Multi-Client switcher: when the logged-in email has ClientUser rows
+  // on more than one Client (e.g. shared by a recruiter to Lion Point
+  // AND to Acme), let them flip between contexts without having to log
+  // out and back in.
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    if (!showNav) return;
+    fetch("/api/client-portal/memberships")
+      .then((r) => r.json())
+      .then((d) => setMemberships(d?.memberships || []))
+      .catch(() => {});
+  }, [showNav]);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  async function switchToClient(clientId: string) {
+    if (switching) return;
+    setSwitching(true);
+    try {
+      const res = await fetch("/api/client-portal/switch-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      if (res.ok) {
+        // Hard reload — every server query (dashboard, jobs, candidates)
+        // re-resolves via getClientContext, which now picks the new
+        // Client from the cookie we just set.
+        window.location.href = "/client-portal/dashboard";
+      } else {
+        setSwitching(false);
+      }
+    } catch {
+      setSwitching(false);
+    }
+  }
+
+  const currentMembership = memberships.find((m) => m.isCurrent) || memberships[0] || null;
+  const hasMultipleMemberships = memberships.length > 1;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -50,23 +112,66 @@ export default function ClientPortalLayout({
             {/* Company workspace badge.
                 - If the client uploaded a logo → show just the logo (clean).
                 - If no logo yet → show the company name as a fallback so
-                  the workspace is still identified. */}
+                  the workspace is still identified.
+                - When the user has memberships on multiple Clients, the
+                  whole badge becomes a switcher dropdown. */}
             {showNav && (session?.user as any)?.clientName && (
               <div
-                className="hidden lg:flex items-center gap-2.5 pl-4 border-l border-gray-200"
+                ref={switcherRef}
+                className="hidden lg:flex items-center pl-4 border-l border-gray-200 relative"
                 title={(session?.user as any)?.clientName || ""}
               >
-                {clientLogo ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={clientLogo}
-                    alt={(session?.user as any)?.clientName || ""}
-                    className="h-16 w-auto max-w-[180px] object-contain"
-                  />
-                ) : (
-                  <span className="text-sm font-semibold text-gray-900 truncate max-w-[220px]">
-                    {(session?.user as any)?.clientName}
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => hasMultipleMemberships && setSwitcherOpen((v) => !v)}
+                  className={`flex items-center gap-2.5 ${hasMultipleMemberships ? "hover:bg-gray-50 rounded-lg px-2 py-1.5 -mx-2 cursor-pointer" : "cursor-default"}`}
+                  disabled={!hasMultipleMemberships}
+                >
+                  {clientLogo ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={clientLogo}
+                      alt={(session?.user as any)?.clientName || ""}
+                      className="h-16 w-auto max-w-[180px] object-contain"
+                    />
+                  ) : (
+                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[220px]">
+                      {currentMembership?.clientName || (session?.user as any)?.clientName}
+                    </span>
+                  )}
+                  {hasMultipleMemberships && (
+                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${switcherOpen ? "rotate-180" : ""}`} />
+                  )}
+                </button>
+
+                {hasMultipleMemberships && switcherOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
+                    <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                      Switch workspace
+                    </div>
+                    {memberships.map((m) => (
+                      <button
+                        key={m.clientId}
+                        type="button"
+                        onClick={() => switchToClient(m.clientId)}
+                        disabled={switching || m.isCurrent}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                          m.isCurrent
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "hover:bg-gray-50 text-gray-700"
+                        }`}
+                      >
+                        <Building2 className={`h-4 w-4 shrink-0 ${m.isCurrent ? "text-emerald-600" : "text-gray-400"}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{m.clientName}</p>
+                          {m.industry && (
+                            <p className="text-[11px] text-gray-400 truncate">{m.industry}</p>
+                          )}
+                        </div>
+                        {m.isCurrent && <Check className="h-4 w-4 text-emerald-600 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

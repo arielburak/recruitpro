@@ -151,6 +151,24 @@ export default function JobDetailPage() {
   const [shareSuccess, setShareSuccess] = useState("");
   const [shareError, setShareError] = useState("");
 
+  // Autocomplete for the share-with-client dialog. As the recruiter
+  // types, surface every ClientUser the agency already has on file so
+  // they can pick "Nick Cuello · Lion Point" instead of re-typing a
+  // misspelled email and accidentally creating a duplicate account.
+  type ContactSuggestion = {
+    id: string;
+    email: string;
+    name: string;
+    title: string | null;
+    clientId: string;
+    clientName: string;
+    hasPassword: boolean;
+    onCurrentClient: boolean;
+  };
+  const [shareSuggestions, setShareSuggestions] = useState<ContactSuggestion[]>([]);
+  const [shareSuggestOpen, setShareSuggestOpen] = useState(false);
+  const [shareSuggestLoading, setShareSuggestLoading] = useState(false);
+
   // Assign recruiters dialog state
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignSearch, setAssignSearch] = useState("");
@@ -489,6 +507,41 @@ export default function JobDetailPage() {
     }
   }
 
+  // Debounced contact lookup while the recruiter types in the share
+  // dialog. Skipped when the input doesn't look like a search yet
+  // (< 2 chars) or when the dialog is closed.
+  useEffect(() => {
+    if (!showShareDialog) return;
+    const q = shareEmail.trim();
+    if (q.length < 2) {
+      setShareSuggestions([]);
+      setShareSuggestOpen(false);
+      return;
+    }
+    setShareSuggestLoading(true);
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ q });
+      if (job?.clientId) qs.set("currentClientId", job.clientId);
+      fetch(`/api/clients/contact-lookup?${qs.toString()}`)
+        .then((r) => r.json())
+        .then((data) => {
+          const list = Array.isArray(data) ? data : [];
+          setShareSuggestions(list);
+          setShareSuggestOpen(list.length > 0);
+        })
+        .catch(() => setShareSuggestions([]))
+        .finally(() => setShareSuggestLoading(false));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [shareEmail, showShareDialog, job?.clientId]);
+
+  function pickShareSuggestion(s: ContactSuggestion) {
+    setShareEmail(s.email);
+    setShareName(s.name || "");
+    setShareSuggestOpen(false);
+    setShareError("");
+  }
+
   async function sendClientInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!job || !shareEmail.trim()) return;
@@ -729,16 +782,71 @@ export default function JobDetailPage() {
                     <span>{shareSuccess}</span>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="share-email">Email Address *</Label>
                   <Input
                     id="share-email"
                     type="email"
-                    placeholder="client@company.com"
+                    placeholder="client@company.com — start typing to find existing contacts"
                     value={shareEmail}
                     onChange={(e) => setShareEmail(e.target.value)}
+                    onFocus={() => shareSuggestions.length > 0 && setShareSuggestOpen(true)}
+                    autoComplete="off"
                     required
                   />
+                  {shareSuggestOpen && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-72 overflow-y-auto">
+                      <div className="px-3 pt-2 pb-1.5 flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                          Existing contacts
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShareSuggestOpen(false)}
+                          className="text-[10px] text-gray-400 hover:text-gray-600"
+                        >
+                          dismiss
+                        </button>
+                      </div>
+                      {shareSuggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => pickShareSuggestion(s)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 transition-colors border-t border-gray-50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-medium text-gray-900 truncate">
+                                {s.name || s.email}
+                              </span>
+                              {s.onCurrentClient ? (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                                  on this client
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                  {s.clientName}
+                                </span>
+                              )}
+                              {!s.hasPassword && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                                  not activated
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 truncate">
+                              {s.email}
+                              {s.title ? ` · ${s.title}` : ""}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {shareSuggestLoading && !shareSuggestOpen && (
+                    <p className="text-[11px] text-gray-400">Searching contacts…</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="share-name">Name (optional)</Label>
