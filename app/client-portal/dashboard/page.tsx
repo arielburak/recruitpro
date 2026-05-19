@@ -190,7 +190,15 @@ export default function ClientDashboardPage() {
     0
   );
 
-  const stats = [
+  type Stat = {
+    label: string;
+    value: number;
+    icon: typeof Briefcase;
+    gradient: string;
+    href?: string;
+    onClick?: () => void;
+  };
+  const stats: Stat[] = [
     {
       label: "Open Positions",
       value: openJobs,
@@ -210,7 +218,10 @@ export default function ClientDashboardPage() {
       value: activeRecruiters,
       icon: Handshake,
       gradient: "from-violet-500 to-purple-600",
-      href: null,
+      // No dedicated "recruiters" page in the client portal — open the
+      // same Firms Engaged drawer used by the Hiring Progress widget so
+      // the click does land somewhere useful instead of dead-ending.
+      onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined,
     },
     {
       label: "Total Jobs",
@@ -246,26 +257,29 @@ export default function ClientDashboardPage() {
 
       {/* Pending Engagements Alert */}
       {pendingEngagements > 0 && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="p-2 bg-amber-100 rounded-xl flex-shrink-0">
-            <Clock className="h-5 w-5 text-amber-600" />
+        <Link href="/client-portal/jobs">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-md transition group">
+            <div className="p-2 bg-amber-100 rounded-xl flex-shrink-0">
+              <Clock className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-amber-900 text-sm">
+                {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
+              </p>
+              <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>
-          <div className="flex-1">
-            <p className="font-semibold text-amber-900 text-sm">
-              {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
-            </p>
-            <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
-          </div>
-        </div>
+        </Link>
       )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((stat) => {
+          const interactive = !!stat.href || !!stat.onClick;
           const inner = (
             <Card
-              key={stat.label}
-              className={`border-0 shadow-sm transition-all ${stat.href ? "hover:shadow-md hover:-translate-y-0.5 cursor-pointer" : ""}`}
+              className={`border-0 shadow-sm transition-all ${interactive ? "hover:shadow-md hover:-translate-y-0.5 cursor-pointer" : ""}`}
             >
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -278,13 +292,26 @@ export default function ClientDashboardPage() {
               </CardContent>
             </Card>
           );
-          return stat.href ? (
-            <Link key={stat.label} href={stat.href}>
-              {inner}
-            </Link>
-          ) : (
-            <div key={stat.label}>{inner}</div>
-          );
+          if (stat.href) {
+            return (
+              <Link key={stat.label} href={stat.href}>
+                {inner}
+              </Link>
+            );
+          }
+          if (stat.onClick) {
+            return (
+              <button
+                key={stat.label}
+                type="button"
+                onClick={stat.onClick}
+                className="text-left"
+              >
+                {inner}
+              </button>
+            );
+          }
+          return <div key={stat.label}>{inner}</div>;
         })}
       </div>
 
@@ -594,18 +621,19 @@ export default function ClientDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[
-                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", onClick: undefined as undefined | (() => void) },
+                {([
+                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", href: "/client-portal/jobs" },
                   { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500", onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined },
-                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", onClick: undefined },
-                ].map((item) => {
+                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", href: "/client-portal/candidates" },
+                ] as Array<{ label: string; value: number; max: number; color: string; href?: string; onClick?: () => void }>).map((item) => {
                   const pct = Math.min((item.value / item.max) * 100, 100);
+                  const interactive = !!item.href || !!item.onClick;
                   const Row = (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-sm">
-                        <span className={`text-gray-600 ${item.onClick ? "group-hover:text-indigo-600" : ""} flex items-center gap-1.5`}>
+                        <span className={`text-gray-600 ${interactive ? "group-hover:text-indigo-600" : ""} flex items-center gap-1.5`}>
                           {item.label}
-                          {item.onClick && <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                          {interactive && <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
                         </span>
                         <span className="font-bold text-gray-900">{item.value}</span>
                       </div>
@@ -617,18 +645,27 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
                   );
-                  return item.onClick ? (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={item.onClick}
-                      className="group w-full text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-indigo-50/40 transition-colors"
-                    >
-                      {Row}
-                    </button>
-                  ) : (
-                    <div key={item.label}>{Row}</div>
-                  );
+                  const wrapperClass = "group block w-full text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-indigo-50/40 transition-colors";
+                  if (item.href) {
+                    return (
+                      <Link key={item.label} href={item.href} className={wrapperClass}>
+                        {Row}
+                      </Link>
+                    );
+                  }
+                  if (item.onClick) {
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={item.onClick}
+                        className={wrapperClass}
+                      >
+                        {Row}
+                      </button>
+                    );
+                  }
+                  return <div key={item.label}>{Row}</div>;
                 })}
               </div>
             </CardContent>
