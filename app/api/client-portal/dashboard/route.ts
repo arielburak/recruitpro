@@ -30,12 +30,16 @@ export async function GET() {
           job: { clientId: ctx.clientId },
         },
       }),
-      prisma.firmEngagement.count({
-        where: {
-          clientJob: { clientId: ctx.clientId },
-          status: "ACCEPTED",
-        },
-      }),
+      // Count UNIQUE accepted firms (one firm on three jobs = 1, not 3).
+      // Prior implementation counted FirmEngagement rows, which is what
+      // the "Firms Engaged" widget surfaces, and inflated the number.
+      prisma.firmEngagement
+        .findMany({
+          where: { clientJob: { clientId: ctx.clientId }, status: "ACCEPTED" },
+          select: { organizationId: true },
+          distinct: ["organizationId"],
+        })
+        .then((rows) => rows.length),
     ]);
 
     return NextResponse.json({

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Briefcase,
   Users,
@@ -49,6 +50,32 @@ export default function ClientDashboardPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [teamMenuOpen, setTeamMenuOpen] = useState<string | null>(null);
+
+  // Firms Engaged drawer
+  const [firmsOpen, setFirmsOpen] = useState(false);
+  const [firms, setFirms] = useState<
+    | { organizationId: string; name: string; jobsCount: number; pendingCount: number; candidatesShared: number }[]
+    | null
+  >(null);
+  const [firmsLoading, setFirmsLoading] = useState(false);
+
+  async function openFirmsDrawer() {
+    setFirmsOpen(true);
+    if (firms !== null) return;
+    setFirmsLoading(true);
+    try {
+      const res = await fetch("/api/client-portal/firms-engaged");
+      if (res.ok) {
+        const data = await res.json();
+        setFirms(data.firms || []);
+      } else {
+        setFirms([]);
+      }
+    } catch {
+      setFirms([]);
+    }
+    setFirmsLoading(false);
+  }
 
   useEffect(() => {
     fetch("/api/client-portal/dashboard")
@@ -568,15 +595,18 @@ export default function ClientDashboardPage() {
             <CardContent>
               <div className="space-y-4">
                 {[
-                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500" },
-                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500" },
-                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500" },
+                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", onClick: undefined as undefined | (() => void) },
+                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500", onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined },
+                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", onClick: undefined },
                 ].map((item) => {
                   const pct = Math.min((item.value / item.max) * 100, 100);
-                  return (
-                    <div key={item.label} className="space-y-1.5">
+                  const Row = (
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{item.label}</span>
+                        <span className={`text-gray-600 ${item.onClick ? "group-hover:text-indigo-600" : ""} flex items-center gap-1.5`}>
+                          {item.label}
+                          {item.onClick && <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                        </span>
                         <span className="font-bold text-gray-900">{item.value}</span>
                       </div>
                       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -586,6 +616,18 @@ export default function ClientDashboardPage() {
                         />
                       </div>
                     </div>
+                  );
+                  return item.onClick ? (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={item.onClick}
+                      className="group w-full text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-indigo-50/40 transition-colors"
+                    >
+                      {Row}
+                    </button>
+                  ) : (
+                    <div key={item.label}>{Row}</div>
                   );
                 })}
               </div>
@@ -637,6 +679,57 @@ export default function ClientDashboardPage() {
           </Card>
         </div>
       )}
+
+      <Dialog open={firmsOpen} onOpenChange={setFirmsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Handshake className="h-4 w-4 text-indigo-500" />
+              Recruiting firms engaged
+            </DialogTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Firms actively sourcing for your open jobs. Counts include every job and candidate they&apos;ve worked with you on.
+            </p>
+          </DialogHeader>
+          {firmsLoading ? (
+            <div className="py-8 space-y-2">
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+            </div>
+          ) : !firms || firms.length === 0 ? (
+            <p className="py-8 text-sm text-gray-400 text-center">No firms engaged yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {firms.map((firm) => (
+                <div
+                  key={firm.organizationId}
+                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                    {firm.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{firm.name}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {firm.jobsCount} job{firm.jobsCount === 1 ? "" : "s"}
+                      {firm.pendingCount > 0 && (
+                        <> · <span className="text-amber-600">{firm.pendingCount} pending invite{firm.pendingCount === 1 ? "" : "s"}</span></>
+                      )}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold text-gray-900">{firm.candidatesShared}</p>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide">
+                      candidate{firm.candidatesShared === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
