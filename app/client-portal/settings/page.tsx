@@ -27,6 +27,8 @@ import {
   Shield,
   ShieldOff,
   Lock,
+  Send,
+  UserCheck,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -71,6 +73,8 @@ export default function ClientPortalSettingsPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
+  const [contactMatch, setContactMatch] = useState<{ name: string; title: string | null; email: string } | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -96,6 +100,33 @@ export default function ClientPortalSettingsPage() {
       if (res.ok) setTeam(await res.json());
     } catch {}
   }
+
+  // When the recruiter types an email into the invite form, debounce
+  // and check whether that email already exists as a Contact on the
+  // agency side. If so, we pre-fill name/title so they don't retype.
+  useEffect(() => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@") || !email.includes(".")) {
+      setContactMatch(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/client-portal/contact-lookup?email=${encodeURIComponent(email)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.match) {
+          setContactMatch(null);
+          return;
+        }
+        setContactMatch(data.match);
+        // Only auto-fill empty fields — don't clobber what the user already typed.
+        setInviteName((prev) => (prev.trim() ? prev : data.match.name));
+        setInviteTitle((prev) => (prev.trim() ? prev : data.match.title || ""));
+      } catch {}
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [inviteEmail]);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -185,6 +216,7 @@ export default function ClientPortalSettingsPage() {
         setInviteTitle("");
         setInviteEmail("");
         setInviteRole("USER");
+        setContactMatch(null);
         fetchTeam();
       }
     } catch {
@@ -212,6 +244,34 @@ export default function ClientPortalSettingsPage() {
     }
     setMemberMenu(null);
     fetchTeam();
+  }
+
+  async function cancelInvite(memberId: string, email: string) {
+    if (!confirm(`Cancel invite for ${email}? They won't be able to use any previously sent link.`)) return;
+    const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Failed to cancel invite");
+    }
+    setMemberMenu(null);
+    fetchTeam();
+  }
+
+  async function resendInvite(memberId: string) {
+    setResendingId(memberId);
+    try {
+      const res = await fetch(`/api/client-portal/team/${memberId}/resend`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to resend invite");
+      } else {
+        alert(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
+      }
+    } catch {
+      alert("Something went wrong");
+    }
+    setResendingId(null);
+    setMemberMenu(null);
   }
 
   async function changeMemberRole(memberId: string, newRole: "ADMIN" | "USER") {
@@ -438,6 +498,20 @@ export default function ClientPortalSettingsPage() {
             <CardContent>
               {isAdmin && showInvite && (
                 <div className="mb-4 p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
+                  {contactMatch && (
+                    <div className="mb-3 flex items-start gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                      <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-medium">
+                          {contactMatch.name} is already a contact on file
+                          {contactMatch.title ? ` (${contactMatch.title})` : ""}.
+                        </p>
+                        <p className="text-blue-700/80 mt-0.5">
+                          We pre-filled their info. Submitting will give them portal access too.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <form onSubmit={inviteMember} className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
@@ -503,7 +577,9 @@ export default function ClientPortalSettingsPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {team.map((member) => (
+                  {team.map((member) => {
+                    const isPending = member.isActive && member.hasPassword === false;
+                    return (
                     <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                       <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
                         {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
@@ -520,6 +596,11 @@ export default function ClientPortalSettingsPage() {
                         >
                           {member.role === "ADMIN" ? "Admin" : "User"}
                         </Badge>
+                        {isPending && (
+                          <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-800 border border-amber-200">
+                            Pending
+                          </Badge>
+                        )}
                         {!member.isActive && <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Inactive</Badge>}
                         {isAdmin && (
                           <div className="relative">
@@ -531,49 +612,70 @@ export default function ClientPortalSettingsPage() {
                             </button>
                             {memberMenu === member.id && (
                               <div className="absolute right-0 top-8 z-10 bg-white border rounded-lg shadow-lg py-1 w-44">
-                                {member.role === "USER" ? (
-                                  <button
-                                    onClick={() => changeMemberRole(member.id, "ADMIN")}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <Shield className="h-3.5 w-3.5" /> Promote to Admin
-                                  </button>
+                                {isPending ? (
+                                  <>
+                                    <button
+                                      onClick={() => resendInvite(member.id)}
+                                      disabled={resendingId === member.id}
+                                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
+                                    >
+                                      <Send className="h-3.5 w-3.5" /> {resendingId === member.id ? "Resending..." : "Resend invite"}
+                                    </button>
+                                    <button
+                                      onClick={() => cancelInvite(member.id, member.email)}
+                                      className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                    >
+                                      <X className="h-3.5 w-3.5" /> Cancel invite
+                                    </button>
+                                  </>
                                 ) : (
-                                  <button
-                                    onClick={() => changeMemberRole(member.id, "USER")}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <ShieldOff className="h-3.5 w-3.5" /> Demote to User
-                                  </button>
+                                  <>
+                                    {member.role === "USER" ? (
+                                      <button
+                                        onClick={() => changeMemberRole(member.id, "ADMIN")}
+                                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <Shield className="h-3.5 w-3.5" /> Promote to Admin
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => changeMemberRole(member.id, "USER")}
+                                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <ShieldOff className="h-3.5 w-3.5" /> Demote to User
+                                      </button>
+                                    )}
+                                    {member.isActive ? (
+                                      <button
+                                        onClick={() => toggleMember(member.id, false)}
+                                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <UserX className="h-3.5 w-3.5" /> Deactivate
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => toggleMember(member.id, true)}
+                                        className="w-full text-left px-3 py-1.5 text-sm text-emerald-600 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <CheckCircle className="h-3.5 w-3.5" /> Reactivate
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => removeMember(member.id)}
+                                      className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                    >
+                                      <X className="h-3.5 w-3.5" /> Remove
+                                    </button>
+                                  </>
                                 )}
-                                {member.isActive ? (
-                                  <button
-                                    onClick={() => toggleMember(member.id, false)}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <UserX className="h-3.5 w-3.5" /> Deactivate
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => toggleMember(member.id, true)}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-emerald-600 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <CheckCircle className="h-3.5 w-3.5" /> Reactivate
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => removeMember(member.id)}
-                                  className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                >
-                                  <X className="h-3.5 w-3.5" /> Remove
-                                </button>
                               </div>
                             )}
                           </div>
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

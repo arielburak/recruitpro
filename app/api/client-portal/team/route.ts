@@ -19,11 +19,18 @@ export async function GET() {
         role: true,
         isActive: true,
         createdAt: true,
+        passwordHash: true,
       },
       orderBy: { createdAt: "asc" },
     });
 
-    return NextResponse.json(members);
+    // Strip the hash itself, expose only whether the invite was accepted.
+    const sanitized = members.map(({ passwordHash, ...m }) => ({
+      ...m,
+      hasPassword: !!passwordHash,
+    }));
+
+    return NextResponse.json(sanitized);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
