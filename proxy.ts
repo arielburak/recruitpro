@@ -51,6 +51,15 @@ export async function proxy(request: NextRequest) {
   const sharedApiRoutes = ["/api/profile"];
   const isSharedApi = sharedApiRoutes.some((p) => pathname.startsWith(p));
 
+  // Agency-owned APIs that happen to live under /api/client-portal/* because
+  // they manage client-portal data on the agency's behalf (e.g. issuing
+  // set-password invites for a Client's portal account). They use
+  // getOrgContext() internally, so let staffing users through — the
+  // "no client-portal access for agency users" rule below would otherwise
+  // 401 them.
+  const agencyClientPortalApis = ["/api/client-portal/tokens"];
+  const isAgencyClientPortalApi = agencyClientPortalApis.some((p) => pathname.startsWith(p));
+
   // Client users can only access client portal (plus shared APIs)
   if (
     token.isClientUser &&
@@ -63,11 +72,13 @@ export async function proxy(request: NextRequest) {
 
   // Staffing firm users accessing client portal → redirect to client login
   // (they need to sign out of staffing and sign in as client)
-  // But allow shared APIs like /api/profile
+  // But allow shared APIs like /api/profile, plus agency-owned APIs that
+  // happen to be namespaced under /api/client-portal/*.
   if (
     !token.isClientUser &&
     (pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal")) &&
-    !isSharedApi
+    !isSharedApi &&
+    !isAgencyClientPortalApi
   ) {
     // For pages, redirect to client login
     if (pathname.startsWith("/client-portal")) {
