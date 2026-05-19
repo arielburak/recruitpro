@@ -52,13 +52,17 @@ function ClientCandidatesPageInner() {
   // sees just the candidates from that one search. Resolved server-side via
   // FirmEngagement → firm Job.id; the page itself just passes it through.
   const initialClientJobId = searchParams.get("clientJobId") || "";
+  // The dashboard "Active Searches" cards (agency-side Jobs running under
+  // this client) deep-link here with ?jobId=… to scope down to that one
+  // search's candidates without round-tripping through ClientJob.
+  const initialJobId = searchParams.get("jobId") || "";
 
   const [rows, setRows] = useState<CandidateRow[]>([]);
   const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
-  const [jobFilter, setJobFilter] = useState<string>("all");
+  const [jobFilter, setJobFilter] = useState<string>(initialJobId || "all");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [firmFilter, setFirmFilter] = useState<string>("all");
   const [clientJobIdFilter, setClientJobIdFilter] = useState<string>(initialClientJobId);

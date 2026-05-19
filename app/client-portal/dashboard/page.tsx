@@ -443,6 +443,67 @@ export default function ClientDashboardPage() {
         </div>
       )}
 
+      {/* Active Searches — agency-created Jobs running under this Client.
+          These are jobs your recruiter is working on for you (not jobs
+          you posted yourself). Each card links to the shared candidates
+          for that search. */}
+      {(data?.agencyJobs?.length || 0) > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">
+              Active Searches by Your Recruiters
+            </h2>
+            <span className="text-xs text-gray-400">
+              {data.agencyJobs.length} search{data.agencyJobs.length === 1 ? "" : "es"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.agencyJobs.map((aj: any) => (
+              <Link
+                key={aj.id}
+                href={`/client-portal/candidates?jobId=${aj.id}`}
+                className="block"
+              >
+                <Card className="border-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-emerald-600 transition">
+                            {aj.title}
+                          </h3>
+                          <Badge
+                            variant="secondary"
+                            className={`text-[10px] shrink-0 ${
+                              aj.status === "OPEN" || aj.status === "ACTIVE"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {aj.status}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-gray-500 truncate">
+                          {aj.firmName ? `via ${aj.firmName}` : "via your recruiter"}
+                          {aj.location ? ` · ${aj.location}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-lg font-bold text-gray-900 leading-none">{aj.candidatesShared}</p>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mt-0.5">
+                          shared
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Team Members */}
       <div>
         <div className="flex items-center justify-between mb-4">

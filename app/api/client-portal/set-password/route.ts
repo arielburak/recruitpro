@@ -41,7 +41,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { token, email, password, companyName, industry } = await request.json();
+    const { token, email: rawEmail, password, companyName, industry } = await request.json();
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
     if (!token || !email || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -67,7 +68,11 @@ export async function POST(request: Request) {
 
     // Find the client user
     const clientUser = await prisma.clientUser.findFirst({
-      where: { email, clientId: tokenRecord.clientId, isActive: true },
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        clientId: tokenRecord.clientId,
+        isActive: true,
+      },
     });
 
     if (!clientUser) {

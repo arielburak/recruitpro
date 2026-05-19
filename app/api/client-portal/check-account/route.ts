@@ -3,14 +3,15 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
-    const { email } = await request.json();
+    const { email: rawEmail } = await request.json();
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
     if (!email) {
       return NextResponse.json({ exists: false });
     }
 
     const clientUsers = await prisma.clientUser.findMany({
-      where: { email, isActive: true },
+      where: { email: { equals: email, mode: "insensitive" }, isActive: true },
       select: { id: true, passwordHash: true },
     });
 
