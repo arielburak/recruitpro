@@ -21,6 +21,7 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   Activity,
+  Upload,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
@@ -401,15 +402,42 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* First-week migration nudge. Sits BELOW the Welcome banner so
-          a brand-new empty workspace still leads with the quickstart
-          steps; agencies that have started using the product (but are
-          still in their first week) see this as the primary CTA.
-          Day-0 uses the non-dismissable static variant so localStorage
-          / build-cache quirks can't silently hide it on the very first
-          session; day 1+ switches to the dismissable Client Component. */}
+      {/* First-week migration nudge. Day-0 is fully inlined here (no
+          separate component, no client state, no localStorage) so the
+          banner ships in the initial server-rendered HTML and there's
+          literally no code path that can hide it. Day 1+ keeps using
+          the dismissable Client Component. The tiny "v2" pill is a
+          temporary deploy-verification marker — if a user reports the
+          banner missing, the absence of this pill means their browser
+          is hitting a stale build. */}
       {isWithinFirstWeek && daysSinceSignup <= 0 && (
-        <MigrateBannerStatic daysSinceSignup={daysSinceSignup} />
+        <div className="bg-gradient-to-r from-cyan-50 via-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-5 relative">
+          <span className="absolute top-2 right-3 text-[9px] font-mono text-sky-400/60">v2</span>
+          <div className="flex items-start gap-4 pr-6">
+            <div className="p-2.5 bg-sky-100 rounded-xl shrink-0">
+              <Upload className="w-5 h-5 text-sky-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sky-900">Coming from another ATS?</p>
+              <p className="text-sm text-sky-800/80 mt-0.5">
+                Bring your candidates, clients, and open searches over in one shot — CSV or TSV from Bullhorn,
+                JobAdder, Loxo, Crelate, or wherever you live today. The mapping wizard handles renamed columns.
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <Link
+                  href="/import"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Start importing
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+                <span className="text-[11px] text-sky-700/70">
+                  Your first day — 7 days left
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {isWithinFirstWeek && daysSinceSignup > 0 && (
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
