@@ -82,9 +82,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = jobSchema.parse(body);
 
-    // Verify client belongs to org
+    // Verify this agency is engaged with the target Client (shared-
+    // Client model — see lib/client-access).
     const client = await prisma.client.findFirst({
-      where: { id: data.clientId, organizationId: ctx.organizationId },
+      where: {
+        id: data.clientId,
+        engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+      },
     });
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 400 });

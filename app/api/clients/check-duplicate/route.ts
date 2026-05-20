@@ -47,7 +47,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ matches: [] });
     }
 
-    const orgFilter = { organizationId: ctx.organizationId };
+    // Scope duplicate-detection to clients THIS agency is engaged
+    // with. "Is this client already on our roster?" is the question
+    // we're answering — not "does it exist anywhere in the system".
+    const orgFilter = {
+      engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+    };
     const queries: Promise<any[]>[] = [];
 
     if (name) {

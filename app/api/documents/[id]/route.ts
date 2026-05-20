@@ -18,7 +18,7 @@ export async function GET(
         OR: [
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
-          { client: { organizationId: ctx.organizationId } },
+          { client: { engagedOrganizations: { some: { organizationId: ctx.organizationId } } } },
         ],
       },
     });
@@ -74,7 +74,7 @@ export async function DELETE(
         OR: [
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
-          { client: { organizationId: ctx.organizationId } },
+          { client: { engagedOrganizations: { some: { organizationId: ctx.organizationId } } } },
         ],
       },
       include: {

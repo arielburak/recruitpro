@@ -10,11 +10,15 @@ export async function DELETE(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Verify the client user belongs to a client in this org
+    // Verify the client user belongs to a Client this agency is
+    // engaged with. We can't just check ownership anymore — multiple
+    // agencies share Clients now.
     const clientUser = await prisma.clientUser.findFirst({
       where: {
         id,
-        client: { organizationId: ctx.organizationId },
+        client: {
+          engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+        },
       },
     });
 

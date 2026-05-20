@@ -24,7 +24,9 @@ export async function GET(request: Request) {
     const matches = await prisma.clientUser.findMany({
       where: {
         isActive: true,
-        client: { organizationId: ctx.organizationId },
+        client: {
+          engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+        },
         OR: [
           { email: { contains: q, mode: "insensitive" } },
           { name: { contains: q, mode: "insensitive" } },

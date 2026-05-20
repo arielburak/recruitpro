@@ -30,7 +30,10 @@ export async function GET(
     const { id } = await params;
 
     const client = await prisma.client.findFirst({
-      where: { id, organizationId: ctx.organizationId },
+      where: {
+        id,
+        engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+      },
       select: { id: true },
     });
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -65,7 +68,10 @@ export async function POST(
     }
 
     const client = await prisma.client.findFirst({
-      where: { id, organizationId: ctx.organizationId },
+      where: {
+        id,
+        engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+      },
       select: { id: true, name: true },
     });
     if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
