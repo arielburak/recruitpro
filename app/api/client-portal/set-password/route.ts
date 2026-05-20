@@ -94,7 +94,16 @@ export async function POST(request: Request) {
     const ops: any[] = [
       prisma.clientUser.update({
         where: { id: clientUser.id },
-        data: { passwordHash },
+        data: {
+          passwordHash,
+          // Possession of the email-delivered token is proof of mailbox
+          // ownership, so stamp the verified-at here. The login flow's
+          // hard-block on unverified accounts would otherwise lock the
+          // user out on their very first sign-in.
+          emailVerifiedAt: clientUser.emailVerifiedAt ?? new Date(),
+          emailVerificationToken: null,
+          emailVerificationExpiresAt: null,
+        },
       }),
       prisma.clientPortalToken.update({
         where: { id: tokenRecord.id },

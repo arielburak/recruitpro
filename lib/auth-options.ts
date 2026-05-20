@@ -97,6 +97,13 @@ export const authOptions: NextAuthOptions = {
         );
         if (!isValid) return null;
 
+        // Same hard block as the agency side: don't issue a session
+        // until the email-verification token has been clicked. The UI
+        // catches this and offers a resend.
+        if (!clientUser.emailVerifiedAt) {
+          throw new Error("EMAIL_NOT_VERIFIED");
+        }
+
         return {
           id: clientUser.id,
           email: clientUser.email,
@@ -217,6 +224,20 @@ export const authOptions: NextAuthOptions = {
             include: { client: true },
           });
           if (dbClient) {
+            // Google has already verified the address on its side, so
+            // backfill emailVerifiedAt on first OAuth sign-in if it
+            // wasn't set yet. Keeps the hard-block in client-credentials
+            // honest for password users without locking out OAuth users.
+            if (!dbClient.emailVerifiedAt) {
+              await prisma.clientUser.update({
+                where: { id: dbClient.id },
+                data: {
+                  emailVerifiedAt: new Date(),
+                  emailVerificationToken: null,
+                  emailVerificationExpiresAt: null,
+                },
+              });
+            }
             token.id = dbClient.id;
             token.name = dbClient.name;
             token.isClientUser = true;

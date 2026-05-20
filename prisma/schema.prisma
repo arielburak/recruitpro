@@ -206,6 +206,13 @@ model ClientUser {
   role         UserRole @default(USER)
   clientId     String
   isActive     Boolean  @default(true)
+  // Email verification mirrors User: token + expiry are populated at
+  // self-signup time and cleared on verify. The invited path
+  // (set-password via mail token) and OAuth backfill emailVerifiedAt
+  // at first activation since the email itself is proof of ownership.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

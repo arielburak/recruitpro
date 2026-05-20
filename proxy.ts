@@ -23,13 +23,14 @@ export async function proxy(request: NextRequest) {
   }
 
   // Client portal public pages (login, set-password, reset-password) — always allow
-  const clientPublicPaths = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
+  const clientPublicPaths = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password", "/client-portal/verify-email"];
   if (clientPublicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Client portal API routes that don't need session (register, check-account)
-  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password"];
+  // Client portal API routes that don't need session (register, check-account,
+  // verify-email + resend — the recipient has no session yet by definition).
+  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password", "/api/client-portal/verify-email", "/api/client-portal/resend-verification"];
   if (clientPublicApis.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
