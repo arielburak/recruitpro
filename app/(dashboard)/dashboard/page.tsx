@@ -406,7 +406,7 @@ export default async function DashboardPage() {
           steps; agencies that have started using the product (but are
           still in their first week) see this as the primary CTA. */}
       {isWithinFirstWeek && (
-        <MigrateBanner daysSinceSignup={daysSinceSignup} />
+        <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
       {/* KPI Cards */}
