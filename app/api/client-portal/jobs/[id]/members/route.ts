@@ -5,9 +5,13 @@ import { canAccessClientJob } from "@/lib/client-job-access";
 
 // Manage which ClientUsers can see a given ClientJob.
 //
-// Auth: only the JO's creator (postedBy) or a Client admin can change
-// the member list. Other team members can READ it (returns the list)
-// but can't mutate it — they'd just be removing themselves.
+// Auth: the JO's creator (postedBy) or any current member can mutate
+// the list — i.e. it's collaborative within the group, no admin
+// override. The "admin" role doesn't auto-grant access to JOs (see
+// lib/client-job-access for why), so it shouldn't grant management
+// privileges over them either. Non-members can't GET the list at
+// all (would leak names + emails); non-members trying to PUT get a
+// 404 the same as on detail.
 //
 // PUT body: { memberIds: string[] }. Replaces the full list. The
 // creator is always re-added if missing so they can't lock
@@ -65,10 +69,19 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const canManage = ctx.role === "ADMIN" || job.postedById === ctx.clientUserId;
+    // Any current member (or the creator) can mutate — collaborative
+    // within the group. canAccessClientJob above already confirmed the
+    // caller is either the creator, in the members list, or hitting a
+    // legacy job with no members yet; we re-check creatorship here so
+    // a non-member from a legacy "everyone" job can't quietly create
+    // a restricted member list without joining first.
+    const isMember = job.members.some((m) => m.clientUserId === ctx.clientUserId);
+    const isCreator = job.postedById === ctx.clientUserId;
+    const isLegacyOpen = job.members.length === 0;
+    const canManage = isCreator || isMember || isLegacyOpen;
     if (!canManage) {
       return NextResponse.json(
-        { error: "Only the job's creator or a client admin can manage access." },
+        { error: "Only people already on this job can manage access." },
         { status: 403 }
       );
     }

@@ -1,13 +1,20 @@
 // Helpers for the per-JO membership feature on the client portal.
 //
-// Rule of thumb:
-//   - Admins see every ClientJob of their Client.
-//   - Non-admins see jobs where the members list is EMPTY (backwards
-//     compat: the feature post-dates many jobs) OR where they're
-//     explicitly a member.
+// Rule of thumb (no admin bypass — explicit decision):
+//   - Visibility: a ClientUser sees a JO only when they're an explicit
+//     member. The "admin" role grants team-management powers (inviting
+//     teammates, changing org info) but does NOT auto-grant access to
+//     every job — an admin from another branch / department shouldn't
+//     see a confidential search they were never invited to.
+//   - Legacy jobs (no member rows yet, created before this feature
+//     shipped) stay visible to all team members: "members is empty"
+//     reads as "no one explicitly restricted, defer to the workspace".
 //   - The creator (postedById) is always added as a member at create
-//     time so the recruiter who posted the job never gets locked out
-//     of their own search.
+//     time so they can't lock themselves out of their own search.
+//
+// Management gating (who can change the member list) lives in the
+// jobs/[id]/members route — same idea: it's not derived from the
+// ADMIN role, only from membership + creatorship.
 
 import type { Prisma } from "@/app/generated/prisma/client";
 
@@ -21,9 +28,6 @@ export type ClientCtx = {
 // ClientJobs by visibility. Combine with other conditions via
 // spread / AND as needed.
 export function clientJobAccessWhere(ctx: ClientCtx): Prisma.ClientJobWhereInput {
-  if (ctx.role === "ADMIN") {
-    return { clientId: ctx.clientId };
-  }
   return {
     clientId: ctx.clientId,
     OR: [
@@ -41,7 +45,6 @@ export function canAccessClientJob(
   job: { clientId: string; members: { clientUserId: string }[] }
 ): boolean {
   if (job.clientId !== ctx.clientId) return false;
-  if (ctx.role === "ADMIN") return true;
   if (job.members.length === 0) return true;
   return job.members.some((m) => m.clientUserId === ctx.clientUserId);
 }
