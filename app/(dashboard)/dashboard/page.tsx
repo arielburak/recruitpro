@@ -31,6 +31,7 @@ import {
   JobStatusChart,
   RecruiterLeaderboard,
 } from "@/components/dashboard-charts";
+import { MigrateBanner } from "@/components/dashboard/migrate-banner";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -41,6 +42,19 @@ export default async function DashboardPage() {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  // Org age drives the first-week migration banner (see MigrateBanner).
+  // We fetch this outside the Promise.all so the banner can render
+  // even if any of the dashboard stat queries fail — it's a hint, not
+  // a hard dependency.
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { createdAt: true },
+  });
+  const daysSinceSignup = org
+    ? Math.floor((now.getTime() - new Date(org.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : Infinity;
+  const isWithinFirstWeek = daysSinceSignup <= 7;
 
   const [
     activeJobs,
@@ -385,6 +399,14 @@ export default async function DashboardPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* First-week migration nudge. Sits BELOW the Welcome banner so
+          a brand-new empty workspace still leads with the quickstart
+          steps; agencies that have started using the product (but are
+          still in their first week) see this as the primary CTA. */}
+      {isWithinFirstWeek && (
+        <MigrateBanner daysSinceSignup={daysSinceSignup} />
       )}
 
       {/* KPI Cards */}
