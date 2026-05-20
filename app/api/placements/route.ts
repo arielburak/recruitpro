@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
-import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 
 export async function GET() {
   try {
@@ -274,18 +273,6 @@ export async function POST(request: Request) {
           where: { id: jobId! },
           data: { status: "FILLED" },
         });
-        // Same notification fan-out as a manual flip to FILLED so the
-        // client portal hears about the placement regardless of which
-        // path triggered the status change.
-        try {
-          await notifyClientOfJobStatusChange({
-            jobId: jobId!,
-            newStatus: "FILLED",
-            organizationId: ctx.organizationId,
-          });
-        } catch (e) {
-          console.error("[placement] FILLED notif failed:", e);
-        }
       }
     }
 
