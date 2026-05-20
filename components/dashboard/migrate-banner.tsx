@@ -27,7 +27,15 @@ export function MigrateBanner({
   daysSinceSignup: number;
   orgId: string;
 }) {
-  const [dismissed, setDismissed] = useState(true);
+  // On day 0 — the literal first day of the org — we force the banner
+  // on regardless of any stored dismiss state. A user can't have
+  // genuinely engaged with the suggestion in the time it took to
+  // bounce from /register to /dashboard, so an early-state dismiss
+  // flag (legacy global, stale from a previous QA run, leftover
+  // browser state, etc.) is more likely noise than a real preference.
+  // From day 1 onwards we honor the user's dismiss again.
+  const forceShow = daysSinceSignup <= 0;
+  const [dismissed, setDismissed] = useState(!forceShow);
   const key = `${DISMISS_KEY_PREFIX}${orgId}`;
 
   useEffect(() => {
@@ -36,11 +44,18 @@ export function MigrateBanner({
       // forward — we don't honor it as a dismiss because that was the
       // exact bug we're fixing here.
       window.localStorage.removeItem(LEGACY_DISMISS_KEY);
+      if (forceShow) {
+        // Also clear the per-org flag on day 0: a fresh org should
+        // not carry over a dismiss from any earlier session.
+        window.localStorage.removeItem(key);
+        setDismissed(false);
+        return;
+      }
       setDismissed(window.localStorage.getItem(key) === "1");
     } catch {
       setDismissed(false);
     }
-  }, [key]);
+  }, [key, forceShow]);
 
   if (dismissed) return null;
 
