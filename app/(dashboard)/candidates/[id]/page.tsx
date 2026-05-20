@@ -35,6 +35,7 @@ import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
 import { InterviewsList } from "@/components/interviews/interviews-list";
+import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -68,6 +69,7 @@ export default function CandidateDetailPage() {
   // create mode (with the candidate's submissions as the job picker);
   // `editingInterview` opens it in edit mode pre-filled from the row.
   const [showCreateInterview, setShowCreateInterview] = useState(false);
+  const [interviewsView, setInterviewsView] = useState<"list" | "calendar">("list");
   const [editingInterview, setEditingInterview] = useState<any | null>(null);
 
   useEffect(() => {
@@ -768,9 +770,35 @@ export default function CandidateDetailPage() {
 
         <TabsContent value="interviews" className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              {candidate.interviews?.length || 0} total interview{candidate.interviews?.length === 1 ? "" : "s"}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-500">
+                {candidate.interviews?.length || 0} total interview{candidate.interviews?.length === 1 ? "" : "s"}
+              </p>
+              <div className="inline-flex bg-gray-100 rounded-md p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setInterviewsView("list")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded ${
+                    interviewsView === "list"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInterviewsView("calendar")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded ${
+                    interviewsView === "calendar"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Calendar
+                </button>
+              </div>
+            </div>
             <Button
               size="sm"
               onClick={() => setShowCreateInterview(true)}
@@ -785,11 +813,19 @@ export default function CandidateDetailPage() {
               Schedule interview
             </Button>
           </div>
-          <InterviewsList
-            interviews={candidate.interviews || []}
-            attendeeKind="job"
-            onRowClick={setEditingInterview}
-          />
+          {interviewsView === "list" ? (
+            <InterviewsList
+              interviews={candidate.interviews || []}
+              attendeeKind="job"
+              onRowClick={setEditingInterview}
+            />
+          ) : (
+            <InterviewsCalendar
+              interviews={candidate.interviews || []}
+              attendeeKind="job"
+              onRowClick={setEditingInterview}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-2">
