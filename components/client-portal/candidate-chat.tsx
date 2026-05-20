@@ -253,7 +253,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
         {tabComments.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-center">
             <div>
-              <Briefcase className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+              <Briefcase className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
               <p className="text-sm text-gray-400">
                 {activeTab === "CLIENT_INTERNAL"
                   ? "No internal messages yet."

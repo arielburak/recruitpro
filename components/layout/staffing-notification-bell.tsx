@@ -121,9 +121,9 @@ export function StaffingNotificationBell() {
 
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
-              <div className="p-8 text-center">
-                <Bell className="h-8 w-8 text-gray-200 mx-auto mb-2" />
-                <p className="text-xs text-gray-400">No notifications yet.</p>
+              <div className="px-8 py-10 text-center">
+                <Bell className="block h-8 w-8 text-gray-200 mx-auto mb-3" />
+                <p className="text-xs text-gray-400 leading-relaxed">No notifications yet.</p>
               </div>
             ) : (
               <ul>

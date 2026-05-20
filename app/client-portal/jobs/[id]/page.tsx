@@ -562,7 +562,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 <CardContent className="p-0">
                   {jobCandidates.length === 0 ? (
                     <div className="p-6 text-center">
-                      <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <Users className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
                       <p className="text-sm text-gray-500">No candidates shared yet.</p>
                       <p className="text-xs text-gray-400 mt-1">
                         Your recruiting firms will share candidates here as they find them.
