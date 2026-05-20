@@ -525,7 +525,7 @@ export default function ClientDetailPage() {
                 </div>
               ) : contacts.length === 0 && !addingContact ? (
                 <div className="text-center py-8">
-                  <UserCircle className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <UserCircle className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-400">No contacts yet for this client.</p>
                 </div>
               ) : (
