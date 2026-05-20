@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Badge } from "@/components/ui/badge";
-import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Calendar, Video, Plug, RefreshCw } from "lucide-react";
+import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Calendar, Plug, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export default function StaffingProfilePage() {
@@ -354,26 +354,6 @@ export default function StaffingProfilePage() {
                       Connect Google
                     </Button>
                   )}
-                </div>
-              </div>
-
-              {/* Microsoft Teams (coming soon) */}
-              <div className="border rounded-lg p-4 opacity-60">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center shrink-0">
-                      <Video className="h-5 w-5 text-[#6264A7]" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-medium text-sm">Microsoft Teams</h3>
-                        <Badge variant="secondary" className="text-[10px]">Coming soon</Badge>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Auto-create Teams meetings when scheduling interviews.
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </CardContent>
