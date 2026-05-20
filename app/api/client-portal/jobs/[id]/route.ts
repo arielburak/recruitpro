@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { canAccessClientJob } from "@/lib/client-job-access";
 
 export async function PUT(
   request: Request,
@@ -11,12 +12,15 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Verify job belongs to this client
+    // Verify job belongs to this client AND the caller can see it.
+    // Editing a JO they shouldn't see leaks both existence and
+    // content, so we 404 the same way the list would.
     const existing = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
+      include: { members: { select: { clientUserId: true } } },
     });
 
-    if (!existing) {
+    if (!existing || !canAccessClientJob(ctx, existing)) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 

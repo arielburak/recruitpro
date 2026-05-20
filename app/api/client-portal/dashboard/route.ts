@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { clientJobAccessWhere } from "@/lib/client-job-access";
 
 export async function GET() {
   try {
@@ -12,7 +13,9 @@ export async function GET() {
         select: { name: true, industry: true },
       }),
       prisma.clientJob.findMany({
-        where: { clientId: ctx.clientId },
+        // Per-JO visibility: admins see everything; non-admins see
+        // jobs they're a member of (or legacy jobs with no member list).
+        where: clientJobAccessWhere(ctx),
         include: {
           _count: { select: { engagements: true } },
           engagements: {

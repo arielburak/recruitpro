@@ -221,6 +221,9 @@ model ClientUser {
   ratings    CandidateRating[]
   clientJobs ClientJob[]
   notifications ClientNotification[]
+  // Per-JO access — the JOs this team member was explicitly added to.
+  // See ClientJobMember; combined with role=ADMIN as a global bypass.
+  jobMemberships ClientJobMember[]
 
   @@index([clientId])
 }
@@ -727,9 +730,28 @@ model ClientJob {
   engagements        FirmEngagement[]
   pendingFirmInvites PendingFirmInvite[]
   documents          Document[]
+  // Per-JO member access: ClientUsers explicitly listed here can see
+  // this job. If the array is empty, ALL team members of the Client
+  // can see it (backwards-compatible default for jobs created before
+  // this feature shipped). Admins always see everything regardless.
+  members            ClientJobMember[]
 
   @@index([clientId])
   @@index([status])
+}
+
+model ClientJobMember {
+  id           String   @id @default(cuid())
+  clientJobId  String
+  clientUserId String
+  addedAt      DateTime @default(now())
+
+  clientJob  ClientJob  @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+  clientUser ClientUser @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+
+  @@unique([clientJobId, clientUserId])
+  @@index([clientJobId])
+  @@index([clientUserId])
 }
 
 // ─── FIRM ENGAGEMENTS (links client jobs to recruiting firms) ───
