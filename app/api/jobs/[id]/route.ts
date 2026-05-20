@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
+import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 
 // A job is "private" when it was born from a person-level client-portal
 // invite: at least one FirmEngagement row points at it with invitedUserId
@@ -230,6 +231,22 @@ export async function PATCH(
     if (updated.count === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Best-effort client-portal notification on the transitions the
+    // hiring contact actually cares about. Wrapped in try/catch so a
+    // notification glitch never breaks the status flip itself.
+    if (typeof data.status === "string") {
+      try {
+        await notifyClientOfJobStatusChange({
+          jobId: id,
+          newStatus: data.status,
+          organizationId: ctx.organizationId,
+        });
+      } catch (e) {
+        console.error("[job PATCH] client notif failed:", e);
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
