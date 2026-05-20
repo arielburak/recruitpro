@@ -19,56 +19,72 @@ function deriveCompanyNameFromEmail(email: string): string {
     .join(" ");
 }
 
-// Quick-share path used by Job /new: agency types ONLY the hiring contact's
-// email. We create a stub Client (just enough to attach Jobs to), a
-// ClientUser, a set-password token, and email the invite. The hiring
-// manager fills in real company info on first login.
+// Quick-share path used by Job /new: agency types ONLY the hiring
+// contact's email. With the shared-Client model in place we handle
+// three cases:
 //
-// Email uniqueness (ClientUser.email is globally unique) means we
-// need three distinct branches:
-//   1. The email already belongs to a ClientUser whose Client is in
-//      THIS agency's org → reuse silently, attach Jobs to that Client.
-//   2. The email belongs to a ClientUser at another org's Client (a
-//      competitor agency, or a self-signed-up hiring company) →
-//      surface a clear 409 so the recruiter knows to use a different
-//      address (the contact's personal / alt email).
-//   3. Brand new email → create stub Client + ClientUser as before.
+//   1. Email matches a ClientUser whose Client THIS agency is
+//      already engaged with → reuse silently (return the existing
+//      clientId so the new Job attaches to the right Client; no
+//      new mail since the contact is already in flight).
+//
+//   2. Email matches a ClientUser at a Client we're NOT engaged
+//      with yet (could be a totally new Acme record in the system,
+//      or the same Acme another agency is also working with) →
+//      transparently engage with that Client. The hiring company
+//      lives once globally; we just need an OrganizationClient row
+//      to make it visible on this agency's roster. No new mail —
+//      the recipient already has a portal account.
+//
+//   3. Brand-new email → create stub Client + ClientUser + the
+//      engagement, send the set-password invite.
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
     const body = await request.json();
-    const rawEmail = typeof body?.hiringContactEmail === "string" ? body.hiringContactEmail.trim().toLowerCase() : "";
-    const contactName = typeof body?.hiringContactName === "string" ? body.hiringContactName.trim() : "";
+    const rawEmail =
+      typeof body?.hiringContactEmail === "string"
+        ? body.hiringContactEmail.trim().toLowerCase()
+        : "";
+    const contactName =
+      typeof body?.hiringContactName === "string"
+        ? body.hiringContactName.trim()
+        : "";
 
     if (!rawEmail || !/^\S+@\S+\.\S+$/.test(rawEmail)) {
-      return NextResponse.json({ error: "A valid hiring contact email is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "A valid hiring contact email is required" },
+        { status: 400 }
+      );
     }
 
-    // Branch 1/2: this email already has a ClientUser somewhere.
     const existingCu = await prisma.clientUser.findUnique({
       where: { email: rawEmail },
       select: {
         id: true,
         name: true,
         clientId: true,
-        passwordHash: true,
-        client: { select: { id: true, name: true, organizationId: true } },
+        client: { select: { id: true, name: true } },
       },
     });
 
     if (existingCu) {
-      if (existingCu.client.organizationId !== ctx.organizationId) {
-        return NextResponse.json(
-          {
-            error:
-              "This email is already in use at another client / agency. Ask the contact for a different email (work or personal) you can use here.",
+      // Ensure this agency is engaged with the hiring company. If
+      // they already are, this is a no-op via the unique constraint.
+      await prisma.organizationClient.upsert({
+        where: {
+          organizationId_clientId: {
+            organizationId: ctx.organizationId,
+            clientId: existingCu.clientId,
           },
-          { status: 409 }
-        );
-      }
-      // Same agency — reuse the existing Client + ClientUser. No
-      // set-password email here because the recipient already has an
-      // account in flight; the share flow will follow up.
+        },
+        update: {},
+        create: {
+          organizationId: ctx.organizationId,
+          clientId: existingCu.clientId,
+        },
+      });
+
       return NextResponse.json(
         {
           clientId: existingCu.clientId,
@@ -83,12 +99,12 @@ export async function POST(request: Request) {
 
     const derivedName = deriveCompanyNameFromEmail(rawEmail);
 
-    // Branch 3: brand new email. Reuse an existing stub Client tied
-    // to this hiring email if one was already created in this org
-    // (prevents duplicates when the recruiter retries quick-share).
+    // Reuse an existing stub Client this agency already created for
+    // this hiring email (prevents duplicates when the recruiter
+    // retries quick-share without picking up the previous invite).
     const existingStub = await prisma.client.findFirst({
       where: {
-        organizationId: ctx.organizationId,
+        engagedOrganizations: { some: { organizationId: ctx.organizationId } },
         isStub: true,
         contactEmail: rawEmail,
       },
@@ -112,7 +128,14 @@ export async function POST(request: Request) {
             contactName: contactName || null,
           },
         });
-
+        // Engagement is now the source of visibility, not the audit
+        // column on Client itself.
+        await tx.organizationClient.create({
+          data: {
+            organizationId: ctx.organizationId,
+            clientId: client.id,
+          },
+        });
         await tx.clientPipelineStage.createMany({
           data: DEFAULT_STAGES.map((s, i) => ({
             name: s.name,
@@ -123,16 +146,12 @@ export async function POST(request: Request) {
             clientId: client.id,
           })),
         });
-
         return client;
       });
       clientId = created.id;
       clientName = created.name;
     }
 
-    // Fresh ClientUser for this email under the stub Client. Safe to
-    // unique-create here because the early findUnique above already
-    // ruled out a pre-existing row.
     const clientUser = await prisma.clientUser.create({
       data: {
         email: rawEmail,
@@ -142,9 +161,6 @@ export async function POST(request: Request) {
       },
     });
 
-    // Brand-new account → send set-password email so the hiring
-    // manager can activate it. The share flow will land them on the
-    // specific Job once they set a password.
     const baseUrl =
       process.env.NEXTAUTH_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
@@ -177,6 +193,9 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: error.message?.startsWith("Unauthorized") ? 401 : 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.message?.startsWith("Unauthorized") ? 401 : 500 }
+    );
   }
 }

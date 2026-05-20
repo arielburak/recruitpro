@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       // Search client contacts
       clients = await prisma.clientUser.findMany({
         where: {
-          client: { organizationId: ctx.organizationId },
+          client: { engagedOrganizations: { some: { organizationId: ctx.organizationId } } },
           name: { contains: q, mode: "insensitive" },
           isActive: true,
         },

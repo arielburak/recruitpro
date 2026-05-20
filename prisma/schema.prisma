@@ -22,6 +22,10 @@ model Organization {
 
   users        User[]
   clients      Client[]
+  // Hiring companies this agency is engaged with (decoupled from
+  // Client.organizationId so the same hiring company can be worked
+  // on by multiple agencies). See OrganizationClient.
+  clientEngagements OrganizationClient[]
   candidates   Candidate[]
   contacts     Contact[]
   jobs         Job[]
@@ -146,6 +150,12 @@ model Client {
   // (just an email, no real company info). The invited hiring manager
   // enriches name / industry on first login, which clears this flag.
   isStub         Boolean  @default(false)
+  // organizationId is kept as audit metadata ("created by this org")
+  // but is NOT the authoritative ownership signal anymore. A real-
+  // world hiring company exists once in the DB and multiple agencies
+  // can engage with it concurrently — see OrganizationClient. New
+  // agency-side queries filter by the OrganizationClient join, not
+  // by this column.
   organizationId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -160,8 +170,33 @@ model Client {
   clientJobs   ClientJob[]
   pipelineStages ClientPipelineStage[]
   notifications  ClientNotification[]
+  // Agencies engaged with this hiring company. One Client can be
+  // worked on by multiple agencies in parallel — each agency only
+  // sees their OWN Jobs at the client (Job.organizationId scope)
+  // and the ClientJobs the client explicitly shared (FirmEngagement).
+  engagedOrganizations OrganizationClient[]
 
   @@index([organizationId])
+}
+
+// Join between an agency Organization and a hiring-company Client.
+// Models the "which agencies work with this client" relationship.
+// Listing/access on the agency side filters via this join instead of
+// Client.organizationId — that way a hiring company (e.g. Acme) lives
+// once in the DB and any agency can engage with it without the system
+// duplicating the Client record.
+model OrganizationClient {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  addedAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, clientId])
+  @@index([organizationId])
+  @@index([clientId])
 }
 
 // ─── CONTACTS (people at hiring companies) ───
