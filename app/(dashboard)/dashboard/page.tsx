@@ -34,6 +34,15 @@ import {
 } from "@/components/dashboard-charts";
 import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
 
+// Force dynamic rendering. The page already depends on getServerSession
+// + prisma so Next.js auto-detects this, but stating it explicitly
+// prevents an accidental static-render upstream from quietly caching
+// a snapshot of the dashboard across deploys (we hit exactly that
+// pattern while debugging the migration banner: browser kept serving
+// a stale HTML from before the banner was added).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.organizationId;
