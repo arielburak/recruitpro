@@ -31,7 +31,7 @@ import {
   JobStatusChart,
   RecruiterLeaderboard,
 } from "@/components/dashboard-charts";
-import { MigrateBanner } from "@/components/dashboard/migrate-banner";
+import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -404,8 +404,14 @@ export default async function DashboardPage() {
       {/* First-week migration nudge. Sits BELOW the Welcome banner so
           a brand-new empty workspace still leads with the quickstart
           steps; agencies that have started using the product (but are
-          still in their first week) see this as the primary CTA. */}
-      {isWithinFirstWeek && (
+          still in their first week) see this as the primary CTA.
+          Day-0 uses the non-dismissable static variant so localStorage
+          / build-cache quirks can't silently hide it on the very first
+          session; day 1+ switches to the dismissable Client Component. */}
+      {isWithinFirstWeek && daysSinceSignup <= 0 && (
+        <MigrateBannerStatic daysSinceSignup={daysSinceSignup} />
+      )}
+      {isWithinFirstWeek && daysSinceSignup > 0 && (
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
