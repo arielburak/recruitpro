@@ -122,6 +122,27 @@ function ClientPortalLoginInner() {
   const [isInvitedUser, setIsInvitedUser] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [clearingSession, setClearingSession] = useState(false);
+  // Set when the credentials sign-in succeeds on password but the
+  // server throws EMAIL_NOT_VERIFIED. We surface a dedicated panel
+  // (instead of a generic red error) with a one-click "resend
+  // verification email" so the user can recover without help.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string>("");
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [verificationResent, setVerificationResent] = useState(false);
+
+  async function resendVerification() {
+    if (!unverifiedEmail || resendingVerification) return;
+    setResendingVerification(true);
+    try {
+      await fetch("/api/client-portal/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: unverifiedEmail }),
+      });
+      setVerificationResent(true);
+    } catch {}
+    setResendingVerification(false);
+  }
 
   // If there's a client session already, go straight to dashboard
   // (or honor ?callbackUrl= for share-email deep links).
@@ -160,6 +181,16 @@ function ClientPortalLoginInner() {
       });
 
       if (result?.error) {
+        // NextAuth surfaces our thrown EMAIL_NOT_VERIFIED message via
+        // result.error. Disambiguate that from a generic invalid-creds
+        // case so we can offer a one-click resend instead of leaving
+        // the user stuck without context.
+        if (result.error === "EMAIL_NOT_VERIFIED") {
+          setUnverifiedEmail(String(fd.get("email") || ""));
+          setError("");
+          setLoading(false);
+          return;
+        }
         // Check if user exists but has no password
         try {
           const checkRes = await fetch("/api/client-portal/check-account", {
@@ -232,12 +263,26 @@ function ClientPortalLoginInner() {
         return;
       }
 
+      const data = await res.json().catch(() => ({}));
+
+      // New accounts ship in unverified state — the credentials provider
+      // would refuse to sign them in until they click the verify link.
+      // Skip the auto-login attempt and surface the "check your email"
+      // panel instead so the UX matches the actual constraint.
+      if (data?.needsVerification) {
+        setUnverifiedEmail(email);
+        setMode("login");
+        setLoading(false);
+        return;
+      }
+
       // If a staffing session is active, transparently sign out first
       if (hasStaffingSession) {
         await signOut({ redirect: false });
       }
 
-      // Auto-login
+      // Auto-login (legacy path for pre-verification accounts; new
+      // accounts go through the verify panel above).
       const result = await signIn("client-credentials", {
         email,
         password,
@@ -408,6 +453,26 @@ function ClientPortalLoginInner() {
               <form onSubmit={handleLogin} className="space-y-4">
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
                 {success && <div className="bg-green-50 text-green-600 text-sm p-3 rounded-lg">{success}</div>}
+                {unverifiedEmail && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg space-y-2">
+                    <p className="font-medium">Verify your email to sign in</p>
+                    <p className="text-xs text-amber-800/80">
+                      We sent a confirmation link to <strong>{unverifiedEmail}</strong>. Click it to activate your account.
+                    </p>
+                    {verificationResent ? (
+                      <p className="text-xs text-emerald-700">A new link is on its way. Check your inbox.</p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={resendVerification}
+                        disabled={resendingVerification}
+                        className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline-offset-2 hover:underline disabled:opacity-50"
+                      >
+                        {resendingVerification ? "Sending…" : "Resend verification email"}
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input id="email" name="email" type="email" placeholder="you@company.com" required />

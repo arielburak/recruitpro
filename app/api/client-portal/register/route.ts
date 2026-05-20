@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { sendEmailVerificationEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -18,36 +20,55 @@ export async function POST(request: Request) {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Check if any ClientUser exists with this email
-    const existingUsers = await prisma.clientUser.findMany({
-      where: { email: { equals: email, mode: "insensitive" } },
+    const existing = await prisma.clientUser.findUnique({
+      where: { email },
     });
 
-    if (existingUsers.length > 0) {
-      // Check if any already has a password set
-      const hasPasswordUser = existingUsers.find((u) => u.passwordHash);
-      if (hasPasswordUser) {
+    if (existing) {
+      if (existing.passwordHash) {
         return NextResponse.json({ error: "Email already registered. Please sign in instead." }, { status: 400 });
       }
 
-      // User(s) exist without password (invited by recruiter) — set password on ALL of them
-      await prisma.clientUser.updateMany({
-        where: { email: { equals: email, mode: "insensitive" }, passwordHash: null },
-        data: { passwordHash, name, ...(title ? { title } : {}) },
+      // Invited row without a password yet — activate it. The mail token
+      // they used to reach the set-password screen is proof of ownership,
+      // so we treat that path as implicit verification. This /register
+      // endpoint is a fallback for users who manually visit the register
+      // form with an invited email; we still send a verification email
+      // and gate login until they click.
+      const verificationToken = randomBytes(32).toString("hex");
+      const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await prisma.clientUser.update({
+        where: { id: existing.id },
+        data: {
+          passwordHash,
+          name,
+          ...(title ? { title } : {}),
+          emailVerificationToken: verificationToken,
+          emailVerificationExpiresAt: verificationExpiresAt,
+        },
       });
 
+      const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+      sendEmailVerificationEmail({
+        to: email,
+        recipientName: name,
+        verifyUrl: `${origin}/client-portal/verify-email?token=${verificationToken}`,
+      }).catch((err) => console.error("[client-register] verify mail failed:", err));
+
       return NextResponse.json(
-        { message: "Account activated", clientId: existingUsers[0].clientId },
+        { message: "Account activated", clientId: existing.clientId, needsVerification: true },
         { status: 201 }
       );
     }
 
-    // Brand new user — company name is required
     if (!companyName) {
       return NextResponse.json({ error: "Company name is required" }, { status: 400 });
     }
 
-    // Create client company + user in a transaction
+    const verificationToken = randomBytes(32).toString("hex");
+    const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     const result = await prisma.$transaction(async (tx) => {
       let client = await tx.client.findFirst({
         where: { name: companyName, organizationId: null },
@@ -62,7 +83,6 @@ export async function POST(request: Request) {
           },
         });
         client = created;
-        // Seed the canonical 9 pipeline stages for this new client
         await tx.clientPipelineStage.createMany({
           data: DEFAULT_STAGES.map((s, i) => ({
             name: s.name,
@@ -75,7 +95,6 @@ export async function POST(request: Request) {
         });
       }
 
-      // Check if this is the first user of this client — they become ADMIN
       const existingUsersForClient = await tx.clientUser.count({
         where: { clientId: client.id },
       });
@@ -89,14 +108,26 @@ export async function POST(request: Request) {
           passwordHash,
           clientId: client.id,
           role: isFirstUser ? "ADMIN" : "USER",
+          emailVerificationToken: verificationToken,
+          emailVerificationExpiresAt: verificationExpiresAt,
         },
       });
 
       return { client, clientUser };
     });
 
+    // Fire-and-forget; a transient mail failure shouldn't fail the
+    // account creation. The user can request a resend from the
+    // verify-email landing page.
+    const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+    sendEmailVerificationEmail({
+      to: email,
+      recipientName: name,
+      verifyUrl: `${origin}/client-portal/verify-email?token=${verificationToken}`,
+    }).catch((err) => console.error("[client-register] verify mail failed:", err));
+
     return NextResponse.json(
-      { message: "Account created", clientId: result.client.id },
+      { message: "Account created", clientId: result.client.id, needsVerification: true },
       { status: 201 }
     );
   } catch (error: any) {
