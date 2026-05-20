@@ -52,6 +52,12 @@ export async function GET(
               },
             },
             stage: { select: { id: true, name: true, color: true } },
+            // Mirror the per-row data the /jobs/[id] List view shows so
+            // the candidate's Jobs tab can read like a mini submissions
+            // table: share status (+ when), the client's perceived stage
+            // when shared, and activity counters.
+            clientStage: { select: { id: true, name: true, color: true } },
+            _count: { select: { comments: true, ratings: true } },
             // Linked placement (if any). The candidate page warns before
             // leaving Placed because that deletes the placement.
             placement: { select: { id: true } },
