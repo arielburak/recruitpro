@@ -23,6 +23,10 @@ import {
   Download,
   X,
   Plus,
+  Share2,
+  CheckCircle2,
+  MessageSquare,
+  Star,
 } from "lucide-react";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
@@ -178,6 +182,25 @@ export default function CandidateDetailPage() {
     } catch {
       alert("Failed to change stage");
     }
+  }
+
+  // Mirror /jobs/[id] page's toggleShare so the candidate's Jobs tab
+  // can flip share state per submission. The share dialog handles the
+  // "moving to Submitted" flow; this handler covers re-sharing or
+  // stop-sharing on an existing submission without changing stages.
+  async function toggleSubmissionShare(submissionId: string, shared: boolean) {
+    await fetch(`/api/submissions/${submissionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isSharedWithClient: shared }),
+    });
+    await fetchCandidate();
+  }
+
+  async function removeSubmissionFromJob(submissionId: string) {
+    if (!confirm("Remove this candidate from the pipeline?")) return;
+    await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
+    await fetchCandidate();
   }
 
   async function uploadDocument(file: File) {
@@ -420,51 +443,135 @@ export default function CandidateDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            candidate.submissions?.map((sub: any) => (
-              <Card key={sub.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4 flex items-center justify-between gap-4">
-                  {/* Job title + submitted date — keep the link to the
-                      job page so the recruiter can still drill in for
-                      the full pipeline / placement / interview UX. */}
-                  <Link
-                    href={`/jobs/${sub.job.id}`}
-                    className="flex-1 min-w-0 group"
-                  >
-                    <h3 className="font-medium group-hover:text-indigo-600 group-hover:underline truncate">
-                      {sub.job.title}
-                    </h3>
-                    {sub.job.client?.name && (
-                      <p className="text-xs text-gray-400">{sub.job.client.name}</p>
-                    )}
-                    <p className="text-sm text-gray-500">
-                      Submitted {formatDate(sub.createdAt)}
-                    </p>
-                  </Link>
+            candidate.submissions?.map((sub: any) => {
+              const isShared = !!sub.isSharedWithClient;
+              const commentCount = sub._count?.comments || 0;
+              const ratingCount = sub._count?.ratings || 0;
+              return (
+                <Card key={sub.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">
+                    {/* Job title + submitted date — keep the link to the
+                        job page so the recruiter can still drill in for
+                        the full pipeline / placement / interview UX. */}
+                    <Link
+                      href={`/jobs/${sub.job.id}`}
+                      className="flex-1 min-w-0 group"
+                    >
+                      <h3 className="font-medium group-hover:text-indigo-600 group-hover:underline truncate">
+                        {sub.job.title}
+                      </h3>
+                      {sub.job.client?.name && (
+                        <p className="text-xs text-gray-400">{sub.job.client.name}</p>
+                      )}
+                      <p className="text-sm text-gray-500">
+                        Submitted {formatDate(sub.createdAt)}
+                      </p>
+                    </Link>
 
-                  {/* Inline stage selector. Coloured to match the active
-                      stage so it reads like a badge at a glance, but
-                      stays a real <select> so the keyboard / a11y story
-                      is the same as the list view. */}
-                  <select
-                    value={sub.stageId}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      void changeSubmissionStage(sub, e.target.value);
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                    style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
-                    aria-label={`Stage for ${sub.job.title}`}
-                  >
-                    {(sub.job.stages || []).map((st: any) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                      </option>
-                    ))}
-                  </select>
-                </CardContent>
-              </Card>
-            ))
+                    {/* Per-row controls: mirror the columns of the job
+                        page's List view so the recruiter doesn't have
+                        to jump to the job to see share/activity state. */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {/* Activity counters — only render when non-zero
+                          so the row stays clean for fresh submissions. */}
+                      {(commentCount > 0 || ratingCount > 0) && (
+                        <div className="flex items-center gap-2.5 text-xs text-gray-400">
+                          {commentCount > 0 && (
+                            <span className="flex items-center gap-0.5" title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}>
+                              <MessageSquare className="h-3 w-3" />
+                              {commentCount}
+                            </span>
+                          )}
+                          {ratingCount > 0 && (
+                            <span className="flex items-center gap-0.5" title={`${ratingCount} rating${ratingCount === 1 ? "" : "s"}`}>
+                              <Star className="h-3 w-3" />
+                              {ratingCount}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Share state. "Shared" is a green chip with the
+                          client's stage (when present); "Share" is a
+                          neutral button that flips the flag. The full
+                          share dialog still triggers when the recruiter
+                          *moves* the candidate to Submitted via the
+                          stage selector — this control just toggles an
+                          already-existing submission's visibility. */}
+                      {isShared ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSubmissionShare(sub.id, false)}
+                          className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors"
+                          title={
+                            (sub.sharedAt ? `Shared on ${new Date(sub.sharedAt).toLocaleString()}` : "Shared with client") +
+                            (sub.clientStage ? ` · Client sees: ${sub.clientStage.name}` : "") +
+                            "\nClick to stop sharing"
+                          }
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Shared
+                          {sub.clientStage && (
+                            <span
+                              className="ml-1 text-[10px] font-semibold"
+                              style={{ color: sub.clientStage.color }}
+                            >
+                              · {sub.clientStage.name}
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => toggleSubmissionShare(sub.id, true)}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                          title="Share with client"
+                        >
+                          <Share2 className="h-3 w-3" />
+                          Share
+                        </button>
+                      )}
+
+                      {/* Inline stage selector. Coloured to match the
+                          active stage so it reads like a badge at a
+                          glance, but stays a real <select> so the
+                          keyboard / a11y story is the same as the
+                          list view. */}
+                      <select
+                        value={sub.stageId}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          void changeSubmissionStage(sub, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
+                        aria-label={`Stage for ${sub.job.title}`}
+                      >
+                        {(sub.job.stages || []).map((st: any) => (
+                          <option key={st.id} value={st.id}>
+                            {st.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Remove from this job. Symmetric with the list
+                          view's trash icon — deletes the submission
+                          (and any placement attached via the API's
+                          existing guard) without leaving the page. */}
+                      <button
+                        type="button"
+                        onClick={() => removeSubmissionFromJob(sub.id)}
+                        className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove from this job"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </TabsContent>
 
