@@ -402,17 +402,12 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* First-week migration nudge. Day-0 is fully inlined here (no
-          separate component, no client state, no localStorage) so the
-          banner ships in the initial server-rendered HTML and there's
-          literally no code path that can hide it. Day 1+ keeps using
-          the dismissable Client Component. The tiny "v2" pill is a
-          temporary deploy-verification marker — if a user reports the
-          banner missing, the absence of this pill means their browser
-          is hitting a stale build. */}
+      {/* First-week migration nudge. Day-0 is inlined as plain JSX
+          here (no client component, no localStorage) so it ships in
+          the initial HTML and can't be hidden by any client-side
+          path. Day 1+ keeps using the dismissable Client Component. */}
       {isWithinFirstWeek && daysSinceSignup <= 0 && (
-        <div className="bg-gradient-to-r from-cyan-50 via-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-5 relative">
-          <span className="absolute top-2 right-3 text-[9px] font-mono text-sky-400/60">v2</span>
+        <div className="bg-gradient-to-r from-cyan-50 via-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-5">
           <div className="flex items-start gap-4 pr-6">
             <div className="p-2.5 bg-sky-100 rounded-xl shrink-0">
               <Upload className="w-5 h-5 text-sky-600" />
