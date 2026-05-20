@@ -3,17 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 
 // Agency-side autocomplete for the "Invite Client to Portal" dialog on
-// a Job page. When the recruiter starts typing, they should see hits
-// like "Nick Cuello · Lion Point" — every ClientUser the agency already
-// has on file (across all the agency's own Clients) gets matched.
+// a Job page. The mail-uniqueness rule (one email = one Client) means:
+//   - matches at THIS Client → pickable (recruiter just re-invites
+//     someone already on file);
+//   - matches at ANOTHER Client → shown but disabled, with a clear
+//     "in use at X" so the recruiter knows the email is taken and
+//     they need a different one.
 //
-// Scope: ClientUsers under THIS agency's Clients only. We never expose
-// ClientUsers from another agency's Client records — that would leak
-// the other firm's roster.
-//
-// Optional ?currentClientId is the Job's clientId; we use it just to
-// tag whether each match is already on the same Client (so the UI can
-// say "already a member" vs "invite over from Acme").
+// Scope: ClientUsers under THIS agency's Clients only. Other agencies'
+// rosters stay private.
 export async function GET(request: Request) {
   try {
     const ctx = await getOrgContext();
@@ -46,16 +44,27 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(
-      matches.map((m) => ({
-        id: m.id,
-        email: m.email,
-        name: m.name,
-        title: m.title,
-        clientId: m.clientId,
-        clientName: m.client.name,
-        hasPassword: !!m.passwordHash,
-        onCurrentClient: currentClientId ? m.clientId === currentClientId : false,
-      }))
+      matches.map((m) => {
+        const onCurrentClient = currentClientId
+          ? m.clientId === currentClientId
+          : false;
+        return {
+          id: m.id,
+          email: m.email,
+          name: m.name,
+          title: m.title,
+          clientId: m.clientId,
+          clientName: m.client.name,
+          hasPassword: !!m.passwordHash,
+          onCurrentClient,
+          // Picking a contact at a different Client would fail server-side
+          // (the unique-email rule rejects cross-Client invites). Surface
+          // that as `available: false` so the UI can disable the row and
+          // explain why instead of letting the recruiter submit and get
+          // a 409.
+          available: onCurrentClient || !currentClientId,
+        };
+      })
     );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });

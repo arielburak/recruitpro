@@ -192,7 +192,14 @@ model Contact {
 
 model ClientUser {
   id           String   @id @default(cuid())
-  email        String
+  // Globally unique. An email belongs to exactly one Client across the
+  // whole ATS — a hiring contact at Acme uses their Acme email there
+  // and nowhere else; if they ever work with a second hiring company
+  // they use that company's email (or a personal one). Different
+  // identities (work / personal) can each be at their own Client.
+  // Enforced at the DB level so a recruiter mistyping or trying to
+  // re-invite a contact who's already at another Client fails fast.
+  email        String   @unique
   name         String
   title        String?
   passwordHash String?
@@ -208,7 +215,6 @@ model ClientUser {
   clientJobs ClientJob[]
   notifications ClientNotification[]
 
-  @@unique([email, clientId])
   @@index([clientId])
 }
 
