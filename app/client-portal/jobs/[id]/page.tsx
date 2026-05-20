@@ -96,6 +96,43 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Per-JO access management. Sidebar shows the current member list;
+  // clicking "Manage" opens a dialog with checkboxes for the whole
+  // team. Empty member list = the legacy "everyone can see this job"
+  // state, surfaced as a hint at the top of the card.
+  const [showManageAccess, setShowManageAccess] = useState(false);
+  const [accessIds, setAccessIds] = useState<string[]>([]);
+  const [savingAccess, setSavingAccess] = useState(false);
+
+  function openManageAccess() {
+    const ids = (job?.members || [])
+      .map((m: any) => m.clientUser?.id)
+      .filter((id: any): id is string => typeof id === "string");
+    setAccessIds(ids);
+    setShowManageAccess(true);
+  }
+
+  function toggleAccessId(id: string) {
+    setAccessIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  async function saveAccess() {
+    if (savingAccess) return;
+    setSavingAccess(true);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: accessIds }),
+      });
+      if (res.ok) {
+        setShowManageAccess(false);
+        await fetchJob();
+      }
+    } catch {}
+    setSavingAccess(false);
+  }
+
   // Candidates for this job
   const [jobCandidates, setJobCandidates] = useState<any[]>([]);
 
@@ -823,6 +860,114 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               )}
             </CardContent>
           </Card>
+
+          {/* Job access — who on the team can see this JO. Skipped on
+              solo workspaces (no one else to restrict against). Shows
+              the explicit member list, or a banner pointing out the
+              legacy "everyone" state for jobs created before this
+              feature existed. */}
+          {teamMembers.length > 1 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Users className="h-4 w-4 text-emerald-600" />
+                  Job access
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={() => (showManageAccess ? setShowManageAccess(false) : openManageAccess())}
+                >
+                  {showManageAccess ? "Close" : "Manage"}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {!showManageAccess && (
+                  (job?.members?.length || 0) === 0 ? (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(job?.members || []).map((m: any) => (
+                        <span
+                          key={m.clientUser.id}
+                          className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] px-2 py-1 rounded-md"
+                          title={m.clientUser.email}
+                        >
+                          {m.clientUser.name}
+                        </span>
+                      ))}
+                    </div>
+                  )
+                )}
+
+                {showManageAccess && (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-gray-500">
+                      Tick the people who should see this job. Unchecking everyone reverts to the legacy &quot;visible to the whole team&quot; state — useful if you accidentally restricted it.
+                    </p>
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                      {teamMembers
+                        .filter((m: any) => m.isActive !== false)
+                        .map((m: any) => {
+                          const checked = accessIds.includes(m.id);
+                          const isCreator = job?.postedById === m.id;
+                          return (
+                            <label
+                              key={m.id}
+                              className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer ${
+                                isCreator ? "bg-gray-50" : "hover:bg-gray-50"
+                              }`}
+                              title={isCreator ? "Always a member — the job's creator can't be removed." : undefined}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked || isCreator}
+                                disabled={isCreator}
+                                onChange={() => toggleAccessId(m.id)}
+                                className="rounded border-gray-300"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-gray-900 truncate">
+                                  {m.name}
+                                  {isCreator && (
+                                    <span className="ml-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                                      creator
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">{m.email}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        onClick={() => setShowManageAccess(false)}
+                        disabled={savingAccess}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                        onClick={saveAccess}
+                        disabled={savingAccess}
+                      >
+                        {savingAccess ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Recruiting Firms */}
           <Card>
