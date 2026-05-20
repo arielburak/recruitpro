@@ -51,6 +51,15 @@ export const authOptions: NextAuthOptions = {
         );
         if (!isValid) return null;
 
+        // Hard block on unverified emails. The previous behavior was a
+        // soft check (login + dashboard banner), which let typo'd
+        // addresses and bots end up with a working session. We refuse
+        // to issue one until the verification email is clicked. UI
+        // catches the throw and offers a resend.
+        if (!user.emailVerifiedAt) {
+          throw new Error("EMAIL_NOT_VERIFIED");
+        }
+
         return {
           id: user.id,
           email: user.email,

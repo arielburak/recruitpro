@@ -1,22 +1,51 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { getOrgContext } from "@/lib/tenant";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
 import { sendEmailVerificationEmail } from "@/lib/email";
 
-// Rotate the verification token + resend the email for the signed-in
-// recruiter. Used by the dashboard banner. Already-verified users get
-// a 200 noop so the UI doesn't have to special-case that race.
+// Resend the verification email. Two callers:
+//
+// 1. Authenticated dashboard banner — uses the JWT to figure out which
+//    user is asking; no body required.
+// 2. The login page, when sign-in is blocked by EMAIL_NOT_VERIFIED.
+//    The user doesn't have a session yet, so they POST { email }
+//    instead. We respond with the same shape regardless of whether
+//    the address exists so the endpoint can't be used to enumerate
+//    accounts.
+//
+// Already-verified accounts get a 200 noop so the UI doesn't have to
+// special-case that race.
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const session = await getServerSession(authOptions);
+    const authedUserId = session?.user?.id;
 
-    const user = await prisma.user.findUnique({
-      where: { id: ctx.userId },
-      select: { id: true, name: true, email: true, emailVerifiedAt: true },
-    });
+    let user: { id: string; name: string; email: string; emailVerifiedAt: Date | null } | null = null;
+
+    if (authedUserId) {
+      user = await prisma.user.findUnique({
+        where: { id: authedUserId },
+        select: { id: true, name: true, email: true, emailVerifiedAt: true },
+      });
+    } else {
+      // Unauthenticated path — accept { email }. Always return success
+      // shape to avoid leaking whether an account exists.
+      const body = await request.json().catch(() => ({}));
+      const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+      if (!email) {
+        return NextResponse.json({ success: true });
+      }
+      user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, name: true, email: true, emailVerifiedAt: true },
+      });
+    }
+
     if (!user) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      // Anti-enumeration: pretend it worked.
+      return NextResponse.json({ success: true });
     }
     if (user.emailVerifiedAt) {
       return NextResponse.json({ alreadyVerified: true });
@@ -44,7 +73,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Failed to resend" },
-      { status: 401 },
+      { status: 500 },
     );
   }
 }
