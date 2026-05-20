@@ -400,7 +400,7 @@ export default function PostJobPage() {
               )}
               {restrictAccess && (
                 <p className="text-[11px] text-gray-500">
-                  You&apos;ll always have access — we add the creator automatically. Admins can also see every job by design.
+                  You&apos;ll always have access — we add the creator automatically. Anyone not picked here won&apos;t see this job, even other admins.
                 </p>
               )}
             </CardContent>
