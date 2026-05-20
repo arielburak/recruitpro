@@ -16,6 +16,12 @@ function LoginContent() {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // When the user trips the email-verification wall, swap the generic
+  // error for a richer panel with a resend button. We remember the
+  // email they typed so the resend call has it without prompting.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
   const registered = searchParams.get("registered");
   // Which side of the product the user is signing into. The selector is
   // the default first view; `?portal=agency` (or coming back from a
@@ -62,7 +68,19 @@ function LoginContent() {
       const result = await Promise.race([signInPromise, timeoutPromise]);
 
       if (result?.error) {
-        setError("Invalid email or password");
+        // NextAuth returns the error message via the `error` field on
+        // result when redirect:false. authorize() throws our sentinel
+        // "EMAIL_NOT_VERIFIED" string so we can switch on it; anything
+        // else falls through to the generic credential error.
+        const emailValue = (formData.get("email") as string | null)?.trim().toLowerCase() || "";
+        if (result.error.includes("EMAIL_NOT_VERIFIED")) {
+          setUnverifiedEmail(emailValue);
+          setResendSent(false);
+          setError("");
+        } else {
+          setError("Invalid email or password");
+          setUnverifiedEmail(null);
+        }
         setLoading(false);
         return;
       }
@@ -229,6 +247,48 @@ function LoginContent() {
             {error && (
               <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">
                 {error}
+              </div>
+            )}
+
+            {/* Email-verification wall. Surfaced when authorize() throws
+                EMAIL_NOT_VERIFIED — login is blocked until the user
+                clicks the verify link in their inbox. Resend is one
+                click away so they don't have to leave the page if
+                the email got lost. */}
+            {unverifiedEmail && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm space-y-2">
+                <p className="font-medium text-amber-900">Verify your email first</p>
+                <p className="text-amber-800/90 text-xs">
+                  We need to confirm <span className="font-medium">{unverifiedEmail}</span> before
+                  you can sign in. Check your inbox for the link we sent — or send a new one below.
+                </p>
+                {resendSent ? (
+                  <p className="text-amber-800 text-xs flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Sent. Check your inbox (and spam).
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={resending}
+                    onClick={async () => {
+                      setResending(true);
+                      try {
+                        await fetch("/api/auth/resend-verification", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ email: unverifiedEmail }),
+                        });
+                        setResendSent(true);
+                      } finally {
+                        setResending(false);
+                      }
+                    }}
+                    className="inline-flex items-center text-xs font-medium text-amber-900 underline hover:text-amber-700 disabled:opacity-60"
+                  >
+                    {resending ? "Sending…" : "Resend verification email"}
+                  </button>
+                )}
               </div>
             )}
 
