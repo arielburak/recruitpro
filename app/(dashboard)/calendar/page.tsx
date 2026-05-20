@@ -301,9 +301,24 @@ export default function CalendarPage() {
   }
 
   // Same two-line treatment as milestone chips so interview events sit
-  // visually alongside placement events on the grid. Indigo for the
-  // default scheduled state, green for completed, red for cancelled.
-  function interviewClassNames(status: string): { wrapper: string; label: string; meta: string } {
+  // visually alongside placement events on the grid. Cancelled / completed
+  // override anything else; otherwise the color encodes the interview's
+  // purpose so the calendar tells you at-a-glance whether a slot is a
+  // candidate prep call (indigo) or a client-side interview where the
+  // hiring contact also shows up (amber). Purpose is inferred from
+  // whether any client contacts were attached — there's no enum on the
+  // model, but `clientContacts.length > 0` is what the dialog uses to
+  // route a CLIENT vs CANDIDATE flow, so we use the same signal here.
+  type InterviewPurpose = "CANDIDATE" | "CLIENT";
+  function interviewPurpose(iv: any): InterviewPurpose {
+    return Array.isArray(iv.clientContacts) && iv.clientContacts.length > 0
+      ? "CLIENT"
+      : "CANDIDATE";
+  }
+  function interviewClassNames(
+    status: string,
+    purpose: InterviewPurpose
+  ): { wrapper: string; label: string; meta: string } {
     if (status === "CANCELLED") {
       return {
         wrapper: "bg-red-50 hover:bg-red-100 border-l-2 border-red-500",
@@ -316,6 +331,13 @@ export default function CalendarPage() {
         wrapper: "bg-green-50 hover:bg-green-100 border-l-2 border-green-500",
         label: "text-green-800",
         meta: "text-green-700",
+      };
+    }
+    if (purpose === "CLIENT") {
+      return {
+        wrapper: "bg-amber-50 hover:bg-amber-100 border-l-2 border-amber-500",
+        label: "text-amber-900",
+        meta: "text-amber-800",
       };
     }
     return {
@@ -542,7 +564,8 @@ export default function CalendarPage() {
                       </div>
                       <div className="space-y-0.5">
                         {interviewsToShow.map((iv) => {
-                          const styles = interviewClassNames(iv.status);
+                          const purpose = interviewPurpose(iv);
+                          const styles = interviewClassNames(iv.status, purpose);
                           const candidateName = `${iv.candidate.firstName} ${iv.candidate.lastName.charAt(0)}.`;
                           const jobTitle = iv.job.title;
                           const meta = jobTitle ? `${candidateName} · ${jobTitle}` : candidateName;
@@ -554,7 +577,7 @@ export default function CalendarPage() {
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedDay(null); setSelectedInterview(iv); }}
                               className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
-                              title={`${time} · ${typeLabel} · ${meta}`}
+                              title={`${purpose === "CLIENT" ? "Client interview" : "Candidate call"} · ${time} · ${typeLabel} · ${meta}`}
                             >
                               <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label}`}>
                                 {time} · {typeLabel}
@@ -685,7 +708,8 @@ export default function CalendarPage() {
                   ) : (
                     <div className="space-y-1.5">
                       {dayInterviews.map((iv) => {
-                        const styles = interviewClassNames(iv.status);
+                        const purpose = interviewPurpose(iv);
+                        const styles = interviewClassNames(iv.status, purpose);
                         const Icon =
                           TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon ||
                           Video;
@@ -705,6 +729,16 @@ export default function CalendarPage() {
                               <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
                                 {formatTime(iv.startTime)} ·{" "}
                                 {TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type}
+                                {" · "}
+                                {/* Purpose pill on the sidebar list. The
+                                    color already tells you, but spelling
+                                    it out helps colorblind users and
+                                    avoids ambiguity when the row is
+                                    cancelled/completed (those overrides
+                                    drop the purpose hue). */}
+                                <span className="ml-0.5 opacity-80">
+                                  {purpose === "CLIENT" ? "Client" : "Candidate"}
+                                </span>
                               </p>
                               <p className={`text-xs truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
                                 {iv.candidate.firstName} {iv.candidate.lastName}
