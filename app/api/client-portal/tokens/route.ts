@@ -30,20 +30,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    // One email → one Client (DB-enforced via `email @unique` on
+    // ClientUser). If the email already exists ANYWHERE in the system,
+    // it has to be at THIS Client — otherwise the recruiter is trying
+    // to attach a contact who belongs to another company. Reject with
+    // a clear message so they can use the right address.
+    const existing = await prisma.clientUser.findUnique({
+      where: { email: inviteEmail },
+      select: { id: true, clientId: true, client: { select: { name: true } } },
+    });
+    if (existing && existing.clientId !== client.id) {
+      return NextResponse.json(
+        {
+          error: `This email is already in use by another client (${existing.client.name}). Use a different work or personal address for ${client.name}.`,
+        },
+        { status: 409 }
+      );
+    }
+
     const baseUrl =
       process.env.NEXTAUTH_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
     // Deep-link target the email CTA points to. When sharing a specific
-    // job we want the recipient to land on that job (after switching
-    // Client membership if needed) — not the generic dashboard.
-    //
-    // The bouncer at /client-portal/go handles the Client switch + final
-    // redirect; passing it as ?callbackUrl= means it works regardless of
-    // whether the user is logged in already (login page resumes there)
-    // or needs to set a password first (set-password page also resumes).
+    // job we want the recipient to land on that job, not the dashboard.
+    // /go is kept as the indirection target for backwards-compat with
+    // already-sent emails; it just redirects to the destination now.
     const deepLinkPath = jobId
-      ? `/client-portal/go?clientId=${clientId}&jobId=${jobId}`
+      ? `/client-portal/go?jobId=${jobId}`
       : "/client-portal/dashboard";
     const portalUrl = `${baseUrl}/client-portal/login?callbackUrl=${encodeURIComponent(deepLinkPath)}`;
 
@@ -66,31 +80,19 @@ export async function POST(request: Request) {
       candidateCount = job?._count.submissions;
     }
 
-    // Find or create ClientUser for this email under THIS client only.
-    // The mode:"insensitive" guard is belt-and-suspenders — Postgres still
-    // stores rows verbatim, so future inserts go through the normalized
-    // `inviteEmail` we computed above.
-    let clientUser = await prisma.clientUser.findFirst({
-      where: { email: { equals: inviteEmail, mode: "insensitive" }, clientId: client.id },
+    // Find-or-create ClientUser for this email at THIS Client. By here
+    // we know the email is either free, or already attached to this
+    // same Client (the cross-Client case was rejected above).
+    let clientUser = await prisma.clientUser.findUnique({
+      where: { email: inviteEmail },
     });
 
     if (!clientUser) {
-      // Check if this email already exists under another client (to reuse password)
-      const existingElsewhere = await prisma.clientUser.findFirst({
-        where: {
-          email: { equals: inviteEmail, mode: "insensitive" },
-          passwordHash: { not: null },
-        },
-        select: { passwordHash: true },
-      });
-
       clientUser = await prisma.clientUser.create({
         data: {
           email: inviteEmail,
           name: inviteName || inviteEmail.split("@")[0],
           clientId: client.id,
-          // Copy password from existing account so they can log in immediately
-          passwordHash: existingElsewhere?.passwordHash || undefined,
         },
       });
     }
@@ -162,53 +164,11 @@ export async function POST(request: Request) {
           type: "candidate_shared",
           title: notifTitle,
           body: notifBody,
-          // Same-Client notification — recipient is already viewing this
-          // Client when they see the bell, so jump straight to the job
-          // (no Client switch needed).
           link: jobId ? `/client-portal/jobs/${jobId}` : "/client-portal/dashboard",
         },
       });
     } catch (e) {
       console.error("[invite] notification create failed:", e);
-    }
-
-    // Cross-Client breadcrumb: if this email already has an ACTIVE
-    // ClientUser at any OTHER Client (same org or otherwise), drop a
-    // heads-up notification there too — so when they log into their
-    // existing portal, they still see "you got something new at Acme,
-    // log in there to review". Until we ship a Client switcher, this
-    // is the cheapest way to surface the cross-Client share.
-    try {
-      const others = await prisma.clientUser.findMany({
-        where: {
-          email: { equals: inviteEmail, mode: "insensitive" },
-          isActive: true,
-          NOT: { id: clientUser.id },
-        },
-        select: { id: true, clientId: true },
-      });
-      if (others.length > 0) {
-        await prisma.clientNotification.createMany({
-          data: others.map((cu) => ({
-            clientId: cu.clientId,
-            clientUserId: cu.id,
-            type: "candidate_shared",
-            title: `${firmName} shared a new search at ${client.name}`,
-            body: jobTitle
-              ? `Search: ${jobTitle}. Click to switch to ${client.name} and review.`
-              : `Click to switch to ${client.name} and review.`,
-            // Cross-Client notification — route via /go so the cookie
-            // flips to the right Client before the Job page loads. If
-            // there's no jobId (raw portal invite) we still want the
-            // switch to land them on the right Client's dashboard.
-            link: jobId
-              ? `/client-portal/go?clientId=${client.id}&jobId=${jobId}`
-              : `/client-portal/go?clientId=${client.id}`,
-          })),
-        });
-      }
-    } catch (e) {
-      console.error("[invite] cross-client notification failed:", e);
     }
 
     return NextResponse.json({

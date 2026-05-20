@@ -164,6 +164,9 @@ export default function JobDetailPage() {
     clientName: string;
     hasPassword: boolean;
     onCurrentClient: boolean;
+    // Contacts at OTHER Clients of this agency are listed but can't be
+    // picked — the email-uniqueness rule prevents reusing them here.
+    available: boolean;
   };
   const [shareSuggestions, setShareSuggestions] = useState<ContactSuggestion[]>([]);
   const [shareSuggestOpen, setShareSuggestOpen] = useState(false);
@@ -536,6 +539,7 @@ export default function JobDetailPage() {
   }, [shareEmail, showShareDialog, job?.clientId]);
 
   function pickShareSuggestion(s: ContactSuggestion) {
+    if (!s.available) return; // see ContactSuggestion.available
     setShareEmail(s.email);
     setShareName(s.name || "");
     setShareSuggestOpen(false);
@@ -813,7 +817,17 @@ export default function JobDetailPage() {
                           key={s.id}
                           type="button"
                           onClick={() => pickShareSuggestion(s)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 transition-colors border-t border-gray-50"
+                          disabled={!s.available}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-t border-gray-50 ${
+                            s.available
+                              ? "hover:bg-indigo-50 cursor-pointer"
+                              : "opacity-60 cursor-not-allowed"
+                          }`}
+                          title={
+                            s.available
+                              ? undefined
+                              : `Email already belongs to ${s.clientName}. One email can only be at one client; use a different address for this share.`
+                          }
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -825,8 +839,8 @@ export default function JobDetailPage() {
                                   on this client
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                                  {s.clientName}
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-rose-50 text-rose-700">
+                                  in use at {s.clientName}
                                 </span>
                               )}
                               {!s.hasPassword && (
