@@ -22,8 +22,17 @@ function deriveCompanyNameFromEmail(email: string): string {
 // Quick-share path used by Job /new: agency types ONLY the hiring contact's
 // email. We create a stub Client (just enough to attach Jobs to), a
 // ClientUser, a set-password token, and email the invite. The hiring
-// manager fills in real company info on first login — see
-// /api/client-portal/register, which clears the isStub flag.
+// manager fills in real company info on first login.
+//
+// Email uniqueness (ClientUser.email is globally unique) means we
+// need three distinct branches:
+//   1. The email already belongs to a ClientUser whose Client is in
+//      THIS agency's org → reuse silently, attach Jobs to that Client.
+//   2. The email belongs to a ClientUser at another org's Client (a
+//      competitor agency, or a self-signed-up hiring company) →
+//      surface a clear 409 so the recruiter knows to use a different
+//      address (the contact's personal / alt email).
+//   3. Brand new email → create stub Client + ClientUser as before.
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
@@ -35,12 +44,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A valid hiring contact email is required" }, { status: 400 });
     }
 
+    // Branch 1/2: this email already has a ClientUser somewhere.
+    const existingCu = await prisma.clientUser.findUnique({
+      where: { email: rawEmail },
+      select: {
+        id: true,
+        name: true,
+        clientId: true,
+        passwordHash: true,
+        client: { select: { id: true, name: true, organizationId: true } },
+      },
+    });
+
+    if (existingCu) {
+      if (existingCu.client.organizationId !== ctx.organizationId) {
+        return NextResponse.json(
+          {
+            error:
+              "This email is already in use at another client / agency. Ask the contact for a different email (work or personal) you can use here.",
+          },
+          { status: 409 }
+        );
+      }
+      // Same agency — reuse the existing Client + ClientUser. No
+      // set-password email here because the recipient already has an
+      // account in flight; the share flow will follow up.
+      return NextResponse.json(
+        {
+          clientId: existingCu.clientId,
+          clientName: existingCu.client.name,
+          isStub: false,
+          invited: false,
+          reused: true,
+        },
+        { status: 200 }
+      );
+    }
+
     const derivedName = deriveCompanyNameFromEmail(rawEmail);
 
-    // If we already have a stub Client in this org tied to the same
-    // hiring email, reuse it rather than spawning duplicates. (Real,
-    // user-curated Clients are never reused — the agency may have
-    // intentionally split contacts across accounts.)
+    // Branch 3: brand new email. Reuse an existing stub Client tied
+    // to this hiring email if one was already created in this org
+    // (prevents duplicates when the recruiter retries quick-share).
     const existingStub = await prisma.client.findFirst({
       where: {
         organizationId: ctx.organizationId,
@@ -85,63 +130,52 @@ export async function POST(request: Request) {
       clientName = created.name;
     }
 
-    // Ensure a ClientUser exists for this email under this Client.
-    // Copy password from any prior account on another Client so they
-    // can sign in immediately if they already have one (same pattern
-    // used by /api/client-portal/tokens).
-    let clientUser = await prisma.clientUser.findFirst({
-      where: { email: rawEmail, clientId },
+    // Fresh ClientUser for this email under the stub Client. Safe to
+    // unique-create here because the early findUnique above already
+    // ruled out a pre-existing row.
+    const clientUser = await prisma.clientUser.create({
+      data: {
+        email: rawEmail,
+        name: contactName || rawEmail.split("@")[0],
+        clientId,
+        role: "ADMIN",
+      },
     });
-    if (!clientUser) {
-      const existingElsewhere = await prisma.clientUser.findFirst({
-        where: { email: rawEmail, passwordHash: { not: null } },
-        select: { passwordHash: true },
+
+    // Brand-new account → send set-password email so the hiring
+    // manager can activate it. The share flow will land them on the
+    // specific Job once they set a password.
+    const baseUrl =
+      process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    const setPasswordToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await prisma.clientPortalToken.create({
+      data: {
+        token: setPasswordToken,
+        clientId,
+        expiresAt,
+        isActive: true,
+      },
+    });
+
+    const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(rawEmail)}`;
+
+    try {
+      await sendClientSetPasswordEmail({
+        to: rawEmail,
+        setPasswordUrl,
+        clientName: clientUser.name,
       });
-      clientUser = await prisma.clientUser.create({
-        data: {
-          email: rawEmail,
-          name: contactName || rawEmail.split("@")[0],
-          clientId,
-          role: "ADMIN",
-          passwordHash: existingElsewhere?.passwordHash || undefined,
-        },
-      });
+    } catch (e) {
+      console.error("[quick-invite] set-password email failed:", e);
     }
 
-    // Only send a set-password email if they don't already have one.
-    // If they do, the share notification will be sent later by the
-    // Job-share flow (or they can just log in). The point of quick-
-    // invite is to unblock the agency from creating the Job.
-    if (!clientUser.passwordHash) {
-      const baseUrl =
-        process.env.NEXTAUTH_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      const setPasswordToken = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-      await prisma.clientPortalToken.create({
-        data: {
-          token: setPasswordToken,
-          clientId,
-          expiresAt,
-          isActive: true,
-        },
-      });
-
-      const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(rawEmail)}`;
-
-      try {
-        await sendClientSetPasswordEmail({
-          to: rawEmail,
-          setPasswordUrl,
-          clientName: clientUser.name,
-        });
-      } catch (e) {
-        console.error("[quick-invite] set-password email failed:", e);
-      }
-    }
-
-    return NextResponse.json({ clientId, clientName, isStub: true, invited: !clientUser.passwordHash }, { status: 201 });
+    return NextResponse.json(
+      { clientId, clientName, isStub: true, invited: true },
+      { status: 201 }
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: error.message?.startsWith("Unauthorized") ? 401 : 500 });
   }
