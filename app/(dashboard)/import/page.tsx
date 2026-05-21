@@ -16,17 +16,23 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { IMPORT_FIELDS, autoDetectMapping, type ImportType } from "@/lib/import-fields";
+import { parseSpreadsheetFile, type ParsedSheet } from "@/lib/parse-spreadsheet";
 
 const SUPPORTED_FORMATS = [
   { name: "CSV", ext: ".csv" },
   { name: "TSV", ext: ".tsv" },
+  { name: "Excel", ext: ".xlsx / .xls" },
   { name: "JSON", ext: ".json" },
 ];
 
+// Cap matches what the server-side parser comfortably handles on
+// Vercel's serverless body limit. Generous enough for "I just exported
+// every candidate from another ATS" without inviting 500MB uploads.
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
 type Preview = {
-  headers: string[];
-  rows: Record<string, string>[];
-  totalRows: number;
+  sheets: ParsedSheet[];
+  activeSheet: string;
 };
 
 export default function ImportPage() {
@@ -61,21 +67,28 @@ export default function ImportPage() {
     setFile(f);
     if (!f) return;
 
+    if (f.size > MAX_FILE_BYTES) {
+      setParseError(`File exceeds the ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB limit.`);
+      setFile(null);
+      return;
+    }
+
     // JSON: no headers to map, run the legacy path on import.
     if (f.name.toLowerCase().endsWith(".json")) return;
 
     setParsing(true);
     try {
-      const text = await f.text();
-      const { headers, rows, totalRows } = parseDelimitedClient(text);
-      if (headers.length === 0) {
+      const parsed = await parseSpreadsheetFile(f);
+      const usable = parsed.sheets.filter((s) => s.headers.length > 0);
+      if (usable.length === 0) {
         setParseError("Could not detect any columns in this file.");
         setFile(null);
         setParsing(false);
         return;
       }
-      setPreview({ headers, rows: rows.slice(0, 5), totalRows });
-      setMapping(autoDetectMapping(importType, headers));
+      const activeSheet = usable[0].name;
+      setPreview({ sheets: usable, activeSheet });
+      setMapping(autoDetectMapping(importType, usable[0].headers));
     } catch (e: any) {
       setParseError(e.message || "Could not parse file");
       setFile(null);
@@ -84,12 +97,26 @@ export default function ImportPage() {
     }
   }
 
+  // Sheet picker handler — when the user flips between tabs in a
+  // multi-sheet xlsx, re-seed the column mapping from the new
+  // sheet's headers.
+  function onSheetChange(name: string) {
+    if (!preview) return;
+    const sheet = preview.sheets.find((s) => s.name === name) || preview.sheets[0];
+    setPreview({ ...preview, activeSheet: sheet.name });
+    setMapping(autoDetectMapping(importType, sheet.headers));
+  }
+
   function onTypeChange(next: ImportType) {
     setImportType(next);
     setResult(null);
     // Re-run auto-detect with the new field set so the user doesn't
     // have to re-pick the file.
-    if (preview) setMapping(autoDetectMapping(next, preview.headers));
+    if (preview) {
+      const sheet =
+        preview.sheets.find((s) => s.name === preview.activeSheet) || preview.sheets[0];
+      setMapping(autoDetectMapping(next, sheet.headers));
+    }
   }
 
   async function handleImport() {
@@ -97,14 +124,28 @@ export default function ImportPage() {
     setImporting(true);
     setResult(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("type", importType);
-      // JSON imports skip the mapping wizard entirely — the API falls
-      // back to its legacy header heuristics. CSV/TSV always go
-      // through the wizard, so a mapping is always present here.
-      if (preview) fd.append("mapping", JSON.stringify(mapping));
-      const res = await fetch("/api/import/bulk", { method: "POST", body: fd });
+      // Send records as JSON when we already parsed the file in the
+      // browser (which is always true for CSV/TSV/XLSX). Avoids the
+      // ~4.5MB Vercel multipart cap and keeps the request body
+      // proportional to actual content, not raw file weight.
+      let res: Response;
+      if (preview && activeSheet) {
+        res = await fetch("/api/import/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: importType,
+            mapping,
+            records: activeSheet.rows,
+          }),
+        });
+      } else {
+        // JSON files: no wizard, no client parse. Multipart it.
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("type", importType);
+        res = await fetch("/api/import/bulk", { method: "POST", body: fd });
+      }
       const data = await res.json();
       setResult(data);
     } catch {
@@ -115,6 +156,11 @@ export default function ImportPage() {
 
   const fields = IMPORT_FIELDS[importType];
   const requiredUnmapped = fields.some((f) => f.required && !mapping[f.key]);
+  // The current sheet view — derived so the rest of the JSX doesn't
+  // have to repeat the .find lookup.
+  const activeSheet = preview
+    ? preview.sheets.find((s) => s.name === preview.activeSheet) || preview.sheets[0]
+    : null;
 
   return (
     <div className="space-y-6">
@@ -181,15 +227,15 @@ export default function ImportPage() {
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
                 <Upload className="h-8 w-8 text-gray-300 mb-2" />
                 <span className="text-sm font-medium text-gray-700">
-                  {file ? file.name : "Click to upload a CSV, TSV or JSON file"}
+                  {file ? file.name : "Click to upload a CSV, TSV, Excel or JSON file"}
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
-                  CSV, TSV, JSON (max 10MB)
+                  CSV, TSV, XLSX, XLS, JSON (max 25MB)
                 </span>
                 <input
                   type="file"
                   className="hidden"
-                  accept=".csv,.tsv,.json,.txt"
+                  accept=".csv,.tsv,.json,.txt,.xlsx,.xls,.xlsm,.xlsb"
                   onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
                 />
               </label>
@@ -221,14 +267,14 @@ export default function ImportPage() {
           )}
 
           {/* Stage 2 — header mapping + preview. */}
-          {stage === "map" && preview && (
+          {stage === "map" && preview && activeSheet && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm">
                   <FileText className="h-4 w-4 text-gray-400" />
                   <span className="text-gray-700">{file?.name}</span>
                   <span className="text-gray-400">
-                    · {preview.totalRows} row{preview.totalRows === 1 ? "" : "s"} · {preview.headers.length} columns
+                    · {activeSheet.rows.length} row{activeSheet.rows.length === 1 ? "" : "s"} · {activeSheet.headers.length} columns
                   </span>
                 </div>
                 <button
@@ -239,6 +285,38 @@ export default function ImportPage() {
                   Choose a different file
                 </button>
               </div>
+
+              {/* Sheet picker — only shows up for multi-sheet xlsx
+                  workbooks. Common case (CSV/TSV/single-sheet xlsx)
+                  is hidden so the wizard stays minimal. */}
+              {preview.sheets.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+                    Sheet
+                  </span>
+                  {preview.sheets.map((s) => {
+                    const isActive = s.name === preview.activeSheet;
+                    return (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => onSheetChange(s.name)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                          isActive
+                            ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200"
+                            : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                        }`}
+                        title={`${s.rows.length} row${s.rows.length === 1 ? "" : "s"} · ${s.headers.length} columns`}
+                      >
+                        {s.name}
+                        <span className={`ml-1 text-[10px] ${isActive ? "text-indigo-500" : "text-gray-400"}`}>
+                          {s.rows.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Mapping table. Each ATS field on the left, a dropdown
                   on the right offering every detected header (plus
@@ -280,7 +358,7 @@ export default function ImportPage() {
                         }`}
                       >
                         <option value="">— Skip this field —</option>
-                        {preview.headers.map((h) => (
+                        {activeSheet.headers.map((h) => (
                           <option key={h} value={h}>
                             {h}
                           </option>
@@ -297,7 +375,7 @@ export default function ImportPage() {
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
                   <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
-                    Preview · first {preview.rows.length} of {preview.totalRows}
+                    Preview · first {Math.min(activeSheet.rows.length, 5)} of {activeSheet.rows.length}
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -312,7 +390,7 @@ export default function ImportPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {preview.rows.map((row, i) => (
+                      {activeSheet.rows.slice(0, 5).map((row, i) => (
                         <tr key={i} className="border-t border-gray-100">
                           {fields.map((f) => {
                             const header = mapping[f.key];
@@ -339,7 +417,7 @@ export default function ImportPage() {
 
               <div className="flex justify-end">
                 <Button onClick={handleImport} disabled={importing || requiredUnmapped}>
-                  {importing ? "Importing..." : `Import ${preview.totalRows} ${importType}`}
+                  {importing ? "Importing..." : `Import ${activeSheet.rows.length} ${importType}`}
                 </Button>
               </div>
             </div>
@@ -422,55 +500,6 @@ export default function ImportPage() {
       </Card>
     </div>
   );
-}
-
-// Same logic as the server-side parser — duplicated so we can show a
-// preview without round-tripping the file. Keeping them in sync is
-// straightforward because the format is simple; if this gets more
-// complex we'll pull in papaparse.
-function parseDelimitedClient(text: string): {
-  headers: string[];
-  rows: Record<string, string>[];
-  totalRows: number;
-} {
-  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
-  if (lines.length < 2) return { headers: [], rows: [], totalRows: 0 };
-
-  const first = lines[0];
-  const tabCount = (first.match(/\t/g) || []).length;
-  const commaCount = (first.match(/,/g) || []).length;
-  const delim = tabCount > commaCount ? "\t" : ",";
-
-  const headers = parseLine(lines[0], delim).map((h) => h.trim());
-  const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseLine(lines[i], delim);
-    const record: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      record[h] = (values[idx] || "").trim();
-    });
-    rows.push(record);
-  }
-  return { headers, rows, totalRows: rows.length };
-}
-
-function parseLine(line: string, delim: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === delim && !inQuotes) {
-      result.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  result.push(current);
-  return result;
 }
 
 function downloadTemplate(type: string) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { parseSpreadsheetFile } from "@/lib/parse-spreadsheet";
 
 // Per-type list of ATS fields the mapping UI lets the user wire up.
 // Mirrored on the client so the field list stays in one place
@@ -45,32 +46,67 @@ const FIELD_SPEC: Record<
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const type = formData.get("type") as "candidates" | "clients" | "jobs";
-    const mappingRaw = formData.get("mapping");
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-    if (!type || !FIELD_SPEC[type]) {
-      return NextResponse.json({ error: "Invalid import type" }, { status: 400 });
-    }
+    // Accept either:
+    //   - JSON: { type, mapping, records } — parsed on the client.
+    //     The recommended path for large imports because we sidestep
+    //     Vercel's ~4.5MB multipart body cap; the client parses the
+    //     spreadsheet (CSV / TSV / XLSX / JSON) and sends a slim
+    //     records array.
+    //   - multipart/form-data with `file`, `type`, `mapping`,
+    //     `sheetName` — kept for backwards compatibility with the
+    //     template downloads and any scripted callers.
+    const contentType = request.headers.get("content-type") || "";
 
-    // Optional mapping: { atsField: csvHeader | null }. When present,
-    // a record's atsField value is read from record[csvHeader] — bypassing
-    // the legacy hard-coded fallbacks. When absent, we fall back to the
-    // old heuristic so existing callers (e.g. template imports) keep
-    // working.
+    let type: "candidates" | "clients" | "jobs" | undefined;
     let mapping: Record<string, string | null> | null = null;
-    if (mappingRaw && typeof mappingRaw === "string") {
-      try {
-        mapping = JSON.parse(mappingRaw);
-      } catch {
-        return NextResponse.json({ error: "Invalid mapping JSON" }, { status: 400 });
+    let records: any[] = [];
+
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      type = body.type;
+      mapping = body.mapping || null;
+      records = Array.isArray(body.records) ? body.records : [];
+      if (!type || !FIELD_SPEC[type]) {
+        return NextResponse.json({ error: "Invalid import type" }, { status: 400 });
       }
-      // Required fields must be mapped to something.
-      const missing = FIELD_SPEC[type]
+    } else {
+      const formData = await request.formData();
+      const file = formData.get("file") as File | null;
+      type = formData.get("type") as "candidates" | "clients" | "jobs";
+      const mappingRaw = formData.get("mapping");
+
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      }
+      if (!type || !FIELD_SPEC[type]) {
+        return NextResponse.json({ error: "Invalid import type" }, { status: 400 });
+      }
+
+      if (mappingRaw && typeof mappingRaw === "string") {
+        try {
+          mapping = JSON.parse(mappingRaw);
+        } catch {
+          return NextResponse.json({ error: "Invalid mapping JSON" }, { status: 400 });
+        }
+      }
+
+      const sheetName = (formData.get("sheetName") as string | null) || null;
+      const parsed = await parseSpreadsheetFile(file);
+      const targetSheet =
+        (sheetName && parsed.sheets.find((s) => s.name === sheetName)) ||
+        parsed.sheets[0];
+      if (!targetSheet) {
+        return NextResponse.json({ error: "No sheet found in file" }, { status: 400 });
+      }
+      records = targetSheet.rows;
+    }
+
+    // Required-field validation runs regardless of how we got here.
+    // When mapping is null we use the legacy header heuristics, so
+    // there's nothing to validate.
+    if (mapping) {
+      const missing = FIELD_SPEC[type!]
         .filter((f) => f.required && !mapping![f.key])
         .map((f) => f.key);
       if (missing.length > 0) {
@@ -79,16 +115,6 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-    }
-
-    const text = await file.text();
-    let records: any[] = [];
-
-    if (file.name.toLowerCase().endsWith(".json")) {
-      records = JSON.parse(text);
-      if (!Array.isArray(records)) records = [records];
-    } else {
-      records = parseDelimited(text);
     }
 
     if (records.length === 0) {
@@ -233,51 +259,8 @@ export async function POST(request: Request) {
   }
 }
 
-// Detect the delimiter from the first line — `\t` if more tabs than
-// commas, comma otherwise. Lets one parser handle both CSV and TSV
-// without making the UI ask which one.
-function parseDelimited(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).map((l) => l).filter((l) => l.length > 0);
-  if (lines.length < 2) return [];
-
-  const first = lines[0];
-  const tabCount = (first.match(/\t/g) || []).length;
-  const commaCount = (first.match(/,/g) || []).length;
-  const delim = tabCount > commaCount ? "\t" : ",";
-
-  const headers = parseLine(lines[0], delim);
-  const records: Record<string, string>[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseLine(lines[i], delim);
-    const record: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      record[h.trim()] = (values[idx] || "").trim();
-    });
-    records.push(record);
-  }
-
-  return records;
-}
-
-function parseLine(line: string, delim: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === delim && !inQuotes) {
-      result.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  result.push(current);
-  return result;
-}
+// CSV / TSV / XLSX parsing lives in lib/parse-spreadsheet now so the
+// API and the UI preview share one source of truth.
 
 function parseSkillsField(skills: string | string[]): string[] {
   if (Array.isArray(skills)) return skills;
