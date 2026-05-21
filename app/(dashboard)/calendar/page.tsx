@@ -386,6 +386,14 @@ export default function CalendarPage() {
     .filter((iv) => new Date(iv.startTime).getTime() >= nowMs && new Date(iv.startTime).getTime() <= weekFromNow && iv.status === "SCHEDULED")
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
+  // Same 7-day window for placement milestones (first day, payment
+  // due, guarantee expiry). The grid already renders these per-day;
+  // the sidebar feed surfaces them as a single "what's coming up"
+  // list so the recruiter doesn't have to scan the whole month.
+  const upcomingMilestones = milestones
+    .filter((ms) => ms.date.getTime() >= nowMs && ms.date.getTime() <= weekFromNow)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
   function formatTime(dateStr: string, tz?: string) {
     try {
       return new Date(dateStr).toLocaleTimeString("en-US", {
@@ -1144,6 +1152,58 @@ export default function CalendarPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Placement milestones feed — first days, payment dues,
+              and guarantee expirations falling inside the same
+              7-day window. Same on-click behavior as a grid chip:
+              opens the milestone detail sidebar. Hidden entirely
+              when there's nothing upcoming so it doesn't add empty
+              chrome. */}
+          {!loading && upcomingMilestones.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-sm mb-3">Placements (7 days)</h3>
+                <div className="space-y-2">
+                  {upcomingMilestones.map((ms, i) => {
+                    const styles = milestoneClassNames(ms.kind);
+                    const kindLabel = milestoneKindLabel(ms.kind);
+                    const candidateName = milestoneCandidateName(ms);
+                    const clientName = milestoneClient(ms);
+                    const meta = clientName ? `${candidateName} · ${clientName}` : candidateName;
+                    const isSelected =
+                      selectedMilestone?.placement.id === ms.placement.id &&
+                      selectedMilestone?.kind === ms.kind;
+                    return (
+                      <button
+                        key={`${ms.placement.id}-${ms.kind}-${i}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedInterview(null);
+                          setSelectedDay(null);
+                          setSelectedMilestone(ms);
+                        }}
+                        className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
+                          isSelected
+                            ? "border-indigo-300 bg-indigo-50"
+                            : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                            {kindLabel}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            {ms.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 truncate">{meta}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
