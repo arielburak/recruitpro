@@ -166,6 +166,47 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
+  // Bulk selection (checkbox column + action bar). Same pattern as
+  // /candidates: per-id Set, clear on every fresh fetch so a delete
+  // doesn't leave dangling ids.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible(checked: boolean, visibleIds: string[]) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      visibleIds.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  }
+  async function bulkDelete() {
+    if (selectedIds.size === 0 || bulkDeleting) return;
+    const n = selectedIds.size;
+    if (!confirm(`Delete ${n} job${n === 1 ? "" : "s"}? This removes their pipeline, submissions, interviews, and history. Cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch("/api/jobs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        const dead = new Set(selectedIds);
+        setJobs((arr) => arr.filter((j) => !dead.has(j.id)));
+        setSelectedIds(new Set());
+      }
+    } catch {}
+    setBulkDeleting(false);
+  }
+
   // Multi-select filters. Status defaults to Open + Active so the
   // first thing the recruiter sees are the searches they're working
   // on right now — closed / filled jobs are still reachable by
@@ -182,6 +223,7 @@ export default function JobsPage() {
       .then((r) => r.json())
       .then((data) => {
         setJobs(data);
+        setSelectedIds(new Set());
         setLoading(false);
       });
   }, []);
@@ -389,6 +431,35 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Bulk action bar — same pattern as /candidates. Above the
+          table so the user can see it without scrolling once a row
+          is checked. */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <span className="text-sm font-medium text-indigo-900">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-indigo-700 hover:text-indigo-900"
+          >
+            Clear
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {bulkDeleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-1">
           {[...Array(6)].map((_, i) => (
@@ -411,7 +482,16 @@ export default function JobsPage() {
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-          <div className="grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="grid grid-cols-[36px_1fr_1fr_90px_80px_130px_100px_70px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider items-center">
+            <div>
+              <input
+                type="checkbox"
+                aria-label="Select all visible jobs"
+                checked={filtered.length > 0 && filtered.every((j: any) => selectedIds.has(j.id))}
+                onChange={(e) => selectAllVisible(e.target.checked, filtered.map((j: any) => j.id))}
+                className="rounded border-gray-300"
+              />
+            </div>
             <div>Title</div>
             <div>Client</div>
             <div>Status</div>
@@ -422,10 +502,22 @@ export default function JobsPage() {
           </div>
 
           {filtered.map((j: any, i: number) => (
-            <Link key={j.id} href={`/jobs/${j.id}`} className="block">
-              <div className={`group grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors cursor-pointer ${
+            <div
+              key={j.id}
+              className={`group grid grid-cols-[36px_1fr_1fr_90px_80px_130px_100px_70px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors ${
                 i < filtered.length - 1 ? "border-b border-gray-100" : ""
-              }`}>
+              } ${selectedIds.has(j.id) ? "bg-indigo-50/30" : ""}`}
+            >
+              <div onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${j.title}`}
+                  checked={selectedIds.has(j.id)}
+                  onChange={() => toggleSelected(j.id)}
+                  className="rounded border-gray-300"
+                />
+              </div>
+              <Link href={`/jobs/${j.id}`} className="contents">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{j.title}</p>
                 </div>
@@ -491,8 +583,8 @@ export default function JobsPage() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
