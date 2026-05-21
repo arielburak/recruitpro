@@ -287,28 +287,30 @@ export default function CalendarPage() {
   }
 
   // Two-line chip: small uppercase kind label on top, candidate · client
-  // below in the same color but lighter weight. Subtle background +
-  // matching left border accent reads more like a typical pro
-  // calendar event than a flat colored pill.
+  // below. Quieter palette: neutral slate background for all three
+  // kinds, with a colored left-border accent + colored label so the
+  // kind is still discriminable at a glance. The previous
+  // emerald+amber+rose palette competed with itself; this reads
+  // closer to a Linear / Outlook event — serious, calm, not loud.
   function milestoneClassNames(kind: MilestoneKind): { wrapper: string; label: string; meta: string } {
     if (kind === "first_day") {
       return {
-        wrapper: "bg-emerald-50 hover:bg-emerald-100 border-l-2 border-emerald-500",
-        label: "text-emerald-800",
-        meta: "text-emerald-700",
+        wrapper: "bg-slate-50 hover:bg-slate-100 border-l-2 border-emerald-500",
+        label: "text-emerald-700",
+        meta: "text-slate-600",
       };
     }
     if (kind === "payment_due") {
       return {
-        wrapper: "bg-amber-50 hover:bg-amber-100 border-l-2 border-amber-500",
-        label: "text-amber-800",
-        meta: "text-amber-700",
+        wrapper: "bg-slate-50 hover:bg-slate-100 border-l-2 border-indigo-500",
+        label: "text-indigo-700",
+        meta: "text-slate-600",
       };
     }
     return {
-      wrapper: "bg-rose-50 hover:bg-rose-100 border-l-2 border-rose-500",
-      label: "text-rose-800",
-      meta: "text-rose-700",
+      wrapper: "bg-slate-50 hover:bg-slate-100 border-l-2 border-amber-500",
+      label: "text-amber-700",
+      meta: "text-slate-600",
     };
   }
 
@@ -2554,12 +2556,16 @@ function MilestoneDetailCard({
   const jobTitle = placement.job?.title || "Job";
   const clientName = placement.client?.name || "Client";
   const currency = placement.currency || placement.job?.currency || "USD";
+  // Mirror the calmed-down chip palette: neutral slate panel with a
+  // single colored accent (emerald / indigo / amber) so the detail
+  // sidebar doesn't suddenly switch to a louder color scheme than
+  // the grid chip the user just clicked.
   const accent =
     kind === "first_day"
-      ? { border: "border-emerald-200", text: "text-emerald-700", bg: "bg-emerald-50" }
+      ? { border: "border-emerald-200", text: "text-emerald-700", bg: "bg-slate-50" }
       : kind === "payment_due"
-        ? { border: "border-amber-200", text: "text-amber-700", bg: "bg-amber-50" }
-        : { border: "border-rose-200", text: "text-rose-700", bg: "bg-rose-50" };
+        ? { border: "border-indigo-200", text: "text-indigo-700", bg: "bg-slate-50" }
+        : { border: "border-amber-200", text: "text-amber-700", bg: "bg-slate-50" };
   const headline =
     kind === "first_day"
       ? "First day"
