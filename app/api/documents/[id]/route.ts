@@ -19,6 +19,7 @@ export async function GET(
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
           { client: { engagedOrganizations: { some: { organizationId: ctx.organizationId } } } },
+          { interview: { organizationId: ctx.organizationId } },
         ],
       },
     });
@@ -75,6 +76,7 @@ export async function DELETE(
           { candidate: { organizationId: ctx.organizationId } },
           { job: { organizationId: ctx.organizationId } },
           { client: { engagedOrganizations: { some: { organizationId: ctx.organizationId } } } },
+          { interview: { organizationId: ctx.organizationId } },
         ],
       },
       include: {
