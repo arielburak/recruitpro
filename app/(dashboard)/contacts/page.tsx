@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserRound, Mail, Phone, Search, Building2, Shield, Star, KeyRound } from "lucide-react";
+import { UserRound, Mail, Phone, Search, Building2, Shield, Star, KeyRound, Trash2 } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 type UnifiedContact = {
@@ -43,11 +43,59 @@ export default function ContactsPage() {
   const [portalFilter, setPortalFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
 
+  // Bulk selection. Two flavors of row live in this table — real
+  // Contacts (isContact=true) and ClientUsers with portal access
+  // (isContact=false). For now bulk-delete only handles Contacts;
+  // portal users have their own removal flow on the client detail
+  // page (deleting them affects login + activity history).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible(checked: boolean, rows: UnifiedContact[]) {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      rows.forEach((r) => {
+        if (!r.isContact) return; // skip portal users
+        if (checked) next.add(r.id);
+        else next.delete(r.id);
+      });
+      return next;
+    });
+  }
+  async function bulkDelete() {
+    if (selectedIds.size === 0 || bulkDeleting) return;
+    const n = selectedIds.size;
+    if (!confirm(`Delete ${n} contact${n === 1 ? "" : "s"}? Cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch("/api/contacts/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        const dead = new Set(selectedIds);
+        setContacts((arr) => arr.filter((c) => !dead.has(c.id)));
+        setSelectedIds(new Set());
+      }
+    } catch {}
+    setBulkDeleting(false);
+  }
+
   useEffect(() => {
     fetch("/api/contacts/all")
       .then((r) => r.json())
       .then((data) => {
         setContacts(Array.isArray(data) ? data : []);
+        setSelectedIds(new Set());
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -170,11 +218,43 @@ export default function ContactsPage() {
           </CardContent>
         </Card>
       ) : (
+        <>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <span className="text-sm font-medium text-indigo-900">{selectedIds.size} selected</span>
+              <button type="button" onClick={() => setSelectedIds(new Set())} className="text-xs text-indigo-700 hover:text-indigo-900">
+                Clear
+              </button>
+              <div className="ml-auto">
+                <button
+                  type="button"
+                  onClick={bulkDelete}
+                  disabled={bulkDeleting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {bulkDeleting ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          )}
         <Card>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-9">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible contacts"
+                      checked={
+                        filtered.filter((c) => c.isContact).length > 0 &&
+                        filtered.filter((c) => c.isContact).every((c) => selectedIds.has(c.id))
+                      }
+                      onChange={(e) => selectAllVisible(e.target.checked, filtered)}
+                      className="rounded border-gray-300"
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Client</TableHead>
@@ -185,7 +265,25 @@ export default function ContactsPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((c) => (
-                  <TableRow key={c.id} className="hover:bg-gray-50">
+                  <TableRow key={c.id} className={`hover:bg-gray-50 ${selectedIds.has(c.id) ? "bg-indigo-50/30" : ""}`}>
+                    <TableCell>
+                      {c.isContact ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${c.name}`}
+                          checked={selectedIds.has(c.id)}
+                          onChange={() => toggleSelected(c.id)}
+                          className="rounded border-gray-300"
+                        />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          disabled
+                          title="Portal users have their own removal flow on the client detail page"
+                          className="rounded border-gray-200 opacity-40"
+                        />
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Link href={`/clients/${c.clientId}`} className="font-medium text-gray-900 hover:text-indigo-600 inline-flex items-center gap-1.5">
                         {c.isPrimary && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
@@ -239,6 +337,7 @@ export default function ContactsPage() {
             </Table>
           </CardContent>
         </Card>
+        </>
       )}
 
       {/* Legend */}
