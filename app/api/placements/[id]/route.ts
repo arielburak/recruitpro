@@ -93,15 +93,18 @@ export async function PUT(
       const pt = paymentTerms !== undefined ? paymentTerms : current.paymentTerms;
 
       if (touchesGuarantee && sd) {
+        // UTC date math — see /api/placements POST. These values
+        // represent calendar days, not moments in time, so local
+        // getDate/setDate would silently flip them across UTC.
         guaranteeExpiry = new Date(sd);
-        guaranteeExpiry.setDate(guaranteeExpiry.getDate() + gp);
+        guaranteeExpiry.setUTCDate(guaranteeExpiry.getUTCDate() + gp);
       }
 
       if (touchesPaymentDue && pt != null) {
         const anchor = sd ?? esd;
         if (anchor) {
           resolvedDue = new Date(anchor);
-          resolvedDue.setDate(resolvedDue.getDate() + pt);
+          resolvedDue.setUTCDate(resolvedDue.getUTCDate() + pt);
         }
       }
     }

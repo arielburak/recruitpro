@@ -31,8 +31,11 @@ export async function GET() {
   }
 }
 
-// Resolve when the agency expects to be paid: anchor on startDate, fall back
-// to estimatedStartDate. Returns undefined if neither anchor nor terms exist.
+// Resolve when the agency expects to be paid: anchor on startDate,
+// fall back to estimatedStartDate. Returns undefined if neither
+// anchor nor terms exist. Uses UTC date math so a runtime in a
+// non-UTC TZ doesn't shift the result by one day (the dates here
+// represent calendar days, not moments in time).
 function computePaymentDueDate(
   estimatedStartDate: Date | null | undefined,
   startDate: Date | null | undefined,
@@ -42,7 +45,7 @@ function computePaymentDueDate(
   const anchor = startDate ?? estimatedStartDate;
   if (!anchor) return undefined;
   const due = new Date(anchor);
-  due.setDate(due.getDate() + paymentTerms);
+  due.setUTCDate(due.getUTCDate() + paymentTerms);
   return due;
 }
 
@@ -207,8 +210,10 @@ export async function POST(request: Request) {
 
     const guaranteeExpiry = startDateValue
       ? (() => {
+          // UTC date math: same reason as computePaymentDueDate above
+          // — the input is a calendar date, not a moment in time.
           const d = new Date(startDateValue);
-          d.setDate(d.getDate() + gp);
+          d.setUTCDate(d.getUTCDate() + gp);
           return d;
         })()
       : undefined;
