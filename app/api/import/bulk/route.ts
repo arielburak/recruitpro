@@ -139,9 +139,33 @@ export async function POST(request: Request) {
 
     let imported = 0;
     let skipped = 0;
+    let duplicates = 0;
     const errors: string[] = [];
 
     if (type === "candidates") {
+      // Pre-fetch existing candidates in this org keyed by lowercased
+      // email and by firstName+lastName so the per-row create-or-skip
+      // check is O(1). 6k candidates fit in memory comfortably; if we
+      // ever push past that we can shard or batch-load.
+      const existing = await prisma.candidate.findMany({
+        where: { organizationId: ctx.organizationId },
+        select: { id: true, email: true, firstName: true, lastName: true, phone: true },
+      });
+      const byEmail = new Map<string, true>();
+      const byNamePhone = new Map<string, true>();
+      const byName = new Map<string, true>();
+      for (const c of existing) {
+        if (c.email) byEmail.set(c.email.trim().toLowerCase(), true);
+        const fullName = `${c.firstName} ${c.lastName}`.trim().toLowerCase();
+        if (c.phone) {
+          byNamePhone.set(`${fullName}|${c.phone.replace(/\D/g, "")}`, true);
+        }
+        byName.set(fullName, true);
+      }
+
+      // Also dedupe within the file itself (a CSV can ship the same
+      // candidate twice). Seed the seen-sets from the existing rows
+      // so subsequent file rows respect both DB + file context.
       for (const record of records) {
         try {
           const firstName = pick(record, "firstName", ["firstName", "first_name", "First Name"]) || "";
@@ -152,12 +176,31 @@ export async function POST(request: Request) {
             continue;
           }
 
+          const email = pick(record, "email", ["email", "Email", "E-mail"]);
+          const phone = pick(record, "phone", ["phone", "Phone", "Phone Number"]);
+          const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
+          const emailKey = email ? email.trim().toLowerCase() : "";
+          const phoneDigits = phone ? phone.replace(/\D/g, "") : "";
+
+          // Dedup priority:
+          //   1. Email (when present) — strongest signal.
+          //   2. fullName + phone digits — handles people without
+          //      an email but with a phone we can match.
+          //   3. fullName alone — last-resort, only used to prevent
+          //      file-internal duplicates (we DON'T treat same-name
+          //      as a DB match because two people can share a name).
+          if (emailKey && byEmail.has(emailKey)) { duplicates++; continue; }
+          if (!emailKey && phoneDigits && byNamePhone.has(`${fullName}|${phoneDigits}`)) {
+            duplicates++;
+            continue;
+          }
+
           await prisma.candidate.create({
             data: {
               firstName,
               lastName,
-              email: pick(record, "email", ["email", "Email", "E-mail"]),
-              phone: pick(record, "phone", ["phone", "Phone", "Phone Number"]),
+              email,
+              phone,
               linkedIn: pick(record, "linkedIn", ["linkedIn", "linkedin", "LinkedIn"]),
               location: pick(record, "location", ["location", "Location", "City"]),
               currentTitle: pick(record, "currentTitle", ["title", "currentTitle", "Title", "Job Title"]),
@@ -171,23 +214,48 @@ export async function POST(request: Request) {
             },
           });
           imported++;
+          // Update the seen-sets so a second occurrence of the same
+          // candidate later in the file gets de-duped against this
+          // row we just inserted.
+          if (emailKey) byEmail.set(emailKey, true);
+          if (phoneDigits) byNamePhone.set(`${fullName}|${phoneDigits}`, true);
         } catch (e: any) {
           skipped++;
           if (errors.length < 5) errors.push(e.message);
         }
       }
     } else if (type === "clients") {
+      // Pre-fetch clients already engaged with this agency, keyed by
+      // lowercased name. Skipping by domain (the website) would be a
+      // nice future improvement; for now name match is what we have.
+      const existingClients = await prisma.client.findMany({
+        where: {
+          engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+        },
+        select: { id: true, name: true },
+      });
+      const clientsByName = new Map<string, string>();
+      for (const c of existingClients) {
+        clientsByName.set(c.name.trim().toLowerCase(), c.id);
+      }
+
       for (const record of records) {
         try {
           const name = pick(record, "name", ["name", "Name", "Company Name"]) || "";
           if (!name) { skipped++; continue; }
+
+          const key = name.trim().toLowerCase();
+          if (clientsByName.has(key)) {
+            duplicates++;
+            continue;
+          }
 
           // Shared-Client model (PR #139): a Client is visible to an
           // agency only if there's an OrganizationClient row linking
           // them. Without it, the imported clients wouldn't show up
           // on /clients. Create both in one transaction so a failed
           // engagement insert doesn't leave the Client orphaned.
-          await prisma.$transaction(async (tx) => {
+          const created = await prisma.$transaction(async (tx) => {
             const c = await tx.client.create({
               data: {
                 name,
@@ -203,14 +271,32 @@ export async function POST(request: Request) {
             await tx.organizationClient.create({
               data: { organizationId: ctx.organizationId, clientId: c.id },
             });
+            return c;
           });
           imported++;
+          clientsByName.set(key, created.id);
         } catch (e: any) {
           skipped++;
           if (errors.length < 5) errors.push(e.message);
         }
       }
     } else if (type === "jobs") {
+      // Existing jobs for THIS agency, keyed by (clientId, lowercased
+      // title). Same-title-at-same-client is the duplicate signal —
+      // two jobs with the same title at different clients are
+      // legitimately distinct. Per-org scope so another agency's job
+      // with the same title doesn't show as duplicate here.
+      const existingJobs = await prisma.job.findMany({
+        where: { organizationId: ctx.organizationId },
+        select: { id: true, title: true, clientId: true },
+      });
+      const jobKey = (clientId: string | null, title: string) =>
+        `${clientId || ""}|${title.trim().toLowerCase()}`;
+      const jobsSeen = new Set<string>();
+      for (const j of existingJobs) {
+        jobsSeen.add(jobKey(j.clientId, j.title));
+      }
+
       for (const record of records) {
         try {
           const title = pick(record, "title", ["title", "Title", "Job Title"]) || "";
@@ -248,6 +334,15 @@ export async function POST(request: Request) {
             clientId = newClient.id;
           }
 
+          // Dedup check now that we know which client the job is
+          // pinned to. Same-title-at-same-client = duplicate; same
+          // title at a different client is a separate job.
+          const key = jobKey(clientId, title);
+          if (jobsSeen.has(key)) {
+            duplicates++;
+            continue;
+          }
+
           const job = await prisma.job.create({
             data: {
               title,
@@ -272,6 +367,7 @@ export async function POST(request: Request) {
           });
 
           imported++;
+          jobsSeen.add(key);
         } catch (e: any) {
           skipped++;
           if (errors.length < 5) errors.push(e.message);
@@ -279,7 +375,13 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ imported, skipped, total: records.length, errors });
+    return NextResponse.json({
+      imported,
+      duplicates,
+      skipped,
+      total: records.length,
+      errors,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
