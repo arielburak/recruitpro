@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { InterviewAttachments } from "@/components/interviews/interview-attachments";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -903,6 +904,11 @@ export default function CalendarPage() {
                       <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedInterview.notes}</p>
                     </div>
                   )}
+
+                  {/* Attachments — same component the dialog and the
+                      job/candidate detail pages use. Quick view +
+                      management without opening the edit modal. */}
+                  <InterviewAttachments interviewId={selectedInterview.id} />
                 </div>
 
                 {/* Actions */}
@@ -2454,6 +2460,12 @@ function EditInterviewModal({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+
+          {/* Attachments — same component the job- and candidate-side
+              InterviewDialog uses, so attachment management is
+              identical no matter where the recruiter opens the
+              interview from. */}
+          <InterviewAttachments interviewId={interview.id} />
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t">
