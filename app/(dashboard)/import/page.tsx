@@ -227,26 +227,27 @@ export default function ImportPage() {
       })).filter((x) => x.sheet);
     const ordered = ORDER.flatMap(byType);
 
-    const perSheet: { sheet: string; type: ImportType; imported: number; duplicates: number; skipped: number; total: number; error?: string }[] = [];
+    const perSheet: { sheet: string; type: ImportType; imported: number; duplicates: number; flagged: number; skipped: number; total: number; error?: string }[] = [];
     for (const { plan, sheet } of ordered) {
       if (!sheet) continue;
       try {
         const res = await postImport(plan.type, plan.mapping, sheet.rows);
         const data = await res.json();
         if (!res.ok) {
-          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, skipped: 0, total: sheet.rows.length, error: data.error });
+          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, flagged: 0, skipped: 0, total: sheet.rows.length, error: data.error });
         } else {
           perSheet.push({
             sheet: sheet.name,
             type: plan.type,
             imported: data.imported || 0,
             duplicates: data.duplicates || 0,
+            flagged: data.flagged || 0,
             skipped: data.skipped || 0,
             total: data.total || sheet.rows.length,
           });
         }
       } catch (e: any) {
-        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
+        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, flagged: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
       }
     }
 
@@ -625,6 +626,11 @@ export default function ImportPage() {
                                   {" "}· {r.duplicates} duplicates
                                 </span>
                               )}
+                              {r.flagged > 0 && (
+                                <span className="text-amber-600" title="Same title at the same client — imported anyway">
+                                  {" "}· {r.flagged} flagged
+                                </span>
+                              )}
                               {r.skipped > 0 && (
                                 <span className="text-amber-600"> · {r.skipped} skipped</span>
                               )}
@@ -653,6 +659,11 @@ export default function ImportPage() {
                       {result.duplicates > 0 && (
                         <p className="text-xs text-gray-600 ml-7">
                           {result.duplicates} already in your workspace — skipped to avoid duplicates.
+                        </p>
+                      )}
+                      {result.flagged > 0 && (
+                        <p className="text-xs text-amber-700 ml-7">
+                          {result.flagged} share a title with an existing job at the same client. Imported anyway — review them in /jobs if any were unintended.
                         </p>
                       )}
                       {result.skipped > 0 && (

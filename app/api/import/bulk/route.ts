@@ -140,6 +140,12 @@ export async function POST(request: Request) {
     let imported = 0;
     let skipped = 0;
     let duplicates = 0;
+    // Jobs only: count of imported rows that share a (clientId, title)
+    // with a pre-existing job. We don't auto-skip these — a recruiter
+    // might be opening a second 'Senior Backend' at the same client
+    // intentionally. Surfaced in the result panel as a soft warning
+    // so the user can review without losing the import.
+    let flagged = 0;
     const errors: string[] = [];
 
     if (type === "candidates") {
@@ -337,10 +343,15 @@ export async function POST(request: Request) {
           // Dedup check now that we know which client the job is
           // pinned to. Same-title-at-same-client = duplicate; same
           // title at a different client is a separate job.
+          // Jobs aren't auto-deduped: same (title, client) might be
+          // a legitimate second search. We just flag it so the user
+          // can review the result panel and clean up if they didn't
+          // mean to. Re-uploads of the exact same file in one
+          // session don't double-count — we track the seen-set
+          // anyway and bump `flagged` only on the first collision.
           const key = jobKey(clientId, title);
           if (jobsSeen.has(key)) {
-            duplicates++;
-            continue;
+            flagged++;
           }
 
           const job = await prisma.job.create({
@@ -378,6 +389,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       imported,
       duplicates,
+      flagged,
       skipped,
       total: records.length,
       errors,
