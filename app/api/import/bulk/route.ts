@@ -252,8 +252,13 @@ export async function POST(request: Request) {
 
           const key = name.trim().toLowerCase();
           if (clientsByName.has(key)) {
-            duplicates++;
-            continue;
+            // Same name as a client we're already engaged with may
+            // be a different real-world company (Acme NY vs Acme
+            // LDN) or two divisions of the same company that the
+            // recruiter wants to track separately. Import anyway
+            // and flag so the result panel can warn — silent
+            // auto-skip would erase legitimate work.
+            flagged++;
           }
 
           // Shared-Client model (PR #139): a Client is visible to an
