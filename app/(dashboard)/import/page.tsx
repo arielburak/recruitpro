@@ -663,7 +663,7 @@ export default function ImportPage() {
                       )}
                       {result.flagged > 0 && (
                         <p className="text-xs text-amber-700 ml-7">
-                          {result.flagged} share a title with an existing job at the same client. Imported anyway — review them in /jobs if any were unintended.
+                          {result.flagged} look like duplicates of records already in your workspace. Imported anyway — review them if any were unintended.
                         </p>
                       )}
                       {result.skipped > 0 && (
