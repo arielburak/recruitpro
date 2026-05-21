@@ -30,6 +30,7 @@ import {
   Star,
   Send,
   Calendar as CalendarIcon,
+  Paperclip,
 } from "lucide-react";
 import Link from "next/link";
 import { FEATURES } from "@/lib/feature-flags";
@@ -128,6 +129,7 @@ type Interview = {
   creator: { name: string };
   interviewers: { user: { id: string; name: string } }[];
   clientContacts?: { contact: { id: string; firstName: string; lastName: string; email?: string; title?: string } }[];
+  _count?: { documents?: number };
 };
 
 type InterviewFeedback = {
@@ -580,16 +582,27 @@ export default function CalendarPage() {
                           const meta = jobTitle ? `${candidateName} · ${jobTitle}` : candidateName;
                           const time = formatTime(iv.startTime);
                           const typeLabel = TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type;
+                          const docCount = iv._count?.documents || 0;
                           return (
                             <button
                               key={iv.id}
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setSelectedMilestone(null); setSelectedDay(null); setSelectedInterview(iv); }}
                               className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
-                              title={`${purpose === "CLIENT" ? "Client interview" : "Candidate call"} · ${time} · ${typeLabel} · ${meta}`}
+                              title={
+                                `${purpose === "CLIENT" ? "Client interview" : "Candidate call"} · ${time} · ${typeLabel} · ${meta}` +
+                                (docCount > 0 ? ` · ${docCount} attachment${docCount === 1 ? "" : "s"}` : "")
+                              }
                             >
-                              <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label}`}>
-                                {time} · {typeLabel}
+                              <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label} flex items-center gap-1`}>
+                                <span>{time} · {typeLabel}</span>
+                                {docCount > 0 && (
+                                  // At-a-glance indicator: there are
+                                  // files pinned to this interview.
+                                  // Clicking the chip still opens the
+                                  // sidebar where the files are listed.
+                                  <Paperclip className="h-2.5 w-2.5 opacity-70" />
+                                )}
                               </p>
                               <p className={`text-[10px] truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
                                 {meta}
@@ -735,19 +748,24 @@ export default function CalendarPage() {
                           >
                             <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${styles.label}`} />
                             <div className="min-w-0 flex-1">
-                              <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
-                                {formatTime(iv.startTime)} ·{" "}
-                                {TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type}
-                                {" · "}
-                                {/* Purpose pill on the sidebar list. The
-                                    color already tells you, but spelling
-                                    it out helps colorblind users and
-                                    avoids ambiguity when the row is
-                                    cancelled/completed (those overrides
-                                    drop the purpose hue). */}
-                                <span className="ml-0.5 opacity-80">
-                                  {purpose === "CLIENT" ? "Client" : "Candidate"}
+                              <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label} flex items-center gap-1 flex-wrap`}>
+                                <span>
+                                  {formatTime(iv.startTime)} ·{" "}
+                                  {TYPE_OPTIONS.find((t) => t.value === iv.type)?.label || iv.type}
+                                  {" · "}
+                                  {/* Purpose pill on the sidebar list. The
+                                      color already tells you, but spelling
+                                      it out helps colorblind users and
+                                      avoids ambiguity when the row is
+                                      cancelled/completed (those overrides
+                                      drop the purpose hue). */}
+                                  <span className="ml-0.5 opacity-80">
+                                    {purpose === "CLIENT" ? "Client" : "Candidate"}
+                                  </span>
                                 </span>
+                                {(iv._count?.documents || 0) > 0 && (
+                                  <Paperclip className="h-2.5 w-2.5 opacity-70" />
+                                )}
                               </p>
                               <p className={`text-xs truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
                                 {iv.candidate.firstName} {iv.candidate.lastName}
@@ -1145,7 +1163,10 @@ export default function CalendarPage() {
                       }`}>
                       <div className="flex items-center gap-2 mb-1">
                         {(() => { const Icon = TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon || Video; return <Icon className="h-3 w-3 text-gray-400" />; })()}
-                        <span className="text-xs font-medium truncate">{iv.candidate.firstName} {iv.candidate.lastName}</span>
+                        <span className="text-xs font-medium truncate flex-1 min-w-0">{iv.candidate.firstName} {iv.candidate.lastName}</span>
+                        {(iv._count?.documents || 0) > 0 && (
+                          <Paperclip className="h-3 w-3 text-gray-400 shrink-0" />
+                        )}
                       </div>
                       <p className="text-[11px] text-gray-500 truncate">{iv.job.title} @ {iv.job.client.name}</p>
                       <p className="text-[11px] text-gray-400">
@@ -1162,51 +1183,57 @@ export default function CalendarPage() {
           {/* Placement milestones feed — first days, payment dues,
               and guarantee expirations falling inside the same
               7-day window. Same on-click behavior as a grid chip:
-              opens the milestone detail sidebar. Hidden entirely
-              when there's nothing upcoming so it doesn't add empty
-              chrome. */}
-          {!loading && upcomingMilestones.length > 0 && (
+              opens the milestone detail sidebar. Always rendered
+              (with an empty state) so the recruiter knows where to
+              look for placement events even on a quiet week. */}
+          {!loading && (
             <Card>
               <CardContent className="p-4">
                 <h3 className="font-semibold text-sm mb-3">Placements (7 days)</h3>
-                <div className="space-y-2">
-                  {upcomingMilestones.map((ms, i) => {
-                    const styles = milestoneClassNames(ms.kind);
-                    const kindLabel = milestoneKindLabel(ms.kind);
-                    const candidateName = milestoneCandidateName(ms);
-                    const clientName = milestoneClient(ms);
-                    const meta = clientName ? `${candidateName} · ${clientName}` : candidateName;
-                    const isSelected =
-                      selectedMilestone?.placement.id === ms.placement.id &&
-                      selectedMilestone?.kind === ms.kind;
-                    return (
-                      <button
-                        key={`${ms.placement.id}-${ms.kind}-${i}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedInterview(null);
-                          setSelectedDay(null);
-                          setSelectedMilestone(ms);
-                        }}
-                        className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                          isSelected
-                            ? "border-indigo-300 bg-indigo-50"
-                            : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
-                            {kindLabel}
-                          </span>
-                          <span className="text-[10px] text-gray-400">
-                            {ms.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-700 truncate">{meta}</p>
-                      </button>
-                    );
-                  })}
-                </div>
+                {upcomingMilestones.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">
+                    No upcoming placement milestones
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {upcomingMilestones.map((ms, i) => {
+                      const styles = milestoneClassNames(ms.kind);
+                      const kindLabel = milestoneKindLabel(ms.kind);
+                      const candidateName = milestoneCandidateName(ms);
+                      const clientName = milestoneClient(ms);
+                      const meta = clientName ? `${candidateName} · ${clientName}` : candidateName;
+                      const isSelected =
+                        selectedMilestone?.placement.id === ms.placement.id &&
+                        selectedMilestone?.kind === ms.kind;
+                      return (
+                        <button
+                          key={`${ms.placement.id}-${ms.kind}-${i}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedInterview(null);
+                            setSelectedDay(null);
+                            setSelectedMilestone(ms);
+                          }}
+                          className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
+                            isSelected
+                              ? "border-indigo-300 bg-indigo-50"
+                              : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                              {kindLabel}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {ms.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-700 truncate">{meta}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
