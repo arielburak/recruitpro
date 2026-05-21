@@ -1147,56 +1147,75 @@ export default function CalendarPage() {
             </Card>
           </>)}
 
+          {/* Upcoming events (7 days) — unified feed: interviews and
+              placement milestones (first day, payment due, guarantee
+              expiry) interleaved by date. The recruiter wants ONE
+              "what's coming up next" surface, not two separate cards
+              they have to mentally merge. Each row carries its own
+              type/color/icon so the kind is unambiguous. */}
           <Card>
             <CardContent className="p-4">
               <h3 className="font-semibold text-sm mb-3">Upcoming (7 days)</h3>
               {loading ? (
                 <div className="space-y-2">{[1,2,3].map((i) => <div key={i} className="h-14 bg-gray-100 rounded animate-pulse" />)}</div>
-              ) : upcoming.length === 0 ? (
-                <p className="text-sm text-gray-400 py-4 text-center">No upcoming interviews</p>
-              ) : (
-                <div className="space-y-2">
-                  {upcoming.map((iv) => (
-                    <button key={iv.id} type="button" onClick={() => { setSelectedMilestone(null); setSelectedInterview(iv); }}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                        selectedInterview?.id === iv.id ? "border-indigo-300 bg-indigo-50" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
-                      }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        {(() => { const Icon = TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon || Video; return <Icon className="h-3 w-3 text-gray-400" />; })()}
-                        <span className="text-xs font-medium truncate flex-1 min-w-0">{iv.candidate.firstName} {iv.candidate.lastName}</span>
-                        {(iv._count?.documents || 0) > 0 && (
-                          <Paperclip className="h-3 w-3 text-gray-400 shrink-0" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-gray-500 truncate">{iv.job.title} @ {iv.job.client.name}</p>
-                      <p className="text-[11px] text-gray-400">
-                        {formatDateShort(iv.startTime)} · {formatTime(iv.startTime, iv.timezone)}
-                        {iv.timezone && <span className="ml-1 text-gray-300">({getTimezoneLabel(iv.timezone)})</span>}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              ) : (() => {
+                // Merge into one chronologically-sorted list.
+                type FeedItem =
+                  | { kind: "interview"; date: Date; iv: Interview }
+                  | { kind: "milestone"; date: Date; ms: Milestone };
+                const items: FeedItem[] = [
+                  ...upcoming.map<FeedItem>((iv) => ({ kind: "interview", date: new Date(iv.startTime), iv })),
+                  ...upcomingMilestones.map<FeedItem>((ms) => ({ kind: "milestone", date: ms.date, ms })),
+                ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
-          {/* Placement milestones feed — first days, payment dues,
-              and guarantee expirations falling inside the same
-              7-day window. Same on-click behavior as a grid chip:
-              opens the milestone detail sidebar. Always rendered
-              (with an empty state) so the recruiter knows where to
-              look for placement events even on a quiet week. */}
-          {!loading && (
-            <Card>
-              <CardContent className="p-4">
-                <h3 className="font-semibold text-sm mb-3">Placements (7 days)</h3>
-                {upcomingMilestones.length === 0 ? (
-                  <p className="text-sm text-gray-400 py-4 text-center">
-                    No upcoming placement milestones
-                  </p>
-                ) : (
+                if (items.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-400 py-4 text-center">
+                      No interviews or placement milestones in the next 7 days
+                    </p>
+                  );
+                }
+
+                return (
                   <div className="space-y-2">
-                    {upcomingMilestones.map((ms, i) => {
+                    {items.map((item, i) => {
+                      if (item.kind === "interview") {
+                        const iv = item.iv;
+                        const isSelected = selectedInterview?.id === iv.id;
+                        const Icon = TYPE_OPTIONS.find((t) => t.value === iv.type)?.icon || Video;
+                        return (
+                          <button
+                            key={`iv-${iv.id}`}
+                            type="button"
+                            onClick={() => { setSelectedMilestone(null); setSelectedDay(null); setSelectedInterview(iv); }}
+                            className={`w-full text-left p-2.5 rounded-lg border-l-2 transition-colors ${
+                              isSelected
+                                ? "border-l-indigo-500 bg-indigo-50"
+                                : "border-l-indigo-400 border border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <Icon className="h-3 w-3 text-indigo-500" />
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                                Interview
+                              </span>
+                              {(iv._count?.documents || 0) > 0 && (
+                                <Paperclip className="h-3 w-3 text-gray-400" />
+                              )}
+                              <span className="ml-auto text-[10px] text-gray-400">
+                                {formatDateShort(iv.startTime)} · {formatTime(iv.startTime, iv.timezone)}
+                              </span>
+                            </div>
+                            <p className="text-xs font-medium text-gray-900 truncate">
+                              {iv.candidate.firstName} {iv.candidate.lastName}
+                            </p>
+                            <p className="text-[11px] text-gray-500 truncate">
+                              {iv.job.title} @ {iv.job.client.name}
+                            </p>
+                          </button>
+                        );
+                      }
+                      const ms = item.ms;
                       const styles = milestoneClassNames(ms.kind);
                       const kindLabel = milestoneKindLabel(ms.kind);
                       const candidateName = milestoneCandidateName(ms);
@@ -1207,17 +1226,13 @@ export default function CalendarPage() {
                         selectedMilestone?.kind === ms.kind;
                       return (
                         <button
-                          key={`${ms.placement.id}-${ms.kind}-${i}`}
+                          key={`ms-${ms.placement.id}-${ms.kind}-${i}`}
                           type="button"
-                          onClick={() => {
-                            setSelectedInterview(null);
-                            setSelectedDay(null);
-                            setSelectedMilestone(ms);
-                          }}
+                          onClick={() => { setSelectedInterview(null); setSelectedDay(null); setSelectedMilestone(ms); }}
                           className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
                             isSelected
                               ? "border-indigo-300 bg-indigo-50"
-                              : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                              : `${styles.wrapper.replace("hover:", "")} border border-gray-100`
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
@@ -1233,10 +1248,10 @@ export default function CalendarPage() {
                       );
                     })}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                );
+              })()}
+            </CardContent>
+          </Card>
         </div>
       </div>
 
