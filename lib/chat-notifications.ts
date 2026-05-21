@@ -257,6 +257,71 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   // INTERNAL and CLIENT_INTERNAL only have the mention notifications handled above.
 }
 
+// Candidate-level comments (no submissionId — pinned to the
+// Candidate itself rather than a specific submission) only need
+// mention fanout. There's no client side to consider because the
+// candidate may be in any number of submissions; the chat is
+// scoped to the staffing-firm's internal context.
+//
+// Called from /api/comments when the body carries candidateId but
+// no submissionId. Used to be silent — which meant @-mentions
+// inside candidate-level notes went nowhere.
+export async function notifyOnNewCandidateComment(args: {
+  candidateId: string;
+  content: string;
+  mentions: string[]; // staffing user IDs
+  authorId: string;
+  authorName: string;
+}) {
+  const { candidateId, content, mentions, authorId, authorName } = args;
+  if (mentions.length === 0) return;
+
+  const candidate = await prisma.candidate.findUnique({
+    where: { id: candidateId },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  if (!candidate) return;
+
+  const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${baseUrl}/candidates/${candidate.id}`;
+  const preview = stripMarkup(content);
+
+  const mentioned = await prisma.user.findMany({
+    where: { id: { in: mentions }, isActive: true },
+    select: { id: true, email: true, name: true },
+  });
+
+  for (const u of mentioned) {
+    if (u.id === authorId) continue;
+    try {
+      await prisma.userNotification.create({
+        data: {
+          userId: u.id,
+          type: "mention",
+          title: `${authorName} mentioned you`,
+          body: truncate(preview, 140),
+          link: `/candidates/${candidate.id}`,
+        },
+      });
+    } catch (e) {
+      console.error("[chat-notify] candidate mention in-app failed:", e);
+    }
+    try {
+      await sendMentionEmail({
+        to: u.email,
+        mentionedBy: authorName,
+        candidateName,
+        jobTitle: "candidate-level note",
+        preview,
+        url,
+      });
+    } catch (e) {
+      console.error("[chat-notify] candidate mention email failed:", e);
+    }
+  }
+}
+
 function stripMarkup(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }

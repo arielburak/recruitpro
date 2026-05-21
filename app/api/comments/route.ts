@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
-import { notifyOnNewComment } from "@/lib/chat-notifications";
+import { notifyOnNewComment, notifyOnNewCandidateComment } from "@/lib/chat-notifications";
 
 export async function POST(request: Request) {
   try {
@@ -37,7 +37,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // Fire-and-forget notifications
+    // Fire-and-forget notifications. Two paths:
+    //   - Submission-scoped → full fanout (mentions + audience on the
+    //     other side via notifyOnNewComment).
+    //   - Candidate-scoped → mention-only fanout (no client to share
+    //     with, candidate may be across many submissions).
     if (body.submissionId) {
       notifyOnNewComment({
         submissionId: body.submissionId,
@@ -48,6 +52,14 @@ export async function POST(request: Request) {
         authorId: ctx.userId,
         authorName: ctx.userName || comment.user?.name || "A recruiter",
       }).catch((e) => console.error("[comments POST] notify failed:", e));
+    } else if (body.candidateId) {
+      notifyOnNewCandidateComment({
+        candidateId: body.candidateId,
+        content,
+        mentions,
+        authorId: ctx.userId,
+        authorName: ctx.userName || comment.user?.name || "A recruiter",
+      }).catch((e) => console.error("[comments POST] candidate notify failed:", e));
     }
 
     return NextResponse.json(comment, { status: 201 });
