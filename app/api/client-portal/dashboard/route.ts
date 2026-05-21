@@ -10,7 +10,9 @@ export async function GET() {
     const [client, clientJobs, agencyJobs, totalCandidates, engagements] = await Promise.all([
       prisma.client.findUnique({
         where: { id: ctx.clientId },
-        select: { name: true, industry: true },
+        // isStub powers the onboarding banner that nudges OAuth /
+        // quick-share self-signups to fill in real company info.
+        select: { name: true, industry: true, isStub: true },
       }),
       prisma.clientJob.findMany({
         // Per-JO visibility: admins see everything; non-admins see

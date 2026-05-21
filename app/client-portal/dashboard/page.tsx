@@ -259,6 +259,23 @@ export default function ClientDashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Stub-Client onboarding banner. Appears when the workspace
+          was bootstrapped from a Google OAuth signup (or a
+          quick-share invite the recruiter sent) and we haven't
+          collected real company info yet. Inline form so the user
+          can complete it without leaving the dashboard. */}
+      {data?.client?.isStub && (
+        <StubOnboardingBanner
+          defaultName={data?.client?.name || ""}
+          defaultIndustry={data?.client?.industry || ""}
+          onSaved={() => {
+            // Hard reload so the header + every server-rendered
+            // surface picks up the new name without a stale render.
+            window.location.reload();
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -835,6 +852,93 @@ export default function ClientDashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Small inline form rendered at the top of the dashboard for stub
+// Clients (Google OAuth self-signups, quick-share invites that
+// haven't filled in real company info yet). Save → PATCH the new
+// /api/client-portal/setup endpoint → reload so the header / every
+// other server-rendered surface picks up the curated name.
+function StubOnboardingBanner({
+  defaultName,
+  defaultIndustry,
+  onSaved,
+}: {
+  defaultName: string;
+  defaultIndustry: string;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [industry, setIndustry] = useState(defaultIndustry);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/client-portal/setup", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), industry: industry.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Could not save");
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch {
+      setError("Something went wrong");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border border-emerald-200 rounded-2xl p-5">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="p-2 bg-emerald-100 rounded-lg shrink-0">
+          <Sparkles className="w-5 h-5 text-emerald-700" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-emerald-900">Tell us about your company</p>
+          <p className="text-sm text-emerald-800/80 mt-0.5">
+            We bootstrapped your workspace from your email domain. Confirm or update the details below so your recruiters see the right company name.
+          </p>
+        </div>
+      </div>
+      <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+        <div className="space-y-1">
+          <Label className="text-xs">Company name *</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Acme Inc."
+            required
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Industry</Label>
+          <Input
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            placeholder="e.g. Technology"
+          />
+        </div>
+        <Button
+          type="submit"
+          className="bg-emerald-600 hover:bg-emerald-700 md:mt-[22px]"
+          disabled={saving || !name.trim()}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </form>
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
     </div>
   );
 }
