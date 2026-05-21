@@ -5,6 +5,20 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
 
+// Turn "jane@acme-corp.com" → "Acme Corp". The hiring manager can
+// overwrite this from the onboarding banner on /client-portal/dashboard;
+// we just want something readable until they do.
+function deriveCompanyNameFromEmail(email: string): string {
+  const domain = email.split("@")[1] || "";
+  const base = domain.split(".")[0] || domain;
+  if (!base) return "New Client";
+  return base
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
 // Helper — reads the per-portal OAuth hint cookie set by the UI before
 // calling signIn("google"). Cookie is short-lived (60s).
 async function getOAuthPortal(): Promise<"client" | "staffing"> {
@@ -127,15 +141,59 @@ export const authOptions: NextAuthOptions = {
       const portal = await getOAuthPortal();
 
       // === Client portal OAuth flow ===
-      // Only existing ClientUsers can sign in this way; we don't auto-create
-      // Client organisations from OAuth to avoid ghost client accounts.
+      // Existing ClientUsers sign in directly. Brand-new emails get a
+      // stub Client + ClientUser auto-created so OAuth isn't a
+      // dead-end for hiring companies that never received an invite.
+      // The stub flag stays true until they fill in real company info
+      // via the onboarding banner on /client-portal/dashboard.
       if (portal === "client") {
         const existing = await prisma.clientUser.findFirst({
           where: { email: user.email, isActive: true },
         });
         if (existing) return true;
-        // Bounce back to client login with an explanatory error.
-        return "/client-portal/login?error=no-client-account";
+
+        const derivedName = deriveCompanyNameFromEmail(user.email);
+        try {
+          await prisma.$transaction(async (tx) => {
+            const client = await tx.client.create({
+              data: {
+                name: derivedName,
+                isStub: true,
+                // No agency owns this — it's a client-portal-self
+                // signup. organizationId stays null; engagements come
+                // later when a recruiter invites them to a job.
+                organizationId: null,
+                contactEmail: user.email!,
+                contactName: user.name || null,
+              },
+            });
+            await tx.clientPipelineStage.createMany({
+              data: (await import("./constants")).DEFAULT_STAGES.map((s, i) => ({
+                name: s.name,
+                order: i,
+                color: s.color,
+                isTerminal: s.isTerminal,
+                kind: s.kind,
+                clientId: client.id,
+              })),
+            });
+            await tx.clientUser.create({
+              data: {
+                email: user.email!,
+                name: user.name || derivedName,
+                clientId: client.id,
+                role: "ADMIN",
+                // Google's already verified the address — no need to
+                // send a separate verify-email mail.
+                emailVerifiedAt: new Date(),
+              },
+            });
+          });
+          return true;
+        } catch (e) {
+          console.error("[signIn] client portal OAuth auto-create failed:", e);
+          return "/client-portal/login?error=signup-failed";
+        }
       }
 
       // === Staffing portal OAuth flow (default) ===
