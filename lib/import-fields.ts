@@ -17,33 +17,33 @@ export type FieldDef = {
 
 export const IMPORT_FIELDS: Record<ImportType, FieldDef[]> = {
   candidates: [
-    { key: "firstName", label: "First name", required: true, aliases: ["firstname", "first", "givenname", "nombre"] },
-    { key: "lastName", label: "Last name", required: true, aliases: ["lastname", "last", "surname", "familyname", "apellido"] },
-    { key: "email", label: "Email", aliases: ["email", "emailaddress", "mail", "correo"] },
-    { key: "phone", label: "Phone", aliases: ["phone", "phonenumber", "mobile", "cell", "telefono", "celular"] },
-    { key: "linkedIn", label: "LinkedIn", aliases: ["linkedin", "linkedinurl", "linkedinprofile"] },
-    { key: "location", label: "Location", aliases: ["location", "city", "address", "ciudad"] },
-    { key: "currentTitle", label: "Current title", aliases: ["title", "currenttitle", "jobtitle", "position", "puesto", "cargo"] },
-    { key: "currentCompany", label: "Current company", aliases: ["company", "currentcompany", "employer", "empresa"] },
-    { key: "source", label: "Source", aliases: ["source", "origin", "channel"], hint: "Defaults to 'Import'" },
-    { key: "summary", label: "Summary / notes", aliases: ["summary", "notes", "bio", "about", "comments", "resumen"] },
-    { key: "skills", label: "Skills", aliases: ["skills", "tags", "tech", "stack", "habilidades"], hint: "Comma, semicolon, or pipe separated" },
+    { key: "firstName", label: "First name", required: true, aliases: ["firstname", "first", "givenname", "nombre", "prenom", "vorname"] },
+    { key: "lastName", label: "Last name", required: true, aliases: ["lastname", "last", "surname", "familyname", "apellido", "nomdefamille"] },
+    { key: "email", label: "Email", aliases: ["email", "emailaddress", "mail", "correo", "email1", "primaryemail", "correoelectronico"] },
+    { key: "phone", label: "Phone", aliases: ["phone", "phonenumber", "mobile", "cell", "telefono", "celular", "phonecell", "phonehome", "phone1"] },
+    { key: "linkedIn", label: "LinkedIn", aliases: ["linkedin", "linkedinurl", "linkedinprofile", "website", "websiteurl"] },
+    { key: "location", label: "Location", aliases: ["location", "city", "address", "ciudad", "ubicacion", "where"] },
+    { key: "currentTitle", label: "Current title", aliases: ["title", "currenttitle", "jobtitle", "position", "puesto", "cargo", "role"] },
+    { key: "currentCompany", label: "Current company", aliases: ["company", "currentcompany", "employer", "empresa", "currentemployer", "organisation", "organization"] },
+    { key: "source", label: "Source", aliases: ["source", "origin", "channel", "fuente", "origen"], hint: "Defaults to 'Import'" },
+    { key: "summary", label: "Summary / notes", aliases: ["summary", "notes", "bio", "about", "comments", "resumen", "observaciones", "remarks"] },
+    { key: "skills", label: "Skills", aliases: ["skills", "tags", "tech", "stack", "habilidades", "keyskills", "technologies", "techstack"], hint: "Comma, semicolon, or pipe separated" },
   ],
   clients: [
-    { key: "name", label: "Company name", required: true, aliases: ["name", "companyname", "client", "clientname", "empresa"] },
-    { key: "industry", label: "Industry", aliases: ["industry", "sector", "vertical"] },
-    { key: "website", label: "Website", aliases: ["website", "url", "site", "domain"] },
-    { key: "contactName", label: "Main contact name", aliases: ["contactname", "contact", "primarycontact"] },
-    { key: "contactEmail", label: "Main contact email", aliases: ["contactemail", "email"] },
-    { key: "contactPhone", label: "Main contact phone", aliases: ["contactphone", "phone"] },
-    { key: "notes", label: "Notes", aliases: ["notes", "comments", "about"] },
+    { key: "name", label: "Company name", required: true, aliases: ["name", "companyname", "client", "clientname", "empresa", "company", "razonsocial"] },
+    { key: "industry", label: "Industry", aliases: ["industry", "sector", "vertical", "industria", "rubro", "keytechnologies"] },
+    { key: "website", label: "Website", aliases: ["website", "url", "site", "domain", "web", "weburl"] },
+    { key: "contactName", label: "Main contact name", aliases: ["contactname", "contact", "primarycontact", "contacto", "billingcontact"] },
+    { key: "contactEmail", label: "Main contact email", aliases: ["contactemail", "email", "correo"] },
+    { key: "contactPhone", label: "Main contact phone", aliases: ["contactphone", "phone", "telefono", "phone1", "phone2"] },
+    { key: "notes", label: "Notes", aliases: ["notes", "comments", "about", "observaciones", "remarks"] },
   ],
   jobs: [
-    { key: "title", label: "Job title", required: true, aliases: ["title", "jobtitle", "position", "role"] },
-    { key: "client", label: "Client (company name)", aliases: ["client", "clientname", "company", "companyname"], hint: "Matched by name; created if not found" },
-    { key: "description", label: "Description", aliases: ["description", "jd", "summary"] },
-    { key: "salary", label: "Salary", aliases: ["salary", "compensation", "pay", "salaryrange"] },
-    { key: "location", label: "Location", aliases: ["location", "city", "address"] },
+    { key: "title", label: "Job title", required: true, aliases: ["title", "jobtitle", "position", "role", "puesto"] },
+    { key: "client", label: "Client (company name)", aliases: ["client", "clientname", "company", "companyname", "empresa"], hint: "Matched by name; created if not found" },
+    { key: "description", label: "Description", aliases: ["description", "jd", "summary", "descripcion", "details"] },
+    { key: "salary", label: "Salary", aliases: ["salary", "compensation", "pay", "salaryrange", "rate", "ratemax", "sueldo"] },
+    { key: "location", label: "Location", aliases: ["location", "city", "address", "ubicacion"] },
   ],
 };
 
@@ -70,4 +70,43 @@ export function autoDetectMapping(
     result[field.key] = hit?.raw || null;
   }
   return result;
+}
+
+// Score how confidently a sheet matches a given entity type by
+// counting how many required + optional fields auto-detect can fill.
+// Used to label each tab of a multi-sheet workbook so the user
+// doesn't have to manually pick "this sheet is Candidates" 3 times.
+export function detectSheetType(
+  sheetName: string,
+  headers: string[]
+): { type: ImportType; confidence: number } {
+  // 1. Sheet name hints — high signal when present.
+  const norm = normalizeHeader(sheetName);
+  const nameHints: Record<ImportType, string[]> = {
+    candidates: ["candidates", "candidate", "people", "talent", "personas", "candidatos"],
+    clients: ["clients", "client", "companies", "company", "accounts", "empresas", "clientes"],
+    jobs: ["jobs", "job", "joborders", "joborder", "positions", "searches", "vacantes", "busquedas"],
+  };
+
+  // 2. Header coverage — how many fields auto-detect would fill.
+  const scores: { type: ImportType; score: number }[] = (["candidates", "clients", "jobs"] as ImportType[]).map(
+    (t) => {
+      const mapping = autoDetectMapping(t, headers);
+      const filled = Object.values(mapping).filter(Boolean).length;
+      const requiredHit = IMPORT_FIELDS[t]
+        .filter((f) => f.required)
+        .every((f) => mapping[f.key]);
+      const nameHint = nameHints[t].some((h) => norm.includes(h));
+      // Weight required-fields-present heavily so a sheet missing
+      // 'firstName + lastName' can't accidentally win the candidates
+      // label even if it has 'email' and 'phone'.
+      return {
+        type: t,
+        score: filled + (requiredHit ? 5 : 0) + (nameHint ? 10 : 0),
+      };
+    }
+  );
+
+  scores.sort((a, b) => b.score - a.score);
+  return { type: scores[0].type, confidence: scores[0].score };
 }

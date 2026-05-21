@@ -15,8 +15,18 @@ import {
   Download,
   ArrowLeft,
 } from "lucide-react";
-import { IMPORT_FIELDS, autoDetectMapping, type ImportType } from "@/lib/import-fields";
+import { IMPORT_FIELDS, autoDetectMapping, detectSheetType, type ImportType } from "@/lib/import-fields";
 import { parseSpreadsheetFile, type ParsedSheet } from "@/lib/parse-spreadsheet";
+
+// In multi-sheet mode, each sheet gets its own auto-detected entity
+// type + its own mapping. The "Import all" path runs the imports in
+// dependency order (clients → jobs → candidates) so Jobs.client can
+// resolve against the Clients we just inserted.
+type SheetPlan = {
+  sheetName: string;
+  type: ImportType;
+  mapping: Record<string, string | null>;
+};
 
 const SUPPORTED_FORMATS = [
   { name: "CSV", ext: ".csv" },
@@ -41,7 +51,11 @@ export default function ImportPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string>("");
-  const [mapping, setMapping] = useState<Record<string, string | null>>({});
+  // Per-sheet plan: each sheet keeps its own auto-detected entity
+  // type + mapping. In single-sheet mode this still works — there's
+  // just one entry. The selected sheet's plan is what powers the
+  // current mapping UI; editing the dropdowns updates that plan.
+  const [plans, setPlans] = useState<SheetPlan[]>([]);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -51,11 +65,19 @@ export default function ImportPage() {
   //   3. result         → success / errors panel
   const stage: "pick" | "map" | "done" = result ? "done" : preview ? "map" : "pick";
 
+  // Current sheet's plan — derived so the rest of the page can read
+  // mapping / type without juggling indexes.
+  const activePlan = preview
+    ? plans.find((p) => p.sheetName === preview.activeSheet) || null
+    : null;
+  const mapping = activePlan?.mapping || {};
+  const isMultiSheet = (preview?.sheets.length || 0) > 1;
+
   function resetAll() {
     setFile(null);
     setPreview(null);
     setParseError("");
-    setMapping({});
+    setPlans([]);
     setResult(null);
   }
 
@@ -63,7 +85,7 @@ export default function ImportPage() {
     setResult(null);
     setParseError("");
     setPreview(null);
-    setMapping({});
+    setPlans([]);
     setFile(f);
     if (!f) return;
 
@@ -86,9 +108,25 @@ export default function ImportPage() {
         setParsing(false);
         return;
       }
-      const activeSheet = usable[0].name;
-      setPreview({ sheets: usable, activeSheet });
-      setMapping(autoDetectMapping(importType, usable[0].headers));
+      // Build a per-sheet plan up-front. detectSheetType picks the
+      // most-likely entity per sheet by sheet name + header coverage,
+      // so a workbook named Candidates/Clients/Jobs auto-types each
+      // sheet without the user touching the type tab.
+      const fileLevelType = isXlsxFile(f) ? null : importType;
+      const initialPlans: SheetPlan[] = usable.map((s) => {
+        const detected = fileLevelType
+          ? { type: fileLevelType }
+          : detectSheetType(s.name, s.headers);
+        return {
+          sheetName: s.name,
+          type: detected.type,
+          mapping: autoDetectMapping(detected.type, s.headers),
+        };
+      });
+      setPlans(initialPlans);
+      setPreview({ sheets: usable, activeSheet: usable[0].name });
+      // Sync the type tab with the first sheet's plan.
+      setImportType(initialPlans[0].type);
     } catch (e: any) {
       setParseError(e.message || "Could not parse file");
       setFile(null);
@@ -97,26 +135,55 @@ export default function ImportPage() {
     }
   }
 
+  function setMapping(next: Record<string, string | null>) {
+    if (!activePlan) return;
+    setPlans((current) =>
+      current.map((p) =>
+        p.sheetName === activePlan.sheetName ? { ...p, mapping: next } : p
+      )
+    );
+  }
+
+  function setPlanType(sheetName: string, type: ImportType) {
+    const sheet = preview?.sheets.find((s) => s.name === sheetName);
+    setPlans((current) =>
+      current.map((p) =>
+        p.sheetName === sheetName
+          ? { ...p, type, mapping: sheet ? autoDetectMapping(type, sheet.headers) : p.mapping }
+          : p
+      )
+    );
+    if (preview?.activeSheet === sheetName) setImportType(type);
+  }
+
   // Sheet picker handler — when the user flips between tabs in a
-  // multi-sheet xlsx, re-seed the column mapping from the new
-  // sheet's headers.
+  // multi-sheet xlsx, sync the active tab + the type selector with
+  // the per-sheet plan we built up-front.
   function onSheetChange(name: string) {
     if (!preview) return;
     const sheet = preview.sheets.find((s) => s.name === name) || preview.sheets[0];
     setPreview({ ...preview, activeSheet: sheet.name });
-    setMapping(autoDetectMapping(importType, sheet.headers));
+    const plan = plans.find((p) => p.sheetName === sheet.name);
+    if (plan) setImportType(plan.type);
   }
 
   function onTypeChange(next: ImportType) {
     setImportType(next);
     setResult(null);
     // Re-run auto-detect with the new field set so the user doesn't
-    // have to re-pick the file.
-    if (preview) {
-      const sheet =
-        preview.sheets.find((s) => s.name === preview.activeSheet) || preview.sheets[0];
-      setMapping(autoDetectMapping(next, sheet.headers));
+    // have to re-pick the file. Also persist the change into the
+    // current sheet's plan.
+    if (preview && activePlan) {
+      setPlanType(activePlan.sheetName, next);
     }
+  }
+
+  async function postImport(type: ImportType, mappingPayload: Record<string, string | null>, records: any[]) {
+    return fetch("/api/import/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, mapping: mappingPayload, records }),
+    });
   }
 
   async function handleImport() {
@@ -124,21 +191,9 @@ export default function ImportPage() {
     setImporting(true);
     setResult(null);
     try {
-      // Send records as JSON when we already parsed the file in the
-      // browser (which is always true for CSV/TSV/XLSX). Avoids the
-      // ~4.5MB Vercel multipart cap and keeps the request body
-      // proportional to actual content, not raw file weight.
       let res: Response;
-      if (preview && activeSheet) {
-        res = await fetch("/api/import/bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: importType,
-            mapping,
-            records: activeSheet.rows,
-          }),
-        });
+      if (preview && activeSheet && activePlan) {
+        res = await postImport(activePlan.type, activePlan.mapping, activeSheet.rows);
       } else {
         // JSON files: no wizard, no client parse. Multipart it.
         const fd = new FormData();
@@ -154,8 +209,60 @@ export default function ImportPage() {
     setImporting(false);
   }
 
+  // Sequential multi-entity import: clients first (so jobs can match
+  // them by name), then jobs, then candidates. Anything else (each
+  // sheet only has one plan in practice) follows in stable order.
+  // No emails fire anywhere on this path — the bulk endpoint only
+  // writes rows; we audited that explicitly for the dry-test case.
+  async function handleImportAll() {
+    if (!preview || plans.length === 0) return;
+    setImporting(true);
+    setResult(null);
+
+    const ORDER: ImportType[] = ["clients", "jobs", "candidates"];
+    const byType = (t: ImportType) =>
+      plans.filter((p) => p.type === t).map((p) => ({
+        plan: p,
+        sheet: preview.sheets.find((s) => s.name === p.sheetName),
+      })).filter((x) => x.sheet);
+    const ordered = ORDER.flatMap(byType);
+
+    const perSheet: { sheet: string; type: ImportType; imported: number; skipped: number; total: number; error?: string }[] = [];
+    for (const { plan, sheet } of ordered) {
+      if (!sheet) continue;
+      try {
+        const res = await postImport(plan.type, plan.mapping, sheet.rows);
+        const data = await res.json();
+        if (!res.ok) {
+          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, skipped: 0, total: sheet.rows.length, error: data.error });
+        } else {
+          perSheet.push({
+            sheet: sheet.name,
+            type: plan.type,
+            imported: data.imported || 0,
+            skipped: data.skipped || 0,
+            total: data.total || sheet.rows.length,
+          });
+        }
+      } catch (e: any) {
+        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
+      }
+    }
+
+    setResult({ multi: true, perSheet });
+    setImporting(false);
+  }
+
   const fields = IMPORT_FIELDS[importType];
   const requiredUnmapped = fields.some((f) => f.required && !mapping[f.key]);
+
+  // Whether the "Import all sheets" path is available: needs 2+
+  // sheets and every plan must have required fields wired up.
+  const allReady =
+    plans.length > 1 &&
+    plans.every((p) =>
+      IMPORT_FIELDS[p.type].filter((f) => f.required).every((f) => p.mapping[f.key])
+    );
   // The current sheet view — derived so the rest of the JSX doesn't
   // have to repeat the .find lookup.
   const activeSheet = preview
@@ -286,10 +393,82 @@ export default function ImportPage() {
                 </button>
               </div>
 
-              {/* Sheet picker — only shows up for multi-sheet xlsx
-                  workbooks. Common case (CSV/TSV/single-sheet xlsx)
-                  is hidden so the wizard stays minimal. */}
-              {preview.sheets.length > 1 && (
+              {/* Multi-sheet detected: per-sheet plan summary +
+                  one-click "Import all" CTA. Each row shows what we
+                  detected (entity type) + whether the required
+                  fields are mapped. Sheet name still doubles as the
+                  active picker. */}
+              {isMultiSheet && (
+                <div className="bg-indigo-50/50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-indigo-900 font-medium">
+                    Multi-sheet workbook detected — we'll import each tab as the entity it best matches.
+                  </p>
+                  <div className="space-y-1.5">
+                    {plans.map((p) => {
+                      const sheet = preview.sheets.find((s) => s.name === p.sheetName);
+                      const isActive = p.sheetName === preview.activeSheet;
+                      const missing = IMPORT_FIELDS[p.type].filter((f) => f.required && !p.mapping[f.key]);
+                      const ready = missing.length === 0;
+                      return (
+                        <div
+                          key={p.sheetName}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded ${
+                            isActive ? "bg-white ring-1 ring-indigo-300" : "bg-white/60"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onSheetChange(p.sheetName)}
+                            className="text-sm font-medium text-gray-900 hover:text-indigo-700"
+                          >
+                            {p.sheetName}
+                          </button>
+                          <span className="text-[10px] text-gray-400">
+                            {sheet?.rows.length || 0} rows
+                          </span>
+                          <select
+                            value={p.type}
+                            onChange={(e) => setPlanType(p.sheetName, e.target.value as ImportType)}
+                            className="ml-auto text-xs border rounded px-1.5 py-0.5 bg-white"
+                          >
+                            <option value="candidates">Candidates</option>
+                            <option value="clients">Clients</option>
+                            <option value="jobs">Jobs</option>
+                          </select>
+                          {ready ? (
+                            <span className="text-[10px] font-medium text-emerald-700 px-1.5 py-0.5 rounded bg-emerald-50">
+                              Ready
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[10px] font-medium text-amber-700 px-1.5 py-0.5 rounded bg-amber-50"
+                              title={`Missing: ${missing.map((f) => f.label).join(", ")}`}
+                            >
+                              Map {missing.length} field{missing.length === 1 ? "" : "s"}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    onClick={handleImportAll}
+                    disabled={importing || !allReady}
+                    className="w-full"
+                  >
+                    {importing
+                      ? "Importing all sheets…"
+                      : allReady
+                        ? `Import all ${plans.length} sheets`
+                        : "Resolve the unmapped fields below first"}
+                  </Button>
+                </div>
+              )}
+
+              {/* Sheet picker — single-sheet xlsx and CSV/TSV use
+                  the compact picker; multi-sheet workbooks use the
+                  plan summary above (more informative). */}
+              {preview.sheets.length > 1 && !isMultiSheet && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
                     Sheet
@@ -346,10 +525,7 @@ export default function ImportPage() {
                       <select
                         value={mapping[field.key] || ""}
                         onChange={(e) =>
-                          setMapping((m) => ({
-                            ...m,
-                            [field.key]: e.target.value || null,
-                          }))
+                          setMapping({ ...mapping, [field.key]: e.target.value || null })
                         }
                         className={`text-sm border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 min-w-[200px] ${
                           field.required && !mapping[field.key]
@@ -426,36 +602,65 @@ export default function ImportPage() {
           {/* Stage 3 — result panel. */}
           {stage === "done" && result && (
             <div className="space-y-3">
-              <div className={`rounded-lg p-4 ${result.error ? "bg-red-50" : "bg-green-50"}`}>
-                {result.error ? (
-                  <div className="flex items-center gap-2 text-red-700">
-                    <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm">{result.error}</span>
+              {result.multi ? (
+                <div className="rounded-lg p-4 bg-green-50 space-y-2">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-sm font-medium">All sheets processed</span>
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-green-700">
-                      <CheckCircle className="h-5 w-5 flex-shrink-0" />
-                      <span className="text-sm font-medium">
-                        Import complete! {result.imported} of {result.total} records imported.
-                      </span>
-                    </div>
-                    {result.skipped > 0 && (
-                      <p className="text-xs text-green-600 ml-7">
-                        {result.skipped} records skipped (duplicates or missing required fields)
-                      </p>
-                    )}
-                    {result.errors?.length > 0 && (
-                      <div className="ml-7">
-                        <p className="text-xs text-amber-600">Some errors occurred:</p>
-                        {result.errors.map((err: string, i: number) => (
-                          <p key={i} className="text-xs text-amber-500">{err}</p>
-                        ))}
+                  <div className="ml-7 space-y-1 text-xs text-gray-700">
+                    {result.perSheet.map((r: any) => (
+                      <div key={r.sheet} className="flex items-center gap-2">
+                        <span className="font-medium">{r.sheet}</span>
+                        <span className="text-gray-400">({r.type})</span>
+                        <span className="ml-auto">
+                          {r.error ? (
+                            <span className="text-red-600">{r.error}</span>
+                          ) : (
+                            <>
+                              <span className="text-green-700">{r.imported} imported</span>
+                              {r.skipped > 0 && (
+                                <span className="text-gray-500"> · {r.skipped} skipped</span>
+                              )}
+                            </>
+                          )}
+                        </span>
                       </div>
-                    )}
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className={`rounded-lg p-4 ${result.error ? "bg-red-50" : "bg-green-50"}`}>
+                  {result.error ? (
+                    <div className="flex items-center gap-2 text-red-700">
+                      <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                      <span className="text-sm">{result.error}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-green-700">
+                        <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                        <span className="text-sm font-medium">
+                          Import complete! {result.imported} of {result.total} records imported.
+                        </span>
+                      </div>
+                      {result.skipped > 0 && (
+                        <p className="text-xs text-green-600 ml-7">
+                          {result.skipped} records skipped (duplicates or missing required fields)
+                        </p>
+                      )}
+                      {result.errors?.length > 0 && (
+                        <div className="ml-7">
+                          <p className="text-xs text-amber-600">Some errors occurred:</p>
+                          {result.errors.map((err: string, i: number) => (
+                            <p key={i} className="text-xs text-amber-500">{err}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <Button variant="outline" size="sm" onClick={resetAll}>
                 Import more
               </Button>
@@ -500,6 +705,11 @@ export default function ImportPage() {
       </Card>
     </div>
   );
+}
+
+function isXlsxFile(f: File): boolean {
+  const lower = f.name.toLowerCase();
+  return lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".xlsm") || lower.endsWith(".xlsb");
 }
 
 function downloadTemplate(type: string) {
