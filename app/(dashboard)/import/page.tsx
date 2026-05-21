@@ -227,25 +227,26 @@ export default function ImportPage() {
       })).filter((x) => x.sheet);
     const ordered = ORDER.flatMap(byType);
 
-    const perSheet: { sheet: string; type: ImportType; imported: number; skipped: number; total: number; error?: string }[] = [];
+    const perSheet: { sheet: string; type: ImportType; imported: number; duplicates: number; skipped: number; total: number; error?: string }[] = [];
     for (const { plan, sheet } of ordered) {
       if (!sheet) continue;
       try {
         const res = await postImport(plan.type, plan.mapping, sheet.rows);
         const data = await res.json();
         if (!res.ok) {
-          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, skipped: 0, total: sheet.rows.length, error: data.error });
+          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, skipped: 0, total: sheet.rows.length, error: data.error });
         } else {
           perSheet.push({
             sheet: sheet.name,
             type: plan.type,
             imported: data.imported || 0,
+            duplicates: data.duplicates || 0,
             skipped: data.skipped || 0,
             total: data.total || sheet.rows.length,
           });
         }
       } catch (e: any) {
-        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
+        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
       }
     }
 
@@ -619,8 +620,13 @@ export default function ImportPage() {
                           ) : (
                             <>
                               <span className="text-green-700">{r.imported} imported</span>
+                              {r.duplicates > 0 && (
+                                <span className="text-gray-500" title="Already in your workspace">
+                                  {" "}· {r.duplicates} duplicates
+                                </span>
+                              )}
                               {r.skipped > 0 && (
-                                <span className="text-gray-500"> · {r.skipped} skipped</span>
+                                <span className="text-amber-600"> · {r.skipped} skipped</span>
                               )}
                             </>
                           )}
@@ -644,9 +650,14 @@ export default function ImportPage() {
                           Import complete! {result.imported} of {result.total} records imported.
                         </span>
                       </div>
+                      {result.duplicates > 0 && (
+                        <p className="text-xs text-gray-600 ml-7">
+                          {result.duplicates} already in your workspace — skipped to avoid duplicates.
+                        </p>
+                      )}
                       {result.skipped > 0 && (
-                        <p className="text-xs text-green-600 ml-7">
-                          {result.skipped} records skipped (duplicates or missing required fields)
+                        <p className="text-xs text-amber-700 ml-7">
+                          {result.skipped} skipped due to missing required fields or errors.
                         </p>
                       )}
                       {result.errors?.length > 0 && (
