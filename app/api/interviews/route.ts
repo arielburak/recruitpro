@@ -52,6 +52,10 @@ export async function GET(request: NextRequest) {
         clientContacts: {
           include: { contact: { select: { id: true, firstName: true, lastName: true, email: true, title: true } } },
         },
+        // Count attachments so the calendar chip can show a paperclip
+        // indicator without forcing the recruiter to open the
+        // interview just to find out it has files.
+        _count: { select: { documents: true } },
       },
       orderBy: { startTime: "asc" },
     });
