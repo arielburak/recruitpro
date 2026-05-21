@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trophy, DollarSign, Plus } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { fetchUsdRates, convertToUsd } from "@/lib/exchange-rates";
 
@@ -413,7 +413,7 @@ export default function PlacementsPage() {
                       <TableCell>{p.job?.title || "-"}</TableCell>
                       <TableCell>{p.client?.name || "-"}</TableCell>
                       <TableCell>
-                        {p.startDate ? formatDate(p.startDate) : "-"}
+                        {p.startDate ? formatDateOnly(p.startDate, "en-US", { month: "short", day: "numeric", year: "numeric" }) : "-"}
                       </TableCell>
                       <TableCell>
                         {p.feeAmount ? (() => {
@@ -450,7 +450,7 @@ export default function PlacementsPage() {
                                   : ""
                             }
                           >
-                            {formatDate(guaranteeExpiry)}
+                            {formatDateOnly(guaranteeExpiry, "en-US", { month: "short", day: "numeric", year: "numeric" })}
                             {expiringSoon && !expired && (
                               <span className="ml-1 text-xs">(expiring soon)</span>
                             )}

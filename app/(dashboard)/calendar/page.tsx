@@ -33,6 +33,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import Link from "next/link";
+import { formatDateOnly } from "@/lib/utils";
 import { FEATURES } from "@/lib/feature-flags";
 
 // ─── Constants ───
@@ -255,9 +256,17 @@ export default function CalendarPage() {
   })();
 
   function getMilestonesForDay(day: number, m: number, y: number) {
+    // Compare against the milestone's UTC date — values come from the
+    // DB as UTC midnight on the user-typed day. Using getDate/getMonth/
+    // getYear (local) flips the date back one day west of UTC, which
+    // dropped milestones on the wrong cell of the grid.
     return milestones.filter((ms) => {
       const d = ms.date;
-      return d.getDate() === day && d.getMonth() === m && d.getFullYear() === y;
+      return (
+        d.getUTCDate() === day &&
+        d.getUTCMonth() === m &&
+        d.getUTCFullYear() === y
+      );
     });
   }
 
@@ -1240,7 +1249,7 @@ export default function CalendarPage() {
                               {kindLabel}
                             </span>
                             <span className="text-[10px] text-gray-400">
-                              {ms.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              {ms.date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
                             </span>
                           </div>
                           <p className="text-xs text-gray-700 truncate">{meta}</p>
@@ -2579,7 +2588,7 @@ function MilestoneDetailCard({
         </div>
 
         <div className={`rounded-md ${accent.bg} px-3 py-2 text-xs ${accent.text} font-medium`}>
-          {date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+          {date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}
         </div>
 
         <div className="space-y-1 text-xs text-gray-600">
@@ -2609,7 +2618,7 @@ function MilestoneDetailCard({
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Starting date</span>
               <span className="font-medium text-gray-900">
-                {new Date(placement.startDate).toLocaleDateString()}
+                {formatDateOnly(placement.startDate)}
               </span>
             </div>
           )}
@@ -2617,7 +2626,7 @@ function MilestoneDetailCard({
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Payment due</span>
               <span className="font-medium text-gray-900">
-                {new Date(placement.paymentDueDate).toLocaleDateString()}
+                {formatDateOnly(placement.paymentDueDate)}
               </span>
             </div>
           )}
@@ -2625,7 +2634,7 @@ function MilestoneDetailCard({
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Guarantee expiry</span>
               <span className="font-medium text-gray-900">
-                {new Date(placement.guaranteeExpiry).toLocaleDateString()}
+                {formatDateOnly(placement.guaranteeExpiry)}
               </span>
             </div>
           )}

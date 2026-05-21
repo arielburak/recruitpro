@@ -118,7 +118,10 @@ function todayIso(): string {
 
 // Anchor on the best date available (actual start beats estimated) and
 // add `days`. Pure function so the live preview stays in sync with what
-// the server does on save.
+// the server does on save. Uses UTC-only date math — local getDate /
+// setDate flip the date back one day in timezones west of UTC, which
+// previously surfaced as "I typed May 21 and the preview / saved value
+// said May 20".
 function previewFromAnchor(
   actualStart: string,
   estimatedStart: string,
@@ -126,9 +129,9 @@ function previewFromAnchor(
 ): string {
   const anchorStr = actualStart || estimatedStart;
   if (!anchorStr || days === "" || isNaN(Number(days))) return "";
-  const anchor = new Date(anchorStr);
+  const anchor = new Date(anchorStr + "T00:00:00.000Z");
   if (isNaN(anchor.getTime())) return "";
-  anchor.setDate(anchor.getDate() + Number(days));
+  anchor.setUTCDate(anchor.getUTCDate() + Number(days));
   return anchor.toISOString().slice(0, 10);
 }
 
