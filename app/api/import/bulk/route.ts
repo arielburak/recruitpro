@@ -182,17 +182,27 @@ export async function POST(request: Request) {
           const name = pick(record, "name", ["name", "Name", "Company Name"]) || "";
           if (!name) { skipped++; continue; }
 
-          await prisma.client.create({
-            data: {
-              name,
-              industry: pick(record, "industry", ["industry", "Industry"]),
-              website: pick(record, "website", ["website", "Website"]),
-              contactName: pick(record, "contactName", ["contactName", "Contact Name"]),
-              contactEmail: pick(record, "contactEmail", ["contactEmail", "Contact Email"]),
-              contactPhone: pick(record, "contactPhone", ["contactPhone", "Contact Phone"]),
-              notes: pick(record, "notes", ["notes", "Notes"]),
-              organizationId: ctx.organizationId,
-            },
+          // Shared-Client model (PR #139): a Client is visible to an
+          // agency only if there's an OrganizationClient row linking
+          // them. Without it, the imported clients wouldn't show up
+          // on /clients. Create both in one transaction so a failed
+          // engagement insert doesn't leave the Client orphaned.
+          await prisma.$transaction(async (tx) => {
+            const c = await tx.client.create({
+              data: {
+                name,
+                industry: pick(record, "industry", ["industry", "Industry"]),
+                website: pick(record, "website", ["website", "Website"]),
+                contactName: pick(record, "contactName", ["contactName", "Contact Name"]),
+                contactEmail: pick(record, "contactEmail", ["contactEmail", "Contact Email"]),
+                contactPhone: pick(record, "contactPhone", ["contactPhone", "Contact Phone"]),
+                notes: pick(record, "notes", ["notes", "Notes"]),
+                organizationId: ctx.organizationId,
+              },
+            });
+            await tx.organizationClient.create({
+              data: { organizationId: ctx.organizationId, clientId: c.id },
+            });
           });
           imported++;
         } catch (e: any) {
@@ -209,15 +219,31 @@ export async function POST(request: Request) {
 
           let clientId: string | null = null;
           if (clientName) {
+            // Match within the agency's engaged clients (shared-Client
+            // model). If we created the client a moment earlier in the
+            // Clients sheet this finds it; falls through to the
+            // create-and-engage branch below otherwise.
             const client = await prisma.client.findFirst({
-              where: { name: { contains: clientName, mode: "insensitive" }, organizationId: ctx.organizationId },
+              where: {
+                name: { contains: clientName, mode: "insensitive" },
+                engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+              },
             });
             clientId = client?.id ?? null;
           }
 
           if (!clientId) {
-            const newClient = await prisma.client.create({
-              data: { name: clientName || "Unknown Client", organizationId: ctx.organizationId },
+            // Same shared-Client engagement insert as the clients
+            // import branch — without it the placeholder Client
+            // would be invisible to the agency.
+            const newClient = await prisma.$transaction(async (tx) => {
+              const c = await tx.client.create({
+                data: { name: clientName || "Unknown Client", organizationId: ctx.organizationId },
+              });
+              await tx.organizationClient.create({
+                data: { organizationId: ctx.organizationId, clientId: c.id },
+              });
+              return c;
             });
             clientId = newClient.id;
           }
