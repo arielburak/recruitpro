@@ -569,6 +569,9 @@ model Interview {
   interviewers    InterviewAssignment[]
   clientContacts  InterviewClientContact[]
   feedback        InterviewFeedback[]
+  // Attachments uploaded against the interview (agenda, prep doc,
+  // NDA, etc.). Cascade-deleted with the interview.
+  documents       Document[]
 
   @@index([organizationId, startTime])
   @@index([candidateId])
@@ -641,6 +644,10 @@ model Document {
   jobId        String?
   clientJobId  String?
   clientId     String?
+  // Attachments on a scheduled interview (think Outlook-style invite
+  // attachments: agenda, prep doc, NDA, JD reference). Null for
+  // documents pinned to candidates / jobs / clients.
+  interviewId  String?
   uploadedBy   String
   createdAt    DateTime @default(now())
 
@@ -648,11 +655,13 @@ model Document {
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   client    Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  interview Interview? @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
   @@index([clientJobId])
   @@index([clientId])
+  @@index([interviewId])
 }
 
 // ─── ACTIVITIES ───
