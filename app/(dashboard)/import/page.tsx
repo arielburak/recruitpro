@@ -186,14 +186,78 @@ export default function ImportPage() {
     });
   }
 
+  // Volume safety net: a single POST with 6k+ records would blow
+  // through Vercel's 60s function timeout because Prisma creates
+  // each row in a separate roundtrip to Neon. Splitting into
+  // chunks of 500 keeps every request comfortably under the
+  // timeout AND lets us show real progress to the user.
+  //
+  // Per-chunk results accumulate so the final panel shows the
+  // grand totals (imported / duplicates / flagged / skipped /
+  // errors) just like a single-call import would.
+  const CHUNK_SIZE = 500;
+  type ImportTotals = {
+    imported: number;
+    duplicates: number;
+    flagged: number;
+    skipped: number;
+    total: number;
+    errors: string[];
+  };
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  async function postChunked(
+    type: ImportType,
+    mappingPayload: Record<string, string | null>,
+    records: any[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<ImportTotals> {
+    const totals: ImportTotals = {
+      imported: 0,
+      duplicates: 0,
+      flagged: 0,
+      skipped: 0,
+      total: records.length,
+      errors: [],
+    };
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      const chunk = records.slice(i, i + CHUNK_SIZE);
+      const res = await postImport(type, mappingPayload, chunk);
+      const data = await res.json();
+      if (!res.ok) {
+        totals.errors.push(data.error || `Chunk ${i / CHUNK_SIZE + 1} failed`);
+        // Bail on first error — anything after this would compound
+        // confusion. The chunks we already imported stay.
+        onProgress?.(i + chunk.length, records.length);
+        break;
+      }
+      totals.imported += data.imported || 0;
+      totals.duplicates += data.duplicates || 0;
+      totals.flagged += data.flagged || 0;
+      totals.skipped += data.skipped || 0;
+      if (Array.isArray(data.errors)) {
+        totals.errors.push(...data.errors.slice(0, 5 - totals.errors.length));
+      }
+      onProgress?.(Math.min(i + CHUNK_SIZE, records.length), records.length);
+    }
+    return totals;
+  }
+
   async function handleImport() {
     if (!file) return;
     setImporting(true);
     setResult(null);
+    setProgress(null);
     try {
-      let res: Response;
+      let res: Response | null = null;
+      let totals: ImportTotals | null = null;
       if (preview && activeSheet && activePlan) {
-        res = await postImport(activePlan.type, activePlan.mapping, activeSheet.rows);
+        totals = await postChunked(
+          activePlan.type,
+          activePlan.mapping,
+          activeSheet.rows,
+          (done, total) => setProgress({ done, total })
+        );
       } else {
         // JSON files: no wizard, no client parse. Multipart it.
         const fd = new FormData();
@@ -201,12 +265,17 @@ export default function ImportPage() {
         fd.append("type", importType);
         res = await fetch("/api/import/bulk", { method: "POST", body: fd });
       }
-      const data = await res.json();
-      setResult(data);
+      if (totals) {
+        setResult(totals);
+      } else if (res) {
+        const data = await res.json();
+        setResult(data);
+      }
     } catch {
       setResult({ error: "Import failed. Please check your file format." });
     }
     setImporting(false);
+    setProgress(null);
   }
 
   // Sequential multi-entity import: clients first (so jobs can match
@@ -218,6 +287,7 @@ export default function ImportPage() {
     if (!preview || plans.length === 0) return;
     setImporting(true);
     setResult(null);
+    setProgress(null);
 
     const ORDER: ImportType[] = ["clients", "jobs", "candidates"];
     const byType = (t: ImportType) =>
@@ -231,21 +301,26 @@ export default function ImportPage() {
     for (const { plan, sheet } of ordered) {
       if (!sheet) continue;
       try {
-        const res = await postImport(plan.type, plan.mapping, sheet.rows);
-        const data = await res.json();
-        if (!res.ok) {
-          perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, flagged: 0, skipped: 0, total: sheet.rows.length, error: data.error });
-        } else {
-          perSheet.push({
-            sheet: sheet.name,
-            type: plan.type,
-            imported: data.imported || 0,
-            duplicates: data.duplicates || 0,
-            flagged: data.flagged || 0,
-            skipped: data.skipped || 0,
-            total: data.total || sheet.rows.length,
-          });
-        }
+        // Chunked import per sheet so a 6,000-row candidates tab
+        // doesn't blow through the 60s function timeout. Progress
+        // counter is sheet-local (resets per sheet) so the user
+        // sees movement on every tab.
+        const totals = await postChunked(
+          plan.type,
+          plan.mapping,
+          sheet.rows,
+          (done, total) => setProgress({ done, total })
+        );
+        perSheet.push({
+          sheet: sheet.name,
+          type: plan.type,
+          imported: totals.imported,
+          duplicates: totals.duplicates,
+          flagged: totals.flagged,
+          skipped: totals.skipped,
+          total: totals.total,
+          error: totals.errors[0],
+        });
       } catch (e: any) {
         perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, flagged: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
       }
@@ -253,6 +328,7 @@ export default function ImportPage() {
 
     setResult({ multi: true, perSheet });
     setImporting(false);
+    setProgress(null);
   }
 
   const fields = IMPORT_FIELDS[importType];
@@ -453,6 +529,22 @@ export default function ImportPage() {
                       );
                     })}
                   </div>
+                  {progress && progress.total > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-gray-500">
+                        <span>
+                          {progress.done.toLocaleString()} / {progress.total.toLocaleString()} rows in current sheet
+                        </span>
+                        <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-500 transition-all duration-300"
+                          style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                   <Button
                     onClick={handleImportAll}
                     disabled={importing || !allReady}
@@ -590,6 +682,23 @@ export default function ImportPage() {
                 <div className="bg-amber-50 text-amber-700 text-sm p-3 rounded-md flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>Map every required field (marked with *) before importing.</span>
+                </div>
+              )}
+
+              {progress && progress.total > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-gray-500">
+                    <span>
+                      Importing batch — {progress.done.toLocaleString()} / {progress.total.toLocaleString()} rows
+                    </span>
+                    <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-500 transition-all duration-300"
+                      style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                    />
+                  </div>
                 </div>
               )}
 
