@@ -4,6 +4,14 @@ import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { parseSpreadsheetFile } from "@/lib/parse-spreadsheet";
 
+// Bump the serverless-function timeout for this route. Default is
+// 10s on Vercel Hobby / 60s on Pro; importing 500 rows per chunk
+// from the client comfortably finishes inside 60s even on cold
+// Neon connections. The client splits big files into 500-row
+// chunks (see handleImport in /import) so we don't need anything
+// longer than this here.
+export const maxDuration = 60;
+
 // Per-type list of ATS fields the mapping UI lets the user wire up.
 // Mirrored on the client so the field list stays in one place
 // (lib/import-fields.ts). Required fields are validated server-side
