@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -352,9 +353,12 @@ export default function JobsPage() {
           <h1 className="text-2xl font-bold">Jobs / Searches</h1>
           <p className="text-sm text-gray-500">{jobs.length} total</p>
         </div>
-        <Link href="/jobs/new">
-          <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton type="jobs" disabled={jobs.length === 0} />
+          <Link href="/jobs/new">
+            <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
+          </Link>
+        </div>
       </div>
 
       {/* Search + Filter bar */}
@@ -447,6 +451,7 @@ export default function JobsPage() {
             Clear
           </button>
           <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="jobs" ids={Array.from(selectedIds)} variant="subtle" />
             <button
               type="button"
               onClick={bulkDelete}

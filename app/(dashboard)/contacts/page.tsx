@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -154,6 +155,7 @@ export default function ContactsPage() {
             </p>
           </div>
         </div>
+        <ExportCsvButton type="contacts" disabled={contacts.length === 0} />
       </div>
 
       {/* Filters */}
@@ -225,7 +227,8 @@ export default function ContactsPage() {
               <button type="button" onClick={() => setSelectedIds(new Set())} className="text-xs text-indigo-700 hover:text-indigo-900">
                 Clear
               </button>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <ExportCsvButton type="contacts" ids={Array.from(selectedIds)} variant="subtle" />
                 <button
                   type="button"
                   onClick={bulkDelete}
