@@ -437,16 +437,17 @@ export async function POST(request: Request) {
         where: { organizationId: ctx.organizationId, externalId: { not: null } },
         select: {
           id: true,
+          clientId: true,
           externalId: true,
           stages: { select: { id: true, name: true } },
         },
       });
-      const jobMap = new Map<string, { jobId: string; stages: Map<string, string> }>();
+      const jobMap = new Map<string, { jobId: string; clientId: string; stages: Map<string, string> }>();
       for (const j of jobsByExt) {
         if (!j.externalId) continue;
         const stages = new Map<string, string>();
         for (const s of j.stages) stages.set(s.name.toLowerCase(), s.id);
-        jobMap.set(j.externalId, { jobId: j.id, stages });
+        jobMap.set(j.externalId, { jobId: j.id, clientId: j.clientId, stages });
       }
       // Cheap idempotency: pre-load existing (candidateId, jobId)
       // pairs so re-running the import won't error out on the unique
@@ -454,10 +455,15 @@ export async function POST(request: Request) {
       // exists.
       const existingSubs = await prisma.candidateSubmission.findMany({
         where: { job: { organizationId: ctx.organizationId } },
-        select: { candidateId: true, jobId: true },
+        select: { id: true, candidateId: true, jobId: true, placement: { select: { id: true } } },
       });
-      const seenPair = new Set<string>();
-      for (const s of existingSubs) seenPair.add(`${s.candidateId}|${s.jobId}`);
+      const seenPair = new Map<string, { submissionId: string; hasPlacement: boolean }>();
+      for (const s of existingSubs) {
+        seenPair.set(`${s.candidateId}|${s.jobId}`, {
+          submissionId: s.id,
+          hasPlacement: !!s.placement,
+        });
+      }
 
       for (const record of records) {
         try {
@@ -477,10 +483,7 @@ export async function POST(request: Request) {
             continue;
           }
           const pairKey = `${candidateId}|${jobInfo.jobId}`;
-          if (seenPair.has(pairKey)) {
-            duplicates++;
-            continue;
-          }
+          const existingPair = seenPair.get(pairKey);
           // Stage match is case-insensitive against the job's
           // PipelineStages. Fall back to "Sourced" so a typo in the
           // source-system status doesn't silently drop the link.
@@ -492,19 +495,67 @@ export async function POST(request: Request) {
             continue;
           }
           const submittedAtRaw = pick(record, "submittedAt", ["submittedAt", "date_submitted", "createdAt"]);
-          await prisma.candidateSubmission.create({
-            data: {
-              candidateId,
-              jobId: jobInfo.jobId,
-              stageId,
-              submittedBy: ctx.userId,
-              ...(submittedAtRaw && !isNaN(Date.parse(submittedAtRaw))
-                ? { createdAt: new Date(submittedAtRaw) }
-                : {}),
-            },
-          });
-          seenPair.add(pairKey);
-          imported++;
+          const submittedAt = submittedAtRaw && !isNaN(Date.parse(submittedAtRaw))
+            ? new Date(submittedAtRaw)
+            : null;
+
+          let submissionId: string;
+          if (existingPair) {
+            // Submission already exists — re-use it. We DON'T overwrite
+            // its stage or createdAt on re-imports; the existing row
+            // wins.
+            submissionId = existingPair.submissionId;
+            duplicates++;
+          } else {
+            const sub = await prisma.candidateSubmission.create({
+              data: {
+                candidateId,
+                jobId: jobInfo.jobId,
+                stageId,
+                submittedBy: ctx.userId,
+                ...(submittedAt ? { createdAt: submittedAt } : {}),
+              },
+            });
+            submissionId = sub.id;
+            seenPair.set(pairKey, { submissionId, hasPlacement: false });
+            imported++;
+          }
+
+          // Stage-driven backfill: when the imported stage is "Placed",
+          // also create a skeleton Placement so /placements reflects
+          // historical hires. Commercial fields stay null (no fee,
+          // salary, payment terms) because the source dump doesn't
+          // carry them — the recruiter can fill those in later. We
+          // anchor every date on the import's submittedAt so a 2024
+          // placement lands in the 2024 bucket of every report. Modern
+          // (2026+) placements created through the manual flow keep
+          // going through the modal that asks for fee/salary up front.
+          if (
+            stageName.toLowerCase() === "placed" &&
+            (!existingPair || !existingPair.hasPlacement)
+          ) {
+            try {
+              const anchor = submittedAt || new Date();
+              await prisma.placement.create({
+                data: {
+                  submissionId,
+                  jobId: jobInfo.jobId,
+                  clientId: jobInfo.clientId,
+                  organizationId: ctx.organizationId,
+                  estimatedStartDate: anchor,
+                  startDate: anchor,
+                  createdAt: anchor,
+                  notes: "Imported from source ATS — commercial fields pending.",
+                },
+              });
+              const pair = seenPair.get(pairKey);
+              if (pair) pair.hasPlacement = true;
+            } catch {
+              // Don't fail the whole row if the Placement insert hits
+              // a race (e.g. another chunk created one already). The
+              // submission already landed; the placement is a bonus.
+            }
+          }
         } catch (e: any) {
           skipped++;
           if (errors.length < 5) errors.push(e.message);
