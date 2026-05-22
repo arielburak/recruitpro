@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -116,9 +117,12 @@ export default function ClientsPage() {
           <h1 className="text-2xl font-bold">Clients</h1>
           <p className="text-sm text-gray-500">{clients.length} companies</p>
         </div>
-        <Link href="/clients/new">
-          <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Add Client</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton type="clients" disabled={clients.length === 0} />
+          <Link href="/clients/new">
+            <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Add Client</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -156,6 +160,7 @@ export default function ClientsPage() {
             Clear
           </button>
           <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="clients" ids={Array.from(selectedIds)} variant="subtle" />
             <button
               type="button"
               onClick={bulkDelete}
