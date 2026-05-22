@@ -1,15 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload,
   FileText,
-  Users,
-  Building,
-  Briefcase,
   CheckCircle,
   AlertCircle,
   Download,
@@ -101,9 +98,6 @@ export default function ImportPage() {
       return;
     }
 
-    // JSON: no headers to map, run the legacy path on import.
-    if (f.name.toLowerCase().endsWith(".json")) return;
-
     setParsing(true);
     try {
       const parsed = await parseSpreadsheetFile(f);
@@ -114,18 +108,14 @@ export default function ImportPage() {
         setParsing(false);
         return;
       }
-      // Build a per-sheet plan up-front. detectSheetType picks the
-      // most-likely entity per sheet by sheet name + header coverage,
-      // so a workbook named Candidates/Clients/Jobs auto-types each
-      // sheet without the user touching the type tab. Multi-sheet
-      // containers (xlsx, zip bundles, OpenCATS dumps) always run
-      // per-sheet detection; single-sheet CSV/TSV honour the type
-      // tab the user picked.
-      const fileLevelType = isMultiSheetFile(f) ? null : importType;
+      // Auto-detect runs on every sheet regardless of how many we
+      // found. detectSheetType picks the most-likely entity from sheet
+      // name + header coverage, so a CSV named "candidates.csv" with
+      // a firstName/email/phone header lands as Candidates without
+      // the user telling us anything. They can override per sheet in
+      // the next stage if we got it wrong.
       const initialPlans: SheetPlan[] = usable.map((s) => {
-        const detected = fileLevelType
-          ? { type: fileLevelType }
-          : detectSheetType(s.name, s.headers);
+        const detected = detectSheetType(s.name, s.headers);
         return {
           sheetName: s.name,
           type: detected.type,
@@ -134,7 +124,6 @@ export default function ImportPage() {
       });
       setPlans(initialPlans);
       setPreview({ sheets: usable, activeSheet: usable[0].name });
-      // Sync the type tab with the first sheet's plan.
       setImportType(initialPlans[0].type);
     } catch (e: any) {
       setParseError(e.message || "Could not parse file");
@@ -174,17 +163,6 @@ export default function ImportPage() {
     setPreview({ ...preview, activeSheet: sheet.name });
     const plan = plans.find((p) => p.sheetName === sheet.name);
     if (plan) setImportType(plan.type);
-  }
-
-  function onTypeChange(next: ImportType) {
-    setImportType(next);
-    setResult(null);
-    // Re-run auto-detect with the new field set so the user doesn't
-    // have to re-pick the file. Also persist the change into the
-    // current sheet's plan.
-    if (preview && activePlan) {
-      setPlanType(activePlan.sheetName, next);
-    }
   }
 
   async function postImport(type: ImportType, mappingPayload: Record<string, string | null>, records: any[]) {
@@ -386,33 +364,11 @@ export default function ImportPage() {
             ))}
           </div>
 
-          {/* Import type selector — disabled while a previous result is
-              showing so a user-triggered switch doesn't quietly nuke
-              the success panel. */}
-          <div className="flex gap-2">
-            {[
-              { value: "candidates" as const, label: "Candidates", icon: Users },
-              { value: "clients" as const, label: "Clients", icon: Building },
-              { value: "jobs" as const, label: "Jobs", icon: Briefcase },
-            ].map(({ value, label, icon: Icon }) => (
-              <button
-                key={value}
-                onClick={() => onTypeChange(value)}
-                disabled={stage === "done"}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  importType === value
-                    ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200"
-                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                } ${stage === "done" ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Stage 1 — file picker (also shows for JSON files since
-              there's nothing to map there). */}
+          {/* Stage 1 — file picker. No entity-type selector here: we
+              detect the type (or types) from the file itself, then
+              let the user override per-sheet in stage 2. Showing
+              tabs at this point only set the wrong expectation that
+              you have to pre-categorize. */}
           {stage === "pick" && (
             <>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
@@ -422,6 +378,9 @@ export default function ImportPage() {
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
                   CSV · TSV · Excel · JSON · ZIP (max 25MB)
+                </span>
+                <span className="text-[11px] text-gray-400 mt-2">
+                  One type or many — we&apos;ll detect candidates, clients, and jobs from your file.
                 </span>
                 <input
                   type="file"
@@ -438,20 +397,6 @@ export default function ImportPage() {
                 <div className="bg-red-50 text-red-700 text-sm p-3 rounded-md flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{parseError}</span>
-                </div>
-              )}
-
-              {/* JSON files: nothing to map, jump straight to import. */}
-              {file && file.name.toLowerCase().endsWith(".json") && (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm">
-                    <FileText className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-700">{file.name}</span>
-                    <span className="text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
-                  </div>
-                  <Button onClick={handleImport} disabled={importing}>
-                    {importing ? "Importing..." : `Import ${importType}`}
-                  </Button>
                 </div>
               )}
             </>
@@ -485,7 +430,7 @@ export default function ImportPage() {
               {isMultiSheet && (
                 <div className="bg-indigo-50/50 border border-indigo-200 rounded-lg p-3 space-y-2">
                   <p className="text-xs text-indigo-900 font-medium">
-                    Multi-sheet workbook detected — we'll import each tab as the entity it best matches.
+                    Found {plans.length} sections in this file. Each will import as the type below — change it if we got something wrong.
                   </p>
                   <div className="space-y-1.5">
                     {plans.map((p) => {
@@ -562,6 +507,29 @@ export default function ImportPage() {
                         ? `Import all ${plans.length} sheets`
                         : "Resolve the unmapped fields below first"}
                   </Button>
+                </div>
+              )}
+
+              {/* Single-sheet detection strip — the file only has one
+                  table inside, so we show one inline selector with the
+                  type we auto-detected and let the user override it
+                  in place. Skipped for multi-sheet uploads, which get
+                  the richer per-sheet panel above. */}
+              {!isMultiSheet && activePlan && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50/50 border border-indigo-200 rounded-lg text-sm">
+                  <span className="text-indigo-900 font-medium">Detected as</span>
+                  <select
+                    value={activePlan.type}
+                    onChange={(e) => setPlanType(activePlan.sheetName, e.target.value as ImportType)}
+                    className="text-sm border border-indigo-200 rounded px-2 py-0.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  >
+                    <option value="candidates">Candidates</option>
+                    <option value="clients">Clients</option>
+                    <option value="jobs">Jobs</option>
+                  </select>
+                  <span className="text-xs text-gray-500 ml-1">
+                    — change it if we picked the wrong type.
+                  </span>
                 </div>
               )}
 
@@ -841,18 +809,6 @@ export default function ImportPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function isMultiSheetFile(f: File): boolean {
-  const lower = f.name.toLowerCase();
-  return (
-    lower.endsWith(".xlsx") ||
-    lower.endsWith(".xls") ||
-    lower.endsWith(".xlsm") ||
-    lower.endsWith(".xlsb") ||
-    lower.endsWith(".zip") ||
-    lower.endsWith(".sql")
   );
 }
 
