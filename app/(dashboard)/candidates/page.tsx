@@ -17,6 +17,7 @@ import {
   ArrowUpDown,
   Trash2,
 } from "lucide-react";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
 
 // ─── Types ───
@@ -311,6 +312,9 @@ export default function CandidatesPage() {
     setBulkDeleting(false);
   }
 
+  // CSV export uses the shared <ExportCsvButton/> component below —
+  // no per-page handler needed.
+
   // Filter state
   const [ownerFilter, setOwnerFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -424,11 +428,14 @@ export default function CandidatesPage() {
           <h1 className="text-2xl font-bold">Candidates</h1>
           <p className="text-sm text-gray-500">{total} total</p>
         </div>
-        <Link href="/candidates/new">
-          <Button size="sm">
-            <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton type="candidates" disabled={candidates.length === 0} />
+          <Link href="/candidates/new">
+            <Button size="sm">
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Search + Filter bar */}
@@ -527,6 +534,7 @@ export default function CandidatesPage() {
             Clear
           </button>
           <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
             <button
               type="button"
               onClick={bulkDelete}
