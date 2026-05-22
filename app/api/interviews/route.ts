@@ -213,6 +213,79 @@ export async function POST(request: Request) {
       }
     }
 
+    // Mirror the event to the OTHER calendar (silent, no attendees)
+    // when the recruiter has both Google and Outlook connected. The
+    // candidate / client only ever get a single invite — from the
+    // platform that owns the Meet/Teams link — but the recruiter
+    // sees the interview as a block in both of their personal
+    // calendars. Skips if no integration is connected for that side
+    // or if we already created the primary event on it.
+    async function mirrorTo(other: "google" | "microsoft") {
+      try {
+        if (other === "google" && !googleEventId) {
+          const t = await getValidAccessToken(ctx.userId);
+          if (!t) return;
+          const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              summary: title,
+              description: notes || undefined,
+              start: { dateTime: new Date(startTime).toISOString(), timeZone: interviewTz },
+              end: { dateTime: new Date(endTime).toISOString(), timeZone: interviewTz },
+              reminders: { useDefault: true },
+            }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            googleEventId = d.id;
+            googleCalendarOwnerId = ctx.userId;
+          }
+        }
+        if (other === "microsoft" && !microsoftEventId) {
+          const t = await getMsAccessToken(ctx.userId);
+          if (!t) return;
+          const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${t}`,
+              "Content-Type": "application/json",
+              Prefer: `outlook.timezone="${interviewTz}"`,
+            },
+            body: JSON.stringify({
+              subject: title,
+              body: { contentType: "Text", content: notes || "" },
+              start: { dateTime: new Date(startTime).toISOString(), timeZone: interviewTz },
+              end: { dateTime: new Date(endTime).toISOString(), timeZone: interviewTz },
+              isReminderOn: true,
+              reminderMinutesBeforeStart: 10,
+            }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            microsoftEventId = d.id;
+            microsoftCalendarOwnerId = ctx.userId;
+          }
+        }
+      } catch (e) {
+        // Mirror failures are non-fatal — the primary event already
+        // landed and the interview row is about to be created. The
+        // recruiter just won't see this one in their secondary
+        // calendar, which is a soft degradation, not a broken flow.
+        console.error("[interview] mirror failed:", e);
+      }
+    }
+    // If primary event was Google → mirror to MS, and vice versa.
+    // Manual-link / no-platform interviews mirror to both, so the
+    // recruiter still gets the block in whichever calendar(s) they
+    // have connected.
+    if (googleEventId && !microsoftEventId) await mirrorTo("microsoft");
+    if (microsoftEventId && !googleEventId) await mirrorTo("google");
+    if (!googleEventId && !microsoftEventId) {
+      await mirrorTo("google");
+      await mirrorTo("microsoft");
+    }
+
     const interview = await prisma.interview.create({
       data: {
         title,
