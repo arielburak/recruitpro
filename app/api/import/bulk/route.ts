@@ -17,10 +17,11 @@ export const maxDuration = 60;
 // (lib/import-fields.ts). Required fields are validated server-side
 // before we even start iterating, so a malformed mapping fails fast.
 const FIELD_SPEC: Record<
-  "candidates" | "clients" | "jobs",
+  "candidates" | "clients" | "jobs" | "pipeline",
   { key: string; required?: boolean }[]
 > = {
   candidates: [
+    { key: "externalId" },
     { key: "firstName", required: true },
     { key: "lastName", required: true },
     { key: "email" },
@@ -34,6 +35,7 @@ const FIELD_SPEC: Record<
     { key: "skills" },
   ],
   clients: [
+    { key: "externalId" },
     { key: "name", required: true },
     { key: "industry" },
     { key: "website" },
@@ -43,11 +45,18 @@ const FIELD_SPEC: Record<
     { key: "notes" },
   ],
   jobs: [
+    { key: "externalId" },
     { key: "title", required: true },
     { key: "client" },
     { key: "description" },
     { key: "salary" },
     { key: "location" },
+  ],
+  pipeline: [
+    { key: "candidateExternalId", required: true },
+    { key: "jobExternalId", required: true },
+    { key: "stage", required: true },
+    { key: "submittedAt" },
   ],
 };
 
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
     //     template downloads and any scripted callers.
     const contentType = request.headers.get("content-type") || "";
 
-    let type: "candidates" | "clients" | "jobs" | undefined;
+    let type: "candidates" | "clients" | "jobs" | "pipeline" | undefined;
     let mapping: Record<string, string | null> | null = null;
     let records: any[] = [];
 
@@ -81,7 +90,7 @@ export async function POST(request: Request) {
     } else {
       const formData = await request.formData();
       const file = formData.get("file") as File | null;
-      type = formData.get("type") as "candidates" | "clients" | "jobs";
+      type = formData.get("type") as "candidates" | "clients" | "jobs" | "pipeline";
       const mappingRaw = formData.get("mapping");
 
       if (!file) {
@@ -223,6 +232,7 @@ export async function POST(request: Request) {
               summary: pick(record, "summary", ["summary", "notes", "Summary", "Notes"]),
               skills: parseSkillsField(pick(record, "skills", ["skills", "Skills"]) || ""),
               tags: ["imported"],
+              externalId: pick(record, "externalId", ["externalId", "external_id", "candidate_id"]),
               organizationId: ctx.organizationId,
               ownerId: ctx.userId,
             },
@@ -274,6 +284,10 @@ export async function POST(request: Request) {
           // them. Without it, the imported clients wouldn't show up
           // on /clients. Create both in one transaction so a failed
           // engagement insert doesn't leave the Client orphaned.
+          // externalId rides on the engagement, not the Client itself,
+          // because the same global Client may be engaged by several
+          // agencies — each with its own foreign-system identifier.
+          const externalId = pick(record, "externalId", ["externalId", "external_id", "company_id"]);
           const created = await prisma.$transaction(async (tx) => {
             const c = await tx.client.create({
               data: {
@@ -288,7 +302,11 @@ export async function POST(request: Request) {
               },
             });
             await tx.organizationClient.create({
-              data: { organizationId: ctx.organizationId, clientId: c.id },
+              data: {
+                organizationId: ctx.organizationId,
+                clientId: c.id,
+                externalId,
+              },
             });
             return c;
           });
@@ -376,6 +394,7 @@ export async function POST(request: Request) {
               organizationId: ctx.organizationId,
               salary: pick(record, "salary", ["salary", "Salary"]),
               location: pick(record, "location", ["location", "Location"]),
+              externalId: pick(record, "externalId", ["externalId", "external_id", "joborder_id"]),
             },
           });
 
@@ -392,6 +411,100 @@ export async function POST(request: Request) {
 
           imported++;
           jobsSeen.add(key);
+        } catch (e: any) {
+          skipped++;
+          if (errors.length < 5) errors.push(e.message);
+        }
+      }
+    } else if (type === "pipeline") {
+      // Relationship import: wire up candidate↔job pipeline rows by
+      // the externalIds we stored on the previous sheets. We only
+      // create CandidateSubmissions — no new candidates, jobs, or
+      // stages are made here.
+      //
+      // Pre-fetch the lookup maps so per-row work is O(1):
+      //   - candidate externalId  → candidate.id
+      //   - job externalId        → { jobId, stageId[name] }
+      const candidatesByExt = await prisma.candidate.findMany({
+        where: { organizationId: ctx.organizationId, externalId: { not: null } },
+        select: { id: true, externalId: true },
+      });
+      const candIdMap = new Map<string, string>();
+      for (const c of candidatesByExt) {
+        if (c.externalId) candIdMap.set(c.externalId, c.id);
+      }
+      const jobsByExt = await prisma.job.findMany({
+        where: { organizationId: ctx.organizationId, externalId: { not: null } },
+        select: {
+          id: true,
+          externalId: true,
+          stages: { select: { id: true, name: true } },
+        },
+      });
+      const jobMap = new Map<string, { jobId: string; stages: Map<string, string> }>();
+      for (const j of jobsByExt) {
+        if (!j.externalId) continue;
+        const stages = new Map<string, string>();
+        for (const s of j.stages) stages.set(s.name.toLowerCase(), s.id);
+        jobMap.set(j.externalId, { jobId: j.id, stages });
+      }
+      // Cheap idempotency: pre-load existing (candidateId, jobId)
+      // pairs so re-running the import won't error out on the unique
+      // constraint — we just skip rows whose submission already
+      // exists.
+      const existingSubs = await prisma.candidateSubmission.findMany({
+        where: { job: { organizationId: ctx.organizationId } },
+        select: { candidateId: true, jobId: true },
+      });
+      const seenPair = new Set<string>();
+      for (const s of existingSubs) seenPair.add(`${s.candidateId}|${s.jobId}`);
+
+      for (const record of records) {
+        try {
+          const candExt = pick(record, "candidateExternalId", ["candidateExternalId", "candidate_id", "candidate"]) || "";
+          const jobExt = pick(record, "jobExternalId", ["jobExternalId", "joborder_id", "job_id", "job"]) || "";
+          const stageName = (pick(record, "stage", ["stage", "status"]) || "").trim();
+          if (!candExt || !jobExt || !stageName) {
+            skipped++;
+            continue;
+          }
+          const candidateId = candIdMap.get(candExt);
+          const jobInfo = jobMap.get(jobExt);
+          if (!candidateId || !jobInfo) {
+            // Candidate or Job wasn't imported (or was deduped). The
+            // pipeline row has nothing to point at — skip silently.
+            skipped++;
+            continue;
+          }
+          const pairKey = `${candidateId}|${jobInfo.jobId}`;
+          if (seenPair.has(pairKey)) {
+            duplicates++;
+            continue;
+          }
+          // Stage match is case-insensitive against the job's
+          // PipelineStages. Fall back to "Sourced" so a typo in the
+          // source-system status doesn't silently drop the link.
+          const stageId =
+            jobInfo.stages.get(stageName.toLowerCase()) ||
+            jobInfo.stages.get("sourced");
+          if (!stageId) {
+            skipped++;
+            continue;
+          }
+          const submittedAtRaw = pick(record, "submittedAt", ["submittedAt", "date_submitted", "createdAt"]);
+          await prisma.candidateSubmission.create({
+            data: {
+              candidateId,
+              jobId: jobInfo.jobId,
+              stageId,
+              submittedBy: ctx.userId,
+              ...(submittedAtRaw && !isNaN(Date.parse(submittedAtRaw))
+                ? { createdAt: new Date(submittedAtRaw) }
+                : {}),
+            },
+          });
+          seenPair.add(pairKey);
+          imported++;
         } catch (e: any) {
           skipped++;
           if (errors.length < 5) errors.push(e.message);

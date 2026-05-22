@@ -2,7 +2,7 @@
 // schema doesn't drift. If you add a new column to the bulk import,
 // add it here AND mirror it in FIELD_SPEC on the API route.
 
-export type ImportType = "candidates" | "clients" | "jobs";
+export type ImportType = "candidates" | "clients" | "jobs" | "pipeline";
 
 export type FieldDef = {
   key: string;
@@ -17,6 +17,7 @@ export type FieldDef = {
 
 export const IMPORT_FIELDS: Record<ImportType, FieldDef[]> = {
   candidates: [
+    { key: "externalId", label: "External ID", aliases: ["externalid", "candidateid", "id", "sourceid"], hint: "Source-system ID — kept so pipeline rows can link back to this candidate" },
     { key: "firstName", label: "First name", required: true, aliases: ["firstname", "first", "givenname", "nombre", "prenom", "vorname"] },
     { key: "lastName", label: "Last name", required: true, aliases: ["lastname", "last", "surname", "familyname", "apellido", "nomdefamille"] },
     { key: "email", label: "Email", aliases: ["email", "emailaddress", "mail", "correo", "email1", "primaryemail", "correoelectronico"] },
@@ -30,6 +31,7 @@ export const IMPORT_FIELDS: Record<ImportType, FieldDef[]> = {
     { key: "skills", label: "Skills", aliases: ["skills", "tags", "tech", "stack", "habilidades", "keyskills", "technologies", "techstack"], hint: "Comma, semicolon, or pipe separated" },
   ],
   clients: [
+    { key: "externalId", label: "External ID", aliases: ["externalid", "companyid", "clientid", "id", "sourceid"], hint: "Source-system ID — kept so jobs/pipeline rows can link back to this client" },
     { key: "name", label: "Company name", required: true, aliases: ["name", "companyname", "client", "clientname", "empresa", "company", "razonsocial"] },
     { key: "industry", label: "Industry", aliases: ["industry", "sector", "vertical", "industria", "rubro", "keytechnologies"] },
     { key: "website", label: "Website", aliases: ["website", "url", "site", "domain", "web", "weburl"] },
@@ -39,11 +41,22 @@ export const IMPORT_FIELDS: Record<ImportType, FieldDef[]> = {
     { key: "notes", label: "Notes", aliases: ["notes", "comments", "about", "observaciones", "remarks"] },
   ],
   jobs: [
+    { key: "externalId", label: "External ID", aliases: ["externalid", "joborderid", "jobid", "id", "sourceid"], hint: "Source-system ID — kept so pipeline rows can link back to this job" },
     { key: "title", label: "Job title", required: true, aliases: ["title", "jobtitle", "position", "role", "puesto"] },
     { key: "client", label: "Client (company name)", aliases: ["client", "clientname", "company", "companyname", "empresa"], hint: "Matched by name; created if not found" },
     { key: "description", label: "Description", aliases: ["description", "jd", "summary", "descripcion", "details"] },
     { key: "salary", label: "Salary", aliases: ["salary", "compensation", "pay", "salaryrange", "rate", "ratemax", "sueldo"] },
     { key: "location", label: "Location", aliases: ["location", "city", "address", "ubicacion"] },
+  ],
+  // Relationship import: wires up candidate↔job pipeline rows by
+  // External IDs the previous sheets exposed. No new entities are
+  // created — every row is looked up against existing Candidates and
+  // Jobs in the workspace.
+  pipeline: [
+    { key: "candidateExternalId", label: "Candidate External ID", required: true, aliases: ["candidateexternalid", "candidateid", "candidate"], hint: "Must match a Candidate's External ID" },
+    { key: "jobExternalId", label: "Job External ID", required: true, aliases: ["jobexternalid", "joborderid", "jobid", "job"], hint: "Must match a Job's External ID" },
+    { key: "stage", label: "Stage", required: true, aliases: ["stage", "status", "etapa"], hint: "Sourced / Internal Review / Submitted / Under Review / Interviewing / Offered / Placed / Lost / Rejected" },
+    { key: "submittedAt", label: "Submitted at", aliases: ["submittedat", "datesubmitted", "createdat", "datecreated"] },
   ],
 };
 
@@ -86,10 +99,11 @@ export function detectSheetType(
     candidates: ["candidates", "candidate", "people", "talent", "personas", "candidatos"],
     clients: ["clients", "client", "companies", "company", "accounts", "empresas", "clientes"],
     jobs: ["jobs", "job", "joborders", "joborder", "positions", "searches", "vacantes", "busquedas"],
+    pipeline: ["pipeline", "submissions", "candidatejoborder", "relationships", "stages", "applications"],
   };
 
   // 2. Header coverage — how many fields auto-detect would fill.
-  const scores: { type: ImportType; score: number }[] = (["candidates", "clients", "jobs"] as ImportType[]).map(
+  const scores: { type: ImportType; score: number }[] = (["candidates", "clients", "jobs", "pipeline"] as ImportType[]).map(
     (t) => {
       const mapping = autoDetectMapping(t, headers);
       const filled = Object.values(mapping).filter(Boolean).length;
