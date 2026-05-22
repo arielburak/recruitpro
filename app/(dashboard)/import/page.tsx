@@ -33,6 +33,8 @@ const SUPPORTED_FORMATS = [
   { name: "TSV", ext: ".tsv" },
   { name: "Excel", ext: ".xlsx / .xls" },
   { name: "JSON", ext: ".json" },
+  { name: "ZIP", ext: "bundle of the above" },
+  { name: "OpenCATS", ext: ".sql / .zip" },
 ];
 
 // Cap matches what the server-side parser comfortably handles on
@@ -111,8 +113,11 @@ export default function ImportPage() {
       // Build a per-sheet plan up-front. detectSheetType picks the
       // most-likely entity per sheet by sheet name + header coverage,
       // so a workbook named Candidates/Clients/Jobs auto-types each
-      // sheet without the user touching the type tab.
-      const fileLevelType = isXlsxFile(f) ? null : importType;
+      // sheet without the user touching the type tab. Multi-sheet
+      // containers (xlsx, zip bundles, OpenCATS dumps) always run
+      // per-sheet detection; single-sheet CSV/TSV honour the type
+      // tab the user picked.
+      const fileLevelType = isMultiSheetFile(f) ? null : importType;
       const initialPlans: SheetPlan[] = usable.map((s) => {
         const detected = fileLevelType
           ? { type: fileLevelType }
@@ -412,15 +417,15 @@ export default function ImportPage() {
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
                 <Upload className="h-8 w-8 text-gray-300 mb-2" />
                 <span className="text-sm font-medium text-gray-700">
-                  {file ? file.name : "Click to upload a CSV, TSV, Excel or JSON file"}
+                  {file ? file.name : "Click to upload a CSV, TSV, Excel, JSON, ZIP or OpenCATS dump"}
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
-                  CSV, TSV, XLSX, XLS, JSON (max 25MB)
+                  CSV, TSV, XLSX, XLS, JSON, ZIP, SQL (max 25MB)
                 </span>
                 <input
                   type="file"
                   className="hidden"
-                  accept=".csv,.tsv,.json,.txt,.xlsx,.xls,.xlsm,.xlsb"
+                  accept=".csv,.tsv,.json,.txt,.xlsx,.xls,.xlsm,.xlsb,.zip,.sql"
                   onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
                 />
               </label>
@@ -838,9 +843,16 @@ export default function ImportPage() {
   );
 }
 
-function isXlsxFile(f: File): boolean {
+function isMultiSheetFile(f: File): boolean {
   const lower = f.name.toLowerCase();
-  return lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".xlsm") || lower.endsWith(".xlsb");
+  return (
+    lower.endsWith(".xlsx") ||
+    lower.endsWith(".xls") ||
+    lower.endsWith(".xlsm") ||
+    lower.endsWith(".xlsb") ||
+    lower.endsWith(".zip") ||
+    lower.endsWith(".sql")
+  );
 }
 
 function downloadTemplate(type: string) {
