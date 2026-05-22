@@ -276,7 +276,11 @@ export default function ImportPage() {
     setResult(null);
     setProgress(null);
 
-    const ORDER: ImportType[] = ["clients", "jobs", "candidates"];
+    // Order matters: clients first (so jobs can match them by name),
+    // then jobs and candidates (so externalIds are in the DB), then
+    // the relationship sheet pinned last so its lookups against
+    // externalId hit populated tables.
+    const ORDER: ImportType[] = ["clients", "jobs", "candidates", "pipeline"];
     const byType = (t: ImportType) =>
       plans.filter((p) => p.type === t).map((p) => ({
         plan: p,
@@ -463,6 +467,7 @@ export default function ImportPage() {
                             <option value="candidates">Candidates</option>
                             <option value="clients">Clients</option>
                             <option value="jobs">Jobs</option>
+                            <option value="pipeline">Pipeline (relationships)</option>
                           </select>
                           {ready ? (
                             <span className="text-[10px] font-medium text-emerald-700 px-1.5 py-0.5 rounded bg-emerald-50">
@@ -526,6 +531,7 @@ export default function ImportPage() {
                     <option value="candidates">Candidates</option>
                     <option value="clients">Clients</option>
                     <option value="jobs">Jobs</option>
+                    <option value="pipeline">Pipeline (relationships)</option>
                   </select>
                   <span className="text-xs text-gray-500 ml-1">
                     — change it if we picked the wrong type.

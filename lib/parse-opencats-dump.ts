@@ -180,6 +180,28 @@ export function isOpenCatsDump(sql: string): boolean {
   );
 }
 
+// Maps OpenCATS status IDs to RecruitPro's canonical PipelineStage
+// names (lib/constants.ts → DEFAULT_STAGES). Anything we can't map
+// confidently falls into "Sourced" so the relationship still gets
+// created — the user can re-stage manually from there.
+const OPENCATS_STATUS_TO_STAGE: Record<string, string> = {
+  "0":   "Sourced",          // No Status
+  "100": "Sourced",          // No Contact
+  "200": "Internal Review",
+  "300": "Internal Review",  // Ready to send
+  "350": "Internal Review",  // Internal Review (mercel)
+  "375": "Submitted",        // Approved
+  "400": "Submitted",
+  "500": "Interviewing",
+  "550": "Internal Review",  // On Hold — closest neutral
+  "575": "Sourced",          // Backlog
+  "600": "Offered",
+  "650": "Rejected",         // Not in Consideration
+  "700": "Rejected",         // Client Declined
+  "800": "Placed",
+  "850": "Placed",           // Joined
+};
+
 export function parseOpenCatsDump(sql: string): ParsedSheet[] {
   // Schema columns first — OpenCATS releases reorder them, so we
   // must read them from the dump's CREATE TABLE statements rather
@@ -187,10 +209,12 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
   const CANDIDATE_COLS = extractTableColumns(sql, "candidate");
   const COMPANY_COLS = extractTableColumns(sql, "company");
   const JOBORDER_COLS = extractTableColumns(sql, "joborder");
+  const PIPELINE_COLS = extractTableColumns(sql, "candidate_joborder");
 
   const candidateRows = extractTable(sql, "candidate");
   const companyRows = extractTable(sql, "company");
   const jobOrderRows = extractTable(sql, "joborder");
+  const pipelineRows = extractTable(sql, "candidate_joborder");
 
   const companyIdToName = new Map<string, string>();
   for (const r of companyRows) {
@@ -199,8 +223,11 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     if (id && name) companyIdToName.set(id, name);
   }
 
+  // `externalId` carries the OpenCATS primary key through the import
+  // so we can later re-wire candidate↔job relationships back to the
+  // right rows.
   const candidateHeaders = [
-    "firstName","lastName","email","phone","linkedIn","location",
+    "externalId","firstName","lastName","email","phone","linkedIn","location",
     "currentTitle","currentCompany","source","skills","summary",
   ];
   const candidateData: Record<string, string>[] = [];
@@ -218,6 +245,7 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     const state = pick(r, CANDIDATE_COLS, "state");
     const location = [city, state].filter(Boolean).join(", ");
     candidateData.push({
+      externalId: pick(r, CANDIDATE_COLS, "candidate_id"),
       firstName,
       lastName,
       email,
@@ -233,7 +261,7 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
   }
 
   const clientHeaders = [
-    "name","industry","website","contactName","contactEmail","contactPhone","notes",
+    "externalId","name","industry","website","contactName","contactEmail","contactPhone","notes",
   ];
   const clientData: Record<string, string>[] = [];
   for (const r of companyRows) {
@@ -243,6 +271,7 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     // for the "Unspecified" company so we don't litter the workspace.
     if (name === "-1") continue;
     clientData.push({
+      externalId: pick(r, COMPANY_COLS, "company_id"),
       name,
       industry: pick(r, COMPANY_COLS, "key_technologies"),
       website: pick(r, COMPANY_COLS, "url"),
@@ -253,7 +282,7 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     });
   }
 
-  const jobHeaders = ["title","client","description","salary","location"];
+  const jobHeaders = ["externalId","title","client","description","salary","location"];
   const jobData: Record<string, string>[] = [];
   for (const r of jobOrderRows) {
     const title = pick(r, JOBORDER_COLS, "title");
@@ -264,6 +293,7 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     const state = pick(r, JOBORDER_COLS, "state");
     const location = [city, state].filter(Boolean).join(", ");
     jobData.push({
+      externalId: pick(r, JOBORDER_COLS, "joborder_id"),
       title,
       client: clientName,
       description: pick(r, JOBORDER_COLS, "description").replace(/\s+/g, " ").trim(),
@@ -272,9 +302,33 @@ export function parseOpenCatsDump(sql: string): ParsedSheet[] {
     });
   }
 
+  // Pipeline = candidate_joborder rows mapped to canonical stages so
+  // the importer's "pipeline" handler can wire submissions back up by
+  // externalId. We drop relationships pointing at candidates/jobs we
+  // didn't keep (the synthetic OpenCATS placeholders); resolved
+  // candidate/job externalIds are checked via the in-memory sheets.
+  const candidateExternalIds = new Set(candidateData.map((c) => c.externalId).filter(Boolean));
+  const jobExternalIds = new Set(jobData.map((j) => j.externalId).filter(Boolean));
+  const pipelineHeaders = ["candidateExternalId","jobExternalId","stage","submittedAt"];
+  const pipelineData: Record<string, string>[] = [];
+  for (const r of pipelineRows) {
+    const candId = pick(r, PIPELINE_COLS, "candidate_id");
+    const jobId = pick(r, PIPELINE_COLS, "joborder_id");
+    if (!candidateExternalIds.has(candId) || !jobExternalIds.has(jobId)) continue;
+    const statusId = pick(r, PIPELINE_COLS, "status");
+    const stage = OPENCATS_STATUS_TO_STAGE[statusId] || "Sourced";
+    pipelineData.push({
+      candidateExternalId: candId,
+      jobExternalId: jobId,
+      stage,
+      submittedAt: pick(r, PIPELINE_COLS, "date_submitted") || pick(r, PIPELINE_COLS, "date_created"),
+    });
+  }
+
   const sheets: ParsedSheet[] = [];
   if (candidateData.length) sheets.push({ name: "Candidates", headers: candidateHeaders, rows: candidateData });
   if (clientData.length) sheets.push({ name: "Clients", headers: clientHeaders, rows: clientData });
   if (jobData.length) sheets.push({ name: "Jobs", headers: jobHeaders, rows: jobData });
+  if (pipelineData.length) sheets.push({ name: "Pipeline", headers: pipelineHeaders, rows: pipelineData });
   return sheets;
 }
