@@ -27,28 +27,50 @@ export type ParsedSheet = {
 };
 
 export type ParsedSpreadsheet = {
-  format: "csv" | "tsv" | "xlsx" | "json" | "zip" | "sql";
+  format: "csv" | "tsv" | "xlsx" | "json" | "jsonl" | "zip" | "sql";
   sheets: ParsedSheet[];
 };
 
-const XLSX_EXTS = [".xlsx", ".xls", ".xlsm", ".xlsb"];
+// SheetJS reads all of these natively, so we accept anything it can
+// open. Covers Excel (xlsx/xls/xlsm/xlsb), OpenDocument (ods/fods —
+// LibreOffice + Google Sheets export), Apple Numbers, plus a long
+// tail of legacy formats some old ATSs still export (dBase, SYLK,
+// Lotus, Quattro Pro). The user gets one drop-zone for everything
+// rather than having to "Save As CSV" first.
+const XLSX_EXTS = [
+  ".xlsx", ".xlsm", ".xlsb", ".xls",
+  ".ods", ".fods",
+  ".numbers",
+  ".dbf",
+  ".dif", ".sylk", ".slk", ".prn",
+  ".eth", ".rtf",
+  ".wk1", ".wk3", ".wk4", ".123",
+];
+const JSONL_EXTS = [".jsonl", ".ndjson"];
 
 function detectFormat(filename: string, headerBytes?: Uint8Array): ParsedSpreadsheet["format"] {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".zip")) return "zip";
   if (lower.endsWith(".sql")) return "sql";
+  if (JSONL_EXTS.some((e) => lower.endsWith(e))) return "jsonl";
   if (lower.endsWith(".json")) return "json";
   if (lower.endsWith(".tsv")) return "tsv";
   if (lower.endsWith(".csv")) return "csv";
   if (XLSX_EXTS.some((e) => lower.endsWith(e))) return "xlsx";
 
-  // Content sniffing: xlsx is a ZIP (starts with PK), .xls is a CFB
-  // (starts with D0 CF). Falls back to CSV otherwise. We treat a
-  // generic ZIP (no .xlsx extension) as a bundle of importable files,
-  // not as a workbook.
+  // Content sniffing for files dropped without an extension, or with
+  // a generic MIME type:
+  //   PK     → ZIP container (xlsx/ods/numbers are zips too, but we
+  //            already covered them by extension above — bare PK is
+  //            either an unlabelled xlsx or a multi-file bundle, and
+  //            parseZip handles both)
+  //   D0 CF  → CFB compound file (xls)
+  //   <?     → XML (SpreadsheetML, FODS, FODT all start this way —
+  //            xlsx library auto-detects)
   if (headerBytes && headerBytes.length >= 2) {
     if (headerBytes[0] === 0x50 && headerBytes[1] === 0x4b) return "zip";
     if (headerBytes[0] === 0xd0 && headerBytes[1] === 0xcf) return "xlsx";
+    if (headerBytes[0] === 0x3c && headerBytes[1] === 0x3f) return "xlsx";
   }
   return "csv";
 }
@@ -121,6 +143,28 @@ function parseXlsx(bytes: ArrayBuffer): ParsedSheet[] {
 function parseJson(text: string, name = "JSON"): ParsedSheet {
   const parsed = JSON.parse(text);
   const arr = Array.isArray(parsed) ? parsed : [parsed];
+  return objectsToSheet(arr, name);
+}
+
+// JSON Lines / NDJSON: one JSON object per line. The de-facto format
+// for bulk exports from Greenhouse / Lever / a lot of analytics
+// pipelines. Tolerant of blank lines + trailing whitespace.
+function parseJsonLines(text: string, name = "JSONL"): ParsedSheet {
+  const objects: any[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      objects.push(JSON.parse(trimmed));
+    } catch {
+      // ignore lines that aren't valid JSON — keeps a stray header
+      // comment or partial last line from blowing up the whole import
+    }
+  }
+  return objectsToSheet(objects, name);
+}
+
+function objectsToSheet(arr: any[], name: string): ParsedSheet {
   const headers = Array.from(
     new Set(arr.flatMap((r: any) => (typeof r === "object" && r ? Object.keys(r) : [])))
   );
@@ -128,7 +172,7 @@ function parseJson(text: string, name = "JSON"): ParsedSheet {
     const rec: Record<string, string> = {};
     headers.forEach((h) => {
       const v = r?.[h];
-      rec[h] = v == null ? "" : String(v);
+      rec[h] = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
     });
     return rec;
   });
@@ -188,11 +232,17 @@ async function parseZip(bytes: ArrayBuffer): Promise<ParsedSheet[]> {
       }
       continue;
     }
+    if (JSONL_EXTS.some((e) => lower.endsWith(e))) {
+      const text = await entry.async("string");
+      const sheet = parseJsonLines(text, baseName(path));
+      if (sheet.headers.length > 0) sheets.push(sheet);
+      continue;
+    }
   }
 
   if (sheets.length === 0) {
     throw new Error(
-      "Couldn't find any importable files inside this ZIP. Expected CSV, TSV, Excel, JSON, or an OpenCATS SQL dump."
+      "Couldn't find any importable files inside this ZIP. Expected CSV, TSV, Excel, JSON, JSONL, or an OpenCATS SQL dump."
     );
   }
   return sheets;
@@ -221,6 +271,10 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedSpreadshee
   if (format === "json") {
     const text = new TextDecoder().decode(arrayBuffer);
     return { format, sheets: [parseJson(text)] };
+  }
+  if (format === "jsonl") {
+    const text = new TextDecoder().decode(arrayBuffer);
+    return { format, sheets: [parseJsonLines(text)] };
   }
   const text = new TextDecoder().decode(arrayBuffer);
   return { format, sheets: [parseDelimited(text, format)] };

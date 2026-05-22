@@ -28,13 +28,17 @@ type SheetPlan = {
   mapping: Record<string, string | null>;
 };
 
+// Badge row stays minimal on purpose — the headline formats every
+// ATS exports. Everything else (ODS, Numbers, JSONL, raw SQL dumps,
+// multi-file ZIPs, dBase, SYLK, Lotus, …) is auto-detected from the
+// file the user picks. Showing every supported extension would just
+// make this look like a checkbox dump.
 const SUPPORTED_FORMATS = [
   { name: "CSV", ext: ".csv" },
   { name: "TSV", ext: ".tsv" },
   { name: "Excel", ext: ".xlsx / .xls" },
   { name: "JSON", ext: ".json" },
-  { name: "ZIP", ext: "bundle of the above" },
-  { name: "OpenCATS", ext: ".sql / .zip" },
+  { name: "ZIP", ext: "" },
 ];
 
 // Cap matches what the server-side parser comfortably handles on
@@ -373,14 +377,11 @@ export default function ImportPage() {
             Export your data from your current ATS as a spreadsheet, then upload it here.
           </p>
 
-          {/* Supported formats — XLSX/XLS removed pending a real parser
-              (the previous "support" read binary as text and silently
-              produced garbage). Use Save As → CSV from Excel for now. */}
           <div className="flex flex-wrap gap-2">
             {SUPPORTED_FORMATS.map((fmt) => (
               <Badge key={fmt.name} variant="secondary" className="text-xs py-1 px-2.5">
                 {fmt.name}
-                <span className="ml-1 text-gray-400">({fmt.ext})</span>
+                {fmt.ext && <span className="ml-1 text-gray-400">({fmt.ext})</span>}
               </Badge>
             ))}
           </div>
@@ -417,15 +418,15 @@ export default function ImportPage() {
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
                 <Upload className="h-8 w-8 text-gray-300 mb-2" />
                 <span className="text-sm font-medium text-gray-700">
-                  {file ? file.name : "Click to upload a CSV, TSV, Excel, JSON, ZIP or OpenCATS dump"}
+                  {file ? file.name : "Click to upload an export from your ATS"}
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
-                  CSV, TSV, XLSX, XLS, JSON, ZIP, SQL (max 25MB)
+                  CSV · TSV · Excel · JSON · ZIP (max 25MB)
                 </span>
                 <input
                   type="file"
                   className="hidden"
-                  accept=".csv,.tsv,.json,.txt,.xlsx,.xls,.xlsm,.xlsb,.zip,.sql"
+                  accept=".csv,.tsv,.json,.jsonl,.ndjson,.txt,.xlsx,.xls,.xlsm,.xlsb,.ods,.fods,.numbers,.dbf,.dif,.sylk,.slk,.prn,.eth,.rtf,.wk1,.wk3,.wk4,.123,.zip,.sql"
                   onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
                 />
               </label>
