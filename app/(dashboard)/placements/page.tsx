@@ -144,14 +144,20 @@ export default function PlacementsPage() {
   // Alias kept readable for the bucketing logic below.
   const quarterPlacements = filteredPlacements;
 
-  // Year dropdown options — derived from each placement's effective
-  // date (same anchor as the filter) plus the current year, so the
-  // recruiter only sees years that make sense.
-  const placementYears = new Set<number>(
-    placements.map((p) => placementDate(p).getFullYear()),
-  );
-  placementYears.add(today.getFullYear());
-  const yearOptions = Array.from(placementYears).sort((a, b) => b - a);
+  // Year dropdown options — the contiguous range from the earliest
+  // placement through the current year. We deliberately include
+  // years with zero placements (e.g. an agency that paused
+  // operations one year, or historical data where one calendar year
+  // happens to be empty) so the user can navigate to them and
+  // confirm "yes, this year was empty" rather than wondering why
+  // the dropdown skipped a gap.
+  const placementYearValues = placements.map((p) => placementDate(p).getFullYear());
+  const currentYear = today.getFullYear();
+  const earliestYear = placementYearValues.length > 0
+    ? Math.min(...placementYearValues, currentYear)
+    : currentYear;
+  const yearOptions: number[] = [];
+  for (let y = currentYear; y >= earliestYear; y--) yearOptions.push(y);
 
   const revenueByCurrency: Record<string, number> = {};
   for (const p of quarterPlacements) {
