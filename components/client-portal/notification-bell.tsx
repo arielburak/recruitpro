@@ -23,7 +23,13 @@ function timeAgo(iso: string) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  if (diff < 2_592_000) return `${Math.floor(diff / 604800)}w ago`;
+  const date = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${months[date.getMonth()]} ${date.getDate()}`
+    : `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
 export function NotificationBell() {
@@ -106,7 +112,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="absolute right-0 top-11 z-[60] w-[22rem] bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900">Notifications</p>
             {unreadCount > 0 && (
@@ -168,7 +174,7 @@ function NotificationContent({ n }: { n: Notification }) {
     <div className="flex items-start gap-2.5">
       {!n.readAt && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
       <div className={cn("min-w-0 flex-1", n.readAt && "pl-3.5")}>
-        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{n.title}</p>
         {n.body && <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{n.body}</p>}
         <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
       </div>
