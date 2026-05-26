@@ -892,29 +892,24 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <p className="text-[11px] text-amber-700">
-                        Restricted — only the {job!.members!.length} of {teamMembers.filter((m: any) => m.isActive !== false).length} team member{teamMembers.filter((m: any) => m.isActive !== false).length === 1 ? "" : "s"} listed below can see this job.
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(job?.members || []).map((m: any) => {
-                          const isCreator = job?.postedById === m.clientUser.id;
-                          return (
-                            <span
-                              key={m.clientUser.id}
-                              className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] px-2 py-1 rounded-md"
-                              title={m.clientUser.email}
-                            >
-                              {m.clientUser.name}
-                              {isCreator && (
-                                <span className="text-[9px] text-emerald-600/70 font-normal ml-0.5">
-                                  (owner)
-                                </span>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(job?.members || []).map((m: any) => {
+                        const isCreator = job?.postedById === m.clientUser.id;
+                        return (
+                          <span
+                            key={m.clientUser.id}
+                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-sm px-3 py-1.5 rounded-lg"
+                            title={m.clientUser.email}
+                          >
+                            {m.clientUser.name}
+                            {isCreator && (
+                              <span className="text-[11px] text-emerald-600/70 font-normal">
+                                (owner)
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )
                 )}
