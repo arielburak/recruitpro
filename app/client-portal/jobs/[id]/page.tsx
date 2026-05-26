@@ -1307,7 +1307,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           onChange={(e) => setSelectedFirm(e.target.value || null)}
                           className="w-full h-9 px-2.5 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
                         >
-                          <option value="">All firms</option>
+                          <option value="">Select a firm…</option>
                           {firmOptions.map((f) => (
                             <option key={f.name} value={f.name}>
                               {f.name} {f.contactCount > 0
@@ -1318,67 +1318,81 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         </select>
                       </div>
 
-                      {/* Recruiter contacts list — gated by the
-                          selected firm + free-text query. */}
-                      {filteredContacts.length === 0 ? (
-                        <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
-                          {selectedFirmInfo && selectedFirmInfo.contactCount === 0
-                            ? <>No saved recruiter contacts at <span className="font-medium text-gray-700">{selectedFirmInfo.name}</span> yet. Type the recruiter&apos;s email above to invite them.</>
-                            : q
-                              ? <>No contacts match &ldquo;{q}&rdquo;.</>
-                              : <>No saved contacts to show.</>}
-                        </p>
-                      ) : (
-                        <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
-                          {filteredContacts.map((s) => {
-                            const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
-                            return (
-                              <button
-                                key={s.key}
-                                type="button"
-                                disabled={s.alreadyOnThisJob}
-                                onClick={() => {
-                                  if (s.alreadyOnThisJob) return;
-                                  setInviteEmail(s.email || "");
-                                }}
-                                className={`w-full text-left px-2.5 py-2 transition-colors ${
-                                  s.alreadyOnThisJob
-                                    ? "opacity-60 cursor-not-allowed"
-                                    : selected
-                                    ? "bg-indigo-50"
-                                    : "hover:bg-indigo-50/70"
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <p className={`text-sm font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                      {s.name || s.email}
-                                    </p>
-                                    <p className="text-[11px] text-gray-500 truncate">
-                                      {s.email}
-                                      {s.firmName && !selectedFirm ? ` · ${s.firmName}` : ""}
-                                    </p>
-                                  </div>
-                                  {(() => {
-                                    if (s.alreadyOnThisJob) {
+                      {/* Recruiter contacts — only rendered once the
+                          user has actively picked a firm. Default
+                          state (no firm selected) shows nothing, so
+                          the modal stays compact and the user
+                          consciously narrows before scanning a list. */}
+                      {selectedFirm && (
+                        filteredContacts.length === 0 ? (
+                          <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
+                            {selectedFirmInfo && selectedFirmInfo.contactCount === 0
+                              ? <>No saved recruiter contacts at <span className="font-medium text-gray-700">{selectedFirmInfo.name}</span> yet. Type the recruiter&apos;s email above to invite them.</>
+                              : q
+                                ? <>No contacts at {selectedFirmInfo?.name} match &ldquo;{q}&rdquo;.</>
+                                : <>No saved contacts at {selectedFirmInfo?.name}.</>}
+                          </p>
+                        ) : (
+                          <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+                            {filteredContacts.map((s) => {
+                              const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
+                              return (
+                                <button
+                                  key={s.key}
+                                  type="button"
+                                  disabled={s.alreadyOnThisJob}
+                                  onClick={() => {
+                                    if (s.alreadyOnThisJob) return;
+                                    setInviteEmail(s.email || "");
+                                  }}
+                                  className={`w-full text-left px-2.5 py-2 transition-colors ${
+                                    s.alreadyOnThisJob
+                                      ? "opacity-60 cursor-not-allowed"
+                                      : selected
+                                      ? "bg-indigo-50"
+                                      : "hover:bg-indigo-50/70"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                        {s.name || s.email}
+                                      </p>
+                                      {s.name && (
+                                        <p className="text-[11px] text-gray-500 break-all">
+                                          {s.email}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {(() => {
+                                      // Pill policy: only render when there's something
+                                      // the user actually needs to know. "accepted" is
+                                      // the default state for anyone who's worked with
+                                      // this client (we just filtered them in), so a
+                                      // pill there is noise. Pending / declined /
+                                      // awaiting-signup / on-this-job all stay because
+                                      // they change the action the user should take.
+                                      if (s.alreadyOnThisJob) {
+                                        return (
+                                          <span className="text-[10px] font-medium text-indigo-600 shrink-0 mt-0.5">
+                                            on this job
+                                          </span>
+                                        );
+                                      }
+                                      if (s.status === "accepted") return null;
+                                      const p = statusPill[s.status];
                                       return (
-                                        <span className="text-[10px] font-medium text-indigo-600 shrink-0">
-                                          on this job
+                                        <span className={`text-[10px] font-medium shrink-0 mt-0.5 px-1.5 py-0.5 rounded ${p.className}`}>
+                                          {p.label}
                                         </span>
                                       );
-                                    }
-                                    const p = statusPill[s.status];
-                                    return (
-                                      <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
-                                        {p.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
+                                    })()}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )
                       )}
                     </div>
                   );
