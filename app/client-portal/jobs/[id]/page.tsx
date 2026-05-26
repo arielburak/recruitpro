@@ -1245,25 +1245,39 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   // every suggestion (person-level + firm-only legacy).
                   // The dropdown surfaces each firm + how many real
                   // contacts you have at that firm, so picking one
-                  // narrows the recruiter list below.
-                  type FirmSummary = { name: string; contactCount: number; firmOnly: boolean };
+                  // narrows the recruiter list below. Firms with zero
+                  // real contacts are filtered out — surfacing
+                  // "Morabits · no saved contacts" only confused users
+                  // because there's nothing to click after picking it.
+                  type FirmSummary = { name: string; contactCount: number };
                   const firmMap = new Map<string, FirmSummary>();
                   for (const s of inviteSuggestions) {
                     if (!s.firmName) continue;
+                    if (s.firmOnly) continue;
                     const existing = firmMap.get(s.firmName) || {
                       name: s.firmName,
                       contactCount: 0,
-                      firmOnly: true,
                     };
-                    if (!s.firmOnly) {
-                      existing.contactCount += 1;
-                      existing.firmOnly = false;
-                    }
+                    existing.contactCount += 1;
                     firmMap.set(s.firmName, existing);
                   }
                   const firmOptions = Array.from(firmMap.values()).sort((a, b) =>
                     a.name.localeCompare(b.name)
                   );
+
+                  // If we have inviteSuggestions but none with a real
+                  // contact behind a firm, the dropdown would be empty
+                  // — fall back to the "no saved contacts" empty state
+                  // shown when the suggestions list itself is empty.
+                  if (firmOptions.length === 0) {
+                    return (
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        You haven&apos;t invited anyone from this client yet.
+                        The first recruiter you invite shows up here for one-
+                        click reuse on future jobs.
+                      </p>
+                    );
+                  }
 
                   // Filter the person-level contact list by:
                   //   1. Selected firm (if any) — gates first.
@@ -1310,9 +1324,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           <option value="">Select a firm…</option>
                           {firmOptions.map((f) => (
                             <option key={f.name} value={f.name}>
-                              {f.name} {f.contactCount > 0
-                                ? `· ${f.contactCount} contact${f.contactCount === 1 ? "" : "s"}`
-                                : "· no saved contacts"}
+                              {f.name} · {f.contactCount} contact{f.contactCount === 1 ? "" : "s"}
                             </option>
                           ))}
                         </select>
@@ -1326,11 +1338,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       {selectedFirm && (
                         filteredContacts.length === 0 ? (
                           <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
-                            {selectedFirmInfo && selectedFirmInfo.contactCount === 0
-                              ? <>No saved recruiter contacts at <span className="font-medium text-gray-700">{selectedFirmInfo.name}</span> yet. Type the recruiter&apos;s email above to invite them.</>
-                              : q
-                                ? <>No contacts at {selectedFirmInfo?.name} match &ldquo;{q}&rdquo;.</>
-                                : <>No saved contacts at {selectedFirmInfo?.name}.</>}
+                            No contacts at {selectedFirmInfo?.name} match &ldquo;{q}&rdquo;.
                           </p>
                         ) : (
                           <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
