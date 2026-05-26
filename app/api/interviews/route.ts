@@ -123,6 +123,18 @@ export async function POST(request: Request) {
     let microsoftEventId: string | null = null;
     let microsoftCalendarOwnerId: string | null = null;
 
+    // Calendar attendees policy (MVP):
+    //
+    // - Client contacts NEVER get added as calendar attendees. The
+    //   agency's policy is "client doesn't get an invite from us";
+    //   the InterviewClientContact rows still get persisted for
+    //   tracking purposes, they just don't reach Google/MS Graph.
+    // - Candidate is opt-in via `notifyAttendees`. When false (the
+    //   default for client-interview tracking), no one external is
+    //   added — the event is just a block on the recruiter's own
+    //   calendar.
+    // - Interviewers (internal agency staff) are always included so
+    //   they get the standard "you're on this meeting" experience.
     async function collectAttendees() {
       const attendees: { email: string; displayName?: string }[] = [];
 
@@ -130,26 +142,11 @@ export async function POST(request: Request) {
         where: { id: candidateId },
         select: { email: true, firstName: true, lastName: true },
       });
-      if (candidateData?.email) {
+      if (notifyAttendees && candidateData?.email) {
         attendees.push({
           email: candidateData.email,
           displayName: `${candidateData.firstName} ${candidateData.lastName}`,
         });
-      }
-
-      if (clientContactIds?.length) {
-        const contacts = await prisma.contact.findMany({
-          where: { id: { in: clientContactIds } },
-          select: { email: true, firstName: true, lastName: true },
-        });
-        for (const c of contacts) {
-          if (c.email) {
-            attendees.push({
-              email: c.email,
-              displayName: `${c.firstName} ${c.lastName}`,
-            });
-          }
-        }
       }
 
       if (interviewerIds?.length) {

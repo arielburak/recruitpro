@@ -1973,9 +1973,9 @@ function CreateInterviewModal({
                       </option>
                     ))}
                   </select>
-                  {selectedClientContacts.length > 0 && notifyAttendees && (
-                    <p className="text-xs text-amber-600">
-                      {selectedClientContacts.length} contact{selectedClientContacts.length > 1 ? "s" : ""} will receive an interview invite email.
+                  {selectedClientContacts.length > 0 && (
+                    <p className="text-xs text-gray-500">
+                      Tracked in the ATS only — the client never receives an invite from the agency.
                     </p>
                   )}
                 </>
