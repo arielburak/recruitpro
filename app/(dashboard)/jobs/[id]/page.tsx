@@ -1407,7 +1407,11 @@ export default function JobDetailPage() {
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
-          <JobNotesCard jobId={params.id as string} initialNotes={job.notes} />
+          <JobNotesCard
+            jobId={params.id as string}
+            initialNotes={job.notes}
+            onSaved={(next) => setJob((prev: any) => prev ? { ...prev, notes: next } : prev)}
+          />
           <div className="border rounded-xl bg-white p-5 space-y-5">
               {!editing ? (
                 <>
@@ -1869,11 +1873,32 @@ export default function JobDetailPage() {
 // with Save / Cancel. Persists via PATCH /api/jobs/[id]. Strictly
 // agency-side — the client portal has its own ClientJob.notes that
 // doesn't sync back.
-function JobNotesCard({ jobId, initialNotes }: { jobId: string; initialNotes: string | null }) {
+function JobNotesCard({
+  jobId,
+  initialNotes,
+  onSaved,
+}: {
+  jobId: string;
+  initialNotes: string | null;
+  // Called on a successful save so the parent can update its own
+  // `job.notes` state. Without this, remounting the card (e.g. tab
+  // switch) would re-seed from a stale `initialNotes` and the user's
+  // freshly saved value would visually revert.
+  onSaved?: (notes: string | null) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState<string>(initialNotes ?? "");
   const [draft, setDraft] = useState<string>(initialNotes ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Resync local state when the parent's notes value updates (refetch,
+  // optimistic update, etc.). Skipped while the user is mid-edit so a
+  // stray refetch doesn't blow away the draft they're typing.
+  useEffect(() => {
+    if (editing) return;
+    setNotes(initialNotes ?? "");
+    setDraft(initialNotes ?? "");
+  }, [initialNotes, editing]);
 
   function startEdit() {
     setDraft(notes);
@@ -1884,14 +1909,16 @@ function JobNotesCard({ jobId, initialNotes }: { jobId: string; initialNotes: st
     setSaving(true);
     try {
       const trimmed = draft.trim();
+      const next = trimmed === "" ? null : trimmed;
       const res = await fetch(`/api/jobs/${jobId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: trimmed === "" ? null : trimmed }),
+        body: JSON.stringify({ notes: next }),
       });
       if (res.ok) {
         setNotes(trimmed);
         setEditing(false);
+        onSaved?.(next);
       }
     } catch {}
     setSaving(false);

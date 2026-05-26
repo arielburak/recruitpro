@@ -476,7 +476,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Job Details */}
         <div className="lg:col-span-2 space-y-4">
-          <ClientJobNotesCard jobId={id} initialNotes={job?.notes ?? null} />
+          <ClientJobNotesCard
+            jobId={id}
+            initialNotes={job?.notes ?? null}
+            onSaved={(next) => setJob((prev: any) => prev ? { ...prev, notes: next } : prev)}
+          />
           {editing ? (
             <Card>
               <CardContent className="p-5 space-y-4">
@@ -1454,17 +1458,26 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 // PUT route. Nothing on this card ever crosses back to the firms
 // engaged on the JO — Job.notes on the agency side is a separate
 // field that stays internal there.
-function ClientJobNotesCard({ jobId, initialNotes }: { jobId: string; initialNotes: string | null }) {
+function ClientJobNotesCard({
+  jobId,
+  initialNotes,
+  onSaved,
+}: {
+  jobId: string;
+  initialNotes: string | null;
+  onSaved?: (notes: string | null) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState<string>(initialNotes ?? "");
   const [draft, setDraft] = useState<string>(initialNotes ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Keep local state in sync if parent reloads job data (e.g. after
-  // some other edit refetches and the notes value changes).
+  // Resync when parent's notes change (refetch, etc.). Skipped while
+  // editing so a refetch doesn't blow away the user's draft.
   useEffect(() => {
+    if (editing) return;
     setNotes(initialNotes ?? "");
-    if (!editing) setDraft(initialNotes ?? "");
+    setDraft(initialNotes ?? "");
   }, [initialNotes, editing]);
 
   function startEdit() {
@@ -1476,14 +1489,16 @@ function ClientJobNotesCard({ jobId, initialNotes }: { jobId: string; initialNot
     setSaving(true);
     try {
       const trimmed = draft.trim();
+      const next = trimmed === "" ? null : trimmed;
       const res = await fetch(`/api/client-portal/jobs/${jobId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: trimmed === "" ? null : trimmed }),
+        body: JSON.stringify({ notes: next }),
       });
       if (res.ok) {
         setNotes(trimmed);
         setEditing(false);
+        onSaved?.(next);
       }
     } catch {}
     setSaving(false);
