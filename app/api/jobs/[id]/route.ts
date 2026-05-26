@@ -218,6 +218,18 @@ export async function PATCH(
       }
       data.status = body.status;
     }
+    // Inline notes edit. Accepts an empty string to clear the field,
+    // null to clear it explicitly, or a string to set it. Capped at
+    // 10000 chars defensively so a malicious paste can't bloat the row.
+    if (body.notes !== undefined) {
+      if (body.notes === null || body.notes === "") {
+        data.notes = null;
+      } else if (typeof body.notes === "string") {
+        data.notes = body.notes.slice(0, 10_000);
+      } else {
+        return NextResponse.json({ error: "Invalid notes" }, { status: 400 });
+      }
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

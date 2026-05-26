@@ -24,12 +24,26 @@ export async function PUT(
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    // Notes can come through as null / empty to clear the field, so
+    // resolve them outside the spread to keep the "?? existing.x"
+    // pattern from re-introducing the old value when the user blanks
+    // the textarea. Capped at 10000 chars defensively.
+    let nextNotes: string | null = existing.notes;
+    if (body.notes !== undefined) {
+      if (body.notes === null || body.notes === "") {
+        nextNotes = null;
+      } else if (typeof body.notes === "string") {
+        nextNotes = body.notes.slice(0, 10_000);
+      }
+    }
+
     const updated = await prisma.clientJob.update({
       where: { id },
       data: {
         title: body.title ?? existing.title,
         description: body.description ?? existing.description,
         requirements: body.requirements ?? existing.requirements,
+        notes: nextNotes,
         location: body.location ?? existing.location,
         salaryRange: body.salaryRange ?? existing.salaryRange,
         salaryCurrency: body.salaryCurrency ?? existing.salaryCurrency,
