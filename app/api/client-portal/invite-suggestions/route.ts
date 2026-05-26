@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const clientJobId = url.searchParams.get("clientJobId");
 
-    const [personEngagements, legacyEngagements, pending] = await Promise.all([
+    const [personEngagements, legacyEngagements, pending, workedJobs] = await Promise.all([
       prisma.firmEngagement.findMany({
         where: {
           clientJob: { clientId: ctx.clientId },
@@ -82,6 +82,34 @@ export async function GET(request: Request) {
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
+      }),
+      // Agency-side activity at this client: any recruiter that's
+      // either assigned to a Job at this client or has submitted a
+      // candidate on a Job at this client. They never went through
+      // the explicit invite flow but they ARE people the client has
+      // worked with — so they should surface as suggestions the
+      // client can pick from. Keeps the dropdown useful for clients
+      // who came through a back-channel (legacy import, direct
+      // engagement from the agency) where formal invites weren't
+      // created.
+      prisma.job.findMany({
+        where: { clientId: ctx.clientId },
+        select: {
+          createdAt: true,
+          updatedAt: true,
+          organization: { select: { name: true } },
+          assignments: {
+            select: {
+              user: { select: { email: true, name: true } },
+            },
+          },
+          submissions: {
+            select: {
+              createdAt: true,
+              submitter: { select: { email: true, name: true } },
+            },
+          },
+        },
       }),
     ]);
 
@@ -159,6 +187,54 @@ export async function GET(request: Request) {
         firmOnly: false,
         alreadyOnThisJob: clientJobId ? p.clientJobId === clientJobId : false,
       });
+    }
+
+    // Agency users that actually worked on Jobs at this client —
+    // either as assignees or as submitters. Each unique user becomes
+    // a suggestion keyed on email. We treat the engagement status
+    // as "accepted" (they're actively in the data already) and pick
+    // the most recent activity timestamp so they sort sensibly.
+    for (const j of workedJobs) {
+      const firmName = j.organization?.name || null;
+      // Collect (user, ts) tuples from both assignments and
+      // submissions so a single user with multiple touchpoints still
+      // dedupes by email.
+      const userTouchpoints: { email: string; name: string; ts: Date }[] = [];
+      for (const a of j.assignments) {
+        if (a.user?.email) {
+          userTouchpoints.push({
+            email: a.user.email,
+            name: a.user.name || "",
+            ts: j.updatedAt || j.createdAt,
+          });
+        }
+      }
+      for (const s of j.submissions) {
+        if (s.submitter?.email) {
+          userTouchpoints.push({
+            email: s.submitter.email,
+            name: s.submitter.name || "",
+            ts: s.createdAt,
+          });
+        }
+      }
+      for (const t of userTouchpoints) {
+        const email = t.email.toLowerCase();
+        upsert(email, {
+          key: email,
+          email,
+          firmName,
+          name: t.name || null,
+          lastInvitedAt: t.ts.toISOString(),
+          // "accepted" reads as "they're already working with you"
+          // in the existing UI pill scheme — a softer alternative
+          // would be a new status, but reusing accepted keeps the
+          // pill colors consistent without a UI change here.
+          status: "accepted",
+          firmOnly: false,
+          alreadyOnThisJob: false,
+        });
+      }
     }
 
     // Legacy firm-only entries go in last. If a person-level row for
