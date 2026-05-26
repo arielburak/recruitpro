@@ -1407,6 +1407,7 @@ export default function JobDetailPage() {
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
+          <JobNotesCard jobId={params.id as string} initialNotes={job.notes} />
           <div className="border rounded-xl bg-white p-5 space-y-5">
               {!editing ? (
                 <>
@@ -1859,6 +1860,81 @@ export default function JobDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Recruiter-private notes scoped to this job. Inline edit pattern: read
+// mode renders the markdown as plain text, Edit swaps to a Textarea
+// with Save / Cancel. Persists via PATCH /api/jobs/[id]. Strictly
+// agency-side — the client portal has its own ClientJob.notes that
+// doesn't sync back.
+function JobNotesCard({ jobId, initialNotes }: { jobId: string; initialNotes: string | null }) {
+  const [editing, setEditing] = useState(false);
+  const [notes, setNotes] = useState<string>(initialNotes ?? "");
+  const [draft, setDraft] = useState<string>(initialNotes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  function startEdit() {
+    setDraft(notes);
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const trimmed = draft.trim();
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: trimmed === "" ? null : trimmed }),
+      });
+      if (res.ok) {
+        setNotes(trimmed);
+        setEditing(false);
+      }
+    } catch {}
+    setSaving(false);
+  }
+
+  return (
+    <div className="border rounded-xl bg-white p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Notes</h3>
+          <p className="text-xs text-gray-400">Private to your firm. The client never sees this.</p>
+        </div>
+        {!editing && (
+          <Button size="sm" variant="outline" className="text-xs gap-1" onClick={startEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+            {notes ? "Edit" : "Add notes"}
+          </Button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Anything to remember about this search — HM preferences, salary caps below the JD, scheduling quirks…"
+            rows={6}
+            className="text-sm"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setEditing(false); setDraft(notes); }}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={saving} onClick={save}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      ) : notes ? (
+        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notes}</p>
+      ) : (
+        <p className="text-xs text-gray-400 italic">No notes yet.</p>
+      )}
     </div>
   );
 }

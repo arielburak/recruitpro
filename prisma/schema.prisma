@@ -334,6 +334,11 @@ model Job {
   id             String    @id @default(cuid())
   title          String
   description    String?
+  // Free-form recruiter notes scoped to this Job. Agency-side only —
+  // the client portal has its own ClientJob.notes that doesn't sync
+  // here, so an "HM has a side commission" note stays internal to
+  // the firm.
+  notes          String?
   status         JobStatus @default(OPEN)
   // Number of seats the client signed for on this search. The
   // placement flow uses it to decide when to auto-flip status to
@@ -775,6 +780,11 @@ model ClientJob {
   title          String
   description    String?
   requirements   String?
+  // Free-form notes from the client-portal side. Strictly private to
+  // the hiring company — Job.notes on the agency side never syncs
+  // back, so the client can keep "HM is impossible to schedule with"
+  // observations without leaking to the firms they engage.
+  notes          String?
   location       String?
   salaryRange    String?
   salaryCurrency String   @default("USD")

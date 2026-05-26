@@ -3,6 +3,9 @@ import { z } from "zod";
 export const jobSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
+  // Free-form recruiter notes — agency-side private scratchpad,
+  // never reaches the client portal even when the JO is shared.
+  notes: z.string().optional(),
   status: z
     .enum(["OPEN", "ACTIVE", "ON_HOLD", "FILLED", "CANCELLED", "LOST"])
     .default("OPEN"),
