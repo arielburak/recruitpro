@@ -863,9 +863,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
           {/* Job access — who on the team can see this JO. Skipped on
               solo workspaces (no one else to restrict against). Shows
-              the explicit member list, or a banner pointing out the
+              the explicit member list with a clear "restricted" copy +
+              count of the total team, or a banner pointing out the
               legacy "everyone" state for jobs created before this
-              feature existed. */}
+              feature existed. The creator gets a subtle (owner) tag so
+              it's obvious which badge is the JO's author vs. someone
+              that was added later. */}
           {teamMembers.length > 1 && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -882,23 +885,36 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   {showManageAccess ? "Close" : "Manage"}
                 </Button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-1">
                 {!showManageAccess && (
                   (job?.members?.length || 0) === 0 ? (
                     <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
                       Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(job?.members || []).map((m: any) => (
-                        <span
-                          key={m.clientUser.id}
-                          className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] px-2 py-1 rounded-md"
-                          title={m.clientUser.email}
-                        >
-                          {m.clientUser.name}
-                        </span>
-                      ))}
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-amber-700">
+                        Restricted — only the {job!.members!.length} of {teamMembers.filter((m: any) => m.isActive !== false).length} team member{teamMembers.filter((m: any) => m.isActive !== false).length === 1 ? "" : "s"} listed below can see this job.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(job?.members || []).map((m: any) => {
+                          const isCreator = job?.postedById === m.clientUser.id;
+                          return (
+                            <span
+                              key={m.clientUser.id}
+                              className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[11px] px-2 py-1 rounded-md"
+                              title={m.clientUser.email}
+                            >
+                              {m.clientUser.name}
+                              {isCreator && (
+                                <span className="text-[9px] text-emerald-600/70 font-normal ml-0.5">
+                                  (owner)
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
                   )
                 )}
@@ -1146,12 +1162,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </p>
 
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email or search</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
                     type="email"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="recruiter@firm.com or search by name / firm"
+                    placeholder="name@firm.com"
                     className="text-sm"
                     autoComplete="off"
                   />
@@ -1235,12 +1251,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     (s.firmName || "").toLowerCase().includes(q) ||
                     (s.name || "").toLowerCase().includes(q)
                   );
+                  // Split firm-only entries (no specific recruiter
+                  // contact yet) out of the clickable contact list —
+                  // they used to render as full-blown rows but clicking
+                  // them did nothing useful (just cleared the input),
+                  // which confused users into thinking the suggestions
+                  // were broken. They survive as a one-liner hint
+                  // ("you've worked with these firms before") that
+                  // sits above the actionable contact list. People
+                  // with real emails are the ones the user can click.
+                  const peopleMatches = matches.filter((m) => !m.firmOnly);
+                  const firmOnlyMatches = matches.filter((m) => m.firmOnly);
+                  // Dedupe firm-only firm names for the hint line.
+                  const previouslyEngagedFirms = Array.from(
+                    new Set(firmOnlyMatches.map((m) => m.firmName).filter(Boolean))
+                  ) as string[];
                   // Group by firmName. People we don't have a firm for
                   // (pending email invites that never registered) fall
                   // into a trailing "No firm yet" bucket.
                   const NO_FIRM_KEY = "__no_firm__";
                   const groups = new Map<string, { label: string; items: InviteSuggestion[] }>();
-                  for (const m of matches) {
+                  for (const m of peopleMatches) {
                     const key = m.firmName || NO_FIRM_KEY;
                     const label = m.firmName || "No firm yet";
                     const g = groups.get(key) || { label, items: [] };
@@ -1290,6 +1321,32 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     );
                   }
 
+                  // Firm-only hint — purely informational. Tells the
+                  // user "you've engaged these firms before; type the
+                  // recruiter's email above to invite a specific
+                  // person there." No fake clickability.
+                  const firmHint = previouslyEngagedFirms.length > 0 ? (
+                    <p className="text-[11px] text-gray-500 leading-relaxed">
+                      Previously engaged with{" "}
+                      <span className="font-medium text-gray-700">
+                        {previouslyEngagedFirms.join(", ")}
+                      </span>
+                      {peopleMatches.length === 0
+                        ? " — type the specific recruiter's email above to invite them."
+                        : "."}
+                    </p>
+                  ) : null;
+
+                  // If there are no people-matches but there ARE firm
+                  // hints, just show the hint (no empty list shell).
+                  if (peopleMatches.length === 0) {
+                    return firmHint || (
+                      <p className="text-[11px] text-gray-400">
+                        No contacts match &ldquo;{q}&rdquo;.
+                      </p>
+                    );
+                  }
+
                   const statusPill: Record<InviteStatus, { label: string; className: string }> = {
                     accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
                     pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
@@ -1298,7 +1355,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   };
 
                   return (
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
+                      {firmHint}
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                           Your recruiter contacts
@@ -1335,9 +1393,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                           disabled={s.alreadyOnThisJob}
                                           onClick={() => {
                                             if (s.alreadyOnThisJob) return;
-                                            // Firm-only rows have no email to prefill;
-                                            // clicking them clears the input so the
-                                            // user can type the specific person.
                                             setInviteEmail(s.email || "");
                                           }}
                                           className={`w-full text-left px-2.5 py-1.5 transition-colors ${
@@ -1350,26 +1405,13 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                         >
                                           <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
-                                              {s.firmOnly ? (
-                                                <>
-                                                  <p className="text-xs font-medium text-gray-800 truncate">
-                                                    {s.firmName}
-                                                  </p>
-                                                  <p className="text-[10px] text-gray-400 truncate">
-                                                    Previously engaged · type the specific person&apos;s email
-                                                  </p>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                                    {s.name || s.email}
-                                                  </p>
-                                                  {s.name && (
-                                                    <p className="text-[10px] text-gray-400 truncate">
-                                                      {s.email}
-                                                    </p>
-                                                  )}
-                                                </>
+                                              <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                                {s.name || s.email}
+                                              </p>
+                                              {s.name && (
+                                                <p className="text-[10px] text-gray-400 truncate">
+                                                  {s.email}
+                                                </p>
                                               )}
                                             </div>
                                             {(() => {
@@ -1377,13 +1419,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                                 return (
                                                   <span className="text-[10px] font-medium text-indigo-600 shrink-0">
                                                     on this job
-                                                  </span>
-                                                );
-                                              }
-                                              if (s.firmOnly) {
-                                                return (
-                                                  <span className="text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                                                    firm only
                                                   </span>
                                                 );
                                               }
