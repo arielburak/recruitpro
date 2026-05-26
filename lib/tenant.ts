@@ -2,22 +2,52 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth-options";
 import { prisma } from "./prisma";
 
+// Agency-side request context. Always sources the user's identity,
+// organization, and role from the database — not from the JWT.
+//
+// Why DB-fresh: the JWT is set at login and isn't refreshed on every
+// request. If anything in the user's profile changes server-side
+// (role flip, organization migration, a User row deleted + recreated
+// with the same address), the JWT would lag and queries would filter
+// by the old values. That broke /engagements + Google Calendar
+// connect after the comp-access run — the JWT had stale org context
+// and self-scoped queries came up empty. Reading DB on every request
+// is cheap (one indexed PK lookup) and lets the session self-heal.
+//
+// Lookup strategy:
+//   1. by id (fast path — JWT.id is usually still valid)
+//   2. fallback by email (covers user deleted + recreated with same
+//      address, which gives them a new id but the same login identity)
 export async function getOrgContext() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.organizationId) {
-    throw new Error("Unauthorized: No organization context");
+  if (!session?.user?.id && !session?.user?.email) {
+    throw new Error("Unauthorized: No session");
   }
-  // Fetch fresh role from DB to ensure permissions are accurate after role changes
-  const dbUser = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true },
-  });
-  const role = (dbUser?.role || session.user.role || "USER") as "ADMIN" | "USER";
+  const sessionId = session.user.id as string | undefined;
+  const sessionEmail = session.user.email as string | undefined;
+
+  const dbUser =
+    (sessionId
+      ? await prisma.user.findUnique({
+          where: { id: sessionId },
+          select: { id: true, role: true, organizationId: true, name: true, isActive: true },
+        })
+      : null) ||
+    (sessionEmail
+      ? await prisma.user.findUnique({
+          where: { email: sessionEmail },
+          select: { id: true, role: true, organizationId: true, name: true, isActive: true },
+        })
+      : null);
+
+  if (!dbUser || !dbUser.isActive) {
+    throw new Error("Unauthorized: User not found or inactive");
+  }
   return {
-    userId: session.user.id,
-    organizationId: session.user.organizationId,
-    role,
-    userName: session.user.name || "",
+    userId: dbUser.id,
+    organizationId: dbUser.organizationId,
+    role: (dbUser.role || "USER") as "ADMIN" | "USER",
+    userName: dbUser.name || "",
   };
 }
 
