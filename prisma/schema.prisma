@@ -539,6 +539,11 @@ model Comment {
   // observations about a search ("HM cobra una comisión", "salary
   // cap real es 180k", etc.) with authorship + timestamps + mentions.
   jobId        String?
+  // ClientJob-level notes — the chat-style thread on the client
+  // portal job page. Private to the hiring company's team and never
+  // synced to the agency side (those have their own Job.notes /
+  // jobId thread). CommentType is always CLIENT_INTERNAL here.
+  clientJobId  String?
   userId       String?
   clientUserId String?
   createdAt    DateTime    @default(now())
@@ -547,12 +552,14 @@ model Comment {
   candidate  Candidate?            @relation("CandidateComments", fields: [candidateId], references: [id])
   submission CandidateSubmission?  @relation("SubmissionComments", fields: [submissionId], references: [id])
   job        Job?                  @relation("JobComments", fields: [jobId], references: [id])
+  clientJob  ClientJob?            @relation("ClientJobComments", fields: [clientJobId], references: [id])
   user       User?                 @relation(fields: [userId], references: [id])
   clientUser ClientUser?           @relation(fields: [clientUserId], references: [id])
 
   @@index([candidateId])
   @@index([submissionId])
   @@index([jobId])
+  @@index([clientJobId])
 }
 
 enum CommentType {
@@ -821,6 +828,10 @@ model ClientJob {
   // can see it (backwards-compatible default for jobs created before
   // this feature shipped). Admins always see everything regardless.
   members            ClientJobMember[]
+  // Chat-style notes thread for the client team. Replaces the legacy
+  // free-form `notes` string above; that field is kept for historical
+  // rows and is backfilled into Comment rows on first migration.
+  comments           Comment[]           @relation("ClientJobComments")
 
   @@index([clientId])
   @@index([status])

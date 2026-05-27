@@ -34,6 +34,22 @@ export async function GET() {
             clientUser: { select: { id: true, name: true, email: true, role: true } },
           },
         },
+        // Chat-style notes thread for the client team (replaces the
+        // legacy `notes` string). CLIENT_INTERNAL by definition — the
+        // agency side never sees these rows.
+        comments: {
+          where: { type: "CLIENT_INTERNAL" },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            content: true,
+            type: true,
+            mentions: true,
+            createdAt: true,
+            clientUserId: true,
+            clientUser: { select: { id: true, name: true, title: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, use, useRef } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { ClientJobChat } from "@/components/client-portal/client-job-chat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +74,8 @@ type InviteLookup = {
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { data: session } = useSession();
+  const currentClientUserId = (session?.user as any)?.id || "";
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -476,10 +480,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Job Details */}
         <div className="lg:col-span-2 space-y-4">
-          <ClientJobNotesCard
+          <ClientJobChat
             jobId={id}
-            initialNotes={job?.notes ?? null}
-            onSaved={(next) => setJob((prev: any) => prev ? { ...prev, notes: next } : prev)}
+            comments={job?.comments || []}
+            onCommentAdded={fetchJob}
+            currentClientUserId={currentClientUserId}
           />
           {editing ? (
             <Card>
@@ -1453,97 +1458,3 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   );
 }
 
-// Hiring-company-private notes scoped to this ClientJob. Mirrors the
-// agency-side JobNotesCard pattern but persists to the client-portal
-// PUT route. Nothing on this card ever crosses back to the firms
-// engaged on the JO — Job.notes on the agency side is a separate
-// field that stays internal there.
-function ClientJobNotesCard({
-  jobId,
-  initialNotes,
-  onSaved,
-}: {
-  jobId: string;
-  initialNotes: string | null;
-  onSaved?: (notes: string | null) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [notes, setNotes] = useState<string>(initialNotes ?? "");
-  const [draft, setDraft] = useState<string>(initialNotes ?? "");
-  const [saving, setSaving] = useState(false);
-
-  // Resync when parent's notes change (refetch, etc.). Skipped while
-  // editing so a refetch doesn't blow away the user's draft.
-  useEffect(() => {
-    if (editing) return;
-    setNotes(initialNotes ?? "");
-    setDraft(initialNotes ?? "");
-  }, [initialNotes, editing]);
-
-  function startEdit() {
-    setDraft(notes);
-    setEditing(true);
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const trimmed = draft.trim();
-      const next = trimmed === "" ? null : trimmed;
-      const res = await fetch(`/api/client-portal/jobs/${jobId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: next }),
-      });
-      if (res.ok) {
-        setNotes(trimmed);
-        setEditing(false);
-        onSaved?.(next);
-      }
-    } catch {}
-    setSaving(false);
-  }
-
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Notes</h3>
-            <p className="text-xs text-gray-400">Private to your team. The recruiting firm never sees this.</p>
-          </div>
-          {!editing && (
-            <Button size="sm" variant="outline" className="text-xs gap-1" onClick={startEdit}>
-              <Pencil className="h-3.5 w-3.5" />
-              {notes ? "Edit" : "Add notes"}
-            </Button>
-          )}
-        </div>
-        {editing ? (
-          <div className="space-y-2">
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Internal notes for your team — HM preferences, scheduling quirks, budget caveats…"
-              rows={6}
-              className="text-sm"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setEditing(false); setDraft(notes); }}>
-                Cancel
-              </Button>
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={saving} onClick={save}>
-                {saving ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-        ) : notes ? (
-          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notes}</p>
-        ) : (
-          <p className="text-xs text-gray-400 italic">No notes yet.</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
