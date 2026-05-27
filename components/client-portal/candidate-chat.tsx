@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Lock, Globe, Send, AtSign, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,52 @@ function relativeTime(iso: string): string {
   if (d === 1) return "Yesterday";
   if (d < 7) return `${d}d ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Clock time (HH:MM, 24h) shown alongside every message — matches the
+// agency-side ChatNotes so the experience is uniform across the ATS.
+function clockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function fullTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Day-separator label for the divider rendered between messages from
+// different calendar days. Same vocabulary as the agency side.
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function sameDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 function initials(name: string): string {
@@ -263,50 +309,73 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
             </div>
           </div>
         ) : (
-          [...tabComments]
-            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-            .map((c) => {
+          (() => {
+            const sorted = [...tabComments].sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+            return sorted.map((c, idx) => {
               const isStaffing = !!c.user?.name && !c.clientUser?.name;
               const authorName = c.user?.name || c.clientUser?.name || "Unknown";
               const authorTitle = c.clientUser?.title;
+              // Day separator before the first message of each calendar day.
+              const prev = idx > 0 ? sorted[idx - 1] : null;
+              const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
               return (
-                <div key={c.id} className="flex items-start gap-2.5">
-                  <div
-                    className={cn(
-                      "w-8 h-8 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
-                      isStaffing
-                        ? "bg-gradient-to-br from-indigo-500 to-violet-600"
-                        : "bg-gradient-to-br from-emerald-500 to-teal-600"
-                    )}
-                  >
-                    {initials(authorName)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-gray-900">{authorName}</p>
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "text-[9px] h-4 px-1.5",
-                          isStaffing
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "bg-emerald-50 text-emerald-700"
-                        )}
-                      >
-                        {isStaffing ? "Recruiter" : "Team"}
-                      </Badge>
-                      {authorTitle && !isStaffing && (
-                        <span className="text-[11px] text-gray-500">{authorTitle}</span>
-                      )}
-                      <span className="text-[10px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                <Fragment key={c.id}>
+                  {showDaySeparator && (
+                    <div className="flex items-center gap-2 my-2" aria-hidden="true">
+                      <div className="flex-1 h-px bg-gray-200" />
+                      <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
+                        {dayLabel(c.createdAt)}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200" />
                     </div>
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap mt-0.5">
-                      {renderMentions(c.content)}
-                    </p>
+                  )}
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      className={cn(
+                        "w-8 h-8 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
+                        isStaffing
+                          ? "bg-gradient-to-br from-indigo-500 to-violet-600"
+                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                      )}
+                    >
+                      {initials(authorName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-900">{authorName}</p>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "text-[9px] h-4 px-1.5",
+                            isStaffing
+                              ? "bg-indigo-50 text-indigo-700"
+                              : "bg-emerald-50 text-emerald-700"
+                          )}
+                        >
+                          {isStaffing ? "Recruiter" : "Team"}
+                        </Badge>
+                        {authorTitle && !isStaffing && (
+                          <span className="text-[11px] text-gray-500">{authorTitle}</span>
+                        )}
+                        <span className="text-[10px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                        <span
+                          className="text-[10px] text-gray-400"
+                          title={fullTimestamp(c.createdAt)}
+                        >
+                          · {clockTime(c.createdAt)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap mt-0.5">
+                        {renderMentions(c.content)}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               );
-            })
+            });
+          })()
         )}
       </div>
 
