@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
@@ -967,32 +968,13 @@ export function PlacementDialog(props: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-salary">Agreed salary</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                    {getCurrency(currency)?.symbol || "$"}
-                  </span>
-                  <Input
-                    id="placement-salary"
-                    // type="text" so we can render the formatted
-                    // value with commas. inputMode="decimal" keeps
-                    // the numeric keyboard on phones.
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="pl-7"
-                    value={salaryFocused ? agreedSalary : formatSalaryForDisplay(agreedSalary)}
-                    onChange={(e) => {
-                      // Strip any non-digit/decimal chars (commas
-                      // we inserted, accidental spaces, etc.) so
-                      // the stored value stays pristine and the
-                      // submit path's Number() conversion works.
-                      const raw = e.target.value.replace(/[^\d.]/g, "");
-                      setAgreedSalary(raw);
-                    }}
-                    onFocus={() => setSalaryFocused(true)}
-                    onBlur={() => setSalaryFocused(false)}
-                  />
-                </div>
+                <MoneyInput
+                  id="placement-salary"
+                  prefix={getCurrency(currency)?.symbol || "$"}
+                  placeholder="0"
+                  value={agreedSalary}
+                  onChange={setAgreedSalary}
+                />
                 <div className="flex items-center justify-between gap-2">
                   <div className="inline-flex rounded-md border bg-white p-0.5">
                     {(["MONTHLY", "ANNUAL"] as const).map((p) => (
@@ -1044,17 +1026,12 @@ export function PlacementDialog(props: Props) {
               <div className="space-y-1.5">
                 <Label className="text-xs">Fee</Label>
                 <div className="flex gap-1.5">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                      {feeType === "FLAT" ? (getCurrency(currency)?.symbol || "$") : "%"}
-                    </span>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
+                  <div className="flex-1">
+                    <MoneyInput
+                      prefix={feeType === "FLAT" ? (getCurrency(currency)?.symbol || "$") : "%"}
                       placeholder="0"
-                      className="pl-7"
                       value={feeInput}
-                      onChange={(e) => setFeeInput(e.target.value)}
+                      onChange={setFeeInput}
                     />
                   </div>
                   <select

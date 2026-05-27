@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -605,22 +606,18 @@ function NewCandidatePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="currentSalary">Current Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
-                <Input
+                <MoneyInput
                   id="currentSalary"
-                  name="currentSalary"
-                  type="number"
                   value={formValues.currentSalary}
-                  onChange={(e) => updateField("currentSalary", e.target.value)}
+                  onChange={(v) => updateField("currentSalary", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="desiredSalary">Desired Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
-                <Input
+                <MoneyInput
                   id="desiredSalary"
-                  name="desiredSalary"
-                  type="number"
                   value={formValues.desiredSalary}
-                  onChange={(e) => updateField("desiredSalary", e.target.value)}
+                  onChange={(v) => updateField("desiredSalary", v)}
                 />
               </div>
             </div>
