@@ -15,7 +15,9 @@ import {
 import { Trophy, DollarSign, Plus } from "lucide-react";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
-import { fetchUsdRates, convertToUsd } from "@/lib/exchange-rates";
+// Currency conversion (fetchUsdRates / convertToUsd) was removed for
+// MVP — every placement is treated as already in USD. If multi-
+// currency reporting comes back later, see lib/exchange-rates.
 
 type JobOption = {
   id: string;
@@ -60,7 +62,6 @@ export default function PlacementsPage() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [jobOptions, setJobOptions] = useState<JobOption[]>([]);
   const [editingPlacement, setEditingPlacement] = useState<any | null>(null);
-  const [usdRates, setUsdRates] = useState<Record<string, number> | null>(null);
 
   // Revenue filter — defaults to the full current year ("ALL" quarters)
   // since the recruiter usually wants the headline number for the year
@@ -84,9 +85,6 @@ export default function PlacementsPage() {
 
   useEffect(() => {
     reloadPlacements();
-    // Fire-and-forget — page renders the per-currency breakdown if rates
-    // don't show up; the USD-normalized headline only appears once they do.
-    fetchUsdRates().then(setUsdRates).catch(() => setUsdRates(null));
   }, []);
 
   function openNewDialog() {
@@ -115,10 +113,6 @@ export default function PlacementsPage() {
     selectedQuarter === "ALL"
       ? new Date(selectedYear, 12, 0, 23, 59, 59)
       : new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
-
-  function placementCurrency(p: any): string {
-    return p.currency || p.job?.currency || "USD";
-  }
 
   // The date a placement "belongs to" for revenue reporting. We anchor
   // on the actual start date when the candidate has already started,
@@ -159,27 +153,13 @@ export default function PlacementsPage() {
   const yearOptions: number[] = [];
   for (let y = currentYear; y >= earliestYear; y--) yearOptions.push(y);
 
-  const revenueByCurrency: Record<string, number> = {};
-  for (const p of quarterPlacements) {
-    const c = placementCurrency(p);
-    revenueByCurrency[c] = (revenueByCurrency[c] || 0) + (Number(p.feeAmount) || 0);
-  }
-
-  // Sum normalized to USD. If a currency is missing from the rates
-  // table (rare) we fall back to leaving it out of the USD total and
-  // surfacing it in `unconverted` so the recruiter knows.
+  // Revenue is the sum of feeAmounts treated as USD. Multi-currency
+  // normalisation was removed for MVP — recruiters enter every fee
+  // in USD and the headline is just the straight sum.
   let revenueUsd = 0;
-  const unconverted: Array<[string, number]> = [];
-  for (const [ccy, amount] of Object.entries(revenueByCurrency)) {
-    const usd = convertToUsd(amount, ccy, usdRates);
-    if (usd != null) {
-      revenueUsd += usd;
-    } else if (ccy !== "USD") {
-      unconverted.push([ccy, amount]);
-    }
+  for (const p of quarterPlacements) {
+    revenueUsd += Number(p.feeAmount) || 0;
   }
-  const currencyCount = Object.keys(revenueByCurrency).length;
-  const breakdownEntries = Object.entries(revenueByCurrency);
 
   if (loading) {
     return (
@@ -304,58 +284,19 @@ export default function PlacementsPage() {
           </div>
         </div>
         <CardContent className="p-5">
-          {usdRates ? (
-            <div className="space-y-1.5">
-              <div className="flex items-baseline gap-2">
-                <p className="text-4xl font-bold text-indigo-600 tracking-tight">
-                  {formatCurrency(revenueUsd, "USD")}
-                </p>
-                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  USD
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                <span className="font-medium">
-                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
-                </span>
-                <span className="text-gray-300">·</span>
-                <span className="text-gray-400">Rows show each placement&apos;s local currency.</span>
-              </div>
-              {unconverted.length > 0 && (
-                <p className="text-[11px] text-amber-600">
-                  Couldn&apos;t convert: {unconverted
-                    .map(([c, amt]) => formatCurrency(amt, c))
-                    .join(" · ")}
-                </p>
-              )}
+          <div className="space-y-1.5">
+            <div className="flex items-baseline gap-2">
+              <p className="text-4xl font-bold text-indigo-600 tracking-tight">
+                {formatCurrency(revenueUsd, "USD")}
+              </p>
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                USD
+              </span>
             </div>
-          ) : (
-            // Fallback while rates load (or if the fetch fails): show
-            // the per-currency breakdown raw so the recruiter sees their
-            // numbers anyway.
-            <div className="space-y-1.5">
-              {breakdownEntries.length === 0 ? (
-                <p className="text-4xl font-bold text-indigo-600 tracking-tight">
-                  {formatCurrency(0, "USD")}
-                </p>
-              ) : (
-                <div className="space-y-0.5">
-                  {breakdownEntries.map(([c, amt]) => (
-                    <p key={c} className="text-2xl font-bold text-indigo-600 tracking-tight">
-                      {formatCurrency(amt, c)}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span className="font-medium">
-                  {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
-                </span>
-                <span className="text-gray-300">·</span>
-                <span className="text-gray-400">Loading conversion rates…</span>
-              </div>
-            </div>
-          )}
+            <p className="text-xs text-gray-500">
+              {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -422,23 +363,9 @@ export default function PlacementsPage() {
                         {p.startDate ? formatDateOnly(p.startDate, "en-US", { month: "short", day: "numeric", year: "numeric" }) : "-"}
                       </TableCell>
                       <TableCell>
-                        {p.feeAmount ? (() => {
-                          const ccy = p.currency || p.job?.currency || "USD";
-                          const amount = Number(p.feeAmount);
-                          const local = formatCurrency(amount, ccy);
-                          if (ccy === "USD") return <span>{local}</span>;
-                          const usd = convertToUsd(amount, ccy, usdRates);
-                          return (
-                            <div className="leading-tight">
-                              <p className="font-medium">{local}</p>
-                              {usd != null && (
-                                <p className="text-[11px] text-gray-400">
-                                  ≈ {formatCurrency(usd, "USD")}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })() : "-"}
+                        {p.feeAmount
+                          ? formatCurrency(Number(p.feeAmount), "USD")
+                          : "-"}
                       </TableCell>
                       <TableCell>
                         <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>
