@@ -26,6 +26,7 @@ import {
   Pencil,
   Building2,
   CheckCircle,
+  AlertCircle,
   MessageSquare,
   Star,
   Send,
@@ -1950,33 +1951,47 @@ function CreateInterviewModal({
             <Textarea rows={3} placeholder="Interview agenda, preparation notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          {/* Notify toggle — only meaningful for Candidate Call interviews
-              (the recruiter wants to coordinate directly with the
-              candidate). Client Interviews are ATS-only by definition: the
-              client already runs that meeting, we just want it on the
-              recruiter's tracking ledger. */}
-          {purpose === "CANDIDATE" ? (
-            <label className="flex items-start gap-2.5 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={notifyAttendees}
-                onChange={(e) => setNotifyAttendees(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              />
+          {/* Notify toggle + disclaimer. The disclaimer used to be a
+              tiny gray helper line under the checkbox; users missed it
+              and ended up surprised on either side ("I thought the
+              candidate got the invite" or "wait, I didn't mean to
+              email them"). Now it's a coloured info banner that
+              changes shape with the toggle: amber when we'll save
+              internally only, emerald when we'll send the invite. */}
+          <label className="flex items-start gap-2.5 cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={notifyAttendees}
+              onChange={(e) => setNotifyAttendees(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Send calendar invite by email</p>
+              <p className="text-[11px] text-gray-500">
+                Off by default. Tick to email the candidate a calendar invite.
+              </p>
+            </div>
+          </label>
+
+          {notifyAttendees ? (
+            <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-900">
+              <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-900">Send calendar invite by email</p>
-                <p className="text-[11px] text-gray-500">
-                  Off by default — saves as an ATS record only. Tick to email the candidate a calendar invite.
+                <p className="font-semibold">A calendar invite will be emailed to the candidate.</p>
+                <p className="text-xs text-emerald-800/80 mt-0.5">
+                  They&apos;ll see the meeting in their email inbox and on their calendar.
                 </p>
               </div>
-            </label>
+            </div>
           ) : (
-            <div className="flex items-start gap-2.5 pt-1 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded px-3 py-2">
-              <CheckCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
-              <span>
-                Client interviews save as an internal ATS record. No emails are sent — the
-                client coordinates the meeting on their side.
-              </span>
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Saved as an internal ATS record only.</p>
+                <p className="text-xs text-amber-800/80 mt-0.5">
+                  The candidate won&apos;t be emailed. Tick the box above to send them a calendar invite.
+                </p>
+              </div>
             </div>
           )}
 
