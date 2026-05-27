@@ -163,6 +163,15 @@ function NewJobContent() {
   const [quickClientName, setQuickClientName] = useState("");
   const [quickClientIndustry, setQuickClientIndustry] = useState("");
   const [quickClientType, setQuickClientType] = useState<"RECRUITING" | "STAFF_AUG">("RECRUITING");
+  // Default fee terms — only used + sent when engagement type is
+  // RECRUITING (Staff Aug negotiates per job, so the client-level
+  // defaults stay null). Kept in dialog-local state so cancelling
+  // doesn't pollute anything.
+  const [quickClientCurrency, setQuickClientCurrency] = useState("USD");
+  const [quickClientFeeType, setQuickClientFeeType] = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
+  const [quickClientFeeAmount, setQuickClientFeeAmount] = useState("");
+  const [quickClientPaymentTerms, setQuickClientPaymentTerms] = useState("");
+  const [quickClientGuarantee, setQuickClientGuarantee] = useState("");
   const [quickClientSaving, setQuickClientSaving] = useState(false);
   const [quickClientError, setQuickClientError] = useState<string>("");
 
@@ -170,6 +179,11 @@ function NewJobContent() {
     setQuickClientName(name.trim());
     setQuickClientIndustry("");
     setQuickClientType("RECRUITING");
+    setQuickClientCurrency("USD");
+    setQuickClientFeeType("PERCENTAGE");
+    setQuickClientFeeAmount("");
+    setQuickClientPaymentTerms("");
+    setQuickClientGuarantee("");
     setQuickClientError("");
     setQuickClientOpen(true);
   }
@@ -183,6 +197,11 @@ function NewJobContent() {
     setQuickClientSaving(true);
     setQuickClientError("");
     try {
+      // Only forward fee defaults for Recruiting clients. Staff Aug
+      // intentionally leaves them null so the per-job form is the
+      // authoritative place — sending values here would seed a
+      // misleading client-level default.
+      const isRecruiting = quickClientType === "RECRUITING";
       const res = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -190,6 +209,20 @@ function NewJobContent() {
           name,
           industry: quickClientIndustry.trim() || undefined,
           engagementType: quickClientType,
+          defaultCurrency: isRecruiting ? quickClientCurrency : null,
+          defaultFeeType: isRecruiting ? quickClientFeeType : null,
+          defaultFeeAmount:
+            isRecruiting && quickClientFeeAmount.trim() !== ""
+              ? Number(quickClientFeeAmount)
+              : null,
+          defaultPaymentTerms:
+            isRecruiting && quickClientPaymentTerms.trim() !== ""
+              ? Number(quickClientPaymentTerms)
+              : null,
+          defaultGuaranteePeriod:
+            isRecruiting && quickClientGuarantee.trim() !== ""
+              ? Number(quickClientGuarantee)
+              : null,
         }),
       });
       const data = await res.json();
@@ -804,24 +837,25 @@ function NewJobContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Quick-create client. Only captures name + industry + the
-          engagement type that affects the fee-form shape on /jobs/new.
-          The recruiter fills the rest (defaults, website, contact,
-          stages, etc.) later from /clients/[id]. The dialog stays in
-          this page so the JD File the user uploaded survives — used
-          to navigate to /clients/new, which dropped the File on
-          return. */}
+      {/* Quick-create client. Captures everything the recruiter
+          normally fills at the client level: name, industry,
+          engagement type, and — for Recruiting — the default fee
+          terms that will pre-fill every Job and Placement at this
+          client. Staff Aug clients skip the terms section because
+          those clients negotiate fees per-job, so a client-level
+          default would be misleading. Website / contacts / notes
+          stay on the full /clients/[id] page. */}
       <Dialog open={quickClientOpen} onOpenChange={(open) => {
         if (!quickClientSaving) setQuickClientOpen(open);
       }}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Quick-create client</DialogTitle>
             <DialogDescription>
-              Just the name to get going. You can fill in fee terms, contacts and other details later on the client page.
+              Add the company and (for Recruiting) the default fee terms. Website, contacts and other details live on the client page.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
             {quickClientError && (
               <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{quickClientError}</div>
             )}
@@ -835,26 +869,95 @@ function NewJobContent() {
                 placeholder="Acme Corp"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Industry</Label>
-              <Input
-                autoComplete="off"
-                value={quickClientIndustry}
-                onChange={(e) => setQuickClientIndustry(e.target.value)}
-                placeholder="Technology, Finance, etc."
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Industry</Label>
+                <Input
+                  autoComplete="off"
+                  value={quickClientIndustry}
+                  onChange={(e) => setQuickClientIndustry(e.target.value)}
+                  placeholder="Technology, Finance, etc."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Engagement type</Label>
+                <select
+                  value={quickClientType}
+                  onChange={(e) => setQuickClientType(e.target.value as "RECRUITING" | "STAFF_AUG")}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                >
+                  <option value="RECRUITING">Recruiting</option>
+                  <option value="STAFF_AUG">Staff Aug</option>
+                </select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Engagement type</Label>
-              <select
-                value={quickClientType}
-                onChange={(e) => setQuickClientType(e.target.value as "RECRUITING" | "STAFF_AUG")}
-                className="w-full border rounded-md px-3 py-2 text-sm"
-              >
-                <option value="RECRUITING">Recruiting (fees + terms at the client level)</option>
-                <option value="STAFF_AUG">Staff Aug (fees + terms negotiated per job)</option>
-              </select>
-            </div>
+
+            {quickClientType === "RECRUITING" && (
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-1">Default fee terms</h3>
+                <p className="text-xs text-gray-400 mb-3">Pre-fill every Job and Placement at this client. Override per-job as needed.</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Currency</Label>
+                    <CurrencyPicker
+                      value={quickClientCurrency}
+                      onChange={(c) => setQuickClientCurrency(c)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Fee Type</Label>
+                    <select
+                      value={quickClientFeeType}
+                      onChange={(e) => setQuickClientFeeType(e.target.value as "PERCENTAGE" | "FLAT")}
+                      className="w-full border rounded-md px-3 py-2 text-sm"
+                    >
+                      <option value="PERCENTAGE">Percentage</option>
+                      <option value="FLAT">Flat Fee</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Fee Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
+                        {quickClientFeeType === "FLAT" ? "$" : "%"}
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 15"
+                        className="pl-7"
+                        value={quickClientFeeAmount}
+                        onChange={(e) => setQuickClientFeeAmount(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Payment terms (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="30"
+                      value={quickClientPaymentTerms}
+                      onChange={(e) => setQuickClientPaymentTerms(e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Days from start date to invoice due (Net 30 = 30).</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Guarantee period (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="90"
+                      value={quickClientGuarantee}
+                      onChange={(e) => setQuickClientGuarantee(e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Replacement window after the candidate starts.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
