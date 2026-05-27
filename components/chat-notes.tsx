@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { Fragment, useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,55 @@ function relativeTime(dateStr: string): string {
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Clock time shown next to every bubble (HH:MM in the viewer's locale,
+// 24h since recruiters scan a lot of messages and the colon-separated
+// form is faster to parse than AM/PM).
+function clockTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+// Tooltip on the timestamp — full date + time, used as `title`.
+function fullTimestamp(dateStr: string): string {
+  return new Date(dateStr).toLocaleString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Day-separator label for the divider between messages from different
+// calendar days. "Today" / "Yesterday" / weekday-and-date for the
+// current year / full date for older messages.
+function dayLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function sameDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 function initials(name: string): string {
@@ -336,69 +385,96 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
             const { isClient, authorName, displayContent, rating, authorId } = parseComment(c);
             const isCurrentUser = authorId === currentUserId;
             const showHeader = shouldShowHeader(idx);
+            // Day separator: render a centered "Today"/"Yesterday"/date
+            // chip the first time we land on a new calendar day, so
+            // long-running threads read like a chat-history timeline.
+            const prev = idx > 0 ? filtered[idx - 1] : null;
+            const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
 
             return (
-              <div
-                key={c.id}
-                className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
-              >
-                <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
-                  {/* Avatar */}
-                  {showHeader ? (
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                        isClient
-                          ? "bg-emerald-100 text-emerald-700"
-                          : isCurrentUser
-                          ? "bg-indigo-600 text-white"
-                          : "bg-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {initials(authorName)}
-                    </div>
-                  ) : (
-                    <div className="w-8 shrink-0" />
-                  )}
-
-                  {/* Message body */}
-                  <div className={isCurrentUser ? "text-right" : ""}>
-                    {showHeader && (
-                      <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
-                        <span className="text-xs font-semibold text-gray-700">{authorName}</span>
-                        {isClient && (
-                          <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
-                            Client
-                          </Badge>
-                        )}
-                        <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
-                      </div>
-                    )}
-
-                    {rating && (
-                      <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <Star
-                            key={n}
-                            className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {displayContent && (
+              <Fragment key={c.id}>
+                {showDaySeparator && (
+                  <div className="flex items-center gap-2 my-3" aria-hidden="true">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
+                      {dayLabel(c.createdAt)}
+                    </span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+                )}
+                <div
+                  className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
+                >
+                  <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                    {/* Avatar */}
+                    {showHeader ? (
                       <div
-                        className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
-                          isCurrentUser
-                            ? "bg-indigo-600 text-white rounded-tr-md"
-                            : "bg-gray-100 text-gray-800 rounded-tl-md"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                          isClient
+                            ? "bg-emerald-100 text-emerald-700"
+                            : isCurrentUser
+                            ? "bg-indigo-600 text-white"
+                            : "bg-gray-200 text-gray-600"
                         }`}
                       >
-                        {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                        {initials(authorName)}
                       </div>
+                    ) : (
+                      <div className="w-8 shrink-0" />
                     )}
+
+                    {/* Message body */}
+                    <div className={isCurrentUser ? "text-right" : ""}>
+                      {showHeader && (
+                        <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                          <span className="text-xs font-semibold text-gray-700">{authorName}</span>
+                          {isClient && (
+                            <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
+                              Client
+                            </Badge>
+                          )}
+                          <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                        </div>
+                      )}
+
+                      {rating && (
+                        <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Star
+                              key={n}
+                              className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Bubble + always-visible clock time. Time sits on
+                          the opposite side of the bubble (after for
+                          incoming, before for outgoing) so it never
+                          interferes with the message text. */}
+                      {displayContent && (
+                        <div className={`flex items-end gap-1.5 ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                          <div
+                            className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
+                              isCurrentUser
+                                ? "bg-indigo-600 text-white rounded-tr-md"
+                                : "bg-gray-100 text-gray-800 rounded-tl-md"
+                            }`}
+                          >
+                            {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                          </div>
+                          <span
+                            className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
+                            title={fullTimestamp(c.createdAt)}
+                          >
+                            {clockTime(c.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Fragment>
             );
           })
         )}
