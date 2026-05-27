@@ -96,7 +96,12 @@ export default async function DashboardPage() {
         stage: { name: "Placed" },
       },
     }),
-    prisma.client.count({ where: { organizationId: orgId } }),
+    // Shared-Client model (PR #139): a Client now belongs to many
+    // agencies via OrganizationClient. The dashboard's "Clients"
+    // count is meant to be "clients THIS firm is engaged with",
+    // not "every Client row in the DB" — that's why an agency with
+    // 11 engaged clients was seeing 338 (the global pool).
+    prisma.organizationClient.count({ where: { organizationId: orgId } }),
     prisma.activity.findMany({
       where: { organizationId: orgId },
       orderBy: { createdAt: "desc" },
