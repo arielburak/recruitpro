@@ -1305,8 +1305,14 @@ function CreateInterviewModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Interview purpose
-  const [purpose, setPurpose] = useState<"CANDIDATE" | "CLIENT" | null>(null);
+  // Interview purpose. Used to be a two-step picker (Candidate Call /
+  // Client Interview) but the Client Interview tracking flow isn't
+  // shipping in MVP, so we skip the picker and default straight to
+  // CANDIDATE. The `interviewPurpose()` inference further down still
+  // tags pre-existing client-side interviews (clientContacts.length > 0)
+  // with CLIENT so historical events keep their amber colour in the
+  // calendar; just the *creation* path is single-type now.
+  const [purpose, setPurpose] = useState<"CANDIDATE" | "CLIENT" | null>("CANDIDATE");
 
   // Notify mode: false = ATS-only record (no emails fire), true = full
   // invite path (candidate + client contacts get the calendar invite).
@@ -1545,51 +1551,6 @@ function CreateInterviewModal({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>}
-
-          {/* Purpose Selector */}
-          {!purpose ? (
-            <div className="space-y-3">
-              <p className="text-sm text-gray-600 font-medium">What type of interview is this?</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPurpose("CANDIDATE")}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-center group"
-                >
-                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
-                    <User className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">Candidate Call</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">Screen or interview a candidate directly</p>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPurpose("CLIENT"); setNotifyAttendees(false); }}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 transition-all text-center group"
-                >
-                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
-                    <Building2 className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">Client Interview</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">Log an interview between the candidate and the client (no emails sent)</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-          ) : (
-          <>
-
-          {/* Purpose Badge */}
-          <div className="flex items-center justify-between">
-            <Badge className={`text-xs ${purpose === "CANDIDATE" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>
-              {purpose === "CANDIDATE" ? "Candidate Call" : "Client Interview"}
-            </Badge>
-            <button type="button" onClick={() => { setPurpose(null); setSelectedCandidate(null); setSelectedSubmissionId(""); setTitle(""); setSelectedClientContacts([]); }}
-              className="text-xs text-gray-400 hover:text-gray-600">Change type</button>
-          </div>
 
           {/* Candidate Search */}
           <div className="space-y-2">
@@ -2026,9 +1987,6 @@ function CreateInterviewModal({
               {saving ? "Saving..." : notifyAttendees ? "Save & send invite" : "Save to ATS"}
             </Button>
           </div>
-
-          </>
-          )}
         </form>
       </div>
     </div>
