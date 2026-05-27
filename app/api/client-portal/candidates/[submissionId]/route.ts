@@ -75,13 +75,17 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    // My rating
-    const myRating = await prisma.candidateRating.findUnique({
+    // My rating. The Prisma client generic for `candidateRating` has
+    // grown deep enough that the inferred awaited type trips
+    // TS's "Excessive stack depth" comparison check during build.
+    // Casting the delegate to `any` at the call site sidesteps the
+    // comparison; we narrow the result with an explicit type so the
+    // rest of the file stays typed.
+    type MyRating = { score: number; feedback: string | null; createdAt: Date } | null;
+    const myRating: MyRating = await (prisma.candidateRating as any).findFirst({
       where: {
-        submissionId_clientUserId: {
-          submissionId,
-          clientUserId: ctx.clientUserId,
-        },
+        submissionId,
+        clientUserId: ctx.clientUserId,
       },
       select: { score: true, feedback: true, createdAt: true },
     });
