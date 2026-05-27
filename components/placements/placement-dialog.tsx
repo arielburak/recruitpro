@@ -154,6 +154,24 @@ export function PlacementDialog(props: Props) {
   const [estimatedStartDate, setEstimatedStartDate] = useState("");
   const [startDate, setStartDate] = useState(""); // edit mode only
   const [agreedSalary, setAgreedSalary] = useState("");
+  // Toggle between formatted-with-thousand-separators (when blurred,
+  // for readability — "3,500,000") and raw digits (while focused, so
+  // the user can edit without cursor-position acrobatics). Stored
+  // value in `agreedSalary` is always the raw numeric string so the
+  // submit path keeps working unchanged.
+  const [salaryFocused, setSalaryFocused] = useState(false);
+  function formatSalaryForDisplay(raw: string): string {
+    if (!raw) return "";
+    // Split out an in-progress decimal so the user can type "150.5"
+    // without us reformatting mid-type. en-US convention because
+    // that's the target market — dots stay as decimal separator,
+    // commas group thousands regardless of where the recruiter
+    // happens to be running their browser.
+    const m = raw.match(/^(-?\d+)(\.\d*)?$/);
+    if (!m) return raw;
+    const intPart = Number(m[1]).toLocaleString("en-US");
+    return intPart + (m[2] || "");
+  }
   // ISO 4217 currency code. Falls back to USD by default — the most common
   // case for our target market (US recruiting firms) — and gets overridden
   // by the job/client default when the dialog opens.
