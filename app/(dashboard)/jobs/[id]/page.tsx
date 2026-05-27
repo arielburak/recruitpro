@@ -24,6 +24,7 @@ import { InterviewsList } from "@/components/interviews/interviews-list";
 import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { ChatNotes } from "@/components/chat-notes";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -1220,6 +1221,9 @@ export default function JobDetailPage() {
           <TabsTrigger value="interviews">
             Interviews ({job.interviews?.length || 0})
           </TabsTrigger>
+          <TabsTrigger value="notes">
+            Notes ({job.comments?.length || 0})
+          </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
@@ -1406,12 +1410,23 @@ export default function JobDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="details" className="space-y-4">
-          <JobNotesCard
+        <TabsContent value="notes" className="space-y-3">
+          {/* Job-level chat — same pattern as candidate notes. Lives
+              under Comment.jobId, distinct from per-submission threads.
+              Use this for standing notes about the search itself
+              (client quirks, comp realities, hidden requirements) that
+              don't belong tied to one candidate. */}
+          <ChatNotes
+            comments={(job.comments || []).slice().sort(
+              (a: any, b: any) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            )}
             jobId={params.id as string}
-            initialNotes={job.notes}
-            onSaved={(next) => setJob((prev: any) => prev ? { ...prev, notes: next } : prev)}
+            onCommentAdded={fetchJob}
           />
+        </TabsContent>
+
+        <TabsContent value="details" className="space-y-4">
           <div className="border rounded-xl bg-white p-5 space-y-5">
               {!editing ? (
                 <>
@@ -1868,100 +1883,3 @@ export default function JobDetailPage() {
   );
 }
 
-// Recruiter-private notes scoped to this job. Inline edit pattern: read
-// mode renders the markdown as plain text, Edit swaps to a Textarea
-// with Save / Cancel. Persists via PATCH /api/jobs/[id]. Strictly
-// agency-side — the client portal has its own ClientJob.notes that
-// doesn't sync back.
-function JobNotesCard({
-  jobId,
-  initialNotes,
-  onSaved,
-}: {
-  jobId: string;
-  initialNotes: string | null;
-  // Called on a successful save so the parent can update its own
-  // `job.notes` state. Without this, remounting the card (e.g. tab
-  // switch) would re-seed from a stale `initialNotes` and the user's
-  // freshly saved value would visually revert.
-  onSaved?: (notes: string | null) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [notes, setNotes] = useState<string>(initialNotes ?? "");
-  const [draft, setDraft] = useState<string>(initialNotes ?? "");
-  const [saving, setSaving] = useState(false);
-
-  // Resync local state when the parent's notes value updates (refetch,
-  // optimistic update, etc.). Skipped while the user is mid-edit so a
-  // stray refetch doesn't blow away the draft they're typing.
-  useEffect(() => {
-    if (editing) return;
-    setNotes(initialNotes ?? "");
-    setDraft(initialNotes ?? "");
-  }, [initialNotes, editing]);
-
-  function startEdit() {
-    setDraft(notes);
-    setEditing(true);
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const trimmed = draft.trim();
-      const next = trimmed === "" ? null : trimmed;
-      const res = await fetch(`/api/jobs/${jobId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: next }),
-      });
-      if (res.ok) {
-        setNotes(trimmed);
-        setEditing(false);
-        onSaved?.(next);
-      }
-    } catch {}
-    setSaving(false);
-  }
-
-  return (
-    <div className="border rounded-xl bg-white p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Notes</h3>
-          <p className="text-xs text-gray-400">Private to your firm. The client never sees this.</p>
-        </div>
-        {!editing && (
-          <Button size="sm" variant="outline" className="text-xs gap-1" onClick={startEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-            {notes ? "Edit" : "Add notes"}
-          </Button>
-        )}
-      </div>
-      {editing ? (
-        <div className="space-y-2">
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Anything to remember about this search — HM preferences, salary caps below the JD, scheduling quirks…"
-            rows={6}
-            className="text-sm"
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setEditing(false); setDraft(notes); }}>
-              Cancel
-            </Button>
-            <Button size="sm" disabled={saving} onClick={save}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        </div>
-      ) : notes ? (
-        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notes}</p>
-      ) : (
-        <p className="text-xs text-gray-400 italic">No notes yet.</p>
-      )}
-    </div>
-  );
-}

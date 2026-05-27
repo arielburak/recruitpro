@@ -374,6 +374,7 @@ model Job {
   organization   Organization        @relation(fields: [organizationId], references: [id])
   stages         PipelineStage[]
   submissions    CandidateSubmission[]
+  comments       Comment[]           @relation("JobComments")
   assignments    JobAssignment[]
   placements     Placement[]
   documents      Document[]
@@ -533,6 +534,11 @@ model Comment {
   mentions     String[]    @default([])
   candidateId  String?
   submissionId String?
+  // Job-level notes — the chat-style thread on /jobs/[id] (no
+  // submission required). Lets the recruiter capture standing
+  // observations about a search ("HM cobra una comisión", "salary
+  // cap real es 180k", etc.) with authorship + timestamps + mentions.
+  jobId        String?
   userId       String?
   clientUserId String?
   createdAt    DateTime    @default(now())
@@ -540,11 +546,13 @@ model Comment {
 
   candidate  Candidate?            @relation("CandidateComments", fields: [candidateId], references: [id])
   submission CandidateSubmission?  @relation("SubmissionComments", fields: [submissionId], references: [id])
+  job        Job?                  @relation("JobComments", fields: [jobId], references: [id])
   user       User?                 @relation(fields: [userId], references: [id])
   clientUser ClientUser?           @relation(fields: [clientUserId], references: [id])
 
   @@index([candidateId])
   @@index([submissionId])
+  @@index([jobId])
 }
 
 enum CommentType {
