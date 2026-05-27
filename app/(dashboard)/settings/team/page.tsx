@@ -220,7 +220,7 @@ export default function AdminUsersPage() {
                 <Input
                   name="name"
                   type="text"
-                  placeholder="John Smith"
+                  placeholder="e.g. María López"
                   required
                 />
               </div>

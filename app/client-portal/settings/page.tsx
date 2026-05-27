@@ -516,7 +516,7 @@ export default function ClientPortalSettingsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <Label className="text-xs">Name *</Label>
-                        <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="John Smith" className="text-sm" required />
+                        <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="e.g. María López" className="text-sm" required />
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Job Title</Label>
