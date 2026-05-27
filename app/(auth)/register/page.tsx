@@ -334,7 +334,7 @@ export default function RegisterPage() {
                 <Input
                   id="name"
                   name="name"
-                  placeholder="John Smith"
+                  placeholder="e.g. María López"
                   className="focus-visible:ring-indigo-500"
                   required
                 />

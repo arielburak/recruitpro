@@ -563,7 +563,7 @@ export default function ClientDashboardPage() {
                     <Input
                       value={inviteName}
                       onChange={(e) => setInviteName(e.target.value)}
-                      placeholder="John Smith"
+                      placeholder="e.g. María López"
                       className="text-sm"
                       required
                     />
