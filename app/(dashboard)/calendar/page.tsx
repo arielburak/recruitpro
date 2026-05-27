@@ -32,6 +32,7 @@ import {
   Send,
   Calendar as CalendarIcon,
   Paperclip,
+  BellOff,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDateOnly } from "@/lib/utils";
@@ -126,6 +127,10 @@ type Interview = {
   meetingLink?: string;
   location?: string;
   timezone?: string;
+  // True iff the candidate was emailed at create time. Calendar UI
+  // surfaces a "internal only" marker when false. Pre-migration rows
+  // come back false because we don't have a historical record.
+  inviteSent?: boolean;
   candidate: { id: string; firstName: string; lastName: string };
   job: { id: string; title: string; client: { name: string } };
   creator: { name: string };
@@ -603,7 +608,8 @@ export default function CalendarPage() {
                               className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
                               title={
                                 `${purpose === "CLIENT" ? "Client interview" : "Candidate call"} · ${time} · ${typeLabel} · ${meta}` +
-                                (docCount > 0 ? ` · ${docCount} attachment${docCount === 1 ? "" : "s"}` : "")
+                                (docCount > 0 ? ` · ${docCount} attachment${docCount === 1 ? "" : "s"}` : "") +
+                                (iv.inviteSent === false ? " · internal only — no invite sent" : "")
                               }
                             >
                               <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label} flex items-center gap-1`}>
@@ -614,6 +620,14 @@ export default function CalendarPage() {
                                   // Clicking the chip still opens the
                                   // sidebar where the files are listed.
                                   <Paperclip className="h-2.5 w-2.5 opacity-70" />
+                                )}
+                                {iv.inviteSent === false && (
+                                  // "Internal only" marker — candidate
+                                  // wasn't emailed. Mirrors the amber
+                                  // banner inside the create dialog so
+                                  // the state is recognisable across
+                                  // surfaces.
+                                  <BellOff className="h-2.5 w-2.5 opacity-70" />
                                 )}
                               </p>
                               <p className={`text-[10px] truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
@@ -778,6 +792,9 @@ export default function CalendarPage() {
                                 {(iv._count?.documents || 0) > 0 && (
                                   <Paperclip className="h-2.5 w-2.5 opacity-70" />
                                 )}
+                                {iv.inviteSent === false && (
+                                  <BellOff className="h-2.5 w-2.5 opacity-70" />
+                                )}
                               </p>
                               <p className={`text-xs truncate ${styles.meta} ${iv.status === "CANCELLED" ? "line-through" : ""}`}>
                                 {iv.candidate.firstName} {iv.candidate.lastName}
@@ -881,6 +898,20 @@ export default function CalendarPage() {
                     </Link>
                     <span className="text-gray-400 text-xs">@ {selectedInterview.job.client.name}</span>
                   </div>
+
+                  {/* "Internal only" notice — the candidate wasn't
+                      emailed at create time. Mirrors the amber banner
+                      from the create dialog so the state is the same
+                      shape across surfaces. */}
+                  {(selectedInterview as any).inviteSent === false && (
+                    <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+                      <BellOff className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+                      <div className="text-xs">
+                        <p className="font-medium">Internal only — no invite was sent</p>
+                        <p className="text-amber-700 mt-0.5">The candidate wasn&apos;t emailed about this meeting.</p>
+                      </div>
+                    </div>
+                  )}
 
                   {selectedInterview.meetingLink && (
                     <div className="space-y-1.5">
