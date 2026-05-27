@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { notifyOnNewComment } from "@/lib/chat-notifications";
+import { logActivity } from "@/lib/activity";
 
 // Helper: verify the submission belongs to this client AND is shared
 async function verifyAccess(submissionId: string, clientId: string) {
@@ -140,6 +141,40 @@ export async function POST(
         authorId: ctx.clientUserId,
         authorName: ctx.userName || "A teammate",
       }).catch((e) => console.error("[client feedback POST] notify failed:", e));
+
+      // Activity log: only surface CLIENT_VISIBLE posts on the
+      // agency-side candidate timeline. CLIENT_INTERNAL is the
+      // client's private team chat — leaking that into the agency's
+      // activity feed would defeat the whole point of having two tabs.
+      if (requestedType === "CLIENT_VISIBLE") {
+        try {
+          const sub = await prisma.candidateSubmission.findUnique({
+            where: { id: submissionId },
+            select: {
+              candidateId: true,
+              job: { select: { organizationId: true } },
+            },
+          });
+          if (sub?.candidateId && sub.job?.organizationId) {
+            const preview = comment.length > 80 ? comment.slice(0, 77) + "…" : comment;
+            await logActivity({
+              action: "comment.created",
+              description: `${ctx.userName || "A client"} posted a client-shared note: "${preview}"`,
+              candidateId: sub.candidateId,
+              organizationId: sub.job.organizationId,
+              metadata: {
+                type: requestedType,
+                mentions: mentions.length,
+                submissionId,
+                authorKind: "client",
+                clientUserId: ctx.clientUserId,
+              },
+            });
+          }
+        } catch (e) {
+          console.error("[client feedback POST] activity log failed:", e);
+        }
+      }
     }
 
     return NextResponse.json({ success: true });
