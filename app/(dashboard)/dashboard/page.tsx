@@ -241,13 +241,20 @@ export default async function DashboardPage() {
 
   const isNewUser = totalCandidates === 0 && activeJobs === 0 && totalClients === 0;
 
-  // Calculate trends
-  const candidateTrend = candidatesLastMonth > 0
-    ? Math.round(((candidatesThisMonth - candidatesLastMonth) / candidatesLastMonth) * 100)
-    : candidatesThisMonth > 0 ? 100 : 0;
-  const placementTrend = placementsLastMonth > 0
-    ? Math.round(((placementsThisMonth - placementsLastMonth) / placementsLastMonth) * 100)
-    : placementsThisMonth > 0 ? 100 : 0;
+  // Trend calculation policy: only show a MoM % when both windows
+  // have enough events to make the ratio meaningful. With ≥ 3 events
+  // in BOTH the current and prior 30-day windows the % is real signal;
+  // anything below that is noise from sparse data, test churn, or
+  // "we just launched and there's no history yet." Returning null
+  // tells the card to render the absolute number alone — cleaner than
+  // a misleading "+100% / -73%" pulled from a tiny sample.
+  function meaningfulTrend(current: number, prior: number): number | null {
+    const MIN_SAMPLE = 3;
+    if (current < MIN_SAMPLE || prior < MIN_SAMPLE) return null;
+    return Math.round(((current - prior) / prior) * 100);
+  }
+  const candidateTrend = meaningfulTrend(candidatesThisMonth, candidatesLastMonth);
+  const placementTrend = meaningfulTrend(placementsThisMonth, placementsLastMonth);
 
   const totalInPipeline = pipelineChartData.reduce((sum, d) => sum + d.count, 0);
 
@@ -462,7 +469,11 @@ export default async function DashboardPage() {
                   <div className={`p-2 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-sm`}>
                     <stat.icon className="h-4 w-4 text-white" />
                   </div>
-                  {"trend" in stat && stat.trend !== undefined && stat.trend !== 0 && (
+                  {/* trend === null is the explicit "not enough sample
+                      to draw a meaningful % from" signal — render
+                      nothing. trend === 0 is "flat exactly" which is
+                      also worth hiding (a 0% chip is visual noise). */}
+                  {"trend" in stat && stat.trend !== undefined && stat.trend !== null && stat.trend !== 0 && (
                     <div className={`flex items-center gap-0.5 text-xs font-medium ${
                       stat.trend > 0 ? "text-emerald-600" : "text-red-500"
                     }`}>
