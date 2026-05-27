@@ -18,7 +18,11 @@ export async function POST(request: Request) {
 
     try {
       const formatted = await parseDocumentBuffer(buffer, file.name);
-      const fields = extractJobFields(formatted);
+      // Pass the filename — JDs are typically named like
+      // "Customer Support - Morabits.pdf" and the leading segment is
+      // the strongest title signal we have when the body starts with
+      // "About the company…" filler.
+      const fields = extractJobFields(formatted, file.name);
       return NextResponse.json({ text: formatted, fields });
     } catch (err: any) {
       return NextResponse.json({
