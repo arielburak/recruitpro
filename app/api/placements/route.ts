@@ -17,7 +17,16 @@ export async function GET() {
           select: {
             id: true,
             candidate: {
-              select: { id: true, firstName: true, lastName: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                // Recruiter who owns the candidate. Drives the per-row
+                // "Recruiter" column on /placements and the aggregate
+                // on the dashboard so attribution is visible without
+                // clicking through.
+                owner: { select: { id: true, name: true } },
+              },
             },
           },
         },
