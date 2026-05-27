@@ -21,13 +21,27 @@ export async function POST(request: Request) {
     // the hiring contact who already had a portal login.
     const inviteEmail = rawInviteEmail.trim().toLowerCase();
 
-    // Verify client belongs to org
+    // Verify the agency is engaged with this client. The old
+    // `Client.organizationId === orgId` filter only matched the agency
+    // that originally created the row, so an agency that engaged with
+    // a pre-existing shared client (post-PR #139) got a silent 404
+    // here — the invite never reached the email-send. Engagement is
+    // the source of truth for "this firm can act on this Client."
     const client = await prisma.client.findFirst({
-      where: { id: clientId, organizationId: ctx.organizationId },
+      where: {
+        id: clientId,
+        engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+      },
       select: { id: true, name: true },
     });
     if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      return NextResponse.json(
+        {
+          error:
+            "This client isn't in your firm's engagements. If you're sure it's the right company, open it from /clients first to re-engage.",
+        },
+        { status: 404 }
+      );
     }
 
     // One email → one Client (DB-enforced via `email @unique` on
