@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
     try {
       const formatted = await parseDocumentBuffer(buffer, file.name);
-      const fields = extractJobFields(formatted);
+      const fields = extractJobFields(formatted, file.name);
       return NextResponse.json({ text: formatted, fields });
     } catch (err: any) {
       return NextResponse.json({
