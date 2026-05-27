@@ -52,6 +52,15 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // Per-row invite state. Keyed by the contact's raw db id (the part
+  // after the "contact_" prefix on the unified row). Tracks the
+  // in-flight POST so the button can show "Inviting…" without
+  // blocking the whole page, and one-shot feedback for the row.
+  const [invitingId, setInvitingId] = useState<string | null>(null);
+  const [inviteFeedback, setInviteFeedback] = useState<
+    Record<string, { type: "success" | "error"; message: string }>
+  >({});
+
   function toggleSelected(id: string) {
     setSelectedIds((cur) => {
       const next = new Set(cur);
@@ -71,6 +80,46 @@ export default function ContactsPage() {
       return next;
     });
   }
+  // Invite a Contact-only row to the client portal. The row id is the
+  // unified "contact_${dbId}" string; we strip the prefix to recover
+  // the underlying Contact.id the API expects.
+  async function inviteToPortal(unifiedId: string) {
+    const dbId = unifiedId.startsWith("contact_") ? unifiedId.slice("contact_".length) : null;
+    if (!dbId) return;
+    setInvitingId(unifiedId);
+    setInviteFeedback((m) => {
+      const copy = { ...m };
+      delete copy[unifiedId];
+      return copy;
+    });
+    try {
+      const res = await fetch(`/api/contacts/${dbId}/invite-portal`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // Optimistic flip — the unified contact now also has portal
+        // access. Avoids a refetch round-trip for a single-row change.
+        setContacts((arr) =>
+          arr.map((c) => (c.id === unifiedId ? { ...c, hasPortalAccess: true } : c))
+        );
+        setInviteFeedback((m) => ({
+          ...m,
+          [unifiedId]: { type: "success", message: "Invite sent" },
+        }));
+      } else {
+        setInviteFeedback((m) => ({
+          ...m,
+          [unifiedId]: { type: "error", message: data?.error || "Couldn't send invite" },
+        }));
+      }
+    } catch {
+      setInviteFeedback((m) => ({
+        ...m,
+        [unifiedId]: { type: "error", message: "Network error — try again" },
+      }));
+    }
+    setInvitingId(null);
+  }
+
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
     const n = selectedIds.size;
@@ -264,6 +313,7 @@ export default function ContactsPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Access</TableHead>
+                  <TableHead className="text-right">Invite</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -333,6 +383,39 @@ export default function ContactsPage() {
                           </Badge>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {/* Invite button only renders for Contact rows
+                          that aren't already in the portal AND have a
+                          valid-looking email to send to. Portal-only
+                          rows or ones missing email skip the column. */}
+                      {c.isContact && !c.hasPortalAccess && c.email ? (
+                        <div className="inline-flex flex-col items-end gap-0.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 gap-1"
+                            disabled={invitingId === c.id}
+                            onClick={() => inviteToPortal(c.id)}
+                          >
+                            <KeyRound className="h-3 w-3" />
+                            {invitingId === c.id ? "Inviting…" : "Invite to portal"}
+                          </Button>
+                          {inviteFeedback[c.id] && (
+                            <span
+                              className={`text-[10px] ${
+                                inviteFeedback[c.id].type === "success"
+                                  ? "text-emerald-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {inviteFeedback[c.id].message}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
