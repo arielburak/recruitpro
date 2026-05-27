@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -406,19 +407,13 @@ export default function ClientDetailPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Fee Amount</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                            {clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
-                          </span>
-                          <Input
-                            className="h-9 pl-7"
-                            type="number"
-                            step="0.01"
-                            placeholder="e.g. 15"
-                            value={clientForm.defaultFeeAmount}
-                            onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
-                          />
-                        </div>
+                        <MoneyInput
+                          className="h-9"
+                          prefix={clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
+                          placeholder="e.g. 15"
+                          value={String(clientForm.defaultFeeAmount ?? "")}
+                          onChange={(v) => setClientForm({ ...clientForm, defaultFeeAmount: v })}
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mt-2">

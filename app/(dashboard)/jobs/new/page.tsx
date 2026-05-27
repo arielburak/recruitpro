@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -731,19 +732,12 @@ function NewJobContent() {
               </div>
               <div className="space-y-2">
                 <Label>Fee Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                    {feeType === "FLAT" ? "$" : "%"}
-                  </span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="25"
-                    className="pl-7"
-                    value={feeAmount}
-                    onChange={(e) => setFeeAmount(e.target.value)}
-                  />
-                </div>
+                <MoneyInput
+                  prefix={feeType === "FLAT" ? "$" : "%"}
+                  placeholder="25"
+                  value={feeAmount}
+                  onChange={setFeeAmount}
+                />
               </div>
             </div>
             <div className="space-y-2">
@@ -917,19 +911,12 @@ function NewJobContent() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs">Fee Amount</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                        {quickClientFeeType === "FLAT" ? "$" : "%"}
-                      </span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 15"
-                        className="pl-7"
-                        value={quickClientFeeAmount}
-                        onChange={(e) => setQuickClientFeeAmount(e.target.value)}
-                      />
-                    </div>
+                    <MoneyInput
+                      prefix={quickClientFeeType === "FLAT" ? "$" : "%"}
+                      placeholder="e.g. 15"
+                      value={quickClientFeeAmount}
+                      onChange={setQuickClientFeeAmount}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
