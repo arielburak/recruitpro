@@ -246,10 +246,14 @@ export function SubmissionsListView({
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-3 text-xs text-gray-400">
                       {s._count?.comments ? (
-                        <span className="flex items-center gap-0.5">
+                        <Link
+                          href={`/candidates/${s.candidate.id}?tab=notes&sub=${s.id}`}
+                          className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors"
+                          title="Open chat for this submission"
+                        >
                           <MessageSquare className="h-3 w-3" />
                           {s._count.comments}
-                        </span>
+                        </Link>
                       ) : null}
                       {s._count?.ratings ? (
                         <span className="flex items-center gap-0.5">

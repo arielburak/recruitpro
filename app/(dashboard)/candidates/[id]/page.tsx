@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +45,16 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  // Deep-link support: ?tab=notes&sub={submissionId} jumps straight
+  // into the Notes tab with that submission's per-job chat selected.
+  // Used by the message-icon shortcuts on /jobs/[id] kanban cards
+  // and the candidates list view, so the recruiter goes from
+  // "I want to see the chat for this person" to actually reading it
+  // in one click.
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "overview";
+  const initialSub = searchParams.get("sub");
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(initialSub);
   // Mirrors the board's pendingShareMove: when the recruiter changes
   // the stage to "Submitted" from this surface and the candidate
   // hasn't been shared with the client yet, we open the same Share
@@ -295,7 +304,7 @@ export default function CandidateDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="submissions">
