@@ -73,7 +73,7 @@ export default function NewContactPage() {
         </div>
       </div>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader>
             <CardTitle>Contact Information</CardTitle>

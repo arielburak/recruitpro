@@ -257,7 +257,13 @@ function NewClientContent() {
         </div>
       )}
 
-      <form onSubmit={onSubmit}>
+      {/* autoComplete="off" on the form (and again on each text input
+          below) tells the browser to stop offering its own history-
+          based suggestions. The screenshots showed "Nicolas Cuello /
+          Paul Rakovich / Merge IT" dropping into the Company Name
+          input — those are Chrome remembering values from same-name
+          inputs across other sites, not anything from the app. */}
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader>
             <CardTitle>Company Information</CardTitle>
@@ -326,6 +332,7 @@ function NewClientContent() {
               <Input
                 name="name"
                 required
+                autoComplete="off"
                 value={formValues.name}
                 className={
                   flaggedFields.has("name")
@@ -345,6 +352,7 @@ function NewClientContent() {
                 <Input
                   name="industry"
                   placeholder="Technology, Finance, etc."
+                  autoComplete="off"
                   value={formValues.industry}
                   onChange={(e) => updateField("industry", e.target.value)}
                 />
@@ -354,6 +362,7 @@ function NewClientContent() {
                 <Input
                   name="website"
                   placeholder="https://"
+                  autoComplete="off"
                   value={formValues.website}
                   className={
                     flaggedFields.has("website")
