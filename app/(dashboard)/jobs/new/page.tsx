@@ -18,6 +18,14 @@ import {
 import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE } from "@/lib/constants";
+import {
+  saveJobDraft,
+  loadJobDraft,
+  clearJobDraft,
+  saveJdFile,
+  loadJdFile,
+  clearJdFile,
+} from "@/lib/job-draft-storage";
 import Link from "next/link";
 
 type JobDuplicateMatch = {
@@ -203,10 +211,66 @@ function NewJobContent() {
     }
   }
 
+  // Persistent draft: restore form fields from localStorage and the JD
+  // File from IndexedDB on mount. Lets the recruiter close the tab,
+  // come back later, navigate away mid-flow, etc., without losing
+  // anything they typed or uploaded. Cleared on successful submit.
   useEffect(() => {
-    // Used to restore a sessionStorage draft here after a round-trip
-    // to /clients/new. Quick-create now happens inline via dialog,
-    // so the draft restore + jdFileMissing warning is gone.
+    const draft = loadJobDraft();
+    if (draft) {
+      if (draft.title) setTitle(draft.title);
+      if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
+      if (draft.description) setDescription(draft.description);
+      if (draft.descriptionFromDoc) setDescriptionFromDoc(draft.descriptionFromDoc);
+      if (draft.location) setLocation(draft.location);
+      if (draft.workMode) setWorkMode(draft.workMode);
+      if (draft.currency) setCurrency(draft.currency);
+      if (draft.feeType) setFeeType(draft.feeType as any);
+      if (draft.feeAmount) setFeeAmount(draft.feeAmount);
+      if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
+      if (draft.parseStatus) setParseStatus(draft.parseStatus);
+    }
+    // JD File lives in IndexedDB — it's binary, can't share storage
+    // with the JSON draft. Best-effort: if there's no saved file we
+    // just leave jdFile null.
+    loadJdFile().then((file) => {
+      if (file) setJdFile(file);
+    });
+  }, []);
+
+  // Auto-save the field draft on every change. localStorage writes are
+  // cheap so debouncing isn't worth the complexity.
+  useEffect(() => {
+    saveJobDraft({
+      title,
+      titleFromDoc,
+      description,
+      descriptionFromDoc,
+      location,
+      workMode,
+      currency,
+      feeType,
+      feeAmount,
+      termsAutoFilled,
+      parseStatus,
+      jdFileName: jdFile?.name || null,
+    });
+  }, [
+    title,
+    titleFromDoc,
+    description,
+    descriptionFromDoc,
+    location,
+    workMode,
+    currency,
+    feeType,
+    feeAmount,
+    termsAutoFilled,
+    parseStatus,
+    jdFile,
+  ]);
+
+  useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
@@ -229,6 +293,9 @@ function NewJobContent() {
 
   async function handleFileUpload(file: File) {
     setJdFile(file);
+    // Persist the binary so a refresh / tab-close doesn't drop it.
+    // Fire-and-forget — failure here doesn't block the parse flow.
+    void saveJdFile(file);
     setParsing(true);
     setParseStatus("Extracting text...");
 
@@ -323,6 +390,12 @@ function NewJobContent() {
       }
     }
 
+    // The Job is created — drop the persistent draft so the next
+    // /jobs/new visit starts fresh. Fire-and-forget; navigation
+    // shouldn't wait on the IndexedDB delete.
+    clearJobDraft();
+    void clearJdFile();
+
     router.push(`/jobs/${job.id}`);
   }
 
@@ -376,7 +449,7 @@ function NewJobContent() {
                       </p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setJdFile(null); setParseStatus(""); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
+                  <button type="button" onClick={() => { setJdFile(null); setParseStatus(""); void clearJdFile(); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
