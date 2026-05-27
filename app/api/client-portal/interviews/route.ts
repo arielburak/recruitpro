@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No organization user found" }, { status: 500 });
     }
 
-    const interview = await prisma.interview.create({
+    const interview = await (prisma.interview as any).create({
       data: {
         title,
         startTime: new Date(startTime),

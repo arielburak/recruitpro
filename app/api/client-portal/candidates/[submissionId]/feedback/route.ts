@@ -95,8 +95,10 @@ export async function POST(
 
     // Upsert rating if score provided (ratings are always visible — they're
     // ratings, not comments. The sharing model for ratings is unchanged.)
+    // `as any` on the delegate sidesteps the Prisma generic-depth blow-up
+    // TS hits on candidateRating.upsert with a compound where-clause.
     if (score) {
-      await prisma.candidateRating.upsert({
+      await (prisma.candidateRating as any).upsert({
         where: {
           submissionId_clientUserId: {
             submissionId,
