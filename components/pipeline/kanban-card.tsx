@@ -116,9 +116,20 @@ export function KanbanCard({
             <div className="flex items-center justify-between mt-2 pt-2 border-t">
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 {submission._count?.comments > 0 && (
-                  <span className="flex items-center gap-0.5">
+                  // Clickable shortcut into the candidate's per-job
+                  // chat. e.stopPropagation so the kanban card's
+                  // drag handler doesn't fire on the same click;
+                  // onMouseDown stops dnd-kit which listens on
+                  // mousedown not click.
+                  <Link
+                    href={`/candidates/${candidate.id}?tab=notes&sub=${submission.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors"
+                    title="Open chat for this submission"
+                  >
                     <MessageSquare className="h-3 w-3" /> {submission._count.comments}
-                  </span>
+                  </Link>
                 )}
                 {submission._count?.ratings > 0 && (
                   <span className="flex items-center gap-0.5">
