@@ -302,6 +302,11 @@ export async function POST(request: Request) {
         googleCalendarOwnerId,
         microsoftEventId,
         microsoftCalendarOwnerId,
+        // Record the user's intent at create time. The calendar UI
+        // uses this to mark "internal only" interviews so a
+        // recruiter scanning their week can tell whether the
+        // candidate was actually emailed.
+        inviteSent: Boolean(notifyAttendees),
         interviewers: interviewerIds?.length
           ? {
               create: interviewerIds.map((userId: string) => ({ userId })),

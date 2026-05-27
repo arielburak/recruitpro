@@ -580,6 +580,13 @@ model Interview {
   // meetings.
   microsoftEventId          String?
   microsoftCalendarOwnerId  String?
+  // True iff the candidate was emailed a calendar invite for this
+  // interview (the "Send calendar invite by email" checkbox was on
+  // at create time AND the candidate had an email to receive it).
+  // Backfilled false for pre-existing rows because we don't have a
+  // historical record either way — better to under-report than to
+  // claim we emailed candidates we didn't.
+  inviteSent     Boolean         @default(false)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
