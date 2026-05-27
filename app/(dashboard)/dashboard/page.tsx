@@ -175,10 +175,15 @@ export default async function DashboardPage() {
       where: { organizationId: orgId },
       _count: { id: true },
     }),
-    // Recruiter leaderboard
+    // Recruiter leaderboard. We pull every active user so we can join
+    // a separate "placements per recruiter" aggregate below — `_count`
+    // can't reach across the submission → candidate.owner relation in
+    // a single query, so the placement count is wired in after the
+    // fetch.
     prisma.user.findMany({
       where: { organizationId: orgId, isActive: true },
       select: {
+        id: true,
         name: true,
         _count: { select: { candidates: true, submissions: true } },
       },
@@ -233,10 +238,28 @@ export default async function DashboardPage() {
   const jobStatusData = jobsByStatus.map((j) => ({ status: j.status, count: j._count.id }));
 
   // Recruiter leaderboard
+  // Placements attributed to each recruiter via the placed candidate's
+  // owner. groupBy on Placement directly can't traverse through the
+  // submission → candidate join, so we pull the placements and bucket
+  // by candidate.ownerId in JS — cheap given the volume.
+  const placementsWithOwner = await prisma.placement.findMany({
+    where: { organizationId: orgId },
+    select: {
+      submission: { select: { candidate: { select: { ownerId: true } } } },
+    },
+  });
+  const placementsByRecruiter = new Map<string, number>();
+  for (const p of placementsWithOwner) {
+    const ownerId = p.submission?.candidate?.ownerId;
+    if (!ownerId) continue;
+    placementsByRecruiter.set(ownerId, (placementsByRecruiter.get(ownerId) || 0) + 1);
+  }
+
   const recruiterData = recruiterStats.map((r) => ({
     name: r.name,
     candidates: r._count.candidates,
     submissions: r._count.submissions,
+    placements: placementsByRecruiter.get(r.id) || 0,
   }));
 
   const isNewUser = totalCandidates === 0 && activeJobs === 0 && totalClients === 0;

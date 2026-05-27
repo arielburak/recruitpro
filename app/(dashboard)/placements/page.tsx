@@ -333,6 +333,7 @@ export default function PlacementsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Candidate Name</TableHead>
+                  <TableHead>Recruiter</TableHead>
                   <TableHead>Job Title</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Start Date</TableHead>
@@ -350,6 +351,12 @@ export default function PlacementsPage() {
                   const expiringSoon = isWithin30Days(guaranteeExpiry);
                   const expired = isExpired(guaranteeExpiry);
 
+                  // Recruiter who owns the candidate. Recorded server-side
+                  // via candidate.ownerId; "—" when the placement is
+                  // submission-less (manual backfill without a candidate
+                  // link, vanishingly rare).
+                  const recruiterName = p.submission?.candidate?.owner?.name || "—";
+
                   return (
                     <TableRow
                       key={p.id}
@@ -357,6 +364,7 @@ export default function PlacementsPage() {
                       className="cursor-pointer hover:bg-gray-50"
                     >
                       <TableCell className="font-medium">{candidateName}</TableCell>
+                      <TableCell className="text-sm text-gray-700">{recruiterName}</TableCell>
                       <TableCell>{p.job?.title || "-"}</TableCell>
                       <TableCell>{p.client?.name || "-"}</TableCell>
                       <TableCell>
