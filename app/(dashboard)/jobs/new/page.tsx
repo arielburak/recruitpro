@@ -29,26 +29,6 @@ type JobDuplicateMatch = {
   client: { id: string; name: string };
 };
 
-// Key under which we stash the in-progress Job form state when the recruiter
-// hops over to the Create Client page, so they don't lose their typing/parsing
-// when they come back.
-const JOB_DRAFT_KEY = "newJobDraft";
-
-type JobDraft = {
-  title: string;
-  titleFromDoc: boolean;
-  description: string;
-  descriptionFromDoc: boolean;
-  location: string;
-  workMode: string;
-  currency: string;
-  feeType: string;
-  feeAmount: string;
-  termsAutoFilled: boolean;
-  parseStatus: string;
-  jdFileName?: string | null;
-};
-
 function NewJobContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -57,7 +37,6 @@ function NewJobContent() {
   const [error, setError] = useState("");
   const [clients, setClients] = useState<any[]>([]);
   const [jdFile, setJdFile] = useState<File | null>(null);
-  const [jdFileMissing, setJdFileMissing] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
@@ -167,66 +146,67 @@ function NewJobContent() {
   }
 
   // Hand off to the full Create Client form so the recruiter can set fee
-  // defaults / industry / website etc., then come back and have those terms
-  // auto-fill on this Job. We stash the in-progress Job draft in
-  // sessionStorage because the File object can't survive navigation; the
-  // parsed text and structured fields do, so the recruiter only loses the
-  // raw upload, not their work.
-  function goCreateClient(name: string) {
-    const trimmed = name.trim();
-    const draft: JobDraft = {
-      title,
-      titleFromDoc,
-      description,
-      descriptionFromDoc,
-      location,
-      workMode,
-      currency,
-      feeType,
-      feeAmount,
-      termsAutoFilled,
-      parseStatus,
-      jdFileName: jdFile?.name || null,
-    };
+  // Quick-create dialog state. We used to navigate to /clients/new
+  // here and store a JobDraft in sessionStorage, but the navigation
+  // forced the user to re-upload the JD file on return (File objects
+  // can't be serialized to localStorage/sessionStorage). Opening a
+  // dialog instead keeps /jobs/new mounted so the File survives.
+  const [quickClientOpen, setQuickClientOpen] = useState(false);
+  const [quickClientName, setQuickClientName] = useState("");
+  const [quickClientIndustry, setQuickClientIndustry] = useState("");
+  const [quickClientType, setQuickClientType] = useState<"RECRUITING" | "STAFF_AUG">("RECRUITING");
+  const [quickClientSaving, setQuickClientSaving] = useState(false);
+  const [quickClientError, setQuickClientError] = useState<string>("");
+
+  function openQuickClient(name: string) {
+    setQuickClientName(name.trim());
+    setQuickClientIndustry("");
+    setQuickClientType("RECRUITING");
+    setQuickClientError("");
+    setQuickClientOpen(true);
+  }
+
+  async function saveQuickClient() {
+    const name = quickClientName.trim();
+    if (!name) {
+      setQuickClientError("Company name is required");
+      return;
+    }
+    setQuickClientSaving(true);
+    setQuickClientError("");
     try {
-      sessionStorage.setItem(JOB_DRAFT_KEY, JSON.stringify(draft));
-    } catch {}
-    const params = new URLSearchParams({ returnTo: "/jobs/new" });
-    if (trimmed) params.set("name", trimmed);
-    router.push(`/clients/new?${params.toString()}`);
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          industry: quickClientIndustry.trim() || undefined,
+          engagementType: quickClientType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setQuickClientError(data.error || "Could not create client");
+        return;
+      }
+      // Insert the new client into the local list and select it. No
+      // refetch needed — the API returns the full row.
+      setClients((cur) => [...cur, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedClientId(data.id);
+      setClientSearch("");
+      setClientDropdownOpen(false);
+      setQuickClientOpen(false);
+    } catch (e: any) {
+      setQuickClientError(e.message || "Could not create client");
+    } finally {
+      setQuickClientSaving(false);
+    }
   }
 
   useEffect(() => {
-    // Restore draft saved before hopping to /clients/new. Run before the
-    // client fetch resolves so the user sees their fields immediately. If
-    // we also have a preselected client (i.e. we just came back from
-    // creating one), the client-driven fee defaults below will overwrite
-    // whatever was in the draft — that's intentional, the new client's
-    // terms are the whole reason we made this round-trip.
-    let draft: JobDraft | null = null;
-    try {
-      const raw = sessionStorage.getItem(JOB_DRAFT_KEY);
-      if (raw) draft = JSON.parse(raw) as JobDraft;
-    } catch {}
-    if (draft) {
-      sessionStorage.removeItem(JOB_DRAFT_KEY);
-      if (draft.title) setTitle(draft.title);
-      if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
-      if (draft.description) setDescription(draft.description);
-      if (draft.descriptionFromDoc) setDescriptionFromDoc(draft.descriptionFromDoc);
-      if (draft.location) setLocation(draft.location);
-      if (draft.workMode) setWorkMode(draft.workMode);
-      if (draft.currency) setCurrency(draft.currency);
-      if (draft.feeType) setFeeType(draft.feeType);
-      if (draft.feeAmount) setFeeAmount(draft.feeAmount);
-      if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
-      if (draft.parseStatus) setParseStatus(draft.parseStatus);
-      // The actual File can't survive navigation; tell the user what was
-      // there before so they know to re-upload if they want to keep the
-      // attachment.
-      if (draft.jdFileName) setJdFileMissing(draft.jdFileName);
-    }
-
+    // Used to restore a sessionStorage draft here after a round-trip
+    // to /clients/new. Quick-create now happens inline via dialog,
+    // so the draft restore + jdFileMissing warning is gone.
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
@@ -503,7 +483,7 @@ function NewJobContent() {
                     ))}
                     <button
                       type="button"
-                      onClick={() => goCreateClient(clientSearch)}
+                      onClick={() => openQuickClient(clientSearch)}
                       className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -518,11 +498,6 @@ function NewJobContent() {
                   </div>
                 )}
               </div>
-              {jdFileMissing && (
-                <p className="text-xs text-amber-600">
-                  Your previous JD file <span className="font-medium">{jdFileMissing}</span> wasn&apos;t restored after creating the client. Re-upload it to keep it as an attachment — the parsed text is still here.
-                </p>
-              )}
             </div>
 
             {checkingDuplicate && (
@@ -751,6 +726,76 @@ function NewJobContent() {
               disabled={loading}
             >
               {loading ? "Creating..." : "Create anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick-create client. Only captures name + industry + the
+          engagement type that affects the fee-form shape on /jobs/new.
+          The recruiter fills the rest (defaults, website, contact,
+          stages, etc.) later from /clients/[id]. The dialog stays in
+          this page so the JD File the user uploaded survives — used
+          to navigate to /clients/new, which dropped the File on
+          return. */}
+      <Dialog open={quickClientOpen} onOpenChange={(open) => {
+        if (!quickClientSaving) setQuickClientOpen(open);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Quick-create client</DialogTitle>
+            <DialogDescription>
+              Just the name to get going. You can fill in fee terms, contacts and other details later on the client page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {quickClientError && (
+              <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{quickClientError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Company Name *</Label>
+              <Input
+                autoFocus
+                autoComplete="off"
+                value={quickClientName}
+                onChange={(e) => setQuickClientName(e.target.value)}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Industry</Label>
+              <Input
+                autoComplete="off"
+                value={quickClientIndustry}
+                onChange={(e) => setQuickClientIndustry(e.target.value)}
+                placeholder="Technology, Finance, etc."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Engagement type</Label>
+              <select
+                value={quickClientType}
+                onChange={(e) => setQuickClientType(e.target.value as "RECRUITING" | "STAFF_AUG")}
+                className="w-full border rounded-md px-3 py-2 text-sm"
+              >
+                <option value="RECRUITING">Recruiting (fees + terms at the client level)</option>
+                <option value="STAFF_AUG">Staff Aug (fees + terms negotiated per job)</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setQuickClientOpen(false)}
+              disabled={quickClientSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={saveQuickClient}
+              disabled={quickClientSaving || !quickClientName.trim()}
+            >
+              {quickClientSaving ? "Saving..." : "Create client"}
             </Button>
           </DialogFooter>
         </DialogContent>
