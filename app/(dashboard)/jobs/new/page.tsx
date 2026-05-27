@@ -85,15 +85,13 @@ function NewJobContent() {
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const clientRef = useRef<HTMLDivElement>(null);
 
-  // "Quick-share" mode: instead of picking an existing Client, the
-  // recruiter just types the hiring contact's email. We create a stub
-  // Client + ClientUser + invite email on submit; the hiring manager
-  // fills in real company info on first login.
-  const [clientMode, setClientMode] = useState<"existing" | "quick">(
-    preselectedClientId ? "existing" : "quick"
-  );
-  const [hiringContactEmail, setHiringContactEmail] = useState("");
-  const [hiringContactName, setHiringContactName] = useState("");
+  // Client mode used to be a toggle between "quick-share by email"
+  // (which auto-created a stub Client + invited the hiring contact)
+  // and "pick existing client." That mixed creating-a-job with
+  // inviting-a-contact, which read as confusing in the create flow —
+  // recruiters expected to JUST create the job and worry about who
+  // gets access later. The Invite Client flow lives on /jobs/[id]
+  // post-creation now. Here we only let you pick an existing Client.
 
   // Duplicate-job detection: matches existing jobs with the same
   // (client, title) within the firm.
@@ -300,32 +298,10 @@ function NewJobContent() {
     setLoading(true);
     setError("");
 
-    // Quick-share mode: spin up a stub Client + invite the hiring
-    // contact before creating the Job, then use the returned id.
-    let clientIdForJob = selectedClientId;
-    if (clientMode === "quick") {
-      const email = hiringContactEmail.trim();
-      if (!email) {
-        setError("Hiring contact email is required");
-        setLoading(false);
-        return;
-      }
-      const inviteRes = await fetch("/api/clients/quick-invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hiringContactEmail: email,
-          hiringContactName: hiringContactName.trim() || undefined,
-        }),
-      });
-      if (!inviteRes.ok) {
-        const body = await inviteRes.json();
-        setError(body.error || "Could not invite hiring contact");
-        setLoading(false);
-        return;
-      }
-      const data = await inviteRes.json();
-      clientIdForJob = data.clientId;
+    if (!selectedClientId) {
+      setError("Pick a client first");
+      setLoading(false);
+      return;
     }
 
     const res = await fetch("/api/jobs", {
@@ -334,7 +310,7 @@ function NewJobContent() {
       body: JSON.stringify({
         title,
         description: description || fd.get("description"),
-        clientId: clientIdForJob,
+        clientId: selectedClientId,
         location,
         workMode,
         status,
@@ -377,9 +353,8 @@ function NewJobContent() {
     const fd = new FormData(e.currentTarget);
 
     // Re-check for duplicates at submit time in case the user never
-    // blurred the title field. Skip in quick-share mode — there's no
-    // Client yet, so by definition no duplicate to find.
-    if (clientMode === "existing") {
+    // blurred the title field.
+    {
       const matches = await checkJobDuplicate();
       if (matches.length > 0) {
         pendingFormData.current = fd;
@@ -473,53 +448,6 @@ function NewJobContent() {
             </div>
             <div className="space-y-2">
               <Label>Client *</Label>
-
-              <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setClientMode("quick")}
-                  className={`px-2.5 py-1 rounded transition ${
-                    clientMode === "quick"
-                      ? "bg-white text-indigo-700 shadow-sm font-medium"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  Quick-share by email
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setClientMode("existing")}
-                  className={`px-2.5 py-1 rounded transition ${
-                    clientMode === "existing"
-                      ? "bg-white text-indigo-700 shadow-sm font-medium"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  Pick existing client
-                </button>
-              </div>
-
-              {clientMode === "quick" ? (
-                <div className="space-y-2">
-                  <Input
-                    type="email"
-                    placeholder="hiring contact email (e.g. jane@acme.com)"
-                    value={hiringContactEmail}
-                    onChange={(e) => setHiringContactEmail(e.target.value)}
-                    required
-                  />
-                  <Input
-                    type="text"
-                    placeholder="Contact name (optional)"
-                    value={hiringContactName}
-                    onChange={(e) => setHiringContactName(e.target.value)}
-                  />
-                  <p className="text-xs text-gray-500">
-                    We&apos;ll email them an invite to set a password and fill in the company details. You can edit the client later.
-                  </p>
-                </div>
-              ) : (
-                <>
               <input type="hidden" name="clientId" value={selectedClientId} />
               <div ref={clientRef} className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -594,8 +522,6 @@ function NewJobContent() {
                 <p className="text-xs text-amber-600">
                   Your previous JD file <span className="font-medium">{jdFileMissing}</span> wasn&apos;t restored after creating the client. Re-upload it to keep it as an attachment — the parsed text is still here.
                 </p>
-              )}
-                </>
               )}
             </div>
 
@@ -763,7 +689,7 @@ function NewJobContent() {
             <div className="flex justify-end gap-2 pt-4">
               <Link href="/jobs"><Button type="button" variant="outline">Cancel</Button></Link>
               <Button type="submit" disabled={loading || parsing}>
-                {loading ? "Creating..." : clientMode === "quick" ? "Create Job & Send Invite" : "Create Job"}
+                {loading ? "Creating..." : "Create Job"}
               </Button>
             </div>
           </CardContent>
