@@ -375,7 +375,7 @@ function NewJobContent() {
         <h1 className="text-2xl font-bold">Create Job</h1>
       </div>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader><CardTitle>Job Order Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">

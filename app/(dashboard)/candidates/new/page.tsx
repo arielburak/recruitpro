@@ -409,7 +409,7 @@ function NewCandidatePage() {
         </CardContent>
       </Card>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader>
             <CardTitle>Candidate Information</CardTitle>
