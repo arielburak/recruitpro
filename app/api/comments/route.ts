@@ -29,6 +29,11 @@ export async function POST(request: Request) {
         type: requestedType,
         candidateId: body.candidateId || null,
         submissionId: body.submissionId || null,
+        // Job-level chat: the Notes tab on /jobs/[id]. Distinct from
+        // per-submission chat (submissionId) so a recruiter can log
+        // "this client cobra X bajo la mesa" without it being tied
+        // to a specific candidate.
+        jobId: body.jobId || null,
         userId: ctx.userId,
         mentions,
       },

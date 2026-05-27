@@ -25,6 +25,10 @@ interface ChatNotesProps {
   // only carry `candidateId`, the CLIENT_VISIBLE tab is hidden
   // because there's no client context to share with at this scope.
   submissionId?: string;
+  // jobId scopes the thread to a Job (the Notes tab on /jobs/[id]).
+  // Distinct from submissionId: those are tied to a candidate-on-job;
+  // jobId covers standing notes about the search itself.
+  jobId?: string;
   onCommentAdded: () => void;
   // Visual override — candidate-level notes usually live above the
   // per-job chat and don't need the full chat height.
@@ -102,7 +106,7 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded, heightClass }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommentAdded, heightClass }: ChatNotesProps) {
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
   // Candidate-level scope means there's no client to share with, so
@@ -232,6 +236,7 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded,
           content: text,
           submissionId: submissionId || undefined,
           candidateId: candidateScope ? candidateId : undefined,
+          jobId: jobId || undefined,
           type: activeTab,
           mentions: mentions.map((m) => m.id),
         }),

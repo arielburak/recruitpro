@@ -71,6 +71,18 @@ export async function GET(
             _count: { select: { comments: true, ratings: true } },
           },
         },
+        // Job-level notes (Notes tab on /jobs/[id]). Same chat pattern
+        // as candidate notes — Comment rows scoped via jobId, with the
+        // INTERNAL / CLIENT_VISIBLE filter applied so we never leak a
+        // CLIENT_INTERNAL row to the firm side.
+        comments: {
+          where: { type: { in: ["INTERNAL", "CLIENT_VISIBLE"] } },
+          include: {
+            user: { select: { id: true, name: true } },
+            clientUser: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
         // Interviews for this job, chronological. The job page surfaces
         // them in a dedicated tab so the recruiter can see the
         // pipeline-to-meeting timeline in one place.
