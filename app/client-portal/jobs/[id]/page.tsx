@@ -7,6 +7,7 @@ import { ClientJobChat } from "@/components/client-portal/client-job-chat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -145,6 +146,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [pipelineStages, setPipelineStages] = useState<any[]>([]);
   // Toggle between the pipeline (kanban) and the flat candidate list.
   const [candidatesView, setCandidatesView] = useState<"pipeline" | "list">("pipeline");
+  // Tab in the main column. Mirrors the agency-side job page (Pipeline /
+  // Notes / Details / Documents) so the client doesn't have to scroll
+  // a page-high stack to find anything. Pipeline is the default tab
+  // because that's the question the hiring manager comes to answer.
+  const [activeTab, setActiveTab] = useState<"pipeline" | "notes" | "details" | "documents">("pipeline");
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -494,14 +500,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Job Details */}
+        {/* Left - Job Details. Organized into tabs (Pipeline / Notes /
+            Details / Documents) to match the agency-side layout. Edit
+            mode replaces the tabs with the full form so we don't have
+            to split fields across tabs. */}
         <div className="lg:col-span-2 space-y-4">
-          <ClientJobChat
-            jobId={id}
-            comments={job?.comments || []}
-            onCommentAdded={fetchJob}
-            currentClientUserId={currentClientUserId}
-          />
           {editing ? (
             <Card>
               <CardContent className="p-5 space-y-4">
@@ -585,241 +588,269 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               </CardContent>
             </Card>
           ) : (
-            <>
-              {job.description && (
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+              <TabsList>
+                <TabsTrigger value="pipeline">
+                  Pipeline{jobCandidates.length > 0 ? ` (${jobCandidates.length})` : ""}
+                </TabsTrigger>
+                <TabsTrigger value="notes">
+                  Notes{job?.comments?.length ? ` (${job.comments.length})` : ""}
+                </TabsTrigger>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="documents">
+                  Documents{documents.length > 0 ? ` (${documents.length})` : ""}
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Pipeline tab — read-only kanban of shared candidates,
+                  with a List toggle for scanning many at once. */}
+              <TabsContent value="pipeline" className="space-y-3">
+                {jobCandidates.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="inline-flex rounded-md border bg-white p-0.5">
+                      {(["pipeline", "list"] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCandidatesView(v)}
+                          className={`px-2.5 py-1 text-[11px] font-medium rounded ${
+                            candidatesView === v
+                              ? "bg-emerald-600 text-white"
+                              : "text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {v === "pipeline" ? "Pipeline" : "List"}
+                        </button>
+                      ))}
+                    </div>
+                    <Link
+                      href={`/client-portal/candidates?clientJobId=${id}`}
+                      className="text-xs text-emerald-600 hover:underline"
+                    >
+                      View all →
+                    </Link>
+                  </div>
+                )}
                 <Card>
-                  <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
-                </Card>
-              )}
-              {job.requirements && (
-                <Card>
-                  <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
-                </Card>
-              )}
-              {job.salaryRange && (
-                <Card>
-                  <CardContent className="p-4">
-                    <span className="text-sm text-gray-500">Salary Range: </span>
-                    <span className="font-medium">{job.salaryRange}</span>
-                    <span className="ml-2 text-xs text-gray-500">
-                      {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
-                    </span>
+                  <CardContent className="p-0">
+                    {jobCandidates.length === 0 ? (
+                      <div className="p-8 text-center">
+                        <Users className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500">No candidates shared yet.</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Your recruiting firms will share candidates here as they find them.
+                        </p>
+                      </div>
+                    ) : candidatesView === "pipeline" ? (
+                      <div className="p-4">
+                        <ReadOnlyPipeline
+                          stages={pipelineStages}
+                          submissions={jobCandidates}
+                        />
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Candidate</TableHead>
+                            <TableHead>Stage</TableHead>
+                            <TableHead>Firm</TableHead>
+                            <TableHead>Location</TableHead>
+                            <TableHead>Rating</TableHead>
+                            <TableHead>Shared</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {jobCandidates.map((row) => (
+                            <CandidateTableRow
+                              key={row.submissionId}
+                              row={row}
+                              showJob={false}
+                              onRated={fetchJobCandidates}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
                   </CardContent>
                 </Card>
-              )}
+              </TabsContent>
 
-              {/* Candidates shared for this job — pipeline view by
-                  default (mirrors the agency's kanban, read-only),
-                  with a List toggle for scanning many at once. */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
-                  </CardTitle>
-                  <div className="flex items-center gap-3">
-                    {jobCandidates.length > 0 && (
-                      <div className="inline-flex rounded-md border bg-white p-0.5">
-                        {(["pipeline", "list"] as const).map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            onClick={() => setCandidatesView(v)}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded ${
-                              candidatesView === v
-                                ? "bg-emerald-600 text-white"
-                                : "text-gray-600 hover:bg-gray-50"
-                            }`}
-                          >
-                            {v === "pipeline" ? "Pipeline" : "List"}
-                          </button>
+              {/* Notes tab — the chat-style thread for the client team.
+                  Used to be always-visible above the page; moved here so
+                  the page can open straight on Pipeline (the question
+                  the hiring manager actually came for). */}
+              <TabsContent value="notes" className="space-y-3">
+                <ClientJobChat
+                  jobId={id}
+                  comments={job?.comments || []}
+                  onCommentAdded={fetchJob}
+                  currentClientUserId={currentClientUserId}
+                />
+              </TabsContent>
+
+              {/* Details tab — description / requirements / salary. The
+                  empty-state CTA also lives here so "Add details" is
+                  always one click away. */}
+              <TabsContent value="details" className="space-y-4">
+                {job.description && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
+                    <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
+                  </Card>
+                )}
+                {job.requirements && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
+                    <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
+                  </Card>
+                )}
+                {job.salaryRange && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <span className="text-sm text-gray-500">Salary Range: </span>
+                      <span className="font-medium">{job.salaryRange}</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
+                      </span>
+                    </CardContent>
+                  </Card>
+                )}
+                {!job.description && !job.requirements && !job.salaryRange && (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <p className="text-sm text-gray-400 mb-2">No description added yet</p>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+                        <Pencil className="h-3 w-3" />
+                        Add Details
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Documents tab — JD file + additional attachments. Both
+                  upload-enabled because right now every ClientJob is
+                  authored by the client (postedById is always a
+                  ClientUser). Read-only-when-agency-authored will land
+                  when we add the agency-pushed Job flow. */}
+              <TabsContent value="documents" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Job Description File
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
+                      if (jdDoc) {
+                        return (
+                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{jdDoc.name}</p>
+                                <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                                <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                              </a>
+                              <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
+                          {uploadingJD ? (
+                            <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
+                          ) : (
+                            <Upload className="h-5 w-5 text-gray-400 mb-2" />
+                          )}
+                          <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
+                          <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.txt"
+                            disabled={uploadingJD}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadDocument(file, "JOB_DESCRIPTION");
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Additional Documents
+                    </CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      disabled={uploadingAdditional}
+                      onClick={() => additionalFileInputRef.current?.click()}
+                    >
+                      {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      {uploadingAdditional ? "Uploading..." : "Add"}
+                    </Button>
+                    <input
+                      ref={additionalFileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                      disabled={uploadingAdditional}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadDocument(file, "ADDITIONAL");
+                        e.target.value = "";
+                      }}
+                    />
+                  </CardHeader>
+                  <CardContent>
+                    {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
+                          <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileText className="h-4 w-4 text-gray-500 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{doc.name}</p>
+                                <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
+                                <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
+                              </a>
+                              <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
-                    {jobCandidates.length > 0 && (
-                      <Link
-                        href={`/client-portal/candidates?clientJobId=${id}`}
-                        className="text-xs text-emerald-600 hover:underline"
-                      >
-                        View all →
-                      </Link>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {jobCandidates.length === 0 ? (
-                    <div className="p-6 text-center">
-                      <Users className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
-                      <p className="text-sm text-gray-500">No candidates shared yet.</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Your recruiting firms will share candidates here as they find them.
-                      </p>
-                    </div>
-                  ) : candidatesView === "pipeline" ? (
-                    <div className="p-4">
-                      <ReadOnlyPipeline
-                        stages={pipelineStages}
-                        submissions={jobCandidates}
-                      />
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Candidate</TableHead>
-                          <TableHead>Stage</TableHead>
-                          <TableHead>Firm</TableHead>
-                          <TableHead>Location</TableHead>
-                          <TableHead>Rating</TableHead>
-                          <TableHead>Shared</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {jobCandidates.map((row) => (
-                          <CandidateTableRow
-                            key={row.submissionId}
-                            row={row}
-                            showJob={false}
-                            onRated={fetchJobCandidates}
-                          />
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Documents */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Job Description File
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
-                    if (jdDoc) {
-                      return (
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{jdDoc.name}</p>
-                              <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
-                              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
-                            </a>
-                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
-                        {uploadingJD ? (
-                          <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
-                        ) : (
-                          <Upload className="h-5 w-5 text-gray-400 mb-2" />
-                        )}
-                        <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
-                        <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.doc,.docx,.txt"
-                          disabled={uploadingJD}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) uploadDocument(file, "JOB_DESCRIPTION");
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-
-              {/* Additional Documents */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Additional Documents
-                  </CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1 text-xs"
-                    disabled={uploadingAdditional}
-                    onClick={() => additionalFileInputRef.current?.click()}
-                  >
-                    {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                    {uploadingAdditional ? "Uploading..." : "Add"}
-                  </Button>
-                  <input
-                    ref={additionalFileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
-                    disabled={uploadingAdditional}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) uploadDocument(file, "ADDITIONAL");
-                      e.target.value = "";
-                    }}
-                  />
-                </CardHeader>
-                <CardContent>
-                  {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <FileText className="h-4 w-4 text-gray-500 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{doc.name}</p>
-                              <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
-                              <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
-                            </a>
-                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {!job.description && !job.requirements && !job.salaryRange && (
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <p className="text-sm text-gray-400 mb-2">No description added yet</p>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
-                      <Pencil className="h-3 w-3" />
-                      Add Details
-                    </Button>
                   </CardContent>
                 </Card>
-              )}
-            </>
+              </TabsContent>
+            </Tabs>
           )}
         </div>
 
