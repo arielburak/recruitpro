@@ -487,7 +487,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!editing && (
+          {/* Edit hidden when the search was mirrored from an agency
+              Job — that side owns the source of truth. */}
+          {!editing && !job.createdByAgency && (
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
               <Pencil className="h-3 w-3" />
               Edit
@@ -498,6 +500,23 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           </Badge>
         </div>
       </div>
+
+      {/* Provenance banner for agency-mirrored jobs. The client can
+          still post notes and review the pipeline; description,
+          requirements and files belong to the firm. */}
+      {job.createdByAgency && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-2.5 text-xs text-indigo-800 flex items-center gap-2">
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+          <span>
+            This search was set up by
+            {(() => {
+              const firmName = job.engagements?.find((e: any) => e.status === "ACCEPTED")?.organization?.name;
+              return firmName ? <strong className="font-semibold"> {firmName}</strong> : <span> your recruiting firm</span>;
+            })()}.
+            You can review candidates and post internal notes; editing the search itself happens on their side.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Job Details. Organized into tabs (Pipeline / Notes /
@@ -759,10 +778,25 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
                                 <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                               </a>
-                              <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {/* Delete only when the search lives on
+                                  the client side. Agency-mirrored docs
+                                  belong to the firm. */}
+                              {!job.createdByAgency && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
+                          </div>
+                        );
+                      }
+                      // No JD yet. Show the upload affordance only when
+                      // this client team owns the search. For agency-
+                      // mirrored ones we just show a soft empty-state.
+                      if (job.createdByAgency) {
+                        return (
+                          <div className="border border-dashed rounded-lg p-5 text-center text-xs text-gray-400">
+                            No JD shared yet. Your recruiting firm will upload it on their side.
                           </div>
                         );
                       }
@@ -798,28 +832,32 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       <FileText className="h-4 w-4" />
                       Additional Documents
                     </CardTitle>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-xs"
-                      disabled={uploadingAdditional}
-                      onClick={() => additionalFileInputRef.current?.click()}
-                    >
-                      {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                      {uploadingAdditional ? "Uploading..." : "Add"}
-                    </Button>
-                    <input
-                      ref={additionalFileInputRef}
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
-                      disabled={uploadingAdditional}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) uploadDocument(file, "ADDITIONAL");
-                        e.target.value = "";
-                      }}
-                    />
+                    {!job.createdByAgency && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          disabled={uploadingAdditional}
+                          onClick={() => additionalFileInputRef.current?.click()}
+                        >
+                          {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          {uploadingAdditional ? "Uploading..." : "Add"}
+                        </Button>
+                        <input
+                          ref={additionalFileInputRef}
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                          disabled={uploadingAdditional}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) uploadDocument(file, "ADDITIONAL");
+                            e.target.value = "";
+                          }}
+                        />
+                      </>
+                    )}
                   </CardHeader>
                   <CardContent>
                     {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
@@ -839,9 +877,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
                                 <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
                               </a>
-                              <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                              {!job.createdByAgency && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         ))}
