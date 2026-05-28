@@ -577,7 +577,13 @@ export default function ClientPortalSettingsPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {team.map((member) => {
+                  {team
+                    // Defensive: hide any leftover dedup'd ClientUser
+                    // rows ("+dedup-" in the email) that earlier merge
+                    // runs left behind. They serve no purpose here —
+                    // the canonical row carries the real data.
+                    .filter((member) => !member.email?.includes("+dedup-"))
+                    .map((member) => {
                     const isPending = member.isActive && member.hasPassword === false;
                     return (
                     <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
