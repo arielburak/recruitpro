@@ -427,6 +427,13 @@ export default function ClientContactsPage() {
                               <KeyRound className="h-3 w-3" />
                               In portal
                             </span>
+                          ) : row.contactId && !row.email ? (
+                            // No email → no invite. Nudge the recruiter
+                            // to add one rather than just hiding the
+                            // action quietly.
+                            <span className="text-[11px] text-gray-400 italic">
+                              Add an email to invite
+                            </span>
                           ) : null}
 
                           {row.contactId && (

@@ -514,6 +514,14 @@ export default function ContactsPage() {
                               <KeyRound className="h-3 w-3" />
                               In portal
                             </span>
+                          ) : c.contactId && !c.email ? (
+                            // The recruiter could invite this person if
+                            // we had somewhere to send the set-password
+                            // link. Nudge them to add an email rather
+                            // than leaving a silent em-dash.
+                            <span className="text-[11px] text-gray-400 italic">
+                              Add an email to invite
+                            </span>
                           ) : (
                             <span className="text-xs text-gray-300">—</span>
                           )}
