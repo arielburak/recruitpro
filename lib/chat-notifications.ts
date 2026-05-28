@@ -322,6 +322,66 @@ export async function notifyOnNewCandidateComment(args: {
   }
 }
 
+// Mention-only fan-out for ClientJob Notes. These comments are
+// CLIENT_INTERNAL by design — the agency never sees them — so the
+// recipient pool is always ClientUsers. Job-access (members list)
+// gates who can be mentioned at the API layer; here we just deliver.
+export async function notifyOnNewClientJobComment(args: {
+  clientJobId: string;
+  content: string;
+  mentions: string[]; // ClientUser IDs
+  authorId: string; // ClientUser ID of the poster
+  authorName: string;
+}) {
+  const { clientJobId, content, mentions, authorId, authorName } = args;
+  if (mentions.length === 0) return;
+
+  const job = await prisma.clientJob.findUnique({
+    where: { id: clientJobId },
+    select: { id: true, title: true, clientId: true, client: { select: { name: true } } },
+  });
+  if (!job) return;
+
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${baseUrl}/client-portal/jobs/${job.id}`;
+  const preview = stripMarkup(content);
+
+  const mentioned = await prisma.clientUser.findMany({
+    where: { id: { in: mentions }, clientId: job.clientId, isActive: true },
+    select: { id: true, email: true, name: true },
+  });
+
+  for (const u of mentioned) {
+    if (u.id === authorId) continue;
+    try {
+      await prisma.clientNotification.create({
+        data: {
+          clientId: job.clientId,
+          clientUserId: u.id,
+          type: "mention",
+          title: `${authorName} mentioned you in ${job.title}`,
+          body: truncate(preview, 140),
+          link: `/client-portal/jobs/${job.id}`,
+        },
+      });
+    } catch (e) {
+      console.error("[chat-notify] client-job mention in-app failed:", e);
+    }
+    try {
+      await sendMentionEmail({
+        to: u.email,
+        mentionedBy: authorName,
+        candidateName: job.client?.name || "your team",
+        jobTitle: job.title,
+        preview,
+        url,
+      });
+    } catch (e) {
+      console.error("[chat-notify] client-job mention email failed:", e);
+    }
+  }
+}
+
 function stripMarkup(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
