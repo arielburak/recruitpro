@@ -111,6 +111,34 @@ export async function POST(request: Request) {
       });
     }
 
+    // Mirror as a Contact too, so the recruiter sees this person in
+    // the CRM right away — both on /contacts and on the Client detail
+    // page. Without this, Job-invited people only existed as
+    // ClientUser rows, which the per-Client Contacts subpage didn't
+    // surface. Find-or-create by (clientId, email) to avoid stacking
+    // duplicates if the recruiter re-invites the same person.
+    const [firstNameGuess, ...restGuess] = (
+      inviteName || clientUser.name || inviteEmail.split("@")[0]
+    )
+      .trim()
+      .split(/\s+/);
+    const lastNameGuess = restGuess.join(" ") || "";
+    const existingContact = await prisma.contact.findFirst({
+      where: { clientId: client.id, email: inviteEmail },
+      select: { id: true },
+    });
+    if (!existingContact) {
+      await prisma.contact.create({
+        data: {
+          firstName: firstNameGuess || inviteEmail,
+          lastName: lastNameGuess,
+          email: inviteEmail,
+          clientId: client.id,
+          organizationId: ctx.organizationId,
+        },
+      });
+    }
+
     const hasPassword = !!clientUser.passwordHash;
     const recipientName = clientUser.name;
 
