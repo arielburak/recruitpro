@@ -53,11 +53,12 @@ export async function POST(
 
     // Cross-Client clash. ClientUser.email is globally unique so the
     // same person at another Client can't be re-keyed here. The
-    // recruiter sees a useful message instead of a 500.
+    // recruiter sees a short message — the full company name still
+    // gets shown via the row tooltip if needed.
     if (existing && existing.clientId !== contact.client.id) {
       return NextResponse.json(
         {
-          error: `That email already has a portal account at ${existing.client.name}. Use a different address or update the contact.`,
+          error: `Email already used at ${existing.client.name}`,
         },
         { status: 409 }
       );
@@ -67,7 +68,7 @@ export async function POST(
     // from a UI that's calling this endpoint.
     if (existing && existing.passwordHash) {
       return NextResponse.json(
-        { error: "This person already has portal access.", alreadyActive: true },
+        { error: "Already has portal access", alreadyActive: true },
         { status: 409 }
       );
     }
