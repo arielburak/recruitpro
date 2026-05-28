@@ -284,7 +284,7 @@ export default function ClientDashboardPage() {
           </h1>
           <p className="text-gray-500 text-sm">
             {data?.client?.industry ? `${data.client.industry} · ` : ""}
-            Manage your hiring pipeline
+            Hiring pipeline, shared searches and candidates from your recruiting firms
           </p>
         </div>
         <Link href="/client-portal/jobs/new">
