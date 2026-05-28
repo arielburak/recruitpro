@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Home } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Users2, Home } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
 import { useLogoUrl } from "@/components/logo-uploader";
 
@@ -88,6 +88,13 @@ export default function ClientPortalLayout({
                 >
                   <Users className="h-4 w-4" />
                   Candidates
+                </NavLink>
+                <NavLink
+                  href="/client-portal/my-team"
+                  current={pathname.startsWith("/client-portal/my-team")}
+                >
+                  <Users2 className="h-4 w-4" />
+                  My Team
                 </NavLink>
                 <NavLink href="/client-portal/jobs/new" current={pathname === "/client-portal/jobs/new"}>
                   <FolderOpen className="h-4 w-4" />
