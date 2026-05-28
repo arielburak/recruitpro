@@ -301,7 +301,7 @@ export default function ClientPortalSettingsPage() {
 
   const tabs: { id: SettingsTab; label: string; icon: any; adminOnly?: boolean }[] = [
     { id: "profile", label: "Profile", icon: User },
-    { id: "team", label: "Team", icon: Users, adminOnly: true },
+    { id: "team", label: "My Team", icon: Users },
     { id: "organization", label: "Organization", icon: Building2, adminOnly: true },
   ];
   const visibleTabs = tabs.filter((t) => !t.adminOnly || isAdmin);
@@ -473,30 +473,29 @@ export default function ClientPortalSettingsPage() {
           {/* ========== TEAM TAB ========== */}
           {activeTab === "team" && (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-500" />
-                Team Members
-              </CardTitle>
-              {isAdmin ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={() => { setShowInvite(!showInvite); setInviteResult(null); }}
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Add Member
-                </Button>
-              ) : (
-                <Badge variant="secondary" className="text-[10px] gap-1 bg-gray-100 text-gray-500">
-                  <Lock className="h-3 w-3" />
-                  Admin only
-                </Badge>
-              )}
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-emerald-500" />
+                  My Team
+                </CardTitle>
+                <p className="text-xs text-gray-500 mt-1">
+                  Members added here get portal access only — share specific
+                  jobs with them from each Job&apos;s access panel.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => { setShowInvite(!showInvite); setInviteResult(null); }}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Add Member
+              </Button>
             </CardHeader>
             <CardContent>
-              {isAdmin && showInvite && (
+              {showInvite && (
                 <div className="mb-4 p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
                   {contactMatch && (
                     <div className="mb-3 flex items-start gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
@@ -533,10 +532,12 @@ export default function ClientPortalSettingsPage() {
                         <select
                           value={inviteRole}
                           onChange={(e) => setInviteRole(e.target.value as "USER" | "ADMIN")}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm"
+                          disabled={!isAdmin}
+                          className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={!isAdmin ? "Only admins can grant the Admin role" : undefined}
                         >
                           <option value="USER">User</option>
-                          <option value="ADMIN">Admin</option>
+                          {isAdmin && <option value="ADMIN">Admin</option>}
                         </select>
                       </div>
                     </div>
