@@ -36,14 +36,17 @@ export async function GET() {
   }
 }
 
-// Invite a new team member (admin only)
+// Invite a new team member. Open to any client portal user (not just
+// ADMIN) so a USER can pull in a teammate without escalating to an
+// admin first. Two guards keep this from being a self-service hole:
+//   1. Domain match — the invitee's email domain must equal the
+//      inviter's. So someone @lionpointpartners.com can only invite
+//      @lionpointpartners.com.
+//   2. Only ADMINs can grant the ADMIN role; USER invites get role
+//      USER regardless of what they send in the body.
 export async function POST(request: Request) {
   try {
     const ctx = await getClientContext();
-
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Only admins can invite team members" }, { status: 403 });
-    }
 
     const body = await request.json();
 
@@ -54,7 +57,30 @@ export async function POST(request: Request) {
     const email = body.email.trim().toLowerCase();
     const name = body.name.trim();
     const title = body.title?.trim() || null;
-    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+
+    // Domain match. The inviter's email lives on their ClientUser
+    // row; we fetch it instead of trusting ctx, since ctx is just
+    // the JWT projection and might not carry email today.
+    const inviter = await prisma.clientUser.findUnique({
+      where: { id: ctx.clientUserId },
+      select: { email: true },
+    });
+    const inviterDomain = inviter?.email?.split("@")[1]?.toLowerCase();
+    const inviteeDomain = email.split("@")[1]?.toLowerCase();
+    if (!inviterDomain || !inviteeDomain || inviterDomain !== inviteeDomain) {
+      return NextResponse.json(
+        {
+          error: `You can only invite teammates at @${inviterDomain || "your company"}. To invite someone with a different email domain, ask an admin.`,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Only ADMINs can grant the ADMIN role. Anyone else's role
+    // selection silently becomes USER — no surprise privilege
+    // escalation via a crafted payload.
+    const role: "ADMIN" | "USER" =
+      ctx.role === "ADMIN" && body.role === "ADMIN" ? "ADMIN" : "USER";
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({
