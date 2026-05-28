@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { clientAccessWhere } from "@/lib/client-access";
+import { findSimilarClients } from "@/lib/client-dedup";
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,6 +86,28 @@ export async function POST(request: Request) {
     const ctx = await getOrgContext();
     const body = await request.json();
     const data = clientSchema.parse(body);
+
+    // Duplicate guard: refuse to silently create another row when the
+    // org already has a Client that normalizes to the same name. The
+    // recruiter has to either pick "use existing" (front-end calls the
+    // existing client's ID) or set force=true on the retry to
+    // acknowledge they really meant to create a separate row. Without
+    // this we end up with the Lionpoint / Lionpoint Partners /
+    // Lionpointpartners situation that needed a one-time merge script
+    // to untangle.
+    if (!body.force) {
+      const dupes = await findSimilarClients(ctx.organizationId, data.name);
+      if (dupes.length > 0) {
+        return NextResponse.json(
+          {
+            error: "duplicate_name",
+            message: `An existing client looks like the same company. Use it instead, or confirm to create anyway.`,
+            duplicates: dupes,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     // Create the Client + the engagement in one transaction so a
     // failed engagement insert doesn't leave a Client orphaned from
