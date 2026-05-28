@@ -924,7 +924,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
         {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Your Internal Team */}
+          {/* Your Internal Team — hidden while the Job access panel is
+              in edit mode below, because that surface already lists
+              the same people with explicit access checkboxes. Showing
+              both side-by-side just duplicates the roster. */}
+          {!showManageAccess && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1018,6 +1022,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Job access — who on the team can see this JO. Skipped on
               solo workspaces (no one else to restrict against). Shows
