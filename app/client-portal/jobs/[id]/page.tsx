@@ -45,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
+import { ReadOnlyPipeline } from "@/components/client-portal/read-only-pipeline";
 import { formatDate } from "@/lib/utils";
 
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
@@ -138,8 +139,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setSavingAccess(false);
   }
 
-  // Candidates for this job
+  // Candidates for this job + the client's pipeline stages, used by
+  // the read-only pipeline view that mirrors the agency's kanban.
   const [jobCandidates, setJobCandidates] = useState<any[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<any[]>([]);
+  // Toggle between the pipeline (kanban) and the flat candidate list.
+  const [candidatesView, setCandidatesView] = useState<"pipeline" | "list">("pipeline");
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -198,6 +203,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchTeam();
     fetchDocuments();
     fetchJobCandidates();
+    fetchPipelineStages();
   }, [id]);
 
   // Debounced lookup: as the user types an email, resolve it against the
@@ -247,6 +253,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       if (res.ok) {
         const data = await res.json();
         setJobCandidates(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  }
+
+  async function fetchPipelineStages() {
+    try {
+      const res = await fetch("/api/client-portal/pipeline-stages");
+      if (res.ok) {
+        const data = await res.json();
+        setPipelineStages(Array.isArray(data) ? data : []);
       }
     } catch {}
   }
@@ -594,18 +610,43 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </Card>
               )}
 
-              {/* Candidates shared for this job */}
+              {/* Candidates shared for this job — pipeline view by
+                  default (mirrors the agency's kanban, read-only),
+                  with a List toggle for scanning many at once. */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
                     <Users className="h-4 w-4" />
                     Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
                   </CardTitle>
-                  {jobCandidates.length > 0 && (
-                    <Link href={`/client-portal/candidates?clientJobId=${id}`} className="text-xs text-emerald-600 hover:underline">
-                      View all →
-                    </Link>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {jobCandidates.length > 0 && (
+                      <div className="inline-flex rounded-md border bg-white p-0.5">
+                        {(["pipeline", "list"] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setCandidatesView(v)}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded ${
+                              candidatesView === v
+                                ? "bg-emerald-600 text-white"
+                                : "text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {v === "pipeline" ? "Pipeline" : "List"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {jobCandidates.length > 0 && (
+                      <Link
+                        href={`/client-portal/candidates?clientJobId=${id}`}
+                        className="text-xs text-emerald-600 hover:underline"
+                      >
+                        View all →
+                      </Link>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   {jobCandidates.length === 0 ? (
@@ -615,6 +656,13 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       <p className="text-xs text-gray-400 mt-1">
                         Your recruiting firms will share candidates here as they find them.
                       </p>
+                    </div>
+                  ) : candidatesView === "pipeline" ? (
+                    <div className="p-4">
+                      <ReadOnlyPipeline
+                        stages={pipelineStages}
+                        submissions={jobCandidates}
+                      />
                     </div>
                   ) : (
                     <Table>
