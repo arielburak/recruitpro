@@ -6,6 +6,26 @@ const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
+// Outbound-mail safety rails. Set these in any env where real
+// addresses could land in the To field while we're still testing:
+//
+//   DISABLE_OUTBOUND_EMAIL=1   — drop every send, log the subject/body
+//                                so the flow still completes without
+//                                contacting anyone.
+//   EMAIL_ALLOWLIST=a@x,b@y    — only addresses in this comma list go
+//                                out; the rest are dropped with a log.
+//                                Lets us test with our own inboxes
+//                                without ever risking a client mail.
+//
+// Production should leave both unset.
+const outboundDisabled =
+  process.env.DISABLE_OUTBOUND_EMAIL === "1" ||
+  process.env.DISABLE_OUTBOUND_EMAIL === "true";
+const allowlist = (process.env.EMAIL_ALLOWLIST || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 type SendArgs = {
   to: string;
   subject: string;
@@ -13,12 +33,24 @@ type SendArgs = {
 };
 
 async function sendEmail({ to, subject, html }: SendArgs) {
+  if (outboundDisabled) {
+    console.warn(
+      `[email] DISABLE_OUTBOUND_EMAIL set — dropping mail to ${to}: ${subject}`
+    );
+    return { skipped: true as const, reason: "disabled" };
+  }
+  if (allowlist.length > 0 && !allowlist.includes(to.trim().toLowerCase())) {
+    console.warn(
+      `[email] ${to} not in EMAIL_ALLOWLIST — dropping mail: ${subject}`
+    );
+    return { skipped: true as const, reason: "allowlist" };
+  }
   if (!resend) {
     console.warn(
       `[email] RESEND_API_KEY not set — would have sent to ${to}: ${subject}`
     );
     console.log(`[email] HTML body:\n${html}`);
-    return { skipped: true as const };
+    return { skipped: true as const, reason: "no_key" };
   }
 
   const { data, error } = await resend.emails.send({
