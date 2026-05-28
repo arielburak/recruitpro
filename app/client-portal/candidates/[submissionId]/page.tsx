@@ -20,7 +20,6 @@ import {
   Calendar,
 } from "lucide-react";
 import { RatingStars } from "@/components/client-portal/rating-stars";
-import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { CandidateChat } from "@/components/client-portal/candidate-chat";
 
 type CandidateDetail = {
@@ -108,10 +107,6 @@ export default function CandidateDetailPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  // Pipeline stages
-  const [availableStages, setAvailableStages] = useState<{ id: string; name: string; color: string; isTerminal: boolean; kind: string | null }[]>([]);
-  const [changingStage, setChangingStage] = useState(false);
-
   // Rating form
   const [myScore, setMyScore] = useState<number>(0);
   const [myFeedback, setMyFeedback] = useState("");
@@ -140,31 +135,11 @@ export default function CandidateDetailPage({
 
   useEffect(() => {
     fetchDetail();
-    // Fetch available client stages for the dropdown
-    fetch("/api/client-portal/pipeline-stages")
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setAvailableStages(data);
-      })
-      .catch(() => {});
   }, [submissionId]);
 
-  async function changeStage(newStageId: string) {
-    if (!detail) return;
-    if (newStageId === "all") return;
-    setChangingStage(true);
-    try {
-      const res = await fetch(`/api/client-portal/candidates/${submissionId}/stage`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientStageId: newStageId }),
-      });
-      if (res.ok) {
-        fetchDetail();
-      }
-    } catch {}
-    setChangingStage(false);
-  }
+  // Pipeline moves are agency-driven for MVP. The PATCH stage endpoint
+  // returns 403 server-side, and the selector that used to call it has
+  // been replaced with the read-only pill in the header.
 
   async function saveRating() {
     if (!myScore) return;
@@ -272,23 +247,28 @@ export default function CandidateDetailPage({
           </div>
         </div>
 
-        {availableStages.length > 0 && (
+        {detail.clientStage && (
+          // Read-only display of the pipeline stage. MVP scope keeps
+          // the pipeline agency-driven — clients see where the
+          // candidate sits, but the move itself happens on the agency
+          // side. Leaving a selector here would imply ownership the
+          // client doesn't actually have.
           <div className="shrink-0 flex flex-col items-end gap-1">
-            <SearchableSelect
-              value={detail.clientStage?.id || "all"}
-              onChange={changeStage}
-              options={availableStages.map<SearchableSelectOption>((s) => ({
-                value: s.id,
-                label: s.name,
-                color: s.color,
-              }))}
-              allLabel="— Select stage —"
-              searchPlaceholder="Search stages..."
-              placeholder="Stage"
-              minWidth={180}
-              disabled={changingStage}
-            />
-            <p className="text-[10px] text-gray-400">Your pipeline stage</p>
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
+              style={{
+                backgroundColor: detail.clientStage.color + "20",
+                color: detail.clientStage.color,
+                borderColor: detail.clientStage.color + "40",
+              }}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: detail.clientStage.color }}
+              />
+              {detail.clientStage.name}
+            </span>
+            <p className="text-[10px] text-gray-400">Pipeline stage</p>
           </div>
         )}
       </div>
