@@ -284,7 +284,7 @@ function ClientCandidatesPageInner() {
         <div className="text-xs text-gray-400 flex flex-wrap items-center gap-4 px-1">
           <span className="flex items-center gap-1.5">
             <Badge className="bg-emerald-100 text-emerald-700 text-[9px]">Stage</Badge>
-            Your hiring pipeline stage for this candidate (editable in each candidate&apos;s detail)
+            Current pipeline stage. Moves happen on your recruiting firm&apos;s side.
           </span>
         </div>
       )}
