@@ -84,10 +84,27 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+type MentionUser = {
+  id: string;
+  name: string;
+  email: string;
+  title?: string | null;
+  kind: "client";
+};
+
 export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUserId }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Mention picker state. Only people with access to THIS Job are
+  // returned by the search endpoint, so the chat can't accidentally
+  // notify someone who isn't on the search.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionResults, setMentionResults] = useState<MentionUser[]>([]);
+  const [pickedMentions, setPickedMentions] = useState<Record<string, MentionUser>>({});
+
   const sorted = [...comments].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
@@ -96,18 +113,59 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sorted.length]);
 
+  // Debounced mention search — fires whenever the user is typing into
+  // an @query at the tail of the input.
+  useEffect(() => {
+    if (mentionQuery === null) {
+      setMentionResults([]);
+      return;
+    }
+    const url = `/api/client-portal/mentions/search?scope=internal&clientJobId=${encodeURIComponent(
+      jobId
+    )}&q=${encodeURIComponent(mentionQuery)}`;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(url);
+        if (res.ok) setMentionResults(await res.json());
+      } catch {}
+    }, 120);
+    return () => clearTimeout(t);
+  }, [mentionQuery, jobId]);
+
+  function handleTextChange(value: string) {
+    setText(value);
+    const match = value.match(/@(\w*)$/);
+    setMentionQuery(match ? match[1] : null);
+  }
+
+  function pickMention(u: MentionUser) {
+    const firstName = u.name.split(" ")[0];
+    const newVal = text.replace(/@\w*$/, `@${firstName} `);
+    setText(newVal);
+    setPickedMentions((prev) => ({ ...prev, [u.id]: u }));
+    setMentionQuery(null);
+    setMentionResults([]);
+    textareaRef.current?.focus();
+  }
+
   async function send() {
     const content = text.trim();
     if (!content || sending) return;
     setSending(true);
+    // Only ship the picked mentions whose @name still appears in the
+    // text — the user may have deleted one before sending.
+    const mentionIds = Object.values(pickedMentions)
+      .filter((m) => content.includes(`@${m.name.split(" ")[0]}`))
+      .map((m) => m.id);
     try {
       const res = await fetch(`/api/client-portal/jobs/${jobId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, mentions: mentionIds }),
       });
       if (res.ok) {
         setText("");
+        setPickedMentions({});
         onCommentAdded();
       }
     } finally {
@@ -240,13 +298,46 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
       </div>
 
       {/* Composer */}
-      <div className="border-t bg-white p-3">
+      <div className="border-t bg-white p-3 relative">
+        {/* Mention autocomplete — anchored above the textarea. Only
+            shows people who can see this Job (the search endpoint
+            applies the access filter) so we can't @ someone who'd be
+            blocked from reading the thread anyway. */}
+        {mentionQuery !== null && mentionResults.length > 0 && (
+          <div className="absolute bottom-full left-3 right-3 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto z-10">
+            {mentionResults.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => pickMention(u)}
+                className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center gap-2 text-sm"
+              >
+                <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
+                  {u.name
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((p) => p[0]?.toUpperCase() || "")
+                    .join("")}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-medium text-gray-900 truncate">{u.name}</div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {u.title ? `${u.title} · ` : ""}
+                    {u.email}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <textarea
+            ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Note for your team — HM preferences, scheduling quirks, budget caveats…"
+            placeholder="Note for your team — type @ to mention someone with access to this job"
             rows={1}
             className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent min-h-[36px] max-h-32"
           />

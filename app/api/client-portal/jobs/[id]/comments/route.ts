@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
+import { notifyOnNewClientJobComment } from "@/lib/chat-notifications";
 
 // Chat-style notes thread on the client-portal job page. Mirrors the
 // agency-side /api/comments endpoint but scoped to a ClientJob and
@@ -54,6 +55,20 @@ export async function POST(
         clientUser: { select: { id: true, name: true, title: true } },
       },
     });
+
+    // Fire-and-forget fan-out for mentions. We don't await so a slow
+    // SMTP doesn't block the POST — the comment is already saved.
+    if (mentions.length > 0) {
+      notifyOnNewClientJobComment({
+        clientJobId: id,
+        content,
+        mentions,
+        authorId: ctx.clientUserId,
+        authorName: comment.clientUser?.name || "A teammate",
+      }).catch((e) =>
+        console.error("[client-job-comments POST] notify failed:", e)
+      );
+    }
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
