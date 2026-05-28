@@ -391,7 +391,7 @@ export default function ClientContactsPage() {
                       <TableCell className="text-right">
                         <div className="inline-flex items-center justify-end gap-1.5">
                           {canInvite ? (
-                            <div className="inline-flex flex-col items-end gap-0.5">
+                            <div className="flex flex-col items-end gap-0.5 max-w-[180px] ml-auto">
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -413,9 +413,10 @@ export default function ClientContactsPage() {
                               </Button>
                               {fb && (
                                 <span
-                                  className={`text-[10px] ${
+                                  className={`text-[10px] leading-tight whitespace-normal break-words text-right ${
                                     fb.type === "success" ? "text-emerald-600" : "text-red-600"
                                   }`}
+                                  title={fb.message}
                                 >
                                   {fb.message}
                                 </span>
