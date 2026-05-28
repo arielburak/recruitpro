@@ -59,6 +59,24 @@ export const DEFAULT_STAGES: StageSpec[] = [
   { name: "Rejected",        color: "#6b7280", isTerminal: true,  kind: "negative" },
 ];
 
+// Stages the client side ever sees. Everything before "Submitted" is
+// agency-internal work (sourcing, screening) and never reaches the
+// client portal. The pipeline view in /client-portal/jobs/[id] and the
+// auto-mirror of clientStage both filter by this list — keep it
+// consistent with DEFAULT_STAGES.
+export const CLIENT_VISIBLE_STAGE_NAMES = [
+  "Submitted",
+  "Under Review",
+  "Interviewing",
+  "Offered",
+  "Placed",
+  "Lost",
+  "Rejected",
+] as const;
+export const CLIENT_VISIBLE_STAGE_SET: ReadonlySet<string> = new Set(
+  CLIENT_VISIBLE_STAGE_NAMES
+);
+
 // Aliases from legacy stage names to the canonical set. Used by the migration
 // script to remap existing PipelineStage rows.
 export const LEGACY_STAGE_ALIASES: Record<string, string> = {

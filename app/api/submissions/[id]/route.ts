@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendCandidateSharedEmail } from "@/lib/email";
+import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
 
 export async function PATCH(
   request: Request,
@@ -92,6 +93,35 @@ export async function PATCH(
       }
     }
 
+    // Mirror agency stage → client stage on the way through. Whenever
+    // the recruiter advances the candidate into a stage the client is
+    // allowed to see (Submitted, Under Review, …), find the matching
+    // ClientPipelineStage by name on the same Client and set
+    // clientStageId so the read-only kanban in the client portal
+    // tracks the agency view automatically. Pre-Submitted moves
+    // (Sourced, Internal Review) leave clientStageId alone — those
+    // stages don't belong on the client side at all.
+    let mirroredStageName: string | null = null;
+    if (updateData.stageId && submission.job.clientId) {
+      const newStage = await prisma.pipelineStage.findUnique({
+        where: { id: updateData.stageId },
+        select: { name: true },
+      });
+      mirroredStageName = newStage?.name || null;
+      if (newStage && CLIENT_VISIBLE_STAGE_SET.has(newStage.name)) {
+        const clientStage = await prisma.clientPipelineStage.findFirst({
+          where: {
+            clientId: submission.job.clientId,
+            name: { equals: newStage.name, mode: "insensitive" },
+          },
+          select: { id: true },
+        });
+        if (clientStage) {
+          updateData.clientStageId = clientStage.id;
+        }
+      }
+    }
+
     await prisma.candidateSubmission.update({
       where: { id },
       data: updateData,
@@ -100,12 +130,9 @@ export async function PATCH(
     // Log stage change — covers both explicit moves (body.stageId) and the
     // implicit advance to "Submitted" we trigger from the share toggle.
     if (updateData.stageId) {
-      const newStage = await prisma.pipelineStage.findUnique({
-        where: { id: updateData.stageId },
-      });
       await logActivity({
         action: "submission.stage_changed",
-        description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${newStage?.name}" in "${submission.job.title}"`,
+        description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${mirroredStageName || "another stage"}" in "${submission.job.title}"`,
         userId: ctx.userId,
         candidateId: submission.candidateId,
         organizationId: ctx.organizationId,
