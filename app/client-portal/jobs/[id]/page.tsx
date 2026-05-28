@@ -253,6 +253,34 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     };
   }, [inviteEmail, id, inviteSuggestions]);
 
+  // Auto-clear the selected firm chip when the typed email clearly
+  // doesn't belong to it. Two signals:
+  //   1. The email matches a known suggestion attached to a different
+  //      firm (immediate — no round-trip needed).
+  //   2. The live lookup resolved a firmName that differs from the
+  //      selected one.
+  // We deliberately do NOT clear on a partial / unmatched email so the
+  // recruiter can still invite a brand-new person at the selected firm
+  // without losing their picked context mid-typing.
+  useEffect(() => {
+    if (!selectedFirm) return;
+    const raw = inviteEmail.trim().toLowerCase();
+    if (!raw) return;
+    const suggestion = inviteSuggestions.find((s) => s.email && s.email === raw);
+    if (suggestion?.firmName && suggestion.firmName !== selectedFirm) {
+      setSelectedFirm(null);
+      return;
+    }
+    if (
+      inviteLookup &&
+      inviteLookup.email === raw &&
+      inviteLookup.firmName &&
+      inviteLookup.firmName !== selectedFirm
+    ) {
+      setSelectedFirm(null);
+    }
+  }, [inviteEmail, selectedFirm, inviteSuggestions, inviteLookup]);
+
   async function fetchJobCandidates() {
     try {
       const res = await fetch(`/api/client-portal/candidates?flat=true&clientJobId=${id}`);
