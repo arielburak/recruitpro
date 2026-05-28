@@ -9,6 +9,42 @@ datasource db {
 
 // ─── MULTI-TENANCY ───
 
+// One per real human. Holds the authentication primitives (email,
+// password, verification state) that used to be duplicated on User
+// and ClientUser. A single Account can have N memberships: agency-
+// side (User rows pointing at an Organization) and/or client-side
+// (ClientUser rows pointing at a Client). That solves two problems:
+//
+//   1. The same person can be a recruiter at one firm AND a hiring
+//      contact at another (or even at the same firm, when the agency
+//      also hires for itself). Today that requires duplicate logins.
+//
+//   2. The same hiring contact can sit at multiple Clients. Today
+//      ClientUser.email is globally unique, so we error out on the
+//      second invite. With Account in the middle, the second invite
+//      just adds another ClientUser membership.
+//
+// This PR introduces the model and backfills 1:1. Auth, login flow
+// and the smart-invite paths follow in separate PRs so each step is
+// reversible.
+model Account {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  // Verification state — moved over from the two old tables. Email-
+  // password signups land with token + expiry set; verifiedAt is set
+  // once they click. OAuth (Google) and invite-via-set-password flows
+  // backfill verifiedAt directly because the email is already proven.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users       User[]
+  clientUsers ClientUser[]
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -54,10 +90,16 @@ model User {
   emailVerifiedAt            DateTime?
   emailVerificationToken     String?   @unique
   emailVerificationExpiresAt DateTime?
+  // Link to the unified Account. Nullable while we migrate — the
+  // backfill script in scripts/migrate-account-identity.ts populates
+  // every existing row. Future PRs make this non-null and migrate
+  // password / verification reads to the Account side.
+  accountId      String?
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  account               Account?              @relation(fields: [accountId], references: [id])
   organization          Organization          @relation(fields: [organizationId], references: [id])
   candidates            Candidate[]
   submissions           CandidateSubmission[] @relation("SubmittedBy")
@@ -72,6 +114,7 @@ model User {
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
 
   @@index([organizationId])
+  @@index([accountId])
 }
 
 // In-app notifications for staffing users (one per user, personal inbox).
@@ -233,13 +276,11 @@ model Contact {
 
 model ClientUser {
   id           String   @id @default(cuid())
-  // Globally unique. An email belongs to exactly one Client across the
-  // whole ATS — a hiring contact at Acme uses their Acme email there
-  // and nowhere else; if they ever work with a second hiring company
-  // they use that company's email (or a personal one). Different
-  // identities (work / personal) can each be at their own Client.
-  // Enforced at the DB level so a recruiter mistyping or trying to
-  // re-invite a contact who's already at another Client fails fast.
+  // Globally unique today. Will be removed in a follow-up PR once
+  // every read path goes through Account — at that point the same
+  // email can have ClientUser memberships at multiple Clients, since
+  // identity lives on Account and ClientUser becomes purely a
+  // (account, client, role) link.
   email        String   @unique
   name         String
   title        String?
@@ -254,9 +295,12 @@ model ClientUser {
   emailVerifiedAt            DateTime?
   emailVerificationToken     String?   @unique
   emailVerificationExpiresAt DateTime?
+  // Link to the unified Account. Nullable while we migrate. See User.accountId.
+  accountId    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  account    Account?          @relation(fields: [accountId], references: [id])
   client     Client            @relation(fields: [clientId], references: [id])
   comments   Comment[]
   ratings    CandidateRating[]
@@ -267,6 +311,7 @@ model ClientUser {
   jobMemberships ClientJobMember[]
 
   @@index([clientId])
+  @@index([accountId])
 }
 
 model ClientPortalToken {
