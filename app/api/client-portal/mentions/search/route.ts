@@ -23,10 +23,13 @@ export async function GET(request: NextRequest) {
 
     const results: Array<{ id: string; name: string; email: string; kind: "client" | "staffing"; title?: string | null }> = [];
 
-    // Job-access filter for the per-Job mention case. We mirror the
-    // canAccessClientJob rule: ADMINs always count, empty members
-    // list is the legacy "whole team" state, otherwise only the
-    // listed ClientUsers can be mentioned.
+    // Job-access filter for the per-Job mention case. Stricter than
+    // view access on purpose: view defaults to "whole team" when no
+    // members are listed (legacy mode), but @-mentions need to ping
+    // someone deliberately, so we only allow people the user has
+    // actively put on the search — the CREATOR plus anyone in the
+    // explicit members list. No ADMIN bypass: management role
+    // doesn't auto-grant search-level access (see lib/client-job-access).
     let jobMemberIds: Set<string> | null = null;
     if (clientJobId) {
       const job = await prisma.clientJob.findFirst({
@@ -36,9 +39,10 @@ export async function GET(request: NextRequest) {
       if (!job) {
         return NextResponse.json([]);
       }
-      if (job.members.length > 0) {
-        jobMemberIds = new Set(job.members.map((m) => m.clientUserId));
-      }
+      jobMemberIds = new Set<string>([
+        job.postedById,
+        ...job.members.map((m) => m.clientUserId),
+      ]);
     }
 
     // Client team members always available
@@ -63,9 +67,9 @@ export async function GET(request: NextRequest) {
     });
 
     for (const u of clientUsers) {
-      // Per-Job filter — only people who can see this Job can be
-      // mentioned in its Notes thread. ADMINs bypass the member list.
-      if (jobMemberIds && u.role !== "ADMIN" && !jobMemberIds.has(u.id)) {
+      // Per-Job filter — only the creator and explicitly added
+      // members can be mentioned. No ADMIN bypass on purpose.
+      if (jobMemberIds && !jobMemberIds.has(u.id)) {
         continue;
       }
       results.push({ id: u.id, name: u.name, email: u.email, title: u.title, kind: "client" });
