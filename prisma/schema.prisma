@@ -429,6 +429,10 @@ model Job {
   // linked engagements has invitedUserId set, only the assignees see
   // the Job (admins included).
   firmEngagements FirmEngagement[]
+  // Mirror row created in the client portal when the recruiter uses
+  // "Invite Client" from /jobs/[id]. The client sees this in their
+  // portal but can't edit it — the agency owns the source of truth.
+  clientJobMirror ClientJob? @relation("ClientJobMirror")
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
@@ -860,11 +864,24 @@ model ClientJob {
   status       String   @default("OPEN")
   clientId     String
   postedById   String
+  // True when the row was mirrored over from an agency-side Job via
+  // the "Invite Client" flow on /jobs/[id]. The client sees the search
+  // in their portal but can't edit description / requirements /
+  // documents — the agency owns the source of truth. Notes (chat) and
+  // team management stay editable because those are about how the
+  // client team collaborates around the search, not about the search
+  // itself.
+  createdByAgency Boolean @default(false)
+  // FK to the originating agency Job when createdByAgency is true.
+  // Nullable + onDelete: SetNull so deleting the agency Job leaves the
+  // client's view of the engagement intact instead of cascading.
+  sourceJobId    String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   client             Client              @relation(fields: [clientId], references: [id])
   postedBy           ClientUser          @relation(fields: [postedById], references: [id])
+  sourceJob          Job?                @relation("ClientJobMirror", fields: [sourceJobId], references: [id], onDelete: SetNull)
   engagements        FirmEngagement[]
   pendingFirmInvites PendingFirmInvite[]
   documents          Document[]

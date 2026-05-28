@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 import { sendClientPortalShareEmail, sendClientSetPasswordEmail } from "@/lib/email";
+import { DEFAULT_STAGES } from "@/lib/constants";
 import crypto from "crypto";
 
 export async function POST(request: Request) {
@@ -75,14 +76,36 @@ export async function POST(request: Request) {
       : "/client-portal/dashboard";
     const portalUrl = `${baseUrl}/client-portal/login?callbackUrl=${encodeURIComponent(deepLinkPath)}`;
 
-    // Get job title if sharing a specific job
+    // Fetch the source Job. We need not just the title (for the email)
+    // but also the body — when sharing a specific job for the first
+    // time we mirror it into a ClientJob so the client sees the search
+    // in their portal, read-only. Cached as a local because we use it
+    // for both the email content and the mirror.
+    let sourceJob:
+      | {
+          title: string;
+          description: string | null;
+          location: string | null;
+          salary: string | null;
+          currency: string;
+          workMode: string;
+          status: string;
+          _count: { submissions: number };
+        }
+      | null = null;
     let jobTitle: string | undefined;
     let candidateCount: number | undefined;
     if (jobId) {
-      const job = await prisma.job.findUnique({
+      sourceJob = await prisma.job.findUnique({
         where: { id: jobId },
         select: {
           title: true,
+          description: true,
+          location: true,
+          salary: true,
+          currency: true,
+          workMode: true,
+          status: true,
           _count: {
             select: {
               submissions: { where: { isSharedWithClient: true } },
@@ -90,8 +113,8 @@ export async function POST(request: Request) {
           },
         },
       });
-      jobTitle = job?.title;
-      candidateCount = job?._count.submissions;
+      jobTitle = sourceJob?.title;
+      candidateCount = sourceJob?._count.submissions;
     }
 
     // Find-or-create ClientUser for this email at THIS Client. By here
@@ -137,6 +160,98 @@ export async function POST(request: Request) {
           organizationId: ctx.organizationId,
         },
       });
+    }
+
+    // Mirror the agency Job into a ClientJob the first time we share
+    // it. After this the client sees the search in their /jobs list
+    // and can dive into the read-only detail view with the pipeline,
+    // notes and documents tabs — without ever being able to edit
+    // description / requirements / files (the agency owns those). We
+    // key the mirror by sourceJobId (unique) so re-inviting more
+    // contacts to the same Job doesn't stack duplicates.
+    let mirroredClientJobId: string | null = null;
+    if (jobId && sourceJob) {
+      const existingMirror = await prisma.clientJob.findUnique({
+        where: { sourceJobId: jobId },
+        select: { id: true },
+      });
+      if (existingMirror) {
+        mirroredClientJobId = existingMirror.id;
+      } else {
+        // Make sure the client has pipeline stages seeded. Quick-share
+        // and OAuth signup already do this, but a Client created via
+        // a manual /api/clients POST in the early days might not, so
+        // we backfill defensively before the first mirror.
+        const stageCount = await prisma.clientPipelineStage.count({
+          where: { clientId: client.id },
+        });
+        if (stageCount === 0) {
+          await prisma.clientPipelineStage.createMany({
+            data: DEFAULT_STAGES.map((s, i) => ({
+              name: s.name,
+              order: i,
+              color: s.color,
+              isTerminal: s.isTerminal,
+              kind: s.kind,
+              clientId: client.id,
+            })),
+          });
+        }
+        // Map agency JobStatus enum onto the free-form ClientJob.status
+        // string. They share the OPEN / ACTIVE / FILLED / CLOSED vocab
+        // so the cast is essentially identity.
+        const mirror = await prisma.clientJob.create({
+          data: {
+            title: sourceJob.title,
+            description: sourceJob.description,
+            location: sourceJob.location,
+            salaryRange: sourceJob.salary,
+            salaryCurrency: sourceJob.currency,
+            isRemote: sourceJob.workMode !== "ON_SITE",
+            status: sourceJob.status,
+            clientId: client.id,
+            // The invited person is recorded as the receiver of the
+            // search on the client side. Combined with createdByAgency
+            // the UI knows the original author was the firm — but the
+            // recipient needs SOME ClientUser to be the postedBy since
+            // the column is required.
+            postedById: clientUser.id,
+            createdByAgency: true,
+            sourceJobId: jobId,
+          },
+          select: { id: true },
+        });
+        mirroredClientJobId = mirror.id;
+      }
+      // Link the engagement to the mirror. Status: ACCEPTED because by
+      // here the agency has actively shared with the client; no
+      // pending step from the client's side. clientJobId is required
+      // on FirmEngagement, so the engagement only exists once the
+      // mirror does. Find-or-create by (clientJobId, organizationId).
+      const existingEngagement = await prisma.firmEngagement.findFirst({
+        where: {
+          clientJobId: mirroredClientJobId,
+          organizationId: ctx.organizationId,
+        },
+        select: { id: true },
+      });
+      if (!existingEngagement) {
+        await prisma.firmEngagement.create({
+          data: {
+            clientJobId: mirroredClientJobId,
+            organizationId: ctx.organizationId,
+            jobId,
+            invitedEmail: inviteEmail,
+            status: "ACCEPTED",
+            respondedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.firmEngagement.updateMany({
+          where: { id: existingEngagement.id },
+          data: { jobId, status: "ACCEPTED", respondedAt: new Date() },
+        });
+      }
     }
 
     const hasPassword = !!clientUser.passwordHash;

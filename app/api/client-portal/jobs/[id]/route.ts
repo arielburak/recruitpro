@@ -24,6 +24,20 @@ export async function PUT(
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    // Refuse to edit content the agency owns. The client team still
+    // owns their internal notes (Comment.clientJobId) so those keep
+    // their own write path — only the search-itself fields are off
+    // limits here.
+    if (existing.createdByAgency) {
+      return NextResponse.json(
+        {
+          error:
+            "This search was set up by your recruiting firm. Ask them to edit the search itself.",
+        },
+        { status: 403 }
+      );
+    }
+
     // Notes can come through as null / empty to clear the field, so
     // resolve them outside the spread to keep the "?? existing.x"
     // pattern from re-introducing the old value when the user blanks
@@ -67,13 +81,29 @@ export async function DELETE(
     const ctx = await getClientContext();
     const { id } = await params;
 
-    const deleted = await prisma.clientJob.deleteMany({
+    // Refuse to delete agency-mirrored jobs. The agency owns the
+    // lifecycle; if the client doesn't want to see it they should
+    // ask their recruiter to close the engagement instead.
+    const existing = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
+      select: { createdByAgency: true },
     });
-
-    if (deleted.count === 0) {
+    if (!existing) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
+    if (existing.createdByAgency) {
+      return NextResponse.json(
+        {
+          error:
+            "This search was set up by your recruiting firm. Ask them to close it.",
+        },
+        { status: 403 }
+      );
+    }
+
+    await prisma.clientJob.deleteMany({
+      where: { id, clientId: ctx.clientId },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
