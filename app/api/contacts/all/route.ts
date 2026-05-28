@@ -99,37 +99,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Second pass: enrich existing Contact rows with their ClientUser
+    // counterpart (so portal status + role light up in the row). We
+    // deliberately DO NOT add a row for ClientUsers that have no
+    // matching Contact — those are people the agency didn't add (self-
+    // service portal signups, leftovers from earlier merges, etc.).
+    // The Contacts view answers "who did we put on this client", not
+    // "who can log in to this client's portal". The latter is what the
+    // Client detail's portal-users surface is for.
     for (const client of clients) {
       for (const u of client.clientUsers) {
         const status: PortalStatus = u.passwordHash ? "active" : "pending";
         const k = makeKey(client.id, u.email, u.name);
         const existing = byKey.get(k);
-        if (existing) {
-          existing.clientUserId = u.id;
-          existing.portalStatus = status;
-          existing.portalRole = u.role;
-          if (!existing.title && u.title) existing.title = u.title;
-          if (!existing.email && u.email) existing.email = u.email;
-          continue;
-        }
-        const [firstName, ...rest] = (u.name || "").trim().split(" ");
-        const lastName = rest.join(" ");
-        byKey.set(k, {
-          id: `portal_${u.id}`,
-          contactId: null,
-          clientUserId: u.id,
-          portalStatus: status,
-          portalRole: u.role,
-          firstName: firstName || u.name,
-          lastName: lastName || "",
-          name: u.name,
-          title: u.title || null,
-          email: u.email,
-          phone: null,
-          clientId: client.id,
-          clientName: client.name,
-          createdAt: new Date(0).toISOString(),
-        });
+        if (!existing) continue;
+        existing.clientUserId = u.id;
+        existing.portalStatus = status;
+        existing.portalRole = u.role;
+        if (!existing.title && u.title) existing.title = u.title;
+        if (!existing.email && u.email) existing.email = u.email;
       }
     }
 

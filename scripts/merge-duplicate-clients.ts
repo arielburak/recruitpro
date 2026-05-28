@@ -135,26 +135,50 @@ async function main() {
     }
   }
 
-  // 3. Orphans (org=null) — attach to a same-org group when at least
-  //    one active ClientUser email overlaps. That covers the
-  //    self-service signup case where the same person ended up at the
-  //    self-created org=null Client AND the agency-created one.
+  // 3. Orphans (org=null) — attach to a same-org group ONLY when a
+  //    same-email person already exists at the owned Client. That
+  //    proves it's the same hiring company, not just two different
+  //    companies with similar names. The old name-only match was
+  //    over-aggressive — a self-service "Brogas" portal signup that
+  //    happens to share a name with the agency's real-world "Brogas"
+  //    is NOT necessarily the same place.
   const orphans = scored.filter((c) => c.organizationId === null);
   for (const orphan of orphans) {
     const orphanUsers = await prisma.clientUser.findMany({
       where: { clientId: orphan.id, isActive: true },
       select: { email: true },
     });
-    const emails = orphanUsers.map((u) => u.email.toLowerCase());
-    if (emails.length === 0) continue;
+    const orphanEmails = orphanUsers.map((u) => u.email.toLowerCase());
+    if (orphanEmails.length === 0) continue;
 
-    const sameNameOwnedMatch = scored.find(
+    // Candidate owned Clients by name. We'll narrow down by email
+    // overlap below.
+    const nameCandidates = scored.filter(
       (c) =>
         c.organizationId !== null &&
         normalizeName(c.name) === normalizeName(orphan.name) &&
         (!orgArg || c.organizationId === orgArg)
     );
-    if (!sameNameOwnedMatch) continue;
+    if (nameCandidates.length === 0) continue;
+
+    let sameNameOwnedMatch: ClientRow | undefined;
+    for (const cand of nameCandidates) {
+      const overlap = await prisma.clientUser.count({
+        where: {
+          clientId: cand.id,
+          email: { in: orphanEmails, mode: "insensitive" },
+        },
+      });
+      if (overlap > 0) {
+        sameNameOwnedMatch = cand;
+        break;
+      }
+    }
+    if (!sameNameOwnedMatch) {
+      // Same name but zero shared people — leave the orphan alone.
+      // Probably a genuinely different company.
+      continue;
+    }
 
     // Only fold the orphan in if no OTHER orgs depend on it — a third
     // agency might also be using it via OrganizationClient. The match
