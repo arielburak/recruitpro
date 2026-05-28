@@ -1,36 +1,40 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 
-// Returns a UNIFIED list of all contacts related to this organization.
+// Unified contacts list — folds Contact[] (CRM rows the recruiter
+// curated) and ClientUser[] (people who can actually sign in to the
+// portal) into one stream so the UI never lies about who's where.
 //
-// A "person" can show up in two places:
-//   - Contact[]    — explicit per-client contacts the recruiter manages.
-//   - ClientUser[] — those that can actually log in to the Client Portal.
+// portalStatus is the tri-state the UI actually cares about:
+//   "none"    — no ClientUser exists for (clientId, email). Pure CRM.
+//   "pending" — ClientUser exists but hasn't redeemed the set-password
+//               invite yet. Shown with an amber badge + Resend.
+//   "active"  — ClientUser has a passwordHash. They've logged in or
+//               at least redeemed the invite and chosen a password.
 //
-// We MERGE both sources by (clientId, email) into a single row instead of
-// showing the same person twice (or — worse — only as a Contact, hiding the
-// fact that they have portal access). The row carries two independent flags:
-//   isContact         — present in the Contact table
-//   hasPortalAccess   — has an active ClientUser for the same client
-// The UI renders one badge per flag, so portal access is always visible
-// even when the person was first added as a regular Contact.
-//
-// The legacy "Main Contact" inline fields on Client (contactName/Email/Phone)
-// are no longer surfaced — that concept has been retired in favor of the
-// Contact[] table with isPrimary marking the main point of contact.
-export async function GET() {
+// Optional ?clientId=… filter scopes the list to a single Client so
+// the same merge logic powers the Client detail view without a
+// duplicate endpoint.
+export async function GET(request: NextRequest) {
   try {
     const ctx = await getOrgContext();
+    const clientId = request.nextUrl.searchParams.get("clientId");
 
     const [contacts, clients] = await Promise.all([
       prisma.contact.findMany({
-        where: { organizationId: ctx.organizationId },
+        where: {
+          organizationId: ctx.organizationId,
+          ...(clientId ? { clientId } : {}),
+        },
         include: { client: { select: { id: true, name: true } } },
         orderBy: { lastName: "asc" },
       }),
       prisma.client.findMany({
-        where: { organizationId: ctx.organizationId },
+        where: {
+          organizationId: ctx.organizationId,
+          ...(clientId ? { id: clientId } : {}),
+        },
         select: {
           id: true,
           name: true,
@@ -42,16 +46,23 @@ export async function GET() {
               email: true,
               title: true,
               role: true,
+              // passwordHash drives the pending vs active flip. We
+              // never ship the hash itself — only the boolean.
+              passwordHash: true,
+              emailVerifiedAt: true,
             },
           },
         },
       }),
     ]);
 
+    type PortalStatus = "none" | "pending" | "active";
+
     type UnifiedContact = {
       id: string;
-      isContact: boolean;
-      hasPortalAccess: boolean;
+      contactId: string | null;
+      clientUserId: string | null;
+      portalStatus: PortalStatus;
       portalRole: string | null;
       firstName: string;
       lastName: string;
@@ -59,25 +70,22 @@ export async function GET() {
       title: string | null;
       email: string | null;
       phone: string | null;
-      isPrimary: boolean;
       clientId: string;
       clientName: string;
       createdAt: string;
     };
 
     const byKey = new Map<string, UnifiedContact>();
+    const makeKey = (cid: string, email: string | null | undefined, name: string) =>
+      `${cid}::${(email || name).trim().toLowerCase()}`;
 
-    const makeKey = (clientId: string, email: string | null | undefined, name: string) =>
-      `${clientId}::${(email || name).trim().toLowerCase()}`;
-
-    // 1. Contact[] table — recruiter-curated source of truth for fields
-    //    (title, phone, primary flag).
     for (const c of contacts) {
       const k = makeKey(c.client.id, c.email, `${c.firstName} ${c.lastName}`);
       byKey.set(k, {
         id: `contact_${c.id}`,
-        isContact: true,
-        hasPortalAccess: false,
+        contactId: c.id,
+        clientUserId: null,
+        portalStatus: "none",
         portalRole: null,
         firstName: c.firstName,
         lastName: c.lastName,
@@ -85,24 +93,21 @@ export async function GET() {
         title: c.title,
         email: c.email,
         phone: c.phone,
-        isPrimary: c.isPrimary,
         clientId: c.client.id,
         clientName: c.client.name,
         createdAt: c.createdAt.toISOString(),
       });
     }
 
-    // 2. ClientUser[] — merge into the existing row if we already saw this
-    //    person as a Contact, otherwise add a new portal-only row.
     for (const client of clients) {
       for (const u of client.clientUsers) {
+        const status: PortalStatus = u.passwordHash ? "active" : "pending";
         const k = makeKey(client.id, u.email, u.name);
         const existing = byKey.get(k);
         if (existing) {
-          existing.hasPortalAccess = true;
+          existing.clientUserId = u.id;
+          existing.portalStatus = status;
           existing.portalRole = u.role;
-          // Backfill missing fields from the ClientUser so we don't lose
-          // information when the Contact was added with sparse data.
           if (!existing.title && u.title) existing.title = u.title;
           if (!existing.email && u.email) existing.email = u.email;
           continue;
@@ -111,8 +116,9 @@ export async function GET() {
         const lastName = rest.join(" ");
         byKey.set(k, {
           id: `portal_${u.id}`,
-          isContact: false,
-          hasPortalAccess: true,
+          contactId: null,
+          clientUserId: u.id,
+          portalStatus: status,
           portalRole: u.role,
           firstName: firstName || u.name,
           lastName: lastName || "",
@@ -120,7 +126,6 @@ export async function GET() {
           title: u.title || null,
           email: u.email,
           phone: null,
-          isPrimary: false,
           clientId: client.id,
           clientName: client.name,
           createdAt: new Date(0).toISOString(),
@@ -129,8 +134,6 @@ export async function GET() {
     }
 
     const all = Array.from(byKey.values());
-
-    // Sort alphabetically by last name, then first name
     all.sort((a, b) => {
       const lastCmp = (a.lastName || "").localeCompare(b.lastName || "");
       if (lastCmp !== 0) return lastCmp;
