@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
+import { sendClientJobAccessGrantedEmail } from "@/lib/email";
 
 // Manage which ClientUsers can see a given ClientJob.
 //
@@ -105,6 +106,13 @@ export async function PUT(
       ...valid.map((v) => v.id),
     ]);
 
+    // Diff previous vs. new so we can notify only the people who
+    // actually GAINED access. Just-saved users who already had a
+    // membership row shouldn't get a duplicate email every time
+    // someone hits Save on the panel.
+    const previousIds = new Set(job.members.map((m) => m.clientUserId));
+    const newlyAddedIds = Array.from(finalIds).filter((cuId) => !previousIds.has(cuId));
+
     await prisma.$transaction([
       prisma.clientJobMember.deleteMany({ where: { clientJobId: id } }),
       prisma.clientJobMember.createMany({
@@ -115,7 +123,78 @@ export async function PUT(
       }),
     ]);
 
-    return NextResponse.json({ success: true, count: finalIds.size });
+    // Fire-and-forget notification fan-out for newly-granted members.
+    // Mirrors the email + in-app the /add-member endpoint sends so
+    // the Manage Access panel and the Add Member form notify the
+    // recipient the same way — there shouldn't be two different
+    // class-of-service behaviours just because of which UI path
+    // the recruiter happened to use.
+    if (newlyAddedIds.length > 0) {
+      const [clientInfo, inviter, jobInfo, newcomers] = await Promise.all([
+        prisma.client.findUnique({
+          where: { id: ctx.clientId },
+          select: { name: true },
+        }),
+        prisma.clientUser.findUnique({
+          where: { id: ctx.clientUserId },
+          select: { name: true },
+        }),
+        prisma.clientJob.findUnique({
+          where: { id },
+          select: { title: true },
+        }),
+        prisma.clientUser.findMany({
+          where: { id: { in: newlyAddedIds } },
+          select: { id: true, name: true, email: true },
+        }),
+      ]);
+
+      const baseUrl =
+        process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+      const jobUrl = `${baseUrl}/client-portal/jobs/${id}`;
+      const companyName = clientInfo?.name || "your team";
+      const inviterName = inviter?.name || "A teammate";
+      const jobTitle = jobInfo?.title || "this search";
+
+      for (const u of newcomers) {
+        // Skip the inviter themselves (they shouldn't email "you added
+        // yourself") and the creator (who's auto-included on every
+        // save — wasn't newly granted, just kept).
+        if (u.id === ctx.clientUserId) continue;
+        try {
+          await prisma.clientNotification.create({
+            data: {
+              clientId: ctx.clientId,
+              clientUserId: u.id,
+              type: "job_access_granted",
+              title: `${inviterName} added you to ${jobTitle}`,
+              body: "Open the search to review shared candidates.",
+              link: `/client-portal/jobs/${id}`,
+            },
+          });
+        } catch (e) {
+          console.error("[members PUT] in-app notification failed:", e);
+        }
+        try {
+          await sendClientJobAccessGrantedEmail({
+            to: u.email,
+            memberName: u.name,
+            inviterName,
+            companyName,
+            jobTitle,
+            jobUrl,
+          });
+        } catch (e) {
+          console.error("[members PUT] grant email failed:", e);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      count: finalIds.size,
+      notified: newlyAddedIds.length,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
