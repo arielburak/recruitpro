@@ -16,6 +16,9 @@ import {
   ArrowRight,
   Briefcase,
   Mail,
+  Users,
+  Share2,
+  Trophy,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -196,29 +199,60 @@ export default function EngagementsPage() {
           </h2>
           {responded.map((eng) => (
             <Card key={eng.id} className={eng.status === "ACCEPTED" ? "border-l-4 border-l-green-400" : ""}>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
-                    <Building2 className="h-3.5 w-3.5" />
-                    {eng.clientJob.client.name}
-                    <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
+                      <Building2 className="h-3.5 w-3.5" />
+                      {eng.clientJob.client.name}
+                      <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge className={eng.status === "ACCEPTED" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}>
+                      {eng.status === "ACCEPTED" ? (
+                        <><CheckCircle className="h-3 w-3 mr-1" /> Accepted</>
+                      ) : (
+                        <><XCircle className="h-3 w-3 mr-1" /> Declined</>
+                      )}
+                    </Badge>
+                    {eng.status === "ACCEPTED" && eng.jobId && (
+                      <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => router.push(`/jobs/${eng.jobId}`)}>
+                        View Job <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={eng.status === "ACCEPTED" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}>
-                    {eng.status === "ACCEPTED" ? (
-                      <><CheckCircle className="h-3 w-3 mr-1" /> Accepted</>
-                    ) : (
-                      <><XCircle className="h-3 w-3 mr-1" /> Declined</>
+                {/* Collaboration stats — only for accepted engagements
+                    with a backing agency Job. Tells the recruiter at a
+                    glance how much has actually flowed through this
+                    relationship without making them click in. */}
+                {eng.status === "ACCEPTED" && eng.stats && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-600 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-gray-400" />
+                      <span className="font-medium text-gray-900">{eng.stats.submissions}</span>
+                      submitted
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Share2 className="h-3.5 w-3.5 text-gray-400" />
+                      <span className="font-medium text-gray-900">{eng.stats.shared}</span>
+                      shared with client
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Trophy className="h-3.5 w-3.5 text-gray-400" />
+                      <span className="font-medium text-gray-900">{eng.stats.placements}</span>
+                      placement{eng.stats.placements === 1 ? "" : "s"}
+                    </span>
+                    {eng.stats.lastActivityAt && (
+                      <span className="inline-flex items-center gap-1.5 ml-auto text-gray-400">
+                        <Clock className="h-3.5 w-3.5" />
+                        Last activity {formatDate(eng.stats.lastActivityAt)}
+                      </span>
                     )}
-                  </Badge>
-                  {eng.status === "ACCEPTED" && eng.jobId && (
-                    <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => router.push(`/jobs/${eng.jobId}`)}>
-                      View Job <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
