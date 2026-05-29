@@ -28,6 +28,7 @@ export async function GET() {
           select: {
             id: true,
             name: true,
+            engagementType: true,
             defaultCurrency: true,
             defaultPaymentTerms: true,
             defaultFeeAmount: true,
@@ -48,6 +49,12 @@ export async function GET() {
       title: j.title,
       clientId: j.client.id,
       clientName: j.client.name,
+      // Pre-pick the placement kind from the client's engagement type:
+      // RECRUITING → HH (one-time fee), STAFF_AUG → OS (recurring MRR).
+      // The form still lets the recruiter override for the rare case
+      // where a normally-recruiting client does a one-off OS contract.
+      defaultKind:
+        j.client.engagementType === "STAFF_AUG" ? "OS" : "HH",
       jobCurrency: j.currency ?? j.client.defaultCurrency ?? "USD",
       clientPaymentTerms: j.paymentTerms ?? j.client.defaultPaymentTerms ?? null,
       clientGuaranteePeriod: j.guaranteePeriod ?? j.client.defaultGuaranteePeriod ?? null,

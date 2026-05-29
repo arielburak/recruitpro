@@ -75,6 +75,10 @@ type ManualProps = {
     clientGuaranteePeriod?: number | null;
     clientFeeAmount?: string | null;
     clientFeeType?: "PERCENTAGE" | "FLAT" | null;
+    // "HH" for traditional recruiting clients, "OS" for staff-aug.
+    // Pre-picks the placement kind so the form shows the right
+    // pricing fields straight away.
+    defaultKind?: "HH" | "OS";
   }>;
   onSuccess?: () => void;
 };
@@ -107,6 +111,12 @@ type EditProps = {
     guaranteePeriod?: number | null;
     notes?: string | null;
     invoiceStatus?: "DRAFT" | "SENT" | "PAID";
+    // OS (staff-aug) fields. Stay null on HH placements; when set the
+    // form switches to the recurring-billing layout (monthly fee + end
+    // date, no guarantee / payment terms / invoice).
+    kind?: "HH" | "OS" | null;
+    monthlyFee?: string | number | null;
+    endDate?: string | null;
   };
   onSuccess?: () => void;
 };
@@ -196,6 +206,17 @@ export function PlacementDialog(props: Props) {
   const [guaranteePeriod, setGuaranteePeriod] = useState<number | "">(90);
   const [notes, setNotes] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState<"DRAFT" | "SENT" | "PAID">("DRAFT");
+
+  // Placement kind. "HH" = traditional headhunting (one-time fee, the
+  // historical shape) — every field above applies. "OS" = staff aug
+  // (recurring MRR) — we hide guarantee / payment terms / invoice and
+  // surface monthlyFee + endDate instead so the recruiter can't
+  // accidentally enter a 6-figure flat fee for what is actually a
+  // monthly bill. Defaults to HH; pre-picked from the job's
+  // Client.engagementType when the form opens.
+  const [kind, setKind] = useState<"HH" | "OS">("HH");
+  const [monthlyFee, setMonthlyFee] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   // Manual-mode candidate picker. The recruiter has to choose an
   // existing candidate — if there are none, the empty state in the
@@ -314,6 +335,9 @@ export function PlacementDialog(props: Props) {
       setGuaranteePeriod(i.guaranteePeriod ?? 90);
       setNotes(i.notes || "");
       setInvoiceStatus(i.invoiceStatus || "DRAFT");
+      setKind(i.kind === "OS" ? "OS" : "HH");
+      setMonthlyFee(i.monthlyFee != null ? String(i.monthlyFee) : "");
+      setEndDate(isoDate(i.endDate));
     } else {
       const initEst = activeDefaults?.estimatedStartDate || todayIso();
       const initTerms = activeDefaults?.paymentTerms ?? 30;
@@ -338,6 +362,16 @@ export function PlacementDialog(props: Props) {
       // same anchor + terms the user is seeing.
       setPaymentDueDate(previewFromAnchor("", initEst, initTerms));
       setPaymentDueDateTouched(false);
+      // Pre-pick kind from the selected job's defaultKind (sent by
+      // /api/placements/job-options based on Client.engagementType).
+      // The kind toggle below still lets the user override.
+      const job =
+        props.mode === "manual" && selectedJobId
+          ? props.jobOptions.find((j) => j.id === selectedJobId)
+          : undefined;
+      setKind(job?.defaultKind === "OS" ? "OS" : "HH");
+      setMonthlyFee("");
+      setEndDate("");
     }
     setError("");
     setStep(isCongrats ? "intro" : "form");
@@ -626,19 +660,37 @@ export function PlacementDialog(props: Props) {
       }
     }
 
-    const payload: Record<string, unknown> = {
-      estimatedStartDate: estimatedStartDate || null,
-      salary: salaryNum,
-      currency: currency || "USD",
-      salaryPeriod,
-      salaryKind,
-      feeAmount: resolvedFeeAmount,
-      feePercentage: resolvedFeePercentage,
-      paymentTerms: paymentTerms === "" ? null : Number(paymentTerms),
-      paymentDueDate: paymentDueDate || null,
-      guaranteePeriod: guaranteePeriod === "" ? 90 : Number(guaranteePeriod),
-      notes: notes || null,
-    };
+    const payload: Record<string, unknown> =
+      kind === "OS"
+        ? {
+            // OS / staff-aug placement: only recurring-billing fields
+            // travel. HH-specific fields (fee / payment terms /
+            // guarantee / invoice) are left off so the API doesn't
+            // accidentally persist them into a recurring engagement.
+            kind: "OS",
+            estimatedStartDate: estimatedStartDate || null,
+            salary: salaryNum,
+            currency: currency || "USD",
+            salaryPeriod,
+            salaryKind,
+            monthlyFee: monthlyFee ? Number(monthlyFee) : null,
+            endDate: endDate || null,
+            notes: notes || null,
+          }
+        : {
+            kind: "HH",
+            estimatedStartDate: estimatedStartDate || null,
+            salary: salaryNum,
+            currency: currency || "USD",
+            salaryPeriod,
+            salaryKind,
+            feeAmount: resolvedFeeAmount,
+            feePercentage: resolvedFeePercentage,
+            paymentTerms: paymentTerms === "" ? null : Number(paymentTerms),
+            paymentDueDate: paymentDueDate || null,
+            guaranteePeriod: guaranteePeriod === "" ? 90 : Number(guaranteePeriod),
+            notes: notes || null,
+          };
 
     if (props.mode === "congrats") {
       payload.submissionId = props.submissionId;
@@ -647,10 +699,12 @@ export function PlacementDialog(props: Props) {
     }
 
     if (props.mode === "edit") {
-      // Edit can additionally touch actual startDate and invoiceStatus —
-      // fields that don't make sense on create.
+      // Edit can additionally touch actual startDate; for HH it also
+      // surfaces invoice status. invoice status is meaningless for OS
+      // (recurring billing isn't tracked here yet) so we leave it off
+      // the OS payload.
       payload.startDate = startDate || null;
-      payload.invoiceStatus = invoiceStatus;
+      if (kind === "HH") payload.invoiceStatus = invoiceStatus;
       await putPlacement(props.placementId, payload);
       return;
     }
@@ -937,6 +991,32 @@ export function PlacementDialog(props: Props) {
               </div>
             )}
 
+            {/* Placement kind toggle. HH = traditional recruiting (one-time
+                fee on hire); OS = staff aug (recurring monthlyFee). Pre-
+                picked from the client's engagementType but always
+                overrideable for the rare cross-mode contract. Switching
+                here re-shapes the rest of the form so the user can't
+                save a flat-fee number against an OS engagement. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Engagement kind</Label>
+              <div className="inline-flex rounded-md border bg-white p-0.5">
+                {(["HH", "OS"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setKind(k)}
+                    className={`px-3 py-1 text-xs font-medium rounded ${
+                      kind === k
+                        ? "bg-indigo-600 text-white"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {k === "HH" ? "HH · one-time fee" : "OS · recurring MRR"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-est-start">Estimated start</Label>
@@ -1024,32 +1104,47 @@ export function PlacementDialog(props: Props) {
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Fee</Label>
-                <div className="flex gap-1.5">
-                  <div className="flex-1">
-                    <MoneyInput
-                      prefix={feeType === "FLAT" ? (getCurrency(currency)?.symbol || "$") : "%"}
-                      placeholder="0"
-                      value={feeInput}
-                      onChange={setFeeInput}
-                    />
+                <Label className="text-xs">
+                  {kind === "OS" ? "Monthly fee" : "Fee"}
+                </Label>
+                {kind === "OS" ? (
+                  <MoneyInput
+                    prefix={getCurrency(currency)?.symbol || "$"}
+                    placeholder="0"
+                    value={monthlyFee}
+                    onChange={setMonthlyFee}
+                  />
+                ) : (
+                  <div className="flex gap-1.5">
+                    <div className="flex-1">
+                      <MoneyInput
+                        prefix={feeType === "FLAT" ? (getCurrency(currency)?.symbol || "$") : "%"}
+                        placeholder="0"
+                        value={feeInput}
+                        onChange={setFeeInput}
+                      />
+                    </div>
+                    <select
+                      value={feeType}
+                      onChange={(e) => setFeeType(e.target.value as "PERCENTAGE" | "FLAT")}
+                      className="h-10 px-2 rounded-md border border-gray-200 bg-white text-sm shrink-0"
+                    >
+                      <option value="PERCENTAGE">%</option>
+                      <option value="FLAT">flat</option>
+                    </select>
                   </div>
-                  <select
-                    value={feeType}
-                    onChange={(e) => setFeeType(e.target.value as "PERCENTAGE" | "FLAT")}
-                    className="h-10 px-2 rounded-md border border-gray-200 bg-white text-sm shrink-0"
-                  >
-                    <option value="PERCENTAGE">%</option>
-                    <option value="FLAT">flat</option>
-                  </select>
-                </div>
+                )}
+                {kind === "OS" && (
+                  <p className="text-[10px] text-gray-400">
+                    Billed monthly while the engagement is active.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Fee calc preview — full-width below the salary + fee row so
-                long numbers (e.g. ARS multipliers) don't bust the grid
-                column they used to live inside. */}
-            {feeType === "PERCENTAGE" && feeInput && (
+            {/* Fee calc preview — only for HH percentage fees. OS uses a
+                fixed monthlyFee, no preview math needed. */}
+            {kind === "HH" && feeType === "PERCENTAGE" && feeInput && (
               agreedSalary ? (
                 (() => {
                   const monthly = Number(agreedSalary);
@@ -1076,71 +1171,90 @@ export function PlacementDialog(props: Props) {
               )
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-terms">Payment terms (days)</Label>
-                <Input
-                  id="placement-terms"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="30"
-                  value={paymentTerms}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    const newTerms = v === "" ? "" : Number(v);
-                    setPaymentTerms(newTerms);
-                    setPaymentDueDateTouched(false);
-                    setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, newTerms));
-                  }}
-                />
+            {kind === "HH" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs" htmlFor="placement-terms">Payment terms (days)</Label>
+                  <Input
+                    id="placement-terms"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="30"
+                    value={paymentTerms}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const newTerms = v === "" ? "" : Number(v);
+                      setPaymentTerms(newTerms);
+                      setPaymentDueDateTouched(false);
+                      setPaymentDueDate(previewFromAnchor(startDate, estimatedStartDate, newTerms));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs" htmlFor="placement-guarantee">Guarantee (days)</Label>
+                  <Input
+                    id="placement-guarantee"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="90"
+                    value={guaranteePeriod}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setGuaranteePeriod(v === "" ? "" : Number(v));
+                    }}
+                  />
+                  {guaranteeExpiryPreview ? (
+                    <p className="text-[10px] text-gray-400">
+                      Expires {guaranteeExpiryPreview}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-gray-400">
+                      Expiry shows once start date is filled.
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-guarantee">Guarantee (days)</Label>
-                <Input
-                  id="placement-guarantee"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="90"
-                  value={guaranteePeriod}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setGuaranteePeriod(v === "" ? "" : Number(v));
-                  }}
-                />
-                {guaranteeExpiryPreview ? (
-                  <p className="text-[10px] text-gray-400">
-                    Expires {guaranteeExpiryPreview}
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-gray-400">
-                    Expiry shows once start date is filled.
-                  </p>
-                )}
-              </div>
-            </div>
+            )}
 
-            <div className="space-y-1.5">
-              <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
-              <Input
-                id="placement-due"
-                type="date"
-                value={paymentDueDate}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setPaymentDueDate(v);
-                  // Clearing the field reverts to auto-mode so the next
-                  // edit to start / terms recomputes it. Only mark
-                  // "touched" when the user actually picked a date.
-                  setPaymentDueDateTouched(v !== "");
-                }}
-              />
-              <p className="text-[10px] text-gray-400">
-                Auto: actual start (if set) or estimated start + payment terms. Editable.
-              </p>
-            </div>
+            {kind === "OS" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs" htmlFor="placement-end-date">End date</Label>
+                <Input
+                  id="placement-end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-400">
+                  Leave blank while the engagement is ongoing — that&apos;s what counts as Active MRR.
+                </p>
+              </div>
+            )}
+
+            {kind === "HH" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
+                <Input
+                  id="placement-due"
+                  type="date"
+                  value={paymentDueDate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPaymentDueDate(v);
+                    // Clearing the field reverts to auto-mode so the next
+                    // edit to start / terms recomputes it. Only mark
+                    // "touched" when the user actually picked a date.
+                    setPaymentDueDateTouched(v !== "");
+                  }}
+                />
+                <p className="text-[10px] text-gray-400">
+                  Auto: actual start (if set) or estimated start + payment terms. Editable.
+                </p>
+              </div>
+            )}
 
             {isEdit && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className={kind === "HH" ? "grid grid-cols-2 gap-3" : ""}>
                 <div className="space-y-1.5">
                   <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
                   <Input
@@ -1158,21 +1272,23 @@ export function PlacementDialog(props: Props) {
                     Fill once the candidate starts. Anchors the guarantee.
                   </p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs" htmlFor="placement-invoice-status">Invoice status</Label>
-                  <select
-                    id="placement-invoice-status"
-                    value={invoiceStatus}
-                    onChange={(e) =>
-                      setInvoiceStatus(e.target.value as "DRAFT" | "SENT" | "PAID")
-                    }
-                    className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="SENT">Sent</option>
-                    <option value="PAID">Paid</option>
-                  </select>
-                </div>
+                {kind === "HH" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs" htmlFor="placement-invoice-status">Invoice status</Label>
+                    <select
+                      id="placement-invoice-status"
+                      value={invoiceStatus}
+                      onChange={(e) =>
+                        setInvoiceStatus(e.target.value as "DRAFT" | "SENT" | "PAID")
+                      }
+                      className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    >
+                      <option value="DRAFT">Draft</option>
+                      <option value="SENT">Sent</option>
+                      <option value="PAID">Paid</option>
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 

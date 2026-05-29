@@ -47,6 +47,12 @@ export async function PUT(
     const {
       estimatedStartDate,
       startDate,
+      // OS-specific fields (kind = "OS"). The form only sends these when
+      // the user is editing an OS placement; on HH they stay undefined
+      // and the existing flat-fee fields below take over.
+      kind,
+      monthlyFee,
+      endDate,
       feeAmount,
       feePercentage,
       salary,
@@ -116,6 +122,9 @@ export async function PUT(
           estimatedStartDate: estimatedStartDate ? new Date(estimatedStartDate) : null,
         }),
         ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
+        ...(kind !== undefined && { kind: kind === "OS" ? "OS" : "HH" }),
+        ...(monthlyFee !== undefined && { monthlyFee }),
+        ...(endDate !== undefined && { endDate: endDate ? new Date(endDate) : null }),
         ...(feeAmount !== undefined && { feeAmount }),
         ...(feePercentage !== undefined && { feePercentage }),
         ...(salary !== undefined && { salary }),
