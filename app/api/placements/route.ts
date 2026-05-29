@@ -70,6 +70,13 @@ export async function POST(request: Request) {
       candidateId: rawCandidateId,
       estimatedStartDate,
       startDate,
+      // Placement kind: "HH" (headhunting / contingent — one-time fee) or
+      // "OS" (outsourcing / staff aug — recurring monthlyFee). Different
+      // pricing fields apply per kind; we filter the payload below so an
+      // OS row can't accidentally land with a giant flat feeAmount.
+      kind: rawKind,
+      monthlyFee,
+      endDate,
       feeAmount,
       feePercentage,
       salary,
@@ -81,6 +88,8 @@ export async function POST(request: Request) {
       guaranteePeriod,
       notes,
     } = body;
+
+    const kind = rawKind === "OS" ? "OS" : "HH";
 
     let jobId: string | undefined;
     let clientId: string | undefined;
@@ -231,27 +240,38 @@ export async function POST(request: Request) {
       ? new Date(paymentDueDate)
       : computePaymentDueDate(estimatedValue, startDateValue, paymentTerms);
 
-    const placement = await prisma.placement.create({
-      data: {
-        submissionId: placementSubmissionId || null,
-        jobId: jobId!,
-        clientId: clientId!,
-        organizationId: ctx.organizationId,
-        estimatedStartDate: estimatedValue ?? undefined,
-        startDate: startDateValue ?? undefined,
-        feeAmount,
-        feePercentage,
-        salary,
-        currency: currency ?? undefined,
-        salaryPeriod: salaryPeriod ?? undefined,
-        salaryKind: salaryKind ?? undefined,
-        paymentTerms: paymentTerms ?? undefined,
-        paymentDueDate: resolvedDue ?? undefined,
-        guaranteePeriod: gp,
-        guaranteeExpiry,
-        notes,
-      },
-    });
+    // Kind-aware field selection. HH placements carry the historical
+    // flat-fee shape; OS placements only keep the recurring-billing
+    // fields (monthlyFee + endDate) — feeAmount / feePercentage /
+    // paymentTerms / guarantee don't apply to staff aug and would
+    // mislead any KPI that mixes the two.
+    const placementData: any = {
+      submissionId: placementSubmissionId || null,
+      jobId: jobId!,
+      clientId: clientId!,
+      organizationId: ctx.organizationId,
+      kind,
+      estimatedStartDate: estimatedValue ?? undefined,
+      startDate: startDateValue ?? undefined,
+      salary,
+      currency: currency ?? undefined,
+      salaryPeriod: salaryPeriod ?? undefined,
+      salaryKind: salaryKind ?? undefined,
+      notes,
+    };
+    if (kind === "OS") {
+      placementData.monthlyFee = monthlyFee;
+      placementData.endDate = endDate ? new Date(endDate) : null;
+    } else {
+      placementData.feeAmount = feeAmount;
+      placementData.feePercentage = feePercentage;
+      placementData.paymentTerms = paymentTerms ?? undefined;
+      placementData.paymentDueDate = resolvedDue ?? undefined;
+      placementData.guaranteePeriod = gp;
+      placementData.guaranteeExpiry = guaranteeExpiry;
+    }
+
+    const placement = await prisma.placement.create({ data: placementData });
 
     // Flip the linked submission to the canonical "Placed" stage so the
     // pipeline matches the placement record. Covers both paths now:

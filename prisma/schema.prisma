@@ -790,6 +790,22 @@ model Placement {
   // startDate is the confirmed start once the candidate actually shows up.
   estimatedStartDate  DateTime?
   startDate           DateTime?
+  // What flavour of engagement this placement records. "HH" = headhunting
+  // / contingent recruiting: one-time fee on hire (the historical default,
+  // and what every existing row is). "OS" = outsourcing / staff aug: the
+  // candidate stays on the agency's payroll and we bill the client a
+  // recurring monthlyFee. Different fields are meaningful per kind:
+  //   - HH  → feeAmount / feePercentage / paymentTerms / guaranteePeriod
+  //   - OS  → monthlyFee / endDate (null = still active)
+  // The form pre-picks `kind` from Client.engagementType (RECRUITING → HH;
+  // STAFF_AUG → OS) and the create API rejects mixed payloads so an OS
+  // row can't accidentally get a giant flat feeAmount.
+  kind                String          @default("HH")
+  monthlyFee          Decimal?
+  // When the OS engagement ended (left, contract over, etc.). null on
+  // HH placements and on active OS engagements. Used to compute MRR
+  // (active when null) and to bound revenue accrual per period.
+  endDate             DateTime?
   feeAmount           Decimal?
   feePercentage       Decimal?
   salary              Decimal?

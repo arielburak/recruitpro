@@ -127,16 +127,81 @@ export default function PlacementsPage() {
     return new Date(p.createdAt);
   }
 
-  // Placements that fall in the selected period. Drives BOTH the
-  // Revenue card and the table below, so the recruiter sees a
-  // matching view across both.
-  const filteredPlacements = placements.filter((p) => {
+  // Split the book by kind. HH (headhunting / contingent) is a flat
+  // fee booked at close; OS (staff aug) is a recurring MRR that
+  // accrues over the months the engagement is active. Mixing them
+  // into a single "Revenue" number (and especially a single "Avg
+  // Fee") is the exact bug that produced the absurd $3.15M average
+  // earlier — keep them separate.
+  const hhPlacements = placements.filter((p) => (p.kind || "HH") === "HH");
+  const osPlacements = placements.filter((p) => p.kind === "OS");
+
+  // HH placements that booked in the selected period (anchor on
+  // startDate / estimatedStartDate / createdAt, same as before).
+  const hhInPeriod = hhPlacements.filter((p) => {
     const d = placementDate(p);
     return d >= periodStart && d <= periodEnd;
   });
 
-  // Alias kept readable for the bucketing logic below.
-  const quarterPlacements = filteredPlacements;
+  // Total placements (HH + OS) signed in period — used for the
+  // "Placements" count tile so the recruiter sees overall activity.
+  const placementsInPeriod = placements.filter((p) => {
+    const d = placementDate(p);
+    return d >= periodStart && d <= periodEnd;
+  });
+
+  // OS revenue accrued during the period: monthlyFee × calendar
+  // months the engagement was active inside [periodStart, periodEnd].
+  // Uses whole-month overlap, not days — keeps the math
+  // understandable and matches how MRR is typically tracked.
+  function osMonthsInPeriod(p: any): number {
+    const start = p.startDate
+      ? new Date(p.startDate)
+      : p.estimatedStartDate
+        ? new Date(p.estimatedStartDate)
+        : new Date(p.createdAt);
+    const end = p.endDate ? new Date(p.endDate) : new Date();
+    const s = start > periodStart ? start : periodStart;
+    const e = end < periodEnd ? end : periodEnd;
+    if (e < s) return 0;
+    return (
+      (e.getFullYear() - s.getFullYear()) * 12 +
+      (e.getMonth() - s.getMonth()) +
+      1
+    );
+  }
+  let osRevenueInPeriod = 0;
+  for (const p of osPlacements) {
+    const m = osMonthsInPeriod(p);
+    osRevenueInPeriod += m * (Number(p.monthlyFee) || 0);
+  }
+
+  // Active MRR = sum of monthlyFee for OS placements with no endDate
+  // (or endDate >= today) and startDate <= today. Point-in-time, not
+  // period — answers "what's running right now?" not "what did we
+  // bill last quarter?".
+  const todayMs = today.getTime();
+  let activeMrr = 0;
+  let activeOsCount = 0;
+  for (const p of osPlacements) {
+    const start = p.startDate
+      ? new Date(p.startDate)
+      : p.estimatedStartDate
+        ? new Date(p.estimatedStartDate)
+        : null;
+    const ended = p.endDate ? new Date(p.endDate).getTime() < todayMs : false;
+    const started = start ? start.getTime() <= todayMs : false;
+    if (started && !ended) {
+      activeMrr += Number(p.monthlyFee) || 0;
+      activeOsCount += 1;
+    }
+  }
+
+  // HH bookings (period) = sum of feeAmount on HH placements in period.
+  let hhBookingsInPeriod = 0;
+  for (const p of hhInPeriod) {
+    hhBookingsInPeriod += Number(p.feeAmount) || 0;
+  }
 
   // Year dropdown options — the contiguous range from the earliest
   // placement through the current year. We deliberately include
@@ -152,14 +217,6 @@ export default function PlacementsPage() {
     : currentYear;
   const yearOptions: number[] = [];
   for (let y = currentYear; y >= earliestYear; y--) yearOptions.push(y);
-
-  // Revenue is the sum of feeAmounts treated as USD. Multi-currency
-  // normalisation was removed for MVP — recruiters enter every fee
-  // in USD and the headline is just the straight sum.
-  let revenueUsd = 0;
-  for (const p of quarterPlacements) {
-    revenueUsd += Number(p.feeAmount) || 0;
-  }
 
   if (loading) {
     return (
@@ -229,6 +286,9 @@ export default function PlacementsPage() {
             guaranteePeriod: editingPlacement.guaranteePeriod,
             notes: editingPlacement.notes,
             invoiceStatus: editingPlacement.invoiceStatus,
+            kind: editingPlacement.kind,
+            monthlyFee: editingPlacement.monthlyFee,
+            endDate: editingPlacement.endDate,
           }}
           onSuccess={() => {
             setEditingPlacement(null);
@@ -241,11 +301,10 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* Revenue for the selected Year + Quarter. KPI strip rather than
-          a single giant number — the old 4xl headline made a $6M
-          placement read as $60M visually. Three balanced tiles
-          (revenue / placements / avg fee) give the eye something to
-          land on without screaming. */}
+      {/* KPI strip — HH and OS each get their own column so the two
+          revenue shapes don't blur into each other. Active MRR is a
+          point-in-time number (right now), the rest are scoped to the
+          Year + Quarter selector above. */}
       <Card className="overflow-hidden">
         <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -286,36 +345,47 @@ export default function PlacementsPage() {
           </div>
         </div>
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="px-1 sm:px-4 first:pl-0 py-2 sm:py-1">
               <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                Revenue
+                HH Bookings
               </p>
-              <div className="flex items-baseline gap-1.5 mt-1">
-                <p className="text-xl font-semibold text-indigo-600 tracking-tight">
-                  {formatCurrency(revenueUsd, "USD")}
-                </p>
-                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
-                  USD
-                </span>
-              </div>
+              <p className="text-xl font-semibold text-indigo-600 tracking-tight mt-1">
+                {formatCurrency(hhBookingsInPeriod, "USD")}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {hhInPeriod.length} placement{hhInPeriod.length === 1 ? "" : "s"}
+              </p>
             </div>
             <div className="px-1 sm:px-4 py-2 sm:py-1">
               <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                Placements
+                OS Revenue
               </p>
               <p className="text-xl font-semibold text-gray-900 mt-1">
-                {filteredPlacements.length}
+                {formatCurrency(osRevenueInPeriod, "USD")}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">accrued in period</p>
+            </div>
+            <div className="px-1 sm:px-4 py-2 sm:py-1">
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                Active MRR
+              </p>
+              <p className="text-xl font-semibold text-emerald-600 mt-1">
+                {formatCurrency(activeMrr, "USD")}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {activeOsCount} engagement{activeOsCount === 1 ? "" : "s"} · today
               </p>
             </div>
             <div className="px-1 sm:px-4 last:pr-0 py-2 sm:py-1">
               <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                Avg fee
+                Placements
               </p>
               <p className="text-xl font-semibold text-gray-900 mt-1">
-                {filteredPlacements.length > 0
-                  ? formatCurrency(revenueUsd / filteredPlacements.length, "USD")
-                  : "—"}
+                {placementsInPeriod.length}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                HH + OS in period
               </p>
             </div>
           </div>
@@ -329,109 +399,196 @@ export default function PlacementsPage() {
             <p className="text-gray-500">No placements yet. Placements are created when candidates are placed on jobs.</p>
           </CardContent>
         </Card>
-      ) : filteredPlacements.length === 0 ? (
-        <Card>
-          <CardContent className="p-10 text-center">
-            <Trophy className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">
-              No placements in {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedYear(today.getFullYear());
-                setSelectedQuarter("ALL");
-              }}
-              className="mt-3 text-xs text-indigo-600 hover:underline"
-            >
-              Reset to {today.getFullYear()} · all quarters
-            </button>
-          </CardContent>
-        </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Candidate Name</TableHead>
-                  <TableHead>Recruiter</TableHead>
-                  <TableHead>Job Title</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Start Date</TableHead>
-                  <TableHead>Fee Amount</TableHead>
-                  <TableHead>Invoice Status</TableHead>
-                  <TableHead>Guarantee Expiry</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPlacements.map((p) => {
-                  const candidateName = p.submission?.candidate
-                    ? `${p.submission.candidate.firstName} ${p.submission.candidate.lastName}`
-                    : "Unknown";
-                  const guaranteeExpiry = p.guaranteeExpiry;
-                  const expiringSoon = isWithin30Days(guaranteeExpiry);
-                  const expired = isExpired(guaranteeExpiry);
-
-                  // Recruiter who owns the candidate. Recorded server-side
-                  // via candidate.ownerId; "—" when the placement is
-                  // submission-less (manual backfill without a candidate
-                  // link, vanishingly rare).
-                  const recruiterName = p.submission?.candidate?.owner?.name || "—";
-
-                  return (
-                    <TableRow
-                      key={p.id}
-                      onClick={() => setEditingPlacement(p)}
-                      className="cursor-pointer hover:bg-gray-50"
-                    >
-                      <TableCell className="font-medium">{candidateName}</TableCell>
-                      <TableCell className="text-sm text-gray-700">{recruiterName}</TableCell>
-                      <TableCell>{p.job?.title || "-"}</TableCell>
-                      <TableCell>{p.client?.name || "-"}</TableCell>
-                      <TableCell>
-                        {p.startDate ? formatDateOnly(p.startDate, "en-US", { month: "short", day: "numeric", year: "numeric" }) : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {p.feeAmount
-                          ? formatCurrency(Number(p.feeAmount), "USD")
-                          : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>
-                          {INVOICE_STATUS_LABELS[p.invoiceStatus] || p.invoiceStatus}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {guaranteeExpiry ? (
-                          <span
-                            className={
-                              expired
-                                ? "text-gray-400 line-through"
-                                : expiringSoon
-                                  ? "text-red-600 font-semibold"
-                                  : ""
-                            }
-                          >
-                            {formatDateOnly(guaranteeExpiry, "en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            {expiringSoon && !expired && (
-                              <span className="ml-1 text-xs">(expiring soon)</span>
-                            )}
-                            {expired && (
-                              <span className="ml-1 text-xs text-gray-400">(expired)</span>
-                            )}
-                          </span>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
+        <>
+          {/* HH Placements — filtered by Year + Quarter so the table
+              matches the HH Bookings tile above. Each row is the
+              traditional one-time-fee placement with guarantee +
+              invoice tracking. */}
+          <Card>
+            <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-700">HH Placements</p>
+                <p className="text-[11px] text-gray-400">
+                  {hhInPeriod.length} in {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                </p>
+              </div>
+            </div>
+            <CardContent className="p-0">
+              {hhInPeriod.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Trophy className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">
+                    No HH placements in this period.
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Candidate Name</TableHead>
+                      <TableHead>Recruiter</TableHead>
+                      <TableHead>Job Title</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>Fee Amount</TableHead>
+                      <TableHead>Invoice Status</TableHead>
+                      <TableHead>Guarantee Expiry</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {hhInPeriod.map((p) => {
+                      const candidateName = p.submission?.candidate
+                        ? `${p.submission.candidate.firstName} ${p.submission.candidate.lastName}`
+                        : "Unknown";
+                      const guaranteeExpiry = p.guaranteeExpiry;
+                      const expiringSoon = isWithin30Days(guaranteeExpiry);
+                      const expired = isExpired(guaranteeExpiry);
+                      const recruiterName = p.submission?.candidate?.owner?.name || "—";
+
+                      return (
+                        <TableRow
+                          key={p.id}
+                          onClick={() => setEditingPlacement(p)}
+                          className="cursor-pointer hover:bg-gray-50"
+                        >
+                          <TableCell className="font-medium">{candidateName}</TableCell>
+                          <TableCell className="text-sm text-gray-700">{recruiterName}</TableCell>
+                          <TableCell>{p.job?.title || "-"}</TableCell>
+                          <TableCell>{p.client?.name || "-"}</TableCell>
+                          <TableCell>
+                            {p.startDate ? formatDateOnly(p.startDate, "en-US", { month: "short", day: "numeric", year: "numeric" }) : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {p.feeAmount
+                              ? formatCurrency(Number(p.feeAmount), "USD")
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>
+                              {INVOICE_STATUS_LABELS[p.invoiceStatus] || p.invoiceStatus}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {guaranteeExpiry ? (
+                              <span
+                                className={
+                                  expired
+                                    ? "text-gray-400 line-through"
+                                    : expiringSoon
+                                      ? "text-red-600 font-semibold"
+                                      : ""
+                                }
+                              >
+                                {formatDateOnly(guaranteeExpiry, "en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                {expiringSoon && !expired && (
+                                  <span className="ml-1 text-xs">(expiring soon)</span>
+                                )}
+                                {expired && (
+                                  <span className="ml-1 text-xs text-gray-400">(expired)</span>
+                                )}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* OS Engagements — staff-aug placements with recurring
+              monthlyFee. NOT filtered by period: the recruiter wants
+              the full active book at a glance, with ended engagements
+              flagged. Sorted active-first, then by most-recent start. */}
+          <Card>
+            <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-700">OS Engagements</p>
+                <p className="text-[11px] text-gray-400">
+                  {activeOsCount} active · {osPlacements.length} total
+                </p>
+              </div>
+            </div>
+            <CardContent className="p-0">
+              {osPlacements.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Trophy className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">
+                    No staff-aug engagements yet.
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Candidate Name</TableHead>
+                      <TableHead>Recruiter</TableHead>
+                      <TableHead>Job Title</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>Monthly Fee</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>End Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...osPlacements]
+                      .sort((a, b) => {
+                        const aActive = !a.endDate || new Date(a.endDate).getTime() >= todayMs;
+                        const bActive = !b.endDate || new Date(b.endDate).getTime() >= todayMs;
+                        if (aActive !== bActive) return aActive ? -1 : 1;
+                        return placementDate(b).getTime() - placementDate(a).getTime();
+                      })
+                      .map((p) => {
+                        const candidateName = p.submission?.candidate
+                          ? `${p.submission.candidate.firstName} ${p.submission.candidate.lastName}`
+                          : "Unknown";
+                        const recruiterName = p.submission?.candidate?.owner?.name || "—";
+                        const ended = p.endDate && new Date(p.endDate).getTime() < todayMs;
+                        return (
+                          <TableRow
+                            key={p.id}
+                            onClick={() => setEditingPlacement(p)}
+                            className="cursor-pointer hover:bg-gray-50"
+                          >
+                            <TableCell className="font-medium">{candidateName}</TableCell>
+                            <TableCell className="text-sm text-gray-700">{recruiterName}</TableCell>
+                            <TableCell>{p.job?.title || "-"}</TableCell>
+                            <TableCell>{p.client?.name || "-"}</TableCell>
+                            <TableCell>
+                              {p.startDate ? formatDateOnly(p.startDate, "en-US", { month: "short", day: "numeric", year: "numeric" }) : "-"}
+                            </TableCell>
+                            <TableCell>
+                              {p.monthlyFee
+                                ? `${formatCurrency(Number(p.monthlyFee), "USD")}/mo`
+                                : "-"}
+                            </TableCell>
+                            <TableCell>
+                              {ended ? (
+                                <Badge className="bg-gray-100 text-gray-600">Ended</Badge>
+                              ) : (
+                                <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {p.endDate
+                                ? formatDateOnly(p.endDate, "en-US", { month: "short", day: "numeric", year: "numeric" })
+                                : "Ongoing"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );
