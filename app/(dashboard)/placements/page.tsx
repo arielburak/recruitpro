@@ -150,17 +150,19 @@ export default function PlacementsPage() {
     return d >= periodStart && d <= periodEnd;
   });
 
-  // OS revenue accrued during the period: monthlyFee × calendar
-  // months the engagement was active inside [periodStart, periodEnd].
-  // Uses whole-month overlap, not days — keeps the math
-  // understandable and matches how MRR is typically tracked.
+  // OS projected revenue for the period: monthlyFee × calendar months
+  // the engagement runs inside [periodStart, periodEnd]. Ongoing
+  // engagements (no endDate) project all the way to periodEnd — this
+  // is the "what's Karen worth for 2026?" view, NOT the strict
+  // accrual ("what have I billed so far?") which capped at today and
+  // hid the value of signed contracts that hadn't started yet.
   function osMonthsInPeriod(p: any): number {
     const start = p.startDate
       ? new Date(p.startDate)
       : p.estimatedStartDate
         ? new Date(p.estimatedStartDate)
         : new Date(p.createdAt);
-    const end = p.endDate ? new Date(p.endDate) : new Date();
+    const end = p.endDate ? new Date(p.endDate) : periodEnd;
     const s = start > periodStart ? start : periodStart;
     const e = end < periodEnd ? end : periodEnd;
     if (e < s) return 0;
@@ -399,7 +401,7 @@ export default function PlacementsPage() {
               </div>
               <div className="pl-4">
                 <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                  Accrued
+                  Projected
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 mt-1">
                   {formatCurrency(osRevenueInPeriod, "USD")}
