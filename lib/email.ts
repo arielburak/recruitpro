@@ -402,6 +402,41 @@ export async function sendClientTeamInviteEmail({
   });
 }
 
+// Sent when an existing teammate gets added to a specific Job on
+// the client portal. Different from the team-invite path (no
+// set-password — they already have a portal account); this just
+// tells them "you can now see this search" and links straight to it.
+export async function sendClientJobAccessGrantedEmail({
+  to,
+  memberName,
+  inviterName,
+  companyName,
+  jobTitle,
+  jobUrl,
+}: {
+  to: string;
+  memberName: string;
+  inviterName: string;
+  companyName: string;
+  jobTitle: string;
+  jobUrl: string;
+}) {
+  const html = wrapTemplate(
+    `${inviterName} added you to ${jobTitle}`,
+    `<p>Hi ${memberName},</p>
+     <p><strong>${inviterName}</strong> just gave you access to <strong>${jobTitle}</strong> on ${companyName}'s portal.</p>
+     <p>You can now review shared candidates, post notes for the team, and follow the pipeline.</p>`,
+    jobUrl,
+    "Open the search"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${inviterName} added you to ${jobTitle}`,
+    html,
+  });
+}
+
 export async function sendNewMessageEmail({
   to,
   fromName,
