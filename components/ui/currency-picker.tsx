@@ -57,13 +57,22 @@ export function getCurrency(code: string | null | undefined) {
   return CURRENCIES.find((c) => c.code === code) || CURRENCIES[0];
 }
 
-/** Render a currency value for display, e.g. 1500 USD -> "$1,500" */
+/** Render a currency value for display, e.g. 1500 USD -> "$1,500 USD" */
 export function formatCurrencyValue(value: number | string | null | undefined, code: string | null | undefined) {
   if (value === null || value === undefined || value === "") return "";
   const n = typeof value === "number" ? value : Number(value);
   if (Number.isNaN(n)) return "";
   const c = getCurrency(code);
-  return `${c.symbol}${n.toLocaleString()} ${c.code}`;
+  // Match formatCurrency() in lib/utils.ts: suppress trailing ".00" on
+  // whole-dollar amounts, keep cents only when they're actually
+  // present. Same criterion across the ATS so $6,500 reads the same
+  // wherever it surfaces.
+  const hasCents = Math.abs(n % 1) > 0.005;
+  const formatted = n.toLocaleString("en-US", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: hasCents ? 2 : 0,
+  });
+  return `${c.symbol}${formatted} ${c.code}`;
 }
 
 interface CurrencyPickerProps {
