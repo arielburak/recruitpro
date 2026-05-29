@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,30 +14,62 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  ArrowRight,
   Briefcase,
   Mail,
   Users,
   Share2,
   Trophy,
+  ChevronRight,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+
+// Agency view of the engagements graph, the mirror of the client
+// portal /engagements page. Same layout: aggregate strip, Pending
+// section with Accept/Decline, Active engagements list (per-client
+// cards with stats + click-through to /engagements/[clientId] for
+// the per-job breakdown), Declined compact list. Same shape both
+// sides so jumping between the agency and client perspective
+// feels symmetric.
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return "—";
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const days = Math.floor((now - then) / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function clientInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || "")
+    .join("");
+}
 
 export default function EngagementsPage() {
   const router = useRouter();
   const [engagements, setEngagements] = useState<any[]>([]);
   const [clientGroups, setClientGroups] = useState<any[]>([]);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Two parallel fetches: the per-engagement list still drives the
-    // Pending section (each invite is its own card with Accept/Decline)
-    // and the per-Client rollup drives the "Active engagements"
-    // section so multiple Jobs at the same hiring company collapse
-    // into one row.
+    // Two parallel fetches: the per-engagement list drives the
+    // Pending and Declined sections (each invite is its own row with
+    // Accept/Decline actions), and the per-Client rollup drives the
+    // "Active engagements" cards so multiple Jobs at the same hiring
+    // company collapse into one row with a drill-down detail page.
     Promise.all([
       fetch("/api/engagements").then((r) => r.json()),
       fetch("/api/engagements/by-client").then((r) => r.json()),
@@ -71,15 +104,21 @@ export default function EngagementsPage() {
         return;
       }
 
-      // Refresh list
-      const updated = await fetch("/api/engagements").then((r) => r.json());
+      // Refresh both lists so the just-actioned row moves into the
+      // right bucket (declined → bottom; accepted → active card via
+      // by-client rollup).
+      const [updated, grouped] = await Promise.all([
+        fetch("/api/engagements").then((r) => r.json()),
+        fetch("/api/engagements/by-client").then((r) => r.json()),
+      ]);
       setEngagements(Array.isArray(updated) ? updated : []);
+      setClientGroups(grouped?.clients || []);
     } catch {}
     setResponding(null);
   }
 
   const pending = engagements.filter((e) => e.status === "PENDING");
-  const responded = engagements.filter((e) => e.status !== "PENDING");
+  const declined = engagements.filter((e) => e.status === "DECLINED");
 
   if (loading) {
     return (
@@ -92,16 +131,33 @@ export default function EngagementsPage() {
     );
   }
 
+  const totals = clientGroups.reduce(
+    (acc: any, c: any) => ({
+      jobs: acc.jobs + c.jobsCount,
+      submitted: acc.submitted + c.candidatesSubmitted,
+      shared: acc.shared + c.candidatesShared,
+      placements: acc.placements + c.placements,
+    }),
+    { jobs: 0, submitted: 0, shared: 0, placements: 0 }
+  );
+
+  const isEmpty = engagements.length === 0 && clientGroups.length === 0;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Inbox className="h-6 w-6 text-indigo-600" />
-          Engagement Requests
-        </h1>
-        <p className="text-gray-500 text-sm">
-          Job requests from hiring companies looking for recruiting help
-        </p>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+          <Inbox className="h-5 w-5 text-indigo-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Engagements</h1>
+          <p className="text-sm text-gray-500">
+            {isEmpty
+              ? "No engagement requests yet."
+              : `${clientGroups.length} client${clientGroups.length === 1 ? "" : "s"} working across ${totals.jobs} job${totals.jobs === 1 ? "" : "s"}.`}
+          </p>
+        </div>
       </div>
 
       {subscriptionError && (
@@ -124,6 +180,37 @@ export default function EngagementsPage() {
         </div>
       )}
 
+      {/* Aggregate strip */}
+      {clientGroups.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Clients engaged
+            </div>
+            <div className="text-xl font-semibold text-gray-900">{clientGroups.length}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Candidates submitted
+            </div>
+            <div className="text-xl font-semibold text-gray-900">{totals.submitted}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Shared with client
+            </div>
+            <div className="text-xl font-semibold text-emerald-600">{totals.shared}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Placements
+            </div>
+            <div className="text-xl font-semibold text-emerald-600">{totals.placements}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending — incoming invites needing Accept / Decline */}
       {pending.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
@@ -142,7 +229,7 @@ export default function EngagementsPage() {
                       <span className="text-xs text-gray-400">{formatDate(eng.invitedAt)}</span>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900">{eng.clientJob.title}</h3>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 flex-wrap">
                       <span className="flex items-center gap-1">
                         <Building2 className="h-3.5 w-3.5" />
                         {eng.clientJob.client.name}
@@ -204,149 +291,102 @@ export default function EngagementsPage() {
         </div>
       )}
 
+      {/* Active engagements — per-Client cards with totals + drill-down
+          to /engagements/[clientId] for the per-job breakdown. */}
       {clientGroups.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
             Active engagements ({clientGroups.length} client{clientGroups.length === 1 ? "" : "s"})
           </h2>
-          {clientGroups.map((c: any) => {
-            const isOpen = expanded === c.clientId;
-            return (
-              <Card key={c.clientId} className="border-l-4 border-l-green-400">
-                <CardContent className="p-4">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(isOpen ? null : c.clientId)}
-                    className="w-full flex items-center gap-3 text-left"
-                  >
-                    {/* Client avatar */}
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
-                      {c.clientName
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .map((p: string) => p[0]?.toUpperCase() || "")
-                        .join("")}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-gray-900 truncate">
+          {clientGroups.map((c: any) => (
+            <Link
+              key={c.clientId}
+              href={`/engagements/${c.clientId}`}
+              className="block group"
+            >
+              <Card className="transition-colors group-hover:border-emerald-200 border-l-4 border-l-green-400">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                    {clientInitials(c.clientName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 truncate group-hover:text-emerald-700">
                         {c.clientName}
-                        {c.industry && (
-                          <span className="ml-2 text-xs font-normal text-gray-400">
-                            {c.industry}
-                          </span>
-                        )}
                       </h3>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-600 flex-wrap">
-                        <span className="inline-flex items-center gap-1">
-                          <Briefcase className="h-3 w-3 text-gray-400" />
-                          {c.jobsCount} job{c.jobsCount === 1 ? "" : "s"}
+                      {c.industry && (
+                        <span className="text-xs font-normal text-gray-400">
+                          {c.industry}
                         </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3 text-gray-400" />
-                          {c.candidatesSubmitted} submitted
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Share2 className="h-3 w-3 text-gray-400" />
-                          {c.candidatesShared} shared
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Trophy className="h-3 w-3 text-gray-400" />
-                          {c.placements} placement{c.placements === 1 ? "" : "s"}
-                        </span>
-                        {c.lastActivityAt && (
-                          <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
-                            <Clock className="h-3 w-3" />
-                            Last activity {formatDate(c.lastActivityAt)}
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
-                    <ArrowRight
-                      className={`h-4 w-4 text-gray-400 transition-transform shrink-0 ${
-                        isOpen ? "rotate-90" : ""
-                      }`}
-                    />
-                  </button>
-
-                  {/* Per-Job breakdown — only when expanded so the
-                      client list stays scannable by default. Each row
-                      links straight into /jobs/[jobId]. */}
-                  {isOpen && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
-                      {c.jobs.map((j: any) => (
-                        <button
-                          key={j.jobId}
-                          type="button"
-                          onClick={() => router.push(`/jobs/${j.jobId}`)}
-                          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 group text-left"
-                        >
-                          <Briefcase className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
-                              {j.title}
-                            </p>
-                            <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-0.5">
-                              <span>{j.submissions} submitted</span>
-                              <span>{j.shared} shared</span>
-                              <span>
-                                {j.placements} placement{j.placements === 1 ? "" : "s"}
-                              </span>
-                              {j.lastActivityAt && (
-                                <span className="ml-auto text-gray-400">
-                                  {formatDate(j.lastActivityAt)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-emerald-500 shrink-0" />
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                      <span className="inline-flex items-center gap-1">
+                        <Briefcase className="h-3 w-3 text-gray-400" />
+                        {c.jobsCount} job{c.jobsCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-3 w-3 text-gray-400" />
+                        {c.candidatesSubmitted} submitted
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Share2 className="h-3 w-3 text-gray-400" />
+                        {c.candidatesShared} shared
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Trophy className="h-3 w-3 text-gray-400" />
+                        {c.placements} placement{c.placements === 1 ? "" : "s"}
+                      </span>
+                      {c.lastActivityAt && (
+                        <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
+                          <Clock className="h-3 w-3" />
+                          Last activity {relativeDate(c.lastActivityAt)}
+                        </span>
+                      )}
                     </div>
-                  )}
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 shrink-0" />
                 </CardContent>
               </Card>
-            );
-          })}
+            </Link>
+          ))}
         </div>
       )}
 
-      {/* Declined invitations — kept as a separate compact list so they
-          don't dilute the active-engagement signal above. */}
-      {responded.filter((e) => e.status === "DECLINED").length > 0 && (
+      {/* Declined */}
+      {declined.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
             Declined
           </h2>
-          {responded
-            .filter((e) => e.status === "DECLINED")
-            .map((eng) => (
-              <Card key={eng.id}>
-                <CardContent className="p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
-                      <Building2 className="h-3.5 w-3.5" />
-                      {eng.clientJob.client.name}
-                      <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
-                    </div>
+          {declined.map((eng) => (
+            <Card key={eng.id}>
+              <CardContent className="p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
+                  <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
+                    <Building2 className="h-3.5 w-3.5" />
+                    {eng.clientJob.client.name}
+                    <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
                   </div>
-                  <Badge className="bg-gray-100 text-gray-500">
-                    <XCircle className="h-3 w-3 mr-1" /> Declined
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+                <Badge className="bg-gray-100 text-gray-500">
+                  <XCircle className="h-3 w-3 mr-1" /> Declined
+                </Badge>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
-      {engagements.length === 0 && (
+      {/* Empty state */}
+      {isEmpty && (
         <Card>
           <CardContent className="p-12 text-center">
             <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <h3 className="text-lg font-semibold text-gray-900 mb-1">No engagement requests yet</h3>
             <p className="text-gray-500 text-sm">
-              When hiring companies invite your firm to work on their searches, they'll appear here.
+              When hiring companies invite your firm to work on their searches, they&apos;ll appear here.
             </p>
           </CardContent>
         </Card>

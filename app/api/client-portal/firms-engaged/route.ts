@@ -152,7 +152,35 @@ export async function GET() {
           a.name.localeCompare(b.name)
       );
 
-    return NextResponse.json({ firms });
+    // Pending / declined invites mirror the agency-side Engagements
+    // page so both views look symmetric — the client wants to see
+    // "who haven't I heard back from?" and "who turned me down?" the
+    // same way the recruiter sees their incoming invites.
+    type InviteRow = {
+      organizationId: string;
+      organizationName: string;
+      clientJobId: string;
+      clientJobTitle: string;
+      invitedAt: string;
+      respondedAt: string | null;
+    };
+    const pending: InviteRow[] = [];
+    const declined: InviteRow[] = [];
+    for (const e of engagements) {
+      if (e.status !== "PENDING" && e.status !== "DECLINED") continue;
+      const row: InviteRow = {
+        organizationId: e.organizationId,
+        organizationName: e.organization.name,
+        clientJobId: e.clientJobId,
+        clientJobTitle: e.clientJob.title,
+        invitedAt: e.invitedAt.toISOString(),
+        respondedAt: e.respondedAt ? e.respondedAt.toISOString() : null,
+      };
+      if (e.status === "PENDING") pending.push(row);
+      else declined.push(row);
+    }
+
+    return NextResponse.json({ firms, pending, declined });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
