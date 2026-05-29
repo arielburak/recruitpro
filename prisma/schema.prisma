@@ -1084,6 +1084,14 @@ model CalendarEvent {
   // of an enum so we can iterate without a migration; the UI maps
   // unknown values to the neutral "EVENT" style.
   kind           String   @default("EVENT") // EVENT | FOLLOW_UP | REMINDER | MEETING
+  // Optional recurrence. null = one-shot event (the historical
+  // default). When set, the event repeats from `startTime` forever
+  // until `recurrenceEndDate` (also optional). Supported values:
+  // DAILY | WEEKLY | MONTHLY | YEARLY. Expansion into individual
+  // calendar chips happens client-side from the base row + this
+  // string — no fan-out rows in the DB.
+  recurrence            String?
+  recurrenceEndDate     DateTime?
 
   clientId       String?
   candidateId    String?

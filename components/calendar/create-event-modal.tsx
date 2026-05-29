@@ -26,6 +26,14 @@ const KIND_OPTIONS: { value: Kind; label: string; color: string }[] = [
   { value: "MEETING", label: "Meeting", color: "bg-indigo-100 text-indigo-700" },
 ];
 
+type Recurrence = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
+const RECURRENCE_OPTIONS: { value: Recurrence; label: string }[] = [
+  { value: "DAILY", label: "Daily" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "YEARLY", label: "Yearly" },
+];
+
 type RelateKind = "NONE" | "CLIENT" | "CANDIDATE" | "JOB";
 
 type Picked = { id: string; label: string };
@@ -48,6 +56,8 @@ export function CreateEventModal({
     meetingLink?: string | null;
     kind: string;
     timezone?: string | null;
+    recurrence?: string | null;
+    recurrenceEndDate?: string | null;
     client?: { id: string; name: string } | null;
     candidate?: { id: string; firstName: string; lastName: string } | null;
     job?: { id: string; title: string; client?: { name: string } | null } | null;
@@ -55,6 +65,15 @@ export function CreateEventModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const editingRecurrence: Recurrence | null =
+    editing && editing.recurrence && RECURRENCE_OPTIONS.some((r) => r.value === editing.recurrence)
+      ? (editing.recurrence as Recurrence)
+      : null;
+  const editingRecurrenceEnd: string =
+    editing && editing.recurrenceEndDate
+      ? new Date(editing.recurrenceEndDate).toISOString().split("T")[0]
+      : "";
+
   const initial = editing
     ? {
         title: editing.title,
@@ -93,6 +112,14 @@ export function CreateEventModal({
   const [meetingLink, setMeetingLink] = useState(initial.meetingLink);
   const [kind, setKind] = useState<Kind>(initial.kind);
   const [allDay, setAllDay] = useState(initial.allDay);
+
+  // Outlook-style recurrence. `recurrence` is null on one-shot events;
+  // when the user ticks the Repeat checkbox we default to WEEKLY (the
+  // most common reminder cadence in practice). recurrenceEnd is its own
+  // optional "Until …" toggle so an indefinite series ("every week
+  // forever") stays representable.
+  const [recurrence, setRecurrence] = useState<Recurrence | null>(editingRecurrence);
+  const [recurrenceEnd, setRecurrenceEnd] = useState<string>(editingRecurrenceEnd);
 
   // Related-to picker. Pre-fill from `editing` if the event was
   // already attached to something, otherwise start "Not related".
@@ -223,6 +250,8 @@ export function CreateEventModal({
         location: location.trim() || undefined,
         meetingLink: meetingLink.trim() || undefined,
         kind,
+        recurrence: recurrence ?? null,
+        recurrenceEndDate: recurrence && recurrenceEnd ? recurrenceEnd : null,
         clientId: relateKind === "CLIENT" ? picked?.id : null,
         candidateId: relateKind === "CANDIDATE" ? picked?.id : null,
         jobId: relateKind === "JOB" ? picked?.id : null,
@@ -356,6 +385,77 @@ export function CreateEventModal({
               </div>
             </div>
           )}
+
+          {/* Repeat — Outlook-style toggle. Off = one-shot event; on
+              opens a frequency picker (Daily / Weekly / Monthly /
+              Yearly) and an optional "Until" date to bound the
+              series. Indefinite series ("every week forever") work by
+              leaving Until off. */}
+          <div className="space-y-1.5">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={recurrence !== null}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setRecurrence("WEEKLY");
+                  } else {
+                    setRecurrence(null);
+                    setRecurrenceEnd("");
+                  }
+                }}
+              />
+              <span className="text-xs text-gray-700">Repeat</span>
+            </label>
+            {recurrence !== null && (
+              <>
+                <div className="flex gap-1.5">
+                  {RECURRENCE_OPTIONS.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => setRecurrence(r.value)}
+                      className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors border ${
+                        recurrence === r.value
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none mt-1">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={recurrenceEnd !== ""}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        // Default the "Until" date to a year out so
+                        // the recruiter rarely has to think about it
+                        // unless they actually want a tighter bound.
+                        const next = new Date();
+                        next.setFullYear(next.getFullYear() + 1);
+                        setRecurrenceEnd(next.toISOString().split("T")[0]);
+                      } else {
+                        setRecurrenceEnd("");
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-gray-700">Until a specific date</span>
+                </label>
+                {recurrenceEnd !== "" && (
+                  <Input
+                    type="date"
+                    value={recurrenceEnd}
+                    onChange={(e) => setRecurrenceEnd(e.target.value)}
+                  />
+                )}
+              </>
+            )}
+          </div>
 
           {/* Related to */}
           <div>

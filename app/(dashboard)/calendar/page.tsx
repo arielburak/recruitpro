@@ -193,6 +193,12 @@ type CalendarEvent = {
   meetingLink: string | null;
   timezone: string;
   kind: string;
+  // Outlook-style recurrence. null = one-shot; otherwise the event
+  // repeats from `startTime` at this cadence until
+  // `recurrenceEndDate` (or forever if null). The grid expands these
+  // into virtual chip occurrences on the client.
+  recurrence: string | null;
+  recurrenceEndDate: string | null;
   client: { id: string; name: string } | null;
   candidate: { id: string; firstName: string; lastName: string } | null;
   job: { id: string; title: string; client: { name: string } | null } | null;
@@ -441,11 +447,45 @@ export default function CalendarPage() {
     });
   }
 
+  // Expand a single CalendarEvent into the set of (day, month, year)
+  // cells where it should render a chip. For a one-shot event this is
+  // just one date; for a recurring event we walk forward from the base
+  // startTime at the requested cadence until we leave the lookahead
+  // window or hit recurrenceEndDate. We cap iterations defensively so
+  // a malformed series (recurrence set without a sane cadence) can
+  // never loop forever in the browser.
+  function eventOccursOn(ev: CalendarEvent, day: number, m: number, y: number): boolean {
+    const base = new Date(ev.startTime);
+    const target = new Date(y, m, day);
+    if (target < new Date(base.getFullYear(), base.getMonth(), base.getDate())) {
+      return false;
+    }
+    if (ev.recurrenceEndDate) {
+      const stop = new Date(ev.recurrenceEndDate);
+      if (target > stop) return false;
+    }
+    if (!ev.recurrence) {
+      return (
+        base.getDate() === day &&
+        base.getMonth() === m &&
+        base.getFullYear() === y
+      );
+    }
+    if (ev.recurrence === "DAILY") return true;
+    if (ev.recurrence === "WEEKLY") {
+      return base.getDay() === target.getDay();
+    }
+    if (ev.recurrence === "MONTHLY") {
+      return base.getDate() === target.getDate();
+    }
+    if (ev.recurrence === "YEARLY") {
+      return base.getMonth() === m && base.getDate() === day;
+    }
+    return false;
+  }
+
   function getEventsForDay(day: number, m: number, y: number) {
-    return events.filter((ev) => {
-      const d = new Date(ev.startTime);
-      return d.getDate() === day && d.getMonth() === m && d.getFullYear() === y;
-    });
+    return events.filter((ev) => eventOccursOn(ev, day, m, y));
   }
 
   // Map the event's free-form `kind` to a chip style + icon. Unknown
@@ -519,10 +559,37 @@ export default function CalendarPage() {
 
   // Personal events in the same 7-day window. Joined into the same
   // upcoming feed below so reminders / follow-ups sit alongside
-  // interviews and milestones.
-  const upcomingEvents = events
-    .filter((ev) => new Date(ev.startTime).getTime() >= nowMs && new Date(ev.startTime).getTime() <= weekFromNow)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  // interviews and milestones. Recurring events get walked day-by-day
+  // through the 7-day window and surface as one feed item per
+  // occurrence — same as the grid expansion above so the sidebar
+  // matches what the user sees on the calendar.
+  type EventOccurrence = { event: CalendarEvent; date: Date };
+  const upcomingEvents: EventOccurrence[] = (() => {
+    const out: EventOccurrence[] = [];
+    for (const ev of events) {
+      const base = new Date(ev.startTime);
+      if (!ev.recurrence) {
+        const t = base.getTime();
+        if (t >= nowMs && t <= weekFromNow) out.push({ event: ev, date: base });
+        continue;
+      }
+      // Walk one day at a time through the 7-day window and pick the
+      // days where the cadence fires. Same predicate as the grid so
+      // the two views can't disagree on which days an event hits.
+      for (let d = new Date(nowMs); d.getTime() <= weekFromNow; d.setDate(d.getDate() + 1)) {
+        if (eventOccursOn(ev, d.getDate(), d.getMonth(), d.getFullYear())) {
+          // Pin the time of day to the base event so "9:00 weekly
+          // sync" still reads 9am on each occurrence chip.
+          const occ = new Date(d);
+          occ.setHours(base.getHours(), base.getMinutes(), 0, 0);
+          if (occ.getTime() >= nowMs && occ.getTime() <= weekFromNow) {
+            out.push({ event: ev, date: occ });
+          }
+        }
+      }
+    }
+    return out.sort((a, b) => a.date.getTime() - b.date.getTime());
+  })();
 
   function formatTime(dateStr: string, tz?: string) {
     try {
@@ -1541,7 +1608,7 @@ export default function CalendarPage() {
                 const items: FeedItem[] = [
                   ...upcoming.map<FeedItem>((iv) => ({ kind: "interview", date: new Date(iv.startTime), iv })),
                   ...upcomingMilestones.map<FeedItem>((ms) => ({ kind: "milestone", date: ms.date, ms })),
-                  ...upcomingEvents.map<FeedItem>((ev) => ({ kind: "event", date: new Date(ev.startTime), ev })),
+                  ...upcomingEvents.map<FeedItem>((occ) => ({ kind: "event", date: occ.date, ev: occ.event })),
                 ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
                 if (items.length === 0) {
