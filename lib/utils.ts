@@ -14,9 +14,17 @@ export function slugify(text: string): string {
 }
 
 export function formatCurrency(amount: number, currency: string = "USD"): string {
+  // Drop "$6,300,000.00" → "$6,300,000" for whole-dollar amounts (the
+  // common case in recruiting fees / salaries); keep cents only when
+  // they're actually present so "$3,500.50" still reads correctly.
+  // One criterion across every surface in the ATS — anything that
+  // routes through this helper gets the same shape.
+  const hasCents = Math.abs(amount % 1) > 0.005;
   return new Intl.NumberFormat(currency === "ARS" ? "es-AR" : "en-US", {
     style: "currency",
     currency,
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: hasCents ? 2 : 0,
   }).format(amount);
 }
 

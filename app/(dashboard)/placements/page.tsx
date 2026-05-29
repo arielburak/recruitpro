@@ -176,22 +176,18 @@ export default function PlacementsPage() {
     osRevenueInPeriod += m * (Number(p.monthlyFee) || 0);
   }
 
-  // Active MRR = sum of monthlyFee for OS placements with no endDate
-  // (or endDate >= today) and startDate <= today. Point-in-time, not
-  // period — answers "what's running right now?" not "what did we
-  // bill last quarter?".
+  // Active MRR = sum of monthlyFee for OS placements whose endDate
+  // is null (or in the future). Matches the "Active" badge in the OS
+  // table below — a signed engagement counts as active even if
+  // billing hasn't started yet ("committed MRR"). Conflating it with
+  // a stricter started-and-not-ended predicate was the bug that made
+  // Karen's $6.5k/mo show as $0 the day before her start date.
   const todayMs = today.getTime();
   let activeMrr = 0;
   let activeOsCount = 0;
   for (const p of osPlacements) {
-    const start = p.startDate
-      ? new Date(p.startDate)
-      : p.estimatedStartDate
-        ? new Date(p.estimatedStartDate)
-        : null;
     const ended = p.endDate ? new Date(p.endDate).getTime() < todayMs : false;
-    const started = start ? start.getTime() <= todayMs : false;
-    if (started && !ended) {
+    if (!ended) {
       activeMrr += Number(p.monthlyFee) || 0;
       activeOsCount += 1;
     }
