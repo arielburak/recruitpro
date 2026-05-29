@@ -33,10 +33,14 @@ import {
   Calendar as CalendarIcon,
   Paperclip,
   BellOff,
+  Bell,
+  Flag,
+  Users as UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDateOnly } from "@/lib/utils";
 import { FEATURES } from "@/lib/feature-flags";
+import { CreateEventModal } from "@/components/calendar/create-event-modal";
 
 // ─── Constants ───
 
@@ -174,6 +178,27 @@ type TeamMember = {
   role: string;
 };
 
+// Personal calendar event (Outlook-style). Renders alongside Interviews
+// on the grid; per-user scope so only the creator sees them. The
+// optional client/candidate/job link is what lets the chip caption read
+// "FU with Acme" instead of just "FU".
+type CalendarEvent = {
+  id: string;
+  title: string;
+  description: string | null;
+  startTime: string;
+  endTime: string;
+  allDay: boolean;
+  location: string | null;
+  meetingLink: string | null;
+  timezone: string;
+  kind: string;
+  client: { id: string; name: string } | null;
+  candidate: { id: string; firstName: string; lastName: string } | null;
+  job: { id: string; title: string; client: { name: string } | null } | null;
+  creator: { id: string; name: string };
+};
+
 // ─── Component ───
 
 export default function CalendarPage() {
@@ -203,6 +228,14 @@ export default function CalendarPage() {
   // Edit modal state
   const [editingInterview, setEditingInterview] = useState<Interview | null>(null);
 
+  // Personal calendar events (Outlook-like). Same range fetch + same
+  // grid as Interviews; selectedEvent / editingEvent mirror the
+  // interview/milestone sidebars below.
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+
   // Feedback state
   const [feedbackList, setFeedbackList] = useState<InterviewFeedback[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
@@ -218,6 +251,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     fetchInterviews();
+    fetchEvents();
   }, [year, month]);
 
   // Placements are fetched once per mount — we render their milestones
@@ -242,6 +276,18 @@ export default function CalendarPage() {
       if (res.ok) setInterviews(await res.json());
     } catch { /* silent */ }
     setLoading(false);
+  }
+
+  // Personal calendar events. Same 3-month window so the grid for the
+  // visible month plus a buffer is always covered. Errors are silent —
+  // events failing shouldn't take down the whole calendar view.
+  async function fetchEvents() {
+    try {
+      const start = new Date(year, month - 1, 1).toISOString();
+      const end = new Date(year, month + 2, 0).toISOString();
+      const res = await fetch(`/api/events?start=${start}&end=${end}`);
+      if (res.ok) setEvents(await res.json());
+    } catch { /* silent */ }
   }
 
   // Placement milestones derived from the loaded placements. Three
@@ -395,6 +441,63 @@ export default function CalendarPage() {
     });
   }
 
+  function getEventsForDay(day: number, m: number, y: number) {
+    return events.filter((ev) => {
+      const d = new Date(ev.startTime);
+      return d.getDate() === day && d.getMonth() === m && d.getFullYear() === y;
+    });
+  }
+
+  // Map the event's free-form `kind` to a chip style + icon. Unknown
+  // kinds fall back to the neutral EVENT palette so the UI doesn't
+  // break if a future kind ships before the front-end is updated.
+  function eventClassNames(kind: string): { wrapper: string; label: string; meta: string; Icon: any; kindLabel: string } {
+    if (kind === "FOLLOW_UP") {
+      return {
+        wrapper: "bg-amber-50 hover:bg-amber-100 border-l-2 border-amber-500",
+        label: "text-amber-800",
+        meta: "text-amber-700",
+        Icon: Flag,
+        kindLabel: "Follow-up",
+      };
+    }
+    if (kind === "REMINDER") {
+      return {
+        wrapper: "bg-rose-50 hover:bg-rose-100 border-l-2 border-rose-500",
+        label: "text-rose-800",
+        meta: "text-rose-700",
+        Icon: Bell,
+        kindLabel: "Reminder",
+      };
+    }
+    if (kind === "MEETING") {
+      return {
+        wrapper: "bg-indigo-50 hover:bg-indigo-100 border-l-2 border-indigo-500",
+        label: "text-indigo-800",
+        meta: "text-indigo-700",
+        Icon: UsersIcon,
+        kindLabel: "Meeting",
+      };
+    }
+    return {
+      wrapper: "bg-slate-100 hover:bg-slate-200 border-l-2 border-slate-500",
+      label: "text-slate-800",
+      meta: "text-slate-700",
+      Icon: CalendarIcon,
+      kindLabel: "Event",
+    };
+  }
+
+  // Human caption for the chip's second line: "FU with Acme" /
+  // "Touch base with John Doe" / "Sync on Sales VP". Falls back to
+  // empty so the chip only shows the title in pure-personal events.
+  function eventCaption(ev: CalendarEvent): string {
+    if (ev.candidate) return `${ev.candidate.firstName} ${ev.candidate.lastName}`;
+    if (ev.job) return ev.job.client?.name ? `${ev.job.title} · ${ev.job.client.name}` : ev.job.title;
+    if (ev.client) return ev.client.name;
+    return "";
+  }
+
   const today = new Date();
   const isToday = (day: number, m: number, y: number) =>
     day === today.getDate() && m === today.getMonth() && y === today.getFullYear();
@@ -413,6 +516,13 @@ export default function CalendarPage() {
   const upcomingMilestones = milestones
     .filter((ms) => ms.date.getTime() >= nowMs && ms.date.getTime() <= weekFromNow)
     .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Personal events in the same 7-day window. Joined into the same
+  // upcoming feed below so reminders / follow-ups sit alongside
+  // interviews and milestones.
+  const upcomingEvents = events
+    .filter((ev) => new Date(ev.startTime).getTime() >= nowMs && new Date(ev.startTime).getTime() <= weekFromNow)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   function formatTime(dateStr: string, tz?: string) {
     try {
@@ -504,11 +614,22 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Calendar</h1>
-          <p className="text-sm text-gray-500">Interview schedule</p>
+          <p className="text-sm text-gray-500">Interviews, follow-ups and reminders</p>
         </div>
-        <Button onClick={() => { setCreateDate(new Date()); setShowCreateModal(true); }}>
-          <Plus className="h-4 w-4 mr-2" /> Schedule Interview
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setCreateDate(new Date());
+              setShowCreateEventModal(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-2" /> Event
+          </Button>
+          <Button onClick={() => { setCreateDate(new Date()); setShowCreateModal(true); }}>
+            <Plus className="h-4 w-4 mr-2" /> Schedule Interview
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -535,24 +656,31 @@ export default function CalendarPage() {
                 {calendarDays.map((cd, idx) => {
                   const dayInterviews = getInterviewsForDay(cd.day, cd.month, cd.year);
                   const dayMilestones = getMilestonesForDay(cd.day, cd.month, cd.year);
+                  const dayEvents = getEventsForDay(cd.day, cd.month, cd.year);
                   const todayHighlight = isToday(cd.day, cd.month, cd.year);
-                  // Interviews + milestones share the same 3-row cap so
-                  // the calendar grid doesn't grow unevenly. Interviews
-                  // win the top slot — they're the time-sensitive
-                  // "show up at 3pm" event; milestones are date-only
-                  // reminders.
-                  const totalEvents = dayInterviews.length + dayMilestones.length;
+                  // Interviews + events + milestones share the same row
+                  // cap so the calendar grid doesn't grow unevenly.
+                  // Order: interviews first (time-sensitive "show up at
+                  // 3pm"), then personal events (follow-ups / reminders),
+                  // then milestones (date-only). All three are
+                  // chronological within their bucket.
+                  const totalEvents = dayInterviews.length + dayEvents.length + dayMilestones.length;
                   // Show up to 6 chips per day before collapsing the rest
                   // behind "+N more". Cells are sized to fit that many
                   // comfortably; if it's still not enough, the day-detail
                   // sidebar covers the full list.
                   const CELL_CAP = 6;
                   const interviewsToShow = dayInterviews.slice(0, CELL_CAP);
-                  const milestonesToShow = dayMilestones.slice(
+                  const eventsToShow = dayEvents.slice(
                     0,
                     Math.max(0, CELL_CAP - interviewsToShow.length),
                   );
-                  const overflow = totalEvents - interviewsToShow.length - milestonesToShow.length;
+                  const milestonesToShow = dayMilestones.slice(
+                    0,
+                    Math.max(0, CELL_CAP - interviewsToShow.length - eventsToShow.length),
+                  );
+                  const overflow =
+                    totalEvents - interviewsToShow.length - eventsToShow.length - milestonesToShow.length;
 
                   return (
                     <div
@@ -636,6 +764,37 @@ export default function CalendarPage() {
                             </button>
                           );
                         })}
+                        {eventsToShow.map((ev) => {
+                          const styles = eventClassNames(ev.kind);
+                          const caption = eventCaption(ev);
+                          const meta = caption ? `${ev.title} · ${caption}` : ev.title;
+                          const time = ev.allDay ? "All day" : formatTime(ev.startTime);
+                          return (
+                            <button
+                              key={ev.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedInterview(null);
+                                setSelectedMilestone(null);
+                                setSelectedDay(null);
+                                setSelectedEvent(ev);
+                              }}
+                              className={`block w-full text-left rounded-r px-1.5 py-1 leading-tight ${styles.wrapper}`}
+                              title={`${styles.kindLabel} · ${time} · ${meta}`}
+                            >
+                              <p className={`text-[9px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {time} · {styles.kindLabel}
+                              </p>
+                              <p className={`text-[10px] truncate ${styles.meta}`}>
+                                {ev.title}
+                                {caption && (
+                                  <span className="opacity-70"> · {caption}</span>
+                                )}
+                              </p>
+                            </button>
+                          );
+                        })}
                         {milestonesToShow.map((ms, i) => {
                           const styles = milestoneClassNames(ms.kind);
                           const candidate = milestoneCandidateName(ms);
@@ -703,7 +862,15 @@ export default function CalendarPage() {
               selectedDay.month,
               selectedDay.year,
             );
-            const total = dayInterviews.length + dayMilestones.length;
+            const dayEvents = getEventsForDay(
+              selectedDay.day,
+              selectedDay.month,
+              selectedDay.year,
+            ).sort(
+              (a, b) =>
+                new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+            );
+            const total = dayInterviews.length + dayEvents.length + dayMilestones.length;
             const dateLabel = new Date(
               selectedDay.year,
               selectedDay.month,
@@ -728,6 +895,24 @@ export default function CalendarPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => {
+                          setCreateDate(
+                            new Date(
+                              selectedDay.year,
+                              selectedDay.month,
+                              selectedDay.day,
+                              9,
+                              0,
+                            ),
+                          );
+                          setShowCreateEventModal(true);
+                        }}
+                        className="text-gray-400 hover:text-indigo-600 p-0.5 rounded hover:bg-indigo-50"
+                        title="Add event on this day"
+                      >
+                        <Bell className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={() =>
                           openCreate(
                             selectedDay.day,
@@ -736,7 +921,7 @@ export default function CalendarPage() {
                           )
                         }
                         className="text-gray-400 hover:text-indigo-600 p-0.5 rounded hover:bg-indigo-50"
-                        title="Schedule on this day"
+                        title="Schedule interview on this day"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
@@ -751,7 +936,7 @@ export default function CalendarPage() {
 
                   {total === 0 ? (
                     <p className="text-xs text-gray-400 py-4 text-center">
-                      Click + to schedule an interview on this day.
+                      Click + to schedule an interview or the bell to add an event.
                     </p>
                   ) : (
                     <div className="space-y-1.5">
@@ -806,6 +991,38 @@ export default function CalendarPage() {
                           </button>
                         );
                       })}
+                      {dayEvents.map((ev) => {
+                        const styles = eventClassNames(ev.kind);
+                        const caption = eventCaption(ev);
+                        const time = ev.allDay ? "All day" : formatTime(ev.startTime);
+                        const Icon = styles.Icon;
+                        return (
+                          <button
+                            key={`ev-${ev.id}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDay(null);
+                              setSelectedInterview(null);
+                              setSelectedMilestone(null);
+                              setSelectedEvent(ev);
+                            }}
+                            className={`flex w-full items-start gap-2 text-left rounded-r px-2 py-1.5 hover:opacity-90 ${styles.wrapper}`}
+                          >
+                            <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${styles.label}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {time} · {styles.kindLabel}
+                              </p>
+                              <p className={`text-xs truncate ${styles.meta}`}>
+                                {ev.title}
+                                {caption && (
+                                  <span className="text-gray-400"> · {caption}</span>
+                                )}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
                       {dayMilestones.map((ms, i) => {
                         const styles = milestoneClassNames(ms.kind);
                         const candidate = milestoneCandidateName(ms);
@@ -849,6 +1066,144 @@ export default function CalendarPage() {
               onClose={() => setSelectedMilestone(null)}
             />
           )}
+          {selectedEvent && (() => {
+            const styles = eventClassNames(selectedEvent.kind);
+            const Icon = styles.Icon;
+            return (
+              <Card className="border-indigo-200">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">{selectedEvent.title}</h3>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingEvent(selectedEvent)}
+                        className="text-gray-400 hover:text-indigo-600 p-0.5 rounded hover:bg-indigo-50"
+                        title="Edit event"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setSelectedEvent(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Badge className={`${styles.wrapper.replace("hover:", "")} ${styles.label} border-0`}>
+                      <Icon className="h-3 w-3 mr-1" />
+                      {styles.kindLabel}
+                    </Badge>
+                    {selectedEvent.allDay && (
+                      <Badge variant="secondary" className="text-xs">All day</Badge>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Clock className="h-3.5 w-3.5" />
+                      <span>
+                        {formatDateShort(selectedEvent.startTime)}
+                        {selectedEvent.allDay
+                          ? ""
+                          : `, ${formatTime(selectedEvent.startTime, selectedEvent.timezone)} - ${formatTime(selectedEvent.endTime, selectedEvent.timezone)}`}
+                      </span>
+                    </div>
+
+                    {selectedEvent.candidate && (
+                      <div className="flex items-center gap-2">
+                        <User className="h-3.5 w-3.5 text-gray-400" />
+                        <Link
+                          href={`/candidates/${selectedEvent.candidate.id}`}
+                          className="text-indigo-600 hover:underline"
+                        >
+                          {selectedEvent.candidate.firstName} {selectedEvent.candidate.lastName}
+                        </Link>
+                      </div>
+                    )}
+                    {selectedEvent.job && (
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="h-3.5 w-3.5 text-gray-400" />
+                        <Link
+                          href={`/jobs/${selectedEvent.job.id}`}
+                          className="text-indigo-600 hover:underline"
+                        >
+                          {selectedEvent.job.title}
+                        </Link>
+                        {selectedEvent.job.client?.name && (
+                          <span className="text-gray-400 text-xs">
+                            @ {selectedEvent.job.client.name}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {selectedEvent.client && !selectedEvent.job && (
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-3.5 w-3.5 text-gray-400" />
+                        <Link
+                          href={`/clients/${selectedEvent.client.id}`}
+                          className="text-indigo-600 hover:underline"
+                        >
+                          {selectedEvent.client.name}
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedEvent.meetingLink && (
+                      <a
+                        href={selectedEvent.meetingLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md"
+                      >
+                        <Video className="h-3.5 w-3.5" /> Open link
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+
+                    {selectedEvent.location && (
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span>{selectedEvent.location}</span>
+                      </div>
+                    )}
+
+                    {selectedEvent.description && (
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase mb-1">Notes</p>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                          {selectedEvent.description}
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase mb-1">Created by</p>
+                      <p className="text-sm">{selectedEvent.creator.name}</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3 flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-500"
+                      onClick={async () => {
+                        if (!confirm("Delete this event?")) return;
+                        await fetch(`/api/events/${selectedEvent.id}`, { method: "DELETE" });
+                        setSelectedEvent(null);
+                        fetchEvents();
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
           {selectedInterview && (<>
             <Card className="border-indigo-200">
               <CardContent className="p-4 space-y-3">
@@ -1181,16 +1536,18 @@ export default function CalendarPage() {
                 // Merge into one chronologically-sorted list.
                 type FeedItem =
                   | { kind: "interview"; date: Date; iv: Interview }
-                  | { kind: "milestone"; date: Date; ms: Milestone };
+                  | { kind: "milestone"; date: Date; ms: Milestone }
+                  | { kind: "event"; date: Date; ev: CalendarEvent };
                 const items: FeedItem[] = [
                   ...upcoming.map<FeedItem>((iv) => ({ kind: "interview", date: new Date(iv.startTime), iv })),
                   ...upcomingMilestones.map<FeedItem>((ms) => ({ kind: "milestone", date: ms.date, ms })),
+                  ...upcomingEvents.map<FeedItem>((ev) => ({ kind: "event", date: new Date(ev.startTime), ev })),
                 ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
                 if (items.length === 0) {
                   return (
                     <p className="text-sm text-gray-400 py-4 text-center">
-                      No interviews or placement milestones in the next 7 days
+                      Nothing on the schedule for the next 7 days
                     </p>
                   );
                 }
@@ -1231,6 +1588,47 @@ export default function CalendarPage() {
                             <p className="text-[11px] text-gray-500 truncate">
                               {iv.job.title} @ {iv.job.client.name}
                             </p>
+                          </button>
+                        );
+                      }
+                      if (item.kind === "event") {
+                        const ev = item.ev;
+                        const styles = eventClassNames(ev.kind);
+                        const Icon = styles.Icon;
+                        const caption = eventCaption(ev);
+                        const isSelected = selectedEvent?.id === ev.id;
+                        return (
+                          <button
+                            key={`ev-${ev.id}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedInterview(null);
+                              setSelectedMilestone(null);
+                              setSelectedDay(null);
+                              setSelectedEvent(ev);
+                            }}
+                            className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
+                              isSelected
+                                ? "border-indigo-300 bg-indigo-50"
+                                : `${styles.wrapper.replace("hover:", "")} border border-gray-100`
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <Icon className={`h-3 w-3 ${styles.label}`} />
+                              <span className={`text-[10px] font-semibold uppercase tracking-wide ${styles.label}`}>
+                                {styles.kindLabel}
+                              </span>
+                              <span className="ml-auto text-[10px] text-gray-400">
+                                {formatDateShort(ev.startTime)}
+                                {!ev.allDay && ` · ${formatTime(ev.startTime, ev.timezone)}`}
+                              </span>
+                            </div>
+                            <p className="text-xs font-medium text-gray-900 truncate">
+                              {ev.title}
+                            </p>
+                            {caption && (
+                              <p className="text-[11px] text-gray-500 truncate">{caption}</p>
+                            )}
                           </button>
                         );
                       }
@@ -1292,6 +1690,39 @@ export default function CalendarPage() {
             setEditingInterview(null);
             setSelectedInterview(updated);
             fetchInterviews();
+          }}
+        />
+      )}
+
+      {/* Create / Edit Event Modal — Outlook-style personal block.
+          Never emails the candidate; just lives on the recruiter's
+          /calendar grid alongside Interviews. */}
+      {showCreateEventModal && (
+        <CreateEventModal
+          defaultDate={createDate}
+          editing={null}
+          onClose={() => setShowCreateEventModal(false)}
+          onSaved={() => {
+            setShowCreateEventModal(false);
+            fetchEvents();
+          }}
+        />
+      )}
+      {editingEvent && (
+        <CreateEventModal
+          defaultDate={null}
+          editing={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSaved={async () => {
+            const id = editingEvent.id;
+            setEditingEvent(null);
+            await fetchEvents();
+            // Pull the updated row back into the detail panel so the
+            // change reflects immediately without a manual click.
+            try {
+              const res = await fetch(`/api/events/${id}`);
+              if (res.ok) setSelectedEvent(await res.json());
+            } catch {}
           }}
         />
       )}

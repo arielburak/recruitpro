@@ -241,17 +241,19 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* Revenue for the selected Year + Quarter — normalized to USD
-          when we have rates, with the per-currency breakdown shown
-          below for auditability. */}
+      {/* Revenue for the selected Year + Quarter. KPI strip rather than
+          a single giant number — the old 4xl headline made a $6M
+          placement read as $60M visually. Three balanced tiles
+          (revenue / placements / avg fee) give the eye something to
+          land on without screaming. */}
       <Card className="overflow-hidden">
-        <div className="border-b bg-gray-50/60 px-5 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-600 shrink-0">
-              <DollarSign className="h-4 w-4 text-white" />
+        <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600 shrink-0">
+              <DollarSign className="h-3.5 w-3.5 text-white" />
             </div>
-            <p className="text-sm font-semibold text-gray-700">Revenue</p>
-            <span className="text-xs text-gray-400">
+            <p className="text-xs font-semibold text-gray-700">Revenue</p>
+            <span className="text-[11px] text-gray-400">
               · {selectedYear}{selectedQuarter === "ALL" ? "" : ` Q${selectedQuarter}`}
             </span>
           </div>
@@ -259,7 +261,7 @@ export default function PlacementsPage() {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="h-8 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
               aria-label="Year"
             >
               {yearOptions.map((y) => (
@@ -272,7 +274,7 @@ export default function PlacementsPage() {
                 const v = e.target.value;
                 setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
               }}
-              className="h-8 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
               aria-label="Quarter"
             >
               <option value="ALL">All quarters</option>
@@ -283,19 +285,39 @@ export default function PlacementsPage() {
             </select>
           </div>
         </div>
-        <CardContent className="p-5">
-          <div className="space-y-1.5">
-            <div className="flex items-baseline gap-2">
-              <p className="text-4xl font-bold text-indigo-600 tracking-tight">
-                {formatCurrency(revenueUsd, "USD")}
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            <div className="px-1 sm:px-4 first:pl-0 py-2 sm:py-1">
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                Revenue
               </p>
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                USD
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <p className="text-xl font-semibold text-indigo-600 tracking-tight">
+                  {formatCurrency(revenueUsd, "USD")}
+                </p>
+                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                  USD
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-gray-500">
-              {filteredPlacements.length} placement{filteredPlacements.length === 1 ? "" : "s"}
-            </p>
+            <div className="px-1 sm:px-4 py-2 sm:py-1">
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                Placements
+              </p>
+              <p className="text-xl font-semibold text-gray-900 mt-1">
+                {filteredPlacements.length}
+              </p>
+            </div>
+            <div className="px-1 sm:px-4 last:pr-0 py-2 sm:py-1">
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                Avg fee
+              </p>
+              <p className="text-xl font-semibold text-gray-900 mt-1">
+                {filteredPlacements.length > 0
+                  ? formatCurrency(revenueUsd / filteredPlacements.length, "USD")
+                  : "—"}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
