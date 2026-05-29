@@ -25,14 +25,26 @@ import { formatDate } from "@/lib/utils";
 export default function EngagementsPage() {
   const router = useRouter();
   const [engagements, setEngagements] = useState<any[]>([]);
+  const [clientGroups, setClientGroups] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/engagements")
-      .then((res) => res.json())
-      .then((data) => setEngagements(Array.isArray(data) ? data : []))
+    // Two parallel fetches: the per-engagement list still drives the
+    // Pending section (each invite is its own card with Accept/Decline)
+    // and the per-Client rollup drives the "Active engagements"
+    // section so multiple Jobs at the same hiring company collapse
+    // into one row.
+    Promise.all([
+      fetch("/api/engagements").then((r) => r.json()),
+      fetch("/api/engagements/by-client").then((r) => r.json()),
+    ])
+      .then(([list, grouped]) => {
+        setEngagements(Array.isArray(list) ? list : []);
+        setClientGroups(grouped?.clients || []);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -192,40 +204,125 @@ export default function EngagementsPage() {
         </div>
       )}
 
-      {responded.length > 0 && (
+      {clientGroups.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-            Past Engagements ({responded.length})
+            Active engagements ({clientGroups.length} client{clientGroups.length === 1 ? "" : "s"})
           </h2>
-          {responded.map((eng) => {
-            // Whole row click → /jobs/[jobId] for accepted engagements;
-            // declined rows stay non-interactive (there's no Job to
-            // open). Same hover styling as the client-portal version
-            // so both surfaces feel consistent.
-            const canOpenJob = eng.status === "ACCEPTED" && !!eng.jobId;
-            const handleOpen = () => {
-              if (canOpenJob) router.push(`/jobs/${eng.jobId}`);
-            };
+          {clientGroups.map((c: any) => {
+            const isOpen = expanded === c.clientId;
             return (
-            <Card
-              key={eng.id}
-              role={canOpenJob ? "button" : undefined}
-              tabIndex={canOpenJob ? 0 : undefined}
-              onClick={canOpenJob ? handleOpen : undefined}
-              onKeyDown={
-                canOpenJob
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handleOpen();
-                      }
-                    }
-                  : undefined
-              }
-              className={`${eng.status === "ACCEPTED" ? "border-l-4 border-l-green-400" : ""} ${canOpenJob ? "cursor-pointer transition-colors hover:border-emerald-200" : ""}`}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
+              <Card key={c.clientId} className="border-l-4 border-l-green-400">
+                <CardContent className="p-4">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : c.clientId)}
+                    className="w-full flex items-center gap-3 text-left"
+                  >
+                    {/* Client avatar */}
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                      {c.clientName
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((p: string) => p[0]?.toUpperCase() || "")
+                        .join("")}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-gray-900 truncate">
+                        {c.clientName}
+                        {c.industry && (
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            {c.industry}
+                          </span>
+                        )}
+                      </h3>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-600 flex-wrap">
+                        <span className="inline-flex items-center gap-1">
+                          <Briefcase className="h-3 w-3 text-gray-400" />
+                          {c.jobsCount} job{c.jobsCount === 1 ? "" : "s"}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="h-3 w-3 text-gray-400" />
+                          {c.candidatesSubmitted} submitted
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Share2 className="h-3 w-3 text-gray-400" />
+                          {c.candidatesShared} shared
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Trophy className="h-3 w-3 text-gray-400" />
+                          {c.placements} placement{c.placements === 1 ? "" : "s"}
+                        </span>
+                        {c.lastActivityAt && (
+                          <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
+                            <Clock className="h-3 w-3" />
+                            Last activity {formatDate(c.lastActivityAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ArrowRight
+                      className={`h-4 w-4 text-gray-400 transition-transform shrink-0 ${
+                        isOpen ? "rotate-90" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {/* Per-Job breakdown — only when expanded so the
+                      client list stays scannable by default. Each row
+                      links straight into /jobs/[jobId]. */}
+                  {isOpen && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+                      {c.jobs.map((j: any) => (
+                        <button
+                          key={j.jobId}
+                          type="button"
+                          onClick={() => router.push(`/jobs/${j.jobId}`)}
+                          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 group text-left"
+                        >
+                          <Briefcase className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
+                              {j.title}
+                            </p>
+                            <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-0.5">
+                              <span>{j.submissions} submitted</span>
+                              <span>{j.shared} shared</span>
+                              <span>
+                                {j.placements} placement{j.placements === 1 ? "" : "s"}
+                              </span>
+                              {j.lastActivityAt && (
+                                <span className="ml-auto text-gray-400">
+                                  {formatDate(j.lastActivityAt)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-emerald-500 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Declined invitations — kept as a separate compact list so they
+          don't dilute the active-engagement signal above. */}
+      {responded.filter((e) => e.status === "DECLINED").length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+            Declined
+          </h2>
+          {responded
+            .filter((e) => e.status === "DECLINED")
+            .map((eng) => (
+              <Card key={eng.id}>
+                <CardContent className="p-4 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
                     <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
@@ -234,52 +331,12 @@ export default function EngagementsPage() {
                       <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge className={eng.status === "ACCEPTED" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}>
-                      {eng.status === "ACCEPTED" ? (
-                        <><CheckCircle className="h-3 w-3 mr-1" /> Accepted</>
-                      ) : (
-                        <><XCircle className="h-3 w-3 mr-1" /> Declined</>
-                      )}
-                    </Badge>
-                    {canOpenJob && (
-                      <ArrowRight className="h-4 w-4 text-gray-300" />
-                    )}
-                  </div>
-                </div>
-                {/* Collaboration stats — only for accepted engagements
-                    with a backing agency Job. Tells the recruiter at a
-                    glance how much has actually flowed through this
-                    relationship without making them click in. */}
-                {eng.status === "ACCEPTED" && eng.stats && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-600 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-gray-400" />
-                      <span className="font-medium text-gray-900">{eng.stats.submissions}</span>
-                      submitted
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Share2 className="h-3.5 w-3.5 text-gray-400" />
-                      <span className="font-medium text-gray-900">{eng.stats.shared}</span>
-                      shared with client
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Trophy className="h-3.5 w-3.5 text-gray-400" />
-                      <span className="font-medium text-gray-900">{eng.stats.placements}</span>
-                      placement{eng.stats.placements === 1 ? "" : "s"}
-                    </span>
-                    {eng.stats.lastActivityAt && (
-                      <span className="inline-flex items-center gap-1.5 ml-auto text-gray-400">
-                        <Clock className="h-3.5 w-3.5" />
-                        Last activity {formatDate(eng.stats.lastActivityAt)}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            );
-          })}
+                  <Badge className="bg-gray-100 text-gray-500">
+                    <XCircle className="h-3 w-3 mr-1" /> Declined
+                  </Badge>
+                </CardContent>
+              </Card>
+            ))}
         </div>
       )}
 
