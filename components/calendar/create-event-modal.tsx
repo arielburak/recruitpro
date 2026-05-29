@@ -1,29 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { X, Search, MapPin, Link as LinkIcon, AlignLeft, Tag, Briefcase, Building2, User } from "lucide-react";
+import { X, MapPin, Link as LinkIcon, AlignLeft, Clock, Repeat } from "lucide-react";
 
 // Lightweight modal to create a personal calendar event. NOT an
-// interview — these are Outlook-style blocks (follow-ups, reminders,
-// internal syncs) with no candidate-facing email path. Per agency
-// policy: events never mail anyone, ever.
-//
-// Optional "Related to" attaches the event to one CRM entity (a
-// Client, a Candidate, or a Job) so the chip can link back to it.
-// Mutually exclusive on the UI side to keep the picker simple; the
-// API accepts any combination but we only surface one for now.
+// interview — these are Outlook-style blocks (follow-ups, reminders)
+// with no candidate-facing email path. Per agency policy: events
+// never mail anyone, ever. Internal "meeting" use cases live on the
+// Interview model, which carries candidate / submission / feedback
+// and external invites; there's intentionally no overlap.
 
-type Kind = "EVENT" | "FOLLOW_UP" | "REMINDER" | "MEETING";
+type Kind = "EVENT" | "FOLLOW_UP" | "REMINDER";
 
 const KIND_OPTIONS: { value: Kind; label: string; color: string }[] = [
   { value: "EVENT", label: "Event", color: "bg-slate-100 text-slate-700" },
   { value: "FOLLOW_UP", label: "Follow-up", color: "bg-amber-100 text-amber-700" },
   { value: "REMINDER", label: "Reminder", color: "bg-rose-100 text-rose-700" },
-  { value: "MEETING", label: "Meeting", color: "bg-indigo-100 text-indigo-700" },
 ];
 
 type Recurrence = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
@@ -34,9 +29,26 @@ const RECURRENCE_OPTIONS: { value: Recurrence; label: string }[] = [
   { value: "YEARLY", label: "Yearly" },
 ];
 
-type RelateKind = "NONE" | "CLIENT" | "CANDIDATE" | "JOB";
+// Default event duration in minutes — chips have to start somewhere
+// and 30 mins matches what the interview dialog defaults to. Changes
+// to end-time after the user sets start are anchored on whatever
+// duration they last picked, mirroring Outlook / Google Calendar.
+const DEFAULT_DURATION_MIN = 30;
 
-type Picked = { id: string; label: string };
+function addMinutes(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  const wrapped = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const nh = Math.floor(wrapped / 60);
+  const nm = wrapped % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
+function diffMinutes(startHHMM: string, endHHMM: string): number {
+  const [sh, sm] = startHHMM.split(":").map(Number);
+  const [eh, em] = endHHMM.split(":").map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
+}
 
 export function CreateEventModal({
   defaultDate,
@@ -59,9 +71,6 @@ export function CreateEventModal({
     recurrence?: string | null;
     recurrenceInterval?: number | null;
     recurrenceEndDate?: string | null;
-    client?: { id: string; name: string } | null;
-    candidate?: { id: string; firstName: string; lastName: string } | null;
-    job?: { id: string; title: string; client?: { name: string } | null } | null;
   } | null;
   onClose: () => void;
   onSaved: () => void;
@@ -131,104 +140,31 @@ export function CreateEventModal({
   );
   const [recurrenceEnd, setRecurrenceEnd] = useState<string>(editingRecurrenceEnd);
 
-  // Related-to picker. Pre-fill from `editing` if the event was
-  // already attached to something, otherwise start "Not related".
-  const initialRelate: { kind: RelateKind; picked: Picked | null } = editing?.client
-    ? { kind: "CLIENT", picked: { id: editing.client.id, label: editing.client.name } }
-    : editing?.candidate
-      ? {
-          kind: "CANDIDATE",
-          picked: {
-            id: editing.candidate.id,
-            label: `${editing.candidate.firstName} ${editing.candidate.lastName}`,
-          },
-        }
-      : editing?.job
-        ? {
-            kind: "JOB",
-            picked: {
-              id: editing.job.id,
-              label: editing.job.client?.name
-                ? `${editing.job.title} · ${editing.job.client.name}`
-                : editing.job.title,
-            },
-          }
-        : { kind: "NONE", picked: null };
-  const [relateKind, setRelateKind] = useState<RelateKind>(initialRelate.kind);
-  const [picked, setPicked] = useState<Picked | null>(initialRelate.picked);
-  const [search, setSearch] = useState("");
-  const [results, setResults] = useState<Picked[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  // Track the most recent intended duration so changing Start re-anchors
+  // End and preserves the gap the user picked. Mirrors the interview
+  // dialog: typing a later start shifts end forward by the same amount,
+  // typing a new end updates the running duration for next time.
+  const initialDuration = (() => {
+    const d = diffMinutes(initial.start, initial.end);
+    return d > 0 ? d : DEFAULT_DURATION_MIN;
+  })();
+  const [durationMin, setDurationMin] = useState<number>(initialDuration);
+
+  function onStartChange(v: string) {
+    setStartTime(v);
+    // Slide End to keep the same duration. The user can still override
+    // End manually afterwards — that just updates durationMin via the
+    // onEndChange handler below.
+    setEndTime(addMinutes(v, durationMin));
+  }
+  function onEndChange(v: string) {
+    setEndTime(v);
+    const d = diffMinutes(startTime, v);
+    if (d > 0) setDurationMin(d);
+  }
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  // Outside-click closes the search dropdown
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
-  // Search by relateKind. Debounced; cleared whenever the relation
-  // kind switches so a stale Candidate search doesn't pollute a Job
-  // result list.
-  useEffect(() => {
-    setResults([]);
-    setSearch("");
-    setPicked(null);
-  }, [relateKind]);
-
-  useEffect(() => {
-    if (relateKind === "NONE" || search.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        let mapped: Picked[] = [];
-        if (relateKind === "CLIENT") {
-          const r = await fetch(`/api/clients?search=${encodeURIComponent(search)}&limit=8`);
-          if (r.ok) {
-            const d = await r.json();
-            const list: any[] = Array.isArray(d) ? d : d.clients || [];
-            mapped = list.map((c) => ({ id: c.id, label: c.name }));
-          }
-        } else if (relateKind === "CANDIDATE") {
-          const r = await fetch(`/api/candidates?search=${encodeURIComponent(search)}&limit=8&mine=false`);
-          if (r.ok) {
-            const d = await r.json();
-            const list: any[] = d.candidates || [];
-            mapped = list.map((c) => ({
-              id: c.id,
-              label: `${c.firstName} ${c.lastName}`,
-            }));
-          }
-        } else if (relateKind === "JOB") {
-          const r = await fetch(`/api/jobs?search=${encodeURIComponent(search)}&limit=8`);
-          if (r.ok) {
-            const d = await r.json();
-            const list: any[] = Array.isArray(d) ? d : d.jobs || [];
-            mapped = list.map((j) => ({
-              id: j.id,
-              label: j.client?.name ? `${j.title} · ${j.client.name}` : j.title,
-            }));
-          }
-        }
-        setResults(mapped);
-        setDropdownOpen(true);
-      } catch {}
-      setSearching(false);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [search, relateKind]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -267,10 +203,18 @@ export function CreateEventModal({
           return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
         })(),
         recurrenceEndDate: recurrence && recurrenceEnd ? recurrenceEnd : null,
-        clientId: relateKind === "CLIENT" ? picked?.id : null,
-        candidateId: relateKind === "CANDIDATE" ? picked?.id : null,
-        jobId: relateKind === "JOB" ? picked?.id : null,
       };
+      // New events: never carry a CRM link from the modal — the
+      // "Related to" picker was retired (events are personal scratch
+      // space). Editing an existing event leaves whatever relation
+      // already lived on the row alone, so legacy events keep their
+      // chip caption ("FU with Acme") instead of silently losing it
+      // when someone just changes the time.
+      if (!editing) {
+        payload.clientId = null;
+        payload.candidateId = null;
+        payload.jobId = null;
+      }
 
       const url = editing ? `/api/events/${editing.id}` : "/api/events";
       const method = editing ? "PUT" : "POST";
@@ -307,107 +251,81 @@ export function CreateEventModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Title */}
-          <div>
-            <Label htmlFor="event-title" className="text-xs font-medium text-gray-600">
-              Title <span className="text-red-500">*</span>
-            </Label>
+        <form onSubmit={handleSubmit} className="p-5 space-y-3">
+          {/* Title — no label, big input, Outlook-style "Add title" */}
+          <Input
+            id="event-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Add title"
+            className="text-base font-medium border-0 border-b border-gray-200 rounded-none px-0 focus-visible:ring-0 focus-visible:border-indigo-500"
+            autoFocus
+          />
+
+          {/* Kind chip row — compact, no label */}
+          <div className="flex gap-1.5">
+            {KIND_OPTIONS.map((k) => (
+              <button
+                key={k.value}
+                type="button"
+                onClick={() => setKind(k.value)}
+                className={`text-xs py-1 px-3 rounded-full font-medium transition-colors border ${
+                  kind === k.value
+                    ? `${k.color} border-transparent`
+                    : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Date + time on one row — date | start | "–" | end | All day */}
+          <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+            <Clock className="h-4 w-4 text-gray-400 shrink-0" />
             <Input
-              id="event-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Follow up with Acme, weekly team sync, …"
-              className="mt-1"
-              autoFocus
+              id="event-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="border-0 px-1 h-8 w-auto focus-visible:ring-0"
             />
-          </div>
-
-          {/* Kind */}
-          <div>
-            <Label className="text-xs font-medium text-gray-600 inline-flex items-center gap-1">
-              <Tag className="h-3 w-3" /> Kind
-            </Label>
-            <div className="flex gap-1.5 mt-1">
-              {KIND_OPTIONS.map((k) => (
-                <button
-                  key={k.value}
-                  type="button"
-                  onClick={() => setKind(k.value)}
-                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors border ${
-                    kind === k.value
-                      ? `${k.color} border-transparent`
-                      : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  {k.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Date + time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="event-date" className="text-xs font-medium text-gray-600">
-                Date <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="event-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex items-end pb-1">
-              <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-                <input
-                  type="checkbox"
-                  checked={allDay}
-                  onChange={(e) => setAllDay(e.target.checked)}
-                  className="h-3.5 w-3.5"
-                />
-                All day
-              </label>
-            </div>
-          </div>
-          {!allDay && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="event-start" className="text-xs font-medium text-gray-600">
-                  Start
-                </Label>
+            {!allDay && (
+              <>
                 <Input
                   id="event-start"
                   type="time"
                   value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="mt-1"
+                  onChange={(e) => onStartChange(e.target.value)}
+                  className="border-0 px-1 h-8 w-24 focus-visible:ring-0"
                 />
-              </div>
-              <div>
-                <Label htmlFor="event-end" className="text-xs font-medium text-gray-600">
-                  End
-                </Label>
+                <span className="text-gray-400 text-sm">–</span>
                 <Input
                   id="event-end"
                   type="time"
                   value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="mt-1"
+                  onChange={(e) => onEndChange(e.target.value)}
+                  className="border-0 px-1 h-8 w-24 focus-visible:ring-0"
                 />
-              </div>
-            </div>
-          )}
+              </>
+            )}
+            <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 ml-auto cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allDay}
+                onChange={(e) => setAllDay(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              All day
+            </label>
+          </div>
 
-          {/* Repeat — Outlook-style toggle. Off = one-shot event; on
-              opens a frequency picker (Daily / Weekly / Monthly /
-              Yearly) and an optional "Until" date to bound the
-              series. Indefinite series ("every week forever") work by
-              leaving Until off. */}
+          {/* Repeat — collapsed when off; inline single-line summary
+              when on. Outlook tucks recurrence inside a "Series" tab;
+              here we keep it inline so a one-look glance shows the
+              cadence. */}
           <div className="space-y-1.5">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none text-xs text-gray-700">
               <input
                 type="checkbox"
                 className="h-3.5 w-3.5"
@@ -421,16 +339,13 @@ export function CreateEventModal({
                   }
                 }}
               />
-              <span className="text-xs text-gray-700">Repeat</span>
+              <Repeat className="h-3.5 w-3.5 text-gray-400" />
+              Repeat
             </label>
             {recurrence !== null && (
-              <>
-                {/* Outlook-style "Every [N] [unit]" line. N defaults to
-                    1 so the toggle keeps the simple "every week" case
-                    when the user doesn't think about it; bumping it
-                    higher means "every 2 weeks", "every 3 days", etc. */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 shrink-0">Every</span>
+              <div className="pl-5 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500">Every</span>
                   <Input
                     type="number"
                     inputMode="numeric"
@@ -438,193 +353,92 @@ export function CreateEventModal({
                     max={365}
                     value={recurrenceInterval}
                     onChange={(e) => setRecurrenceInterval(e.target.value)}
-                    className="w-16 h-9 text-center"
+                    className="w-14 h-8 text-center text-sm"
                   />
-                  <span className="text-xs text-gray-500 shrink-0">
-                    {(() => {
+                  <select
+                    value={recurrence}
+                    onChange={(e) => setRecurrence(e.target.value as Recurrence)}
+                    className="h-8 px-2 rounded-md border border-gray-200 bg-white text-sm"
+                  >
+                    {RECURRENCE_OPTIONS.map((r) => {
                       const n = Number(recurrenceInterval) || 1;
-                      const plural = n !== 1;
                       const word: Record<Recurrence, [string, string]> = {
                         DAILY: ["day", "days"],
                         WEEKLY: ["week", "weeks"],
                         MONTHLY: ["month", "months"],
                         YEARLY: ["year", "years"],
                       };
-                      return plural ? word[recurrence][1] : word[recurrence][0];
-                    })()}
-                  </span>
+                      return (
+                        <option key={r.value} value={r.value}>
+                          {n !== 1 ? word[r.value][1] : word[r.value][0]}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 ml-auto cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={recurrenceEnd !== ""}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          const next = new Date();
+                          next.setFullYear(next.getFullYear() + 1);
+                          setRecurrenceEnd(next.toISOString().split("T")[0]);
+                        } else {
+                          setRecurrenceEnd("");
+                        }
+                      }}
+                    />
+                    Until
+                  </label>
+                  {recurrenceEnd !== "" && (
+                    <Input
+                      type="date"
+                      value={recurrenceEnd}
+                      onChange={(e) => setRecurrenceEnd(e.target.value)}
+                      className="h-8 w-auto text-sm"
+                    />
+                  )}
                 </div>
-                <div className="flex gap-1.5">
-                  {RECURRENCE_OPTIONS.map((r) => (
-                    <button
-                      key={r.value}
-                      type="button"
-                      onClick={() => setRecurrence(r.value)}
-                      className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors border ${
-                        recurrence === r.value
-                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                          : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-                <label className="inline-flex items-center gap-2 cursor-pointer select-none mt-1">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5"
-                    checked={recurrenceEnd !== ""}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        // Default the "Until" date to a year out so
-                        // the recruiter rarely has to think about it
-                        // unless they actually want a tighter bound.
-                        const next = new Date();
-                        next.setFullYear(next.getFullYear() + 1);
-                        setRecurrenceEnd(next.toISOString().split("T")[0]);
-                      } else {
-                        setRecurrenceEnd("");
-                      }
-                    }}
-                  />
-                  <span className="text-xs text-gray-700">Until a specific date</span>
-                </label>
-                {recurrenceEnd !== "" && (
-                  <Input
-                    type="date"
-                    value={recurrenceEnd}
-                    onChange={(e) => setRecurrenceEnd(e.target.value)}
-                  />
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Related to */}
-          <div>
-            <Label className="text-xs font-medium text-gray-600">Related to</Label>
-            <div className="flex gap-1.5 mt-1">
-              {(
-                [
-                  { v: "NONE", label: "None", Icon: null },
-                  { v: "CLIENT", label: "Client", Icon: Building2 },
-                  { v: "CANDIDATE", label: "Candidate", Icon: User },
-                  { v: "JOB", label: "Job", Icon: Briefcase },
-                ] as { v: RelateKind; label: string; Icon: any }[]
-              ).map((opt) => {
-                const Icon = opt.Icon;
-                return (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    onClick={() => setRelateKind(opt.v)}
-                    className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors border inline-flex items-center justify-center gap-1 ${
-                      relateKind === opt.v
-                        ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                        : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    {Icon && <Icon className="h-3 w-3" />}
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            {relateKind !== "NONE" && (
-              <div ref={pickerRef} className="relative mt-2">
-                {picked ? (
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border bg-gray-50">
-                    <span className="text-sm text-gray-900 truncate">{picked.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => setPicked(null)}
-                      className="text-gray-400 hover:text-red-500"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
-                      <Input
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        onFocus={() => results.length && setDropdownOpen(true)}
-                        placeholder={`Search ${relateKind.toLowerCase()}…`}
-                        className="pl-8"
-                      />
-                    </div>
-                    {dropdownOpen && (search.length >= 2 || searching) && (
-                      <div className="absolute z-10 left-0 right-0 mt-1 bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
-                        {searching ? (
-                          <div className="px-3 py-2 text-xs text-gray-400">Searching…</div>
-                        ) : results.length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
-                        ) : (
-                          results.map((r) => (
-                            <button
-                              key={r.id}
-                              type="button"
-                              onClick={() => {
-                                setPicked(r);
-                                setDropdownOpen(false);
-                              }}
-                              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50"
-                            >
-                              {r.label}
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             )}
           </div>
 
-          {/* Location + link */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="event-location" className="text-xs font-medium text-gray-600 inline-flex items-center gap-1">
-                <MapPin className="h-3 w-3" /> Location
-              </Label>
-              <Input
-                id="event-location"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Office, address…"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="event-link" className="text-xs font-medium text-gray-600 inline-flex items-center gap-1">
-                <LinkIcon className="h-3 w-3" /> Link
-              </Label>
-              <Input
-                id="event-link"
-                value={meetingLink}
-                onChange={(e) => setMeetingLink(e.target.value)}
-                placeholder="https://…"
-                className="mt-1"
-              />
-            </div>
+          {/* Location — single icon-prefixed row */}
+          <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+            <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+            <Input
+              id="event-location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Add a location"
+              className="border-0 px-0 h-8 focus-visible:ring-0"
+            />
+          </div>
+
+          {/* Link — single icon-prefixed row */}
+          <div className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+            <LinkIcon className="h-4 w-4 text-gray-400 shrink-0" />
+            <Input
+              id="event-link"
+              value={meetingLink}
+              onChange={(e) => setMeetingLink(e.target.value)}
+              placeholder="Add a link (Zoom, Meet, …)"
+              className="border-0 px-0 h-8 focus-visible:ring-0"
+            />
           </div>
 
           {/* Description */}
-          <div>
-            <Label htmlFor="event-desc" className="text-xs font-medium text-gray-600 inline-flex items-center gap-1">
-              <AlignLeft className="h-3 w-3" /> Description
-            </Label>
+          <div className="flex items-start gap-2 pt-1">
+            <AlignLeft className="h-4 w-4 text-gray-400 shrink-0 mt-2" />
             <Textarea
               id="event-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="mt-1 resize-none"
-              placeholder="Optional notes…"
+              className="resize-none border-0 px-0 focus-visible:ring-0"
+              placeholder="Add a description"
             />
           </div>
 
@@ -639,7 +453,7 @@ export function CreateEventModal({
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : editing ? "Save changes" : "Create event"}
+              {saving ? "Saving…" : editing ? "Save changes" : "Save"}
             </Button>
           </div>
         </form>
