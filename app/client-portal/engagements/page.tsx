@@ -6,8 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2,
-  Users,
-  Share2,
+  Send,
+  Handshake,
   Trophy,
   Clock,
   Briefcase,
@@ -29,8 +29,8 @@ type JobRow = {
   clientJobId: string;
   jobId: string | null;
   title: string;
-  submissions: number;
-  shared: number;
+  submitted: number;
+  offers: number;
   placements: number;
   lastActivityAt: string | null;
 };
@@ -40,8 +40,8 @@ type Firm = {
   name: string;
   jobsCount: number;
   pendingCount: number;
-  candidatesShared: number;
-  candidatesSubmitted: number;
+  submitted: number;
+  offers: number;
   placements: number;
   lastActivityAt: string | null;
   jobs: JobRow[];
@@ -113,11 +113,11 @@ export default function ClientEngagementsPage() {
   const totals = firms.reduce(
     (acc, f) => ({
       jobs: acc.jobs + f.jobsCount,
-      submitted: acc.submitted + f.candidatesSubmitted,
-      shared: acc.shared + f.candidatesShared,
+      submitted: acc.submitted + f.submitted,
+      offers: acc.offers + f.offers,
       placements: acc.placements + f.placements,
     }),
-    { jobs: 0, submitted: 0, shared: 0, placements: 0 }
+    { jobs: 0, submitted: 0, offers: 0, placements: 0 }
   );
 
   const isEmpty = firms.length === 0 && pending.length === 0 && declined.length === 0;
@@ -150,15 +150,15 @@ export default function ClientEngagementsPage() {
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-              Candidates submitted
+              Submitted
             </div>
             <div className="text-xl font-semibold text-gray-900">{totals.submitted}</div>
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-              Shared with team
+              Offers
             </div>
-            <div className="text-xl font-semibold text-emerald-600">{totals.shared}</div>
+            <div className="text-xl font-semibold text-amber-600">{totals.offers}</div>
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -247,12 +247,12 @@ export default function ClientEngagementsPage() {
                         {firm.jobsCount} job{firm.jobsCount === 1 ? "" : "s"}
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <Users className="h-3 w-3 text-gray-400" />
-                        {firm.candidatesSubmitted} submitted
+                        <Send className="h-3 w-3 text-gray-400" />
+                        {firm.submitted} submitted
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <Share2 className="h-3 w-3 text-gray-400" />
-                        {firm.candidatesShared} shared
+                        <Handshake className="h-3 w-3 text-gray-400" />
+                        {firm.offers} offer{firm.offers === 1 ? "" : "s"}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Trophy className="h-3 w-3 text-gray-400" />

@@ -55,7 +55,7 @@ export const IMPORT_FIELDS: Record<ImportType, FieldDef[]> = {
   pipeline: [
     { key: "candidateExternalId", label: "Candidate External ID", required: true, aliases: ["candidateexternalid", "candidateid", "candidate"], hint: "Must match a Candidate's External ID" },
     { key: "jobExternalId", label: "Job External ID", required: true, aliases: ["jobexternalid", "joborderid", "jobid", "job"], hint: "Must match a Job's External ID" },
-    { key: "stage", label: "Stage", required: true, aliases: ["stage", "status", "etapa"], hint: "Sourced / Internal Review / Submitted / Under Review / Interviewing / Offered / Placed / Lost / Rejected" },
+    { key: "stage", label: "Stage", required: true, aliases: ["stage", "status", "etapa"], hint: "Sourced / Internal Review / Submitted / Interviewing / Offered / Placed / Lost / Rejected" },
     { key: "submittedAt", label: "Submitted at", aliases: ["submittedat", "datesubmitted", "createdat", "datecreated"] },
   ],
 };

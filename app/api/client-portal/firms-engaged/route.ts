@@ -39,17 +39,24 @@ export async function GET() {
       .filter((e) => e.status === "ACCEPTED" && e.jobId)
       .map((e) => e.jobId as string);
 
-    const [submissionsByJob, sharedByJob, placementsByJob, lastActivityByJob] =
+    // Three engagement-level metrics tracked here, matching the
+    // agency-side rollup so the same Submitted / Offers / Placements
+    // labels show in both UIs:
+    //   - submitted = candidates the firm pushed to this client
+    //     (isSharedWithClient true).
+    //   - offers   = submissions sitting in the "Offered" stage.
+    //   - placements = closed deals.
+    const [submittedByJob, offersByJob, placementsByJob, lastActivityByJob] =
       acceptedJobIds.length > 0
         ? await Promise.all([
             prisma.candidateSubmission.groupBy({
               by: ["jobId"],
-              where: { jobId: { in: acceptedJobIds } },
+              where: { jobId: { in: acceptedJobIds }, isSharedWithClient: true },
               _count: { id: true },
             }),
             prisma.candidateSubmission.groupBy({
               by: ["jobId"],
-              where: { jobId: { in: acceptedJobIds }, isSharedWithClient: true },
+              where: { jobId: { in: acceptedJobIds }, stage: { name: "Offered" } },
               _count: { id: true },
             }),
             prisma.placement.groupBy({
@@ -69,8 +76,8 @@ export async function GET() {
       clientJobId: string;
       jobId: string | null;
       title: string;
-      submissions: number;
-      shared: number;
+      submitted: number;
+      offers: number;
       placements: number;
       lastActivityAt: string | null;
     };
@@ -80,8 +87,8 @@ export async function GET() {
       name: string;
       jobsCount: number;
       pendingCount: number;
-      candidatesShared: number;
-      candidatesSubmitted: number;
+      submitted: number;
+      offers: number;
       placements: number;
       lastActivityAt: string | null;
       jobs: JobAgg[];
@@ -96,8 +103,8 @@ export async function GET() {
           name: e.organization.name,
           jobsCount: 0,
           pendingCount: 0,
-          candidatesShared: 0,
-          candidatesSubmitted: 0,
+          submitted: 0,
+          offers: 0,
           placements: 0,
           lastActivityAt: null,
           jobs: [],
@@ -106,11 +113,11 @@ export async function GET() {
       }
       if (e.status === "PENDING") agg.pendingCount += 1;
       if (e.status === "ACCEPTED") {
-        const subs = e.jobId
-          ? submissionsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
+        const submitted = e.jobId
+          ? submittedByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
           : 0;
-        const shared = e.jobId
-          ? sharedByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
+        const offers = e.jobId
+          ? offersByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
           : 0;
         const placed = e.jobId
           ? placementsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
@@ -120,8 +127,8 @@ export async function GET() {
           : null;
 
         agg.jobsCount += 1;
-        agg.candidatesSubmitted += subs;
-        agg.candidatesShared += shared;
+        agg.submitted += submitted;
+        agg.offers += offers;
         agg.placements += placed;
         if (lastAt) {
           const iso = lastAt.toISOString();
@@ -133,8 +140,8 @@ export async function GET() {
           clientJobId: e.clientJobId,
           jobId: e.jobId,
           title: e.clientJob.title,
-          submissions: subs,
-          shared,
+          submitted,
+          offers,
           placements: placed,
           lastActivityAt: lastAt ? lastAt.toISOString() : null,
         });
@@ -147,7 +154,9 @@ export async function GET() {
       .filter((f) => f.jobsCount > 0)
       .sort(
         (a, b) =>
-          b.candidatesShared - a.candidatesShared ||
+          b.placements - a.placements ||
+          b.offers - a.offers ||
+          b.submitted - a.submitted ||
           b.jobsCount - a.jobsCount ||
           a.name.localeCompare(b.name)
       );

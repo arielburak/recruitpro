@@ -9,8 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   Building2,
-  Users,
-  Share2,
+  Send,
+  Handshake,
   Trophy,
   Clock,
   Briefcase,
@@ -27,8 +27,8 @@ type JobRow = {
   jobId: string;
   clientJobId: string;
   title: string;
-  submissions: number;
-  shared: number;
+  submitted: number;
+  offers: number;
   placements: number;
   lastActivityAt: string | null;
 };
@@ -38,8 +38,8 @@ type ClientAgg = {
   clientName: string;
   industry: string | null;
   jobsCount: number;
-  candidatesSubmitted: number;
-  candidatesShared: number;
+  submitted: number;
+  offers: number;
   placements: number;
   lastActivityAt: string | null;
   jobs: JobRow[];
@@ -162,18 +162,18 @@ export default function AgencyClientEngagementPage() {
         </div>
         <div className="rounded-xl border bg-white px-4 py-3">
           <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-            Candidates submitted
+            Submitted
           </div>
           <div className="text-xl font-semibold text-gray-900">
-            {client.candidatesSubmitted}
+            {client.submitted}
           </div>
         </div>
         <div className="rounded-xl border bg-white px-4 py-3">
           <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-            Shared with client
+            Offers
           </div>
-          <div className="text-xl font-semibold text-emerald-600">
-            {client.candidatesShared}
+          <div className="text-xl font-semibold text-amber-600">
+            {client.offers}
           </div>
         </div>
         <div className="rounded-xl border bg-white px-4 py-3">
@@ -209,12 +209,12 @@ export default function AgencyClientEngagementPage() {
                   </p>
                   <div className="flex items-center gap-4 mt-1 text-xs text-gray-500 flex-wrap">
                     <span className="inline-flex items-center gap-1">
-                      <Users className="h-3 w-3 text-gray-400" />
-                      {j.submissions} submitted
+                      <Send className="h-3 w-3 text-gray-400" />
+                      {j.submitted} submitted
                     </span>
                     <span className="inline-flex items-center gap-1">
-                      <Share2 className="h-3 w-3 text-gray-400" />
-                      {j.shared} shared
+                      <Handshake className="h-3 w-3 text-gray-400" />
+                      {j.offers} offer{j.offers === 1 ? "" : "s"}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Trophy className="h-3 w-3 text-gray-400" />

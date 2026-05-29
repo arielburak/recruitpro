@@ -46,17 +46,27 @@ export async function GET() {
       .filter((e) => e.jobId)
       .map((e) => e.jobId as string);
 
-    const [submissionsByJob, sharedByJob, placementsByJob, lastSubByJob, jobTitles] =
+    // Engagement-level metrics surfaced to the recruiter, in the order
+    // the deal flows from left to right:
+    //   - submitted = candidates the recruiter actually pushed to the
+    //     client (isSharedWithClient true). The recruiter mental model
+    //     of "submitted" is what the client SAW, not the internal pool.
+    //   - offers   = submissions in the "Offered" pipeline stage. The
+    //     closer-to-the-money signal that recruiters track per client.
+    //   - placements = closed deals.
+    // The total sourced pool is intentionally not exposed here — that's
+    // internal agency stuff, not engagement-level info.
+    const [submittedByJob, offersByJob, placementsByJob, lastSubByJob, jobTitles] =
       jobIds.length > 0
         ? await Promise.all([
             prisma.candidateSubmission.groupBy({
               by: ["jobId"],
-              where: { jobId: { in: jobIds } },
+              where: { jobId: { in: jobIds }, isSharedWithClient: true },
               _count: { id: true },
             }),
             prisma.candidateSubmission.groupBy({
               by: ["jobId"],
-              where: { jobId: { in: jobIds }, isSharedWithClient: true },
+              where: { jobId: { in: jobIds }, stage: { name: "Offered" } },
               _count: { id: true },
             }),
             prisma.placement.groupBy({
@@ -85,8 +95,8 @@ export async function GET() {
       jobId: string;
       clientJobId: string;
       title: string;
-      submissions: number;
-      shared: number;
+      submitted: number;
+      offers: number;
       placements: number;
       lastActivityAt: string | null;
     };
@@ -96,8 +106,8 @@ export async function GET() {
       clientName: string;
       industry: string | null;
       jobsCount: number;
-      candidatesSubmitted: number;
-      candidatesShared: number;
+      submitted: number;
+      offers: number;
       placements: number;
       lastActivityAt: string | null;
       jobs: JobAgg[];
@@ -113,8 +123,8 @@ export async function GET() {
           clientName: client.name,
           industry: client.industry,
           jobsCount: 0,
-          candidatesSubmitted: 0,
-          candidatesShared: 0,
+          submitted: 0,
+          offers: 0,
           placements: 0,
           lastActivityAt: null,
           jobs: [],
@@ -122,14 +132,14 @@ export async function GET() {
         byClient.set(client.id, agg);
       }
       if (!e.jobId) continue;
-      const subs = submissionsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0;
-      const shared = sharedByJob.find((r) => r.jobId === e.jobId)?._count.id || 0;
+      const submitted = submittedByJob.find((r) => r.jobId === e.jobId)?._count.id || 0;
+      const offers = offersByJob.find((r) => r.jobId === e.jobId)?._count.id || 0;
       const placed = placementsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0;
       const lastAt = lastSubByJob.find((r) => r.jobId === e.jobId)?._max.updatedAt;
 
       agg.jobsCount += 1;
-      agg.candidatesSubmitted += subs;
-      agg.candidatesShared += shared;
+      agg.submitted += submitted;
+      agg.offers += offers;
       agg.placements += placed;
       if (lastAt) {
         const iso = lastAt.toISOString();
@@ -141,8 +151,8 @@ export async function GET() {
         jobId: e.jobId,
         clientJobId: e.clientJobId,
         title: titleByJob.get(e.jobId) || e.clientJob.title,
-        submissions: subs,
-        shared,
+        submitted,
+        offers,
         placements: placed,
         lastActivityAt: lastAt ? lastAt.toISOString() : null,
       });
@@ -150,7 +160,9 @@ export async function GET() {
 
     const clients = Array.from(byClient.values()).sort(
       (a, b) =>
-        b.candidatesShared - a.candidatesShared ||
+        b.placements - a.placements ||
+        b.offers - a.offers ||
+        b.submitted - a.submitted ||
         b.jobsCount - a.jobsCount ||
         a.clientName.localeCompare(b.clientName)
     );

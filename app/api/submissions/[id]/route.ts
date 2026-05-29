@@ -95,8 +95,8 @@ export async function PATCH(
 
     // Mirror agency stage → client stage on the way through. Whenever
     // the recruiter advances the candidate into a stage the client is
-    // allowed to see (Submitted, Under Review, …), find the matching
-    // ClientPipelineStage by name on the same Client and set
+    // allowed to see (Submitted, Interviewing, Offered, …), find the
+    // matching ClientPipelineStage by name on the same Client and set
     // clientStageId so the read-only kanban in the client portal
     // tracks the agency view automatically. Pre-Submitted moves
     // (Sourced, Internal Review) leave clientStageId alone — those
