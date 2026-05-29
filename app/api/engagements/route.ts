@@ -51,7 +51,74 @@ export async function GET() {
       orderBy: { invitedAt: "desc" },
     });
 
-    return NextResponse.json(engagements);
+    // Per-engagement collaboration stats. Only meaningful once the
+    // engagement is ACCEPTED and a backing agency Job exists, since
+    // candidates / placements live on the Job side. The aggregation
+    // is per-engagement (i.e. per linked Job), not per-agency — that
+    // higher-level rollup is the client portal's view.
+    const acceptedJobIds = engagements
+      .filter((e) => e.status === "ACCEPTED" && e.jobId)
+      .map((e) => e.jobId as string);
+
+    const statsByJobId = new Map<
+      string,
+      {
+        submissions: number;
+        shared: number;
+        placements: number;
+        lastActivityAt: string | null;
+      }
+    >();
+
+    if (acceptedJobIds.length > 0) {
+      const [submissionsByJob, sharedByJob, placementsByJob, lastSubByJob] =
+        await Promise.all([
+          prisma.candidateSubmission.groupBy({
+            by: ["jobId"],
+            where: { jobId: { in: acceptedJobIds } },
+            _count: { id: true },
+          }),
+          prisma.candidateSubmission.groupBy({
+            by: ["jobId"],
+            where: { jobId: { in: acceptedJobIds }, isSharedWithClient: true },
+            _count: { id: true },
+          }),
+          prisma.placement.groupBy({
+            by: ["jobId"],
+            where: { jobId: { in: acceptedJobIds } },
+            _count: { id: true },
+          }),
+          // Last submission update doubles as a cheap "last activity"
+          // proxy — proper activity feed would need to query
+          // Comments + Activities too, but for the engagements view
+          // this is enough to spot stale collaborations.
+          prisma.candidateSubmission.groupBy({
+            by: ["jobId"],
+            where: { jobId: { in: acceptedJobIds } },
+            _max: { updatedAt: true },
+          }),
+        ]);
+
+      for (const jobId of acceptedJobIds) {
+        const subs = submissionsByJob.find((r) => r.jobId === jobId)?._count.id || 0;
+        const shared = sharedByJob.find((r) => r.jobId === jobId)?._count.id || 0;
+        const placed = placementsByJob.find((r) => r.jobId === jobId)?._count.id || 0;
+        const lastSub = lastSubByJob.find((r) => r.jobId === jobId)?._max.updatedAt;
+        statsByJobId.set(jobId, {
+          submissions: subs,
+          shared,
+          placements: placed,
+          lastActivityAt: lastSub ? lastSub.toISOString() : null,
+        });
+      }
+    }
+
+    const enriched = engagements.map((e) => ({
+      ...e,
+      stats: e.jobId ? statsByJobId.get(e.jobId) || null : null,
+    }));
+
+    return NextResponse.json(enriched);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
