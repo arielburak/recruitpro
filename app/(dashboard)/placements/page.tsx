@@ -301,96 +301,121 @@ export default function PlacementsPage() {
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
 
-      {/* KPI strip — HH and OS each get their own column so the two
-          revenue shapes don't blur into each other. Active MRR is a
-          point-in-time number (right now), the rest are scoped to the
-          Year + Quarter selector above. */}
-      <Card className="overflow-hidden">
-        <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+      {/* Year + quarter filter — applies to both HH revenue and OS
+          accrued revenue below. Lives on its own row so the two
+          revenue cards underneath can each stand on their own. */}
+      <div className="flex items-center justify-end gap-1.5">
+        <span className="text-[11px] text-gray-400 mr-1">Period</span>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          aria-label="Year"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <select
+          value={selectedQuarter}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
+          }}
+          className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          aria-label="Quarter"
+        >
+          <option value="ALL">All quarters</option>
+          <option value={1}>Q1</option>
+          <option value={2}>Q2</option>
+          <option value={3}>Q3</option>
+          <option value={4}>Q4</option>
+        </select>
+      </div>
+
+      {/* HH and OS as two side-by-side panels so the two revenue
+          shapes are visually segmented, not crammed into one strip.
+          HH numbers are period-scoped (Year + Quarter above); OS
+          mixes period revenue with point-in-time MRR because that's
+          what an agency owner actually wants to see. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="overflow-hidden">
+          <div className="border-b bg-indigo-50/60 px-4 py-2.5 flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600 shrink-0">
               <DollarSign className="h-3.5 w-3.5 text-white" />
             </div>
-            <p className="text-xs font-semibold text-gray-700">Revenue</p>
-            <span className="text-[11px] text-gray-400">
-              · {selectedYear}{selectedQuarter === "ALL" ? "" : ` Q${selectedQuarter}`}
+            <p className="text-xs font-semibold text-indigo-900">Headhunting (HH)</p>
+            <span className="text-[11px] text-indigo-700/70 ml-auto">
+              {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              aria-label="Year"
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            <select
-              value={selectedQuarter}
-              onChange={(e) => {
-                const v = e.target.value;
-                setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
-              }}
-              className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              aria-label="Quarter"
-            >
-              <option value="ALL">All quarters</option>
-              <option value={1}>Q1</option>
-              <option value={2}>Q2</option>
-              <option value={3}>Q3</option>
-              <option value={4}>Q4</option>
-            </select>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 divide-x divide-gray-100">
+              <div className="pr-4">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Revenue
+                </p>
+                <p className="text-2xl font-semibold text-indigo-600 tracking-tight mt-1">
+                  {formatCurrency(hhBookingsInPeriod, "USD")}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">fees in period</p>
+              </div>
+              <div className="pl-4">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Placements
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {hhInPeriod.length}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">closed in period</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="border-b bg-emerald-50/60 px-4 py-2.5 flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-600 shrink-0">
+              <DollarSign className="h-3.5 w-3.5 text-white" />
+            </div>
+            <p className="text-xs font-semibold text-emerald-900">Staff Aug (OS)</p>
+            <span className="text-[11px] text-emerald-700/70 ml-auto">recurring · MRR</span>
           </div>
-        </div>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="px-1 sm:px-4 first:pl-0 py-2 sm:py-1">
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                HH Bookings
-              </p>
-              <p className="text-xl font-semibold text-indigo-600 tracking-tight mt-1">
-                {formatCurrency(hhBookingsInPeriod, "USD")}
-              </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                {hhInPeriod.length} placement{hhInPeriod.length === 1 ? "" : "s"}
-              </p>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-3 divide-x divide-gray-100">
+              <div className="pr-4">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Active MRR
+                </p>
+                <p className="text-2xl font-semibold text-emerald-600 mt-1">
+                  {formatCurrency(activeMrr, "USD")}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">today</p>
+              </div>
+              <div className="px-4">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Engagements
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {activeOsCount}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">active now</p>
+              </div>
+              <div className="pl-4">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+                  Accrued
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {formatCurrency(osRevenueInPeriod, "USD")}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                </p>
+              </div>
             </div>
-            <div className="px-1 sm:px-4 py-2 sm:py-1">
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                OS Revenue
-              </p>
-              <p className="text-xl font-semibold text-gray-900 mt-1">
-                {formatCurrency(osRevenueInPeriod, "USD")}
-              </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">accrued in period</p>
-            </div>
-            <div className="px-1 sm:px-4 py-2 sm:py-1">
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                Active MRR
-              </p>
-              <p className="text-xl font-semibold text-emerald-600 mt-1">
-                {formatCurrency(activeMrr, "USD")}
-              </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                {activeOsCount} engagement{activeOsCount === 1 ? "" : "s"} · today
-              </p>
-            </div>
-            <div className="px-1 sm:px-4 last:pr-0 py-2 sm:py-1">
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-                Placements
-              </p>
-              <p className="text-xl font-semibold text-gray-900 mt-1">
-                {placementsInPeriod.length}
-              </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                HH + OS in period
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {placements.length === 0 ? (
         <Card>
