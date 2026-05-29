@@ -6,7 +6,10 @@ import { getOrgContext } from "@/lib/tenant";
 // only the creator can read / edit / delete their own events. No admin
 // override — these are personal blocks, not org records.
 
-const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER", "MEETING"]);
+// See /api/events/route.ts — MEETING removed, Interview model owns
+// that use case. PUT rejects it on edits too so a legacy MEETING row
+// can't be re-saved with the same kind via a stale client.
+const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER"]);
 const ALLOWED_RECURRENCE = new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]);
 
 async function loadOwned(id: string, ctx: { organizationId: string; userId: string }) {

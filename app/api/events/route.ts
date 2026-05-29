@@ -13,7 +13,13 @@ import { getOrgContext } from "@/lib/tenant";
 // "Touch base with John Doe" / "Weekly sync on Sales VP search").
 // All three are nullable so pure personal blocks work too.
 
-const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER", "MEETING"]);
+// Meeting was deprecated — interview-style get-togethers live on the
+// Interview model (candidate / submission / feedback / external
+// invites). Legacy MEETING rows in the DB still render via the
+// CalendarEvent fallback styling but the modal won't surface the
+// kind again, and the API rejects new payloads in that bucket so
+// the deprecation actually sticks going forward.
+const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER"]);
 const ALLOWED_RECURRENCE = new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]);
 
 export async function GET(request: NextRequest) {
