@@ -180,7 +180,11 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+      // whitespace-nowrap keeps multi-word labels ("My Team", "Post a
+      // Job") on a single line. Tighter px-2.5 plus the gap-0.5 on
+      // the parent nav lets six items + brand + user menu fit at
+      // standard laptop widths without overflowing.
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
         current
           ? "bg-emerald-50 text-emerald-700"
           : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
