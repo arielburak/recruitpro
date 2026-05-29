@@ -14,7 +14,6 @@
 
 import Link from "next/link";
 import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
-import { Star } from "lucide-react";
 
 type Stage = {
   id: string;
@@ -37,7 +36,6 @@ type SubmissionRow = {
     location: string | null;
   };
   firm: { id: string; name: string };
-  avgRating?: number | null;
   stage: { id: string; name: string; color: string } | null;
   clientStage: { id: string; name: string; color: string } | null;
   recruiterStage: { id: string; name: string; color: string } | null;
@@ -94,28 +92,28 @@ export function ReadOnlyPipeline({
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+    <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1">
       {visibleStages.map((stage) => {
         const items = byStageId.get(stage.id) || [];
         return (
           <div
             key={stage.id}
-            className="flex flex-col shrink-0 w-[260px] bg-gray-50 rounded-xl border border-gray-200"
+            className="flex flex-col shrink-0 w-[320px] bg-gray-50 rounded-xl border border-gray-200"
           >
             <div
-              className="px-3 py-2 border-b border-gray-200 flex items-center gap-2"
-              style={{ borderTop: `3px solid ${stage.color}`, borderTopLeftRadius: 11, borderTopRightRadius: 11 }}
+              className="px-4 py-3 border-b border-gray-200 flex items-center gap-2"
+              style={{ borderTop: `4px solid ${stage.color}`, borderTopLeftRadius: 11, borderTopRightRadius: 11 }}
             >
-              <span className="text-xs font-semibold text-gray-700 truncate">
+              <span className="text-sm font-semibold text-gray-800 truncate">
                 {stage.name}
               </span>
-              <span className="ml-auto text-[11px] font-medium text-gray-500 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+              <span className="ml-auto text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-full px-2 py-0.5">
                 {items.length}
               </span>
             </div>
-            <div className="flex-1 p-2 space-y-2 min-h-[100px]">
+            <div className="flex-1 p-3 space-y-2 min-h-[140px]">
               {items.length === 0 ? (
-                <p className="text-[11px] text-gray-400 text-center py-3">
+                <p className="text-xs text-gray-400 text-center py-6">
                   No candidates here yet.
                 </p>
               ) : (
@@ -125,29 +123,19 @@ export function ReadOnlyPipeline({
                     <Link
                       key={sub.submissionId}
                       href={`/client-portal/candidates/${sub.submissionId}`}
-                      className="block bg-white border border-gray-200 rounded-lg p-2.5 hover:border-emerald-300 hover:shadow-sm transition"
+                      className="block bg-white border border-gray-200 rounded-lg p-3 hover:border-emerald-300 hover:shadow-sm transition"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {name}
-                          </p>
-                          {sub.candidate.currentTitle && (
-                            <p className="text-[11px] text-gray-500 truncate">
-                              {sub.candidate.currentTitle}
-                              {sub.candidate.currentCompany ? ` @ ${sub.candidate.currentCompany}` : ""}
-                            </p>
-                          )}
-                        </div>
-                        {typeof sub.avgRating === "number" && sub.avgRating > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 shrink-0">
-                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                            {sub.avgRating.toFixed(1)}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {name}
+                      </p>
+                      {sub.candidate.currentTitle && (
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {sub.candidate.currentTitle}
+                          {sub.candidate.currentCompany ? ` @ ${sub.candidate.currentCompany}` : ""}
+                        </p>
+                      )}
                       {(sub.candidate.location || sub.firm?.name) && (
-                        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-400">
                           {sub.candidate.location && (
                             <span className="truncate">{sub.candidate.location}</span>
                           )}
