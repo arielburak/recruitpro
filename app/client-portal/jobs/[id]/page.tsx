@@ -369,24 +369,40 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setAddingMember(true);
     setMemberResult(null);
     try {
-      const res = await fetch("/api/client-portal/team", {
+      // Job-scoped endpoint: handles three cases (new email → portal
+      // invite + this Job's access; existing user → grant + email;
+      // already a member → noop). The flat /api/client-portal/team
+      // path was only adding people at the team level, never granting
+      // access to THIS Job, so they didn't actually see the search.
+      const res = await fetch(`/api/client-portal/jobs/${id}/add-member`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim(), title: memberTitle.trim() || undefined }),
+        body: JSON.stringify({
+          name: memberName.trim(),
+          email: memberEmail.trim(),
+          title: memberTitle.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setMemberResult({ type: "error", message: data.error || "Failed to add" });
       } else {
+        const msg =
+          data.mode === "invited"
+            ? "Member invited and added to this job."
+            : data.mode === "granted"
+              ? "Added to this job. We let them know by email."
+              : "Already on this search.";
         setMemberResult({
           type: "success",
-          message: data.reactivated ? "Team member reactivated!" : "Member invited!",
-          link: data.inviteLink,
+          message: msg,
+          link: data.inviteUrl,
         });
         setMemberName("");
         setMemberTitle("");
         setMemberEmail("");
         fetchTeam();
+        fetchJob();
       }
     } catch {
       setMemberResult({ type: "error", message: "Something went wrong" });
