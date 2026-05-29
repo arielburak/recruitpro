@@ -62,7 +62,6 @@ function relativeDate(iso: string | null): string {
 export default function ClientEngagementsPage() {
   const [firms, setFirms] = useState<Firm[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/client-portal/firms-engaged")
@@ -156,103 +155,62 @@ export default function ClientEngagementsPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {firms.map((firm) => {
-            const isOpen = expanded === firm.organizationId;
-            return (
-              <Card key={firm.organizationId}>
-                <CardContent className="p-4">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(isOpen ? null : firm.organizationId)}
-                    className="w-full flex items-center gap-3 text-left"
-                  >
-                    {/* Firm avatar */}
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
-                      {firm.name
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .map((p) => p[0]?.toUpperCase() || "")
-                        .join("")}
+          {firms.map((firm) => (
+            <Link
+              key={firm.organizationId}
+              href={`/client-portal/engagements/${firm.organizationId}`}
+              className="block group"
+            >
+              <Card className="transition-colors group-hover:border-emerald-200">
+                <CardContent className="p-4 flex items-center gap-3">
+                  {/* Firm avatar */}
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                    {firm.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((p) => p[0]?.toUpperCase() || "")
+                      .join("")}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 truncate group-hover:text-emerald-700">
+                        {firm.name}
+                      </h3>
+                      {firm.pendingCount > 0 && (
+                        <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
+                          {firm.pendingCount} pending
+                        </Badge>
+                      )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-gray-900 truncate">
-                          {firm.name}
-                        </h3>
-                        {firm.pendingCount > 0 && (
-                          <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
-                            {firm.pendingCount} pending
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                        <span className="inline-flex items-center gap-1">
-                          <Briefcase className="h-3 w-3 text-gray-400" />
-                          {firm.jobsCount} job{firm.jobsCount === 1 ? "" : "s"}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3 text-gray-400" />
-                          {firm.candidatesSubmitted} submitted
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Share2 className="h-3 w-3 text-gray-400" />
-                          {firm.candidatesShared} shared
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Trophy className="h-3 w-3 text-gray-400" />
-                          {firm.placements} placement{firm.placements === 1 ? "" : "s"}
-                        </span>
-                        <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
-                          <Clock className="h-3 w-3" />
-                          Last activity {relativeDate(firm.lastActivityAt)}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                      <span className="inline-flex items-center gap-1">
+                        <Briefcase className="h-3 w-3 text-gray-400" />
+                        {firm.jobsCount} job{firm.jobsCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-3 w-3 text-gray-400" />
+                        {firm.candidatesSubmitted} submitted
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Share2 className="h-3 w-3 text-gray-400" />
+                        {firm.candidatesShared} shared
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Trophy className="h-3 w-3 text-gray-400" />
+                        {firm.placements} placement{firm.placements === 1 ? "" : "s"}
+                      </span>
+                      <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
+                        <Clock className="h-3 w-3" />
+                        Last activity {relativeDate(firm.lastActivityAt)}
+                      </span>
                     </div>
-                    <ChevronRight
-                      className={`h-4 w-4 text-gray-400 transition-transform shrink-0 ${
-                        isOpen ? "rotate-90" : ""
-                      }`}
-                    />
-                  </button>
-
-                  {/* Per-job breakdown — only when expanded so the
-                      default firm list stays scannable. */}
-                  {isOpen && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-                      {firm.jobs.map((j) => (
-                        <Link
-                          key={j.clientJobId}
-                          href={`/client-portal/jobs/${j.clientJobId}`}
-                          className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 group"
-                        >
-                          <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
-                              {j.title}
-                            </p>
-                            <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-0.5">
-                              <span>{j.submissions} submitted</span>
-                              <span>{j.shared} shared</span>
-                              <span>
-                                {j.placements} placement{j.placements === 1 ? "" : "s"}
-                              </span>
-                              {j.lastActivityAt && (
-                                <span className="ml-auto text-gray-400">
-                                  {relativeDate(j.lastActivityAt)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 shrink-0" />
-                        </Link>
-                      ))}
-                    </div>
-                  )}
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 shrink-0" />
                 </CardContent>
               </Card>
-            );
-          })}
+            </Link>
+          ))}
         </div>
       )}
     </div>

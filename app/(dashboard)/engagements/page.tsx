@@ -197,8 +197,33 @@ export default function EngagementsPage() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
             Past Engagements ({responded.length})
           </h2>
-          {responded.map((eng) => (
-            <Card key={eng.id} className={eng.status === "ACCEPTED" ? "border-l-4 border-l-green-400" : ""}>
+          {responded.map((eng) => {
+            // Whole row click → /jobs/[jobId] for accepted engagements;
+            // declined rows stay non-interactive (there's no Job to
+            // open). Same hover styling as the client-portal version
+            // so both surfaces feel consistent.
+            const canOpenJob = eng.status === "ACCEPTED" && !!eng.jobId;
+            const handleOpen = () => {
+              if (canOpenJob) router.push(`/jobs/${eng.jobId}`);
+            };
+            return (
+            <Card
+              key={eng.id}
+              role={canOpenJob ? "button" : undefined}
+              tabIndex={canOpenJob ? 0 : undefined}
+              onClick={canOpenJob ? handleOpen : undefined}
+              onKeyDown={
+                canOpenJob
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleOpen();
+                      }
+                    }
+                  : undefined
+              }
+              className={`${eng.status === "ACCEPTED" ? "border-l-4 border-l-green-400" : ""} ${canOpenJob ? "cursor-pointer transition-colors hover:border-emerald-200" : ""}`}
+            >
               <CardContent className="p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -217,10 +242,8 @@ export default function EngagementsPage() {
                         <><XCircle className="h-3 w-3 mr-1" /> Declined</>
                       )}
                     </Badge>
-                    {eng.status === "ACCEPTED" && eng.jobId && (
-                      <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => router.push(`/jobs/${eng.jobId}`)}>
-                        View Job <ArrowRight className="h-3 w-3" />
-                      </Button>
+                    {canOpenJob && (
+                      <ArrowRight className="h-4 w-4 text-gray-300" />
                     )}
                   </div>
                 </div>
@@ -255,7 +278,8 @@ export default function EngagementsPage() {
                 )}
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
