@@ -453,6 +453,7 @@ export default function PlacementsPage() {
                       <TableHead>Client</TableHead>
                       <TableHead>Start Date</TableHead>
                       <TableHead>Fee Amount</TableHead>
+                      <TableHead>Payment Due</TableHead>
                       <TableHead>Invoice Status</TableHead>
                       <TableHead>Guarantee Expiry</TableHead>
                     </TableRow>
@@ -465,6 +466,16 @@ export default function PlacementsPage() {
                       const guaranteeExpiry = p.guaranteeExpiry;
                       const expiringSoon = isWithin30Days(guaranteeExpiry);
                       const expired = isExpired(guaranteeExpiry);
+                      // Same "soon / past due" treatment for Payment Due
+                      // as for Guarantee — the recruiter wants to spot a
+                      // missed invoice at a glance, not click through to
+                      // edit. Unpaid (anything not PAID) gates the
+                      // overdue colouring so a row marked Paid stops
+                      // screaming even if the date is in the past.
+                      const paymentDueDate = p.paymentDueDate;
+                      const isPaid = p.invoiceStatus === "PAID";
+                      const paymentSoon = !isPaid && isWithin30Days(paymentDueDate);
+                      const paymentOverdue = !isPaid && isExpired(paymentDueDate);
                       const recruiterName = p.submission?.candidate?.owner?.name || "—";
 
                       return (
@@ -484,6 +495,29 @@ export default function PlacementsPage() {
                             {p.feeAmount
                               ? formatCurrency(Number(p.feeAmount), "USD")
                               : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {paymentDueDate ? (
+                              <span
+                                className={
+                                  paymentOverdue
+                                    ? "text-red-600 font-semibold"
+                                    : paymentSoon
+                                      ? "text-amber-600 font-medium"
+                                      : ""
+                                }
+                              >
+                                {formatDateOnly(paymentDueDate, "en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                {paymentOverdue && (
+                                  <span className="ml-1 text-xs">(overdue)</span>
+                                )}
+                                {paymentSoon && !paymentOverdue && (
+                                  <span className="ml-1 text-xs">(soon)</span>
+                                )}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge className={INVOICE_STATUS_COLORS[p.invoiceStatus]}>
