@@ -51,7 +51,6 @@ export const DEFAULT_STAGES: StageSpec[] = [
   { name: "Sourced",         color: "#94a3b8", isTerminal: false, kind: null },
   { name: "Internal Review", color: "#60a5fa", isTerminal: false, kind: null },
   { name: "Submitted",       color: "#a78bfa", isTerminal: false, kind: null },
-  { name: "Under Review",    color: "#f59e0b", isTerminal: false, kind: null },
   { name: "Interviewing",    color: "#3b82f6", isTerminal: false, kind: null },
   { name: "Offered",         color: "#8b5cf6", isTerminal: false, kind: null },
   { name: "Placed",          color: "#10b981", isTerminal: true,  kind: "positive" },
@@ -66,7 +65,6 @@ export const DEFAULT_STAGES: StageSpec[] = [
 // consistent with DEFAULT_STAGES.
 export const CLIENT_VISIBLE_STAGE_NAMES = [
   "Submitted",
-  "Under Review",
   "Interviewing",
   "Offered",
   "Placed",
@@ -77,12 +75,16 @@ export const CLIENT_VISIBLE_STAGE_SET: ReadonlySet<string> = new Set(
   CLIENT_VISIBLE_STAGE_NAMES
 );
 
-// Aliases from legacy stage names to the canonical set. Used by the migration
-// script to remap existing PipelineStage rows.
+// Aliases from legacy stage names to the canonical set. Used by the
+// migration script to remap existing PipelineStage rows. "Under Review"
+// is folded into "Submitted" — it used to sit between Submitted and
+// Interviewing but recruiters never used it in practice, the flow goes
+// straight from Submitted to Interviewing or Rejected.
 export const LEGACY_STAGE_ALIASES: Record<string, string> = {
   Interview: "Interviewing",
   Offer: "Offered",
   Contacted: "Internal Review",
+  "Under Review": "Submitted",
 };
 
 // User-facing statuses recruiters can pick. Order matches the

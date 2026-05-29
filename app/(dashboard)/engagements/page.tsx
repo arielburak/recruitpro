@@ -16,8 +16,8 @@ import {
   XCircle,
   Briefcase,
   Mail,
-  Users,
-  Share2,
+  Send,
+  Handshake,
   Trophy,
   ChevronRight,
 } from "lucide-react";
@@ -134,11 +134,11 @@ export default function EngagementsPage() {
   const totals = clientGroups.reduce(
     (acc: any, c: any) => ({
       jobs: acc.jobs + c.jobsCount,
-      submitted: acc.submitted + c.candidatesSubmitted,
-      shared: acc.shared + c.candidatesShared,
+      submitted: acc.submitted + c.submitted,
+      offers: acc.offers + c.offers,
       placements: acc.placements + c.placements,
     }),
-    { jobs: 0, submitted: 0, shared: 0, placements: 0 }
+    { jobs: 0, submitted: 0, offers: 0, placements: 0 }
   );
 
   const isEmpty = engagements.length === 0 && clientGroups.length === 0;
@@ -191,15 +191,15 @@ export default function EngagementsPage() {
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-              Candidates submitted
+              Submitted
             </div>
             <div className="text-xl font-semibold text-gray-900">{totals.submitted}</div>
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
-              Shared with client
+              Offers
             </div>
-            <div className="text-xl font-semibold text-emerald-600">{totals.shared}</div>
+            <div className="text-xl font-semibold text-amber-600">{totals.offers}</div>
           </div>
           <div className="rounded-xl border bg-white px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -326,12 +326,12 @@ export default function EngagementsPage() {
                         {c.jobsCount} job{c.jobsCount === 1 ? "" : "s"}
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <Users className="h-3 w-3 text-gray-400" />
-                        {c.candidatesSubmitted} submitted
+                        <Send className="h-3 w-3 text-gray-400" />
+                        {c.submitted} submitted
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <Share2 className="h-3 w-3 text-gray-400" />
-                        {c.candidatesShared} shared
+                        <Handshake className="h-3 w-3 text-gray-400" />
+                        {c.offers} offer{c.offers === 1 ? "" : "s"}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Trophy className="h-3 w-3 text-gray-400" />

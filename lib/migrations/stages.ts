@@ -118,6 +118,12 @@ async function migrateJobStages(stats: MigrationStats) {
         });
       }
 
+      // Track the final id per canonical name so the orphan loop below
+      // can route submissions of (e.g.) "Under Review" into the brand-
+      // new "Submitted" row instead of dumping them at the top of the
+      // pipeline. Necessary because the matchId of a newly-created
+      // canonical isn't known until create() returns.
+      const canonicalIdByName = new Map<string, string>();
       let firstStageId = firstCanonicalId;
       for (let i = 0; i < resolution.length; i++) {
         const { canonical, matchId } = resolution[i];
@@ -132,6 +138,7 @@ async function migrateJobStages(stats: MigrationStats) {
               kind: canonical.kind,
             },
           });
+          canonicalIdByName.set(canonical.name, matchId);
           if (i === 0) firstStageId = matchId;
         } else {
           const created = await tx.pipelineStage.create({
@@ -145,6 +152,7 @@ async function migrateJobStages(stats: MigrationStats) {
             },
           });
           stats.stagesCreated++;
+          canonicalIdByName.set(canonical.name, created.id);
           if (i === 0) firstStageId = created.id;
         }
       }
@@ -155,9 +163,15 @@ async function migrateJobStages(stats: MigrationStats) {
 
       for (const orphan of orphans) {
         if (orphan._count.submissions > 0) {
+          // Route the orphan's submissions to its aliased canonical
+          // when there is one (e.g. "Under Review" → "Submitted") so
+          // the candidates land in the semantically nearest stage,
+          // not at the start of the pipeline.
+          const aliasTarget = canonicalNameFor(orphan.name);
+          const targetId = canonicalIdByName.get(aliasTarget) ?? firstStageId;
           const moved = await tx.candidateSubmission.updateMany({
             where: { stageId: orphan.id },
-            data: { stageId: firstStageId },
+            data: { stageId: targetId },
           });
           stats.submissionsMoved += moved.count;
         }
@@ -219,6 +233,9 @@ async function migrateClientStages(stats: MigrationStats) {
         });
       }
 
+      // Same alias-aware orphan routing as the job pipeline above —
+      // see comment there.
+      const canonicalIdByName = new Map<string, string>();
       let firstStageId = firstCanonicalId;
       for (let i = 0; i < resolution.length; i++) {
         const { canonical, matchId } = resolution[i];
@@ -233,6 +250,7 @@ async function migrateClientStages(stats: MigrationStats) {
               kind: canonical.kind,
             },
           });
+          canonicalIdByName.set(canonical.name, matchId);
           if (i === 0) firstStageId = matchId;
         } else {
           const created = await tx.clientPipelineStage.create({
@@ -246,6 +264,7 @@ async function migrateClientStages(stats: MigrationStats) {
             },
           });
           stats.stagesCreated++;
+          canonicalIdByName.set(canonical.name, created.id);
           if (i === 0) firstStageId = created.id;
         }
       }
@@ -256,9 +275,11 @@ async function migrateClientStages(stats: MigrationStats) {
 
       for (const orphan of orphans) {
         if (orphan._count.submissions > 0) {
+          const aliasTarget = canonicalNameFor(orphan.name);
+          const targetId = canonicalIdByName.get(aliasTarget) ?? firstStageId;
           const moved = await tx.candidateSubmission.updateMany({
             where: { clientStageId: orphan.id },
-            data: { clientStageId: firstStageId },
+            data: { clientStageId: targetId },
           });
           stats.submissionsMoved += moved.count;
         }
