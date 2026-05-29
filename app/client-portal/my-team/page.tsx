@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,9 +41,13 @@ type Member = {
 };
 
 export default function MyTeamPage() {
-  const { data: session } = useSession();
-  const profileRole = ((session?.user as any)?.role as "ADMIN" | "USER") || "USER";
-  const isAdmin = profileRole === "ADMIN";
+  // Session for the client portal doesn't carry `role` on the token
+  // (auth-options.ts clears it for ClientUser sessions) — we have to
+  // pull it from /api/profile to know if the viewer is ADMIN. Without
+  // this the kebab menu (promote / demote / remove) stays hidden even
+  // for legitimate admins.
+  const [profile, setProfile] = useState<{ role?: string } | null>(null);
+  const isAdmin = profile?.role === "ADMIN";
 
   const [team, setTeam] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +83,10 @@ export default function MyTeamPage() {
 
   useEffect(() => {
     fetchTeam();
+    fetch("/api/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setProfile(data))
+      .catch(() => setProfile(null));
   }, []);
 
   // Live contact lookup — pre-fill the form when the email matches a
