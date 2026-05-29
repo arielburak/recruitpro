@@ -562,12 +562,14 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Job Details. Organized into tabs (Pipeline / Notes /
-            Details / Documents) to match the agency-side layout. Edit
-            mode replaces the tabs with the full form so we don't have
-            to split fields across tabs. */}
-        <div className="lg:col-span-2 space-y-4">
+      {/* Stacked layout — pipeline + tabs take the full width up top
+          because that's what the hiring manager actually came for;
+          team / access / firms surfaces sit below in a 3-col strip.
+          The old 2/3 + 1/3 split was squeezing the kanban into a
+          cramped column while the sidebar carried mostly admin
+          actions the user reaches for occasionally. */}
+      <div className="space-y-6">
+        <div className="space-y-4">
           {editing ? (
             <Card>
               <CardContent className="p-5 space-y-4">
@@ -719,7 +721,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             <TableHead>Stage</TableHead>
                             <TableHead>Firm</TableHead>
                             <TableHead>Location</TableHead>
-                            <TableHead>Rating</TableHead>
                             <TableHead>Shared</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -938,8 +939,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           )}
         </div>
 
-        {/* Right sidebar */}
-        <div className="space-y-4">
+        {/* Supporting cards below the main pipeline. Three-column on
+            large screens, stacked on mobile. Used to be a permanent
+            right sidebar; moved here so the pipeline gets the full
+            width up top. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Your Internal Team — hidden while the Job access panel is
               in edit mode below, because that surface already lists
               the same people with explicit access checkboxes. Showing

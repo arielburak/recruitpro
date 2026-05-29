@@ -485,20 +485,12 @@ export default function CandidateDetailPage() {
                     <div className="flex items-center gap-3 flex-shrink-0">
                       {/* Activity counters — only render when non-zero
                           so the row stays clean for fresh submissions. */}
-                      {(commentCount > 0 || ratingCount > 0) && (
+                      {commentCount > 0 && (
                         <div className="flex items-center gap-2.5 text-xs text-gray-400">
-                          {commentCount > 0 && (
-                            <span className="flex items-center gap-0.5" title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}>
-                              <MessageSquare className="h-3 w-3" />
-                              {commentCount}
-                            </span>
-                          )}
-                          {ratingCount > 0 && (
-                            <span className="flex items-center gap-0.5" title={`${ratingCount} rating${ratingCount === 1 ? "" : "s"}`}>
-                              <Star className="h-3 w-3" />
-                              {ratingCount}
-                            </span>
-                          )}
+                          <span className="flex items-center gap-0.5" title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}>
+                            <MessageSquare className="h-3 w-3" />
+                            {commentCount}
+                          </span>
                         </div>
                       )}
 

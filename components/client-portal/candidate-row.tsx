@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Building2, Briefcase, MapPin } from "lucide-react";
-import { RatingStars } from "./rating-stars";
 
+// Rating column was removed from the table — it took up space for
+// minimal signal at the list level (most rows show empty stars).
+// Rating lives on the candidate detail page where it has more
+// context. avgRating + ratingCount are still kept on the row type
+// in case we want to surface them as a compact pill in the future.
 export type CandidateRow = {
   submissionId: string;
   candidate: {
@@ -31,6 +34,8 @@ type Props = {
   row: CandidateRow;
   showJob?: boolean;
   showFirm?: boolean;
+  // Kept on the API surface so callers don't break — the prop is now
+  // a no-op since rating is removed from the row.
   onRated?: () => void;
 };
 
@@ -44,31 +49,7 @@ function formatDateShort(iso: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function CandidateTableRow({ row, showJob = true, showFirm = true, onRated }: Props) {
-  const [myRating, setMyRating] = useState<number | null>(row.myRating);
-  const [savingRating, setSavingRating] = useState(false);
-
-  async function setRating(score: number) {
-    const prev = myRating;
-    setMyRating(score);
-    setSavingRating(true);
-    try {
-      const res = await fetch(`/api/client-portal/candidates/${row.submissionId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score }),
-      });
-      if (!res.ok) {
-        setMyRating(prev);
-      } else {
-        onRated?.();
-      }
-    } catch {
-      setMyRating(prev);
-    }
-    setSavingRating(false);
-  }
-
+export function CandidateTableRow({ row, showJob = true, showFirm = true }: Props) {
   const fullName = `${row.candidate.firstName} ${row.candidate.lastName}`.trim();
   const initials = (row.candidate.firstName[0] || "") + (row.candidate.lastName[0] || "");
 
@@ -149,18 +130,6 @@ export function CandidateTableRow({ row, showJob = true, showFirm = true, onRate
         ) : (
           <span className="text-xs text-gray-400">—</span>
         )}
-      </TableCell>
-
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <RatingStars value={myRating} onChange={setRating} size="sm" />
-          {savingRating && <span className="text-[10px] text-gray-400">…</span>}
-          {row.avgRating !== null && row.ratingCount > 1 && (
-            <span className="text-[10px] text-gray-400" title={`Team average from ${row.ratingCount} ratings`}>
-              ({row.avgRating.toFixed(1)})
-            </span>
-          )}
-        </div>
       </TableCell>
 
       <TableCell className="text-xs text-gray-500 whitespace-nowrap">
