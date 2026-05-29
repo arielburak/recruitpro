@@ -244,6 +244,12 @@ export default function CalendarPage() {
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
+  // "Event or Interview?" chooser surfaced when the recruiter double-
+  // clicks a day. Routed through a piece of state instead of jumping
+  // straight to one or the other so the action remains explicit at
+  // the call site.
+  const [showCreateChooser, setShowCreateChooser] = useState(false);
+
   // Feedback state
   const [feedbackList, setFeedbackList] = useState<InterviewFeedback[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
@@ -635,9 +641,23 @@ export default function CalendarPage() {
     return found ? found.label : tz.split("/").pop()?.replace(/_/g, " ") || "";
   }
 
+  // Open a small picker that asks "Event or Interview?" instead of
+  // jumping straight to the interview modal. The day cell + the
+  // sidebar Plus button both flow through here so the choice is
+  // surfaced consistently. Header buttons still create directly —
+  // they're already pre-disambiguated by the button itself.
   function openCreate(day: number, m: number, y: number) {
     setCreateDate(new Date(y, m, day, 9, 0));
+    setShowCreateChooser(true);
+  }
+
+  function chooseInterview() {
+    setShowCreateChooser(false);
     setShowCreateModal(true);
+  }
+  function chooseEvent() {
+    setShowCreateChooser(false);
+    setShowCreateEventModal(true);
   }
 
   async function handleDelete(id: string) {
@@ -1763,6 +1783,69 @@ export default function CalendarPage() {
           </Card>
         </div>
       </div>
+
+      {/* "What do you want to create?" chooser. Surfaces when the
+          recruiter double-clicks a day or hits the inline Plus on a
+          day cell / sidebar. Two big buttons so the choice is
+          obvious; clicking either one routes into the matching
+          modal. The header buttons skip this step — they're already
+          pre-disambiguated by which button got clicked. */}
+      {showCreateChooser && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">
+                What do you want to create?
+              </h2>
+              <button
+                onClick={() => setShowCreateChooser(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {createDate && (
+              <p className="text-xs text-gray-500 -mt-2">
+                {createDate.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={chooseEvent}
+                className="rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 px-4 py-5 flex flex-col items-center gap-2 transition-colors group"
+              >
+                <div className="w-10 h-10 rounded-lg bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center">
+                  <CalendarIcon className="h-5 w-5 text-slate-600 group-hover:text-indigo-700" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Event</p>
+                <p className="text-[11px] text-gray-500 text-center">
+                  Follow-up, reminder, personal block
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={chooseInterview}
+                className="rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 px-4 py-5 flex flex-col items-center gap-2 transition-colors group"
+              >
+                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <Video className="h-5 w-5 text-indigo-700" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Interview</p>
+                <p className="text-[11px] text-gray-500 text-center">
+                  Candidate / client meeting with optional invite
+                </p>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Interview Modal */}
       {showCreateModal && (
