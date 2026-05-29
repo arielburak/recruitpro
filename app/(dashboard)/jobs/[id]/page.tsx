@@ -724,9 +724,20 @@ export default function JobDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/jobs">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
-          </Link>
+          {/* Back uses the browser history so you land wherever you
+              came from — /jobs list, /engagements drilldown, a
+              candidate page, etc. The fallback if there's no entry
+              (deep link, new tab) is the Jobs list. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (window.history.length > 1) router.back();
+              else router.push("/jobs");
+            }}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+          </Button>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{job.title}</h1>
