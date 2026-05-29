@@ -19,7 +19,6 @@ import {
   User,
   Calendar,
 } from "lucide-react";
-import { RatingStars } from "@/components/client-portal/rating-stars";
 import { CandidateChat } from "@/components/client-portal/candidate-chat";
 
 type CandidateDetail = {
@@ -107,12 +106,6 @@ export default function CandidateDetailPage({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  // Rating form
-  const [myScore, setMyScore] = useState<number>(0);
-  const [myFeedback, setMyFeedback] = useState("");
-  const [savingRating, setSavingRating] = useState(false);
-  const [ratingStatus, setRatingStatus] = useState<string | null>(null);
-
   async function fetchDetail() {
     try {
       const res = await fetch(`/api/client-portal/candidates/${submissionId}`);
@@ -123,8 +116,6 @@ export default function CandidateDetailPage({
       if (res.ok) {
         const data = await res.json();
         setDetail(data);
-        setMyScore(data.myRating?.score || 0);
-        setMyFeedback(data.myRating?.feedback || "");
       }
     } catch {
       // silent
@@ -140,29 +131,9 @@ export default function CandidateDetailPage({
   // Pipeline moves are agency-driven for MVP. The PATCH stage endpoint
   // returns 403 server-side, and the selector that used to call it has
   // been replaced with the read-only pill in the header.
-
-  async function saveRating() {
-    if (!myScore) return;
-    setSavingRating(true);
-    setRatingStatus(null);
-    try {
-      const res = await fetch(`/api/client-portal/candidates/${submissionId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score: myScore, feedback: myFeedback.trim() || undefined }),
-      });
-      if (res.ok) {
-        setRatingStatus("Saved");
-        setTimeout(() => setRatingStatus(null), 2000);
-        fetchDetail();
-      } else {
-        setRatingStatus("Failed to save");
-      }
-    } catch {
-      setRatingStatus("Failed to save");
-    }
-    setSavingRating(false);
-  }
+  // Ratings (score + feedback inline form) were removed across the
+  // portal; the candidate's value to the team gets discussed in the
+  // Notes thread instead.
 
   if (loading) {
     return (
@@ -349,36 +320,6 @@ export default function CandidateDetailPage({
             comments={detail.comments as any}
             onCommentAdded={fetchDetail}
           />
-
-          {/* Ratings from the team (separate from chat) */}
-          {detail.allRatings.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-gray-500">Team Ratings</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {detail.allRatings.map((r) => (
-                    <div key={r.id} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{r.clientUser.name}</p>
-                          {r.clientUser.title && (
-                            <p className="text-[11px] text-gray-500">{r.clientUser.title}</p>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-gray-400 shrink-0">{formatDateTime(r.createdAt)}</span>
-                      </div>
-                      <RatingStars value={r.score} readonly size="sm" />
-                      {r.feedback && (
-                        <p className="text-sm text-gray-700 mt-1.5 whitespace-pre-wrap">{r.feedback}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* Right column: context + rating form */}
@@ -418,69 +359,6 @@ export default function CandidateDetailPage({
                 </div>
               </div>
 
-              {detail.avgRating !== null && (
-                <div className="pt-3 border-t">
-                  <p className="text-[11px] text-gray-400 uppercase tracking-wider mb-1">Team average</p>
-                  <div className="flex items-center gap-2">
-                    <RatingStars value={Math.round(detail.avgRating)} readonly size="sm" />
-                    <span className="text-xs text-gray-500">
-                      {detail.avgRating.toFixed(1)} · {detail.ratingCount} rating{detail.ratingCount === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* My rating */}
-          <Card className="border-emerald-200">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <User className="h-4 w-4 text-emerald-600" />
-                Your Rating
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <RatingStars value={myScore} onChange={setMyScore} size="lg" />
-                {myScore > 0 && (
-                  <button
-                    onClick={() => setMyScore(0)}
-                    className="text-[11px] text-gray-400 hover:text-gray-600"
-                  >
-                    clear
-                  </button>
-                )}
-              </div>
-
-              <Textarea
-                value={myFeedback}
-                onChange={(e) => setMyFeedback(e.target.value)}
-                placeholder="Private feedback on this candidate..."
-                rows={3}
-                className="text-sm"
-              />
-
-              <div className="flex items-center justify-between">
-                {ratingStatus ? (
-                  <p className="text-xs text-emerald-600">{ratingStatus}</p>
-                ) : (
-                  <span />
-                )}
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  onClick={saveRating}
-                  disabled={savingRating || myScore === 0}
-                >
-                  {savingRating ? "Saving..." : detail.myRating ? "Update" : "Save Rating"}
-                </Button>
-              </div>
-              {detail.myRating && (
-                <p className="text-[11px] text-gray-400">
-                  Last updated {formatDateTime(detail.myRating.createdAt)}
-                </p>
-              )}
             </CardContent>
           </Card>
         </div>

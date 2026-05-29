@@ -719,7 +719,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             <TableHead>Stage</TableHead>
                             <TableHead>Firm</TableHead>
                             <TableHead>Location</TableHead>
-                            <TableHead>Rating</TableHead>
                             <TableHead>Shared</TableHead>
                           </TableRow>
                         </TableHeader>

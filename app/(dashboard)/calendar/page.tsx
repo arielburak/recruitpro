@@ -1060,30 +1060,6 @@ export default function CalendarPage() {
                       />
                     )}
 
-                    {/* Star rating */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-400 mr-1">Rating:</span>
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setFeedbackRating(feedbackRating === s ? 0 : s)}
-                          className="p-0.5"
-                        >
-                          <Star
-                            className={`h-4 w-4 transition-colors ${
-                              s <= feedbackRating
-                                ? "fill-yellow-400 text-yellow-400"
-                                : "text-gray-300 hover:text-yellow-300"
-                            }`}
-                          />
-                        </button>
-                      ))}
-                      {feedbackRating > 0 && (
-                        <span className="text-xs text-gray-400 ml-1">{feedbackRating}/5</span>
-                      )}
-                    </div>
-
                     {/* Comment */}
                     <Textarea
                       placeholder={
