@@ -1090,7 +1090,12 @@ model CalendarEvent {
   // DAILY | WEEKLY | MONTHLY | YEARLY. Expansion into individual
   // calendar chips happens client-side from the base row + this
   // string — no fan-out rows in the DB.
+  // `recurrenceInterval` is the step between occurrences in the same
+  // unit (every N days / weeks / months / years). 1 = the simple
+  // "every week" case; 2 = "every other week"; 3 = "every 3 weeks";
+  // etc. Defaults to 1 so existing rows keep their current cadence.
   recurrence            String?
+  recurrenceInterval    Int       @default(1)
   recurrenceEndDate     DateTime?
 
   clientId       String?

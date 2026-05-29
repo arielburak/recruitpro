@@ -61,6 +61,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         body.recurrence && ALLOWED_RECURRENCE.has(body.recurrence)
           ? body.recurrence
           : null;
+      // Clearing recurrence resets the interval back to 1 so the next
+      // toggle-on starts from a sane "every 1" default.
+      if (data.recurrence === null) data.recurrenceInterval = 1;
+    }
+    if ("recurrenceInterval" in body) {
+      const n = Number(body.recurrenceInterval);
+      data.recurrenceInterval =
+        Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
     }
     if ("recurrenceEndDate" in body) {
       data.recurrenceEndDate = body.recurrenceEndDate
