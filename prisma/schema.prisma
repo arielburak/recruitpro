@@ -70,6 +70,7 @@ model Organization {
   activities   Activity[]
   engagements  FirmEngagement[]
   interviews   Interview[]
+  calendarEvents CalendarEvent[]
 }
 
 model User {
@@ -112,6 +113,7 @@ model User {
   integrations          UserIntegration[]
   notifications         UserNotification[]
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
+  createdCalendarEvents CalendarEvent[]       @relation("CalendarEventCreator")
 
   @@index([organizationId])
   @@index([accountId])
@@ -218,6 +220,7 @@ model Client {
   // sees their OWN Jobs at the client (Job.organizationId scope)
   // and the ClientJobs the client explicitly shared (FirmEngagement).
   engagedOrganizations OrganizationClient[]
+  calendarEvents       CalendarEvent[]
 
   @@index([organizationId])
 }
@@ -366,6 +369,7 @@ model Candidate {
   comments     Comment[]             @relation("CandidateComments")
   activities   Activity[]            @relation("CandidateActivities")
   interviews   Interview[]
+  calendarEvents CalendarEvent[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
@@ -424,6 +428,7 @@ model Job {
   placements     Placement[]
   documents      Document[]
   interviews     Interview[]
+  calendarEvents CalendarEvent[]
   // Populated when the Job was born out of a client-portal invite. Used
   // to enforce person-level privacy on Job visibility — if any of the
   // linked engagements has invitedUserId set, only the assignees see
@@ -1024,4 +1029,65 @@ model UserInvite {
 
   @@index([token])
   @@index([organizationId])
+}
+
+// ─── CALENDAR EVENTS ───
+//
+// Generic personal calendar events (Outlook / Google-style) that live
+// alongside Interviews on the recruiter's /calendar grid. Use cases:
+// follow-up reminders, internal team syncs, blocking time, "call so-
+// and-so back next week" notes. Interviews stay their own model
+// because they carry candidate / submission / feedback / external
+// invite semantics; events deliberately don't — they're a personal
+// block.
+//
+// Visibility is per-user: every event belongs to its creator and
+// only the creator sees it. No invitee list, no email fan-out (the
+// agency policy is "don't email the candidate from generic events"
+// — Interviews are the only path that mails anyone).
+//
+// Optional relations are nullable on purpose so the same model
+// handles:
+//   - "FU with Acme" → clientId set
+//   - "Touch base with John Doe" → candidateId set
+//   - "Team weekly on Sales VP" → jobId set
+//   - Pure personal block → none set
+// Relations use onDelete: SetNull so dropping a Job / Candidate /
+// Client doesn't nuke the recruiter's reminders alongside it.
+model CalendarEvent {
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  startTime      DateTime
+  endTime        DateTime
+  allDay         Boolean  @default(false)
+  location       String?
+  meetingLink    String?
+  timezone       String   @default("America/Argentina/Buenos_Aires")
+  // High-level kind for the chip color + icon. Free-form string instead
+  // of an enum so we can iterate without a migration; the UI maps
+  // unknown values to the neutral "EVENT" style.
+  kind           String   @default("EVENT") // EVENT | FOLLOW_UP | REMINDER | MEETING
+
+  clientId       String?
+  candidateId    String?
+  jobId          String?
+
+  organizationId String
+  createdBy      String
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  candidate    Candidate?   @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id])
+  creator      User         @relation("CalendarEventCreator", fields: [createdBy], references: [id])
+
+  @@index([organizationId, startTime])
+  @@index([createdBy, startTime])
+  @@index([clientId])
+  @@index([candidateId])
+  @@index([jobId])
 }
