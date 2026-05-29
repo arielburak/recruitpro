@@ -4,39 +4,87 @@ import { getClientContext } from "@/lib/tenant";
 
 // Returns the unique list of recruiting firms (Organizations) that
 // have at least one ACCEPTED engagement with this client, plus the
-// per-firm counts surfaced in the dashboard drawer:
-//   - jobsCount       — distinct ClientJobs the firm is engaged on
-//   - candidatesShared — CandidateSubmissions the firm shared (isSharedWithClient=true)
-//   - pendingCount    — engagements still PENDING (response pending)
+// per-firm collaboration aggregates:
+//   - jobsCount        — distinct ClientJobs the firm is engaged on
+//   - candidatesShared — CandidateSubmissions the firm shared
+//   - candidatesSubmitted — total submissions (not only shared)
+//   - placements       — placements closed on those Jobs
+//   - pendingCount     — engagements still PENDING (response pending)
+//   - lastActivityAt   — most recent submission updated-at across all
+//                        the firm's Jobs for this client
+//   - jobs[]           — light breakdown for drill-down on the
+//                        client-portal Engagements page
 export async function GET() {
   try {
     const ctx = await getClientContext();
 
-    const [engagements, sharedSubs] = await Promise.all([
-      prisma.firmEngagement.findMany({
-        where: { clientJob: { clientId: ctx.clientId } },
-        select: {
-          organizationId: true,
-          clientJobId: true,
-          status: true,
-          organization: { select: { name: true } },
-        },
-      }),
-      prisma.candidateSubmission.findMany({
-        where: {
-          isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
-        },
-        select: { job: { select: { organizationId: true } } },
-      }),
-    ]);
+    const engagements = await prisma.firmEngagement.findMany({
+      where: { clientJob: { clientId: ctx.clientId } },
+      select: {
+        organizationId: true,
+        clientJobId: true,
+        jobId: true,
+        status: true,
+        invitedAt: true,
+        respondedAt: true,
+        organization: { select: { name: true } },
+        clientJob: { select: { title: true, id: true } },
+      },
+    });
+
+    // Index firm Jobs (agency-side) that contributed candidates +
+    // placements to this client. We need the jobId for cross-table
+    // counts; only ACCEPTED engagements have one.
+    const acceptedJobIds = engagements
+      .filter((e) => e.status === "ACCEPTED" && e.jobId)
+      .map((e) => e.jobId as string);
+
+    const [submissionsByJob, sharedByJob, placementsByJob, lastActivityByJob] =
+      acceptedJobIds.length > 0
+        ? await Promise.all([
+            prisma.candidateSubmission.groupBy({
+              by: ["jobId"],
+              where: { jobId: { in: acceptedJobIds } },
+              _count: { id: true },
+            }),
+            prisma.candidateSubmission.groupBy({
+              by: ["jobId"],
+              where: { jobId: { in: acceptedJobIds }, isSharedWithClient: true },
+              _count: { id: true },
+            }),
+            prisma.placement.groupBy({
+              by: ["jobId"],
+              where: { jobId: { in: acceptedJobIds } },
+              _count: { id: true },
+            }),
+            prisma.candidateSubmission.groupBy({
+              by: ["jobId"],
+              where: { jobId: { in: acceptedJobIds } },
+              _max: { updatedAt: true },
+            }),
+          ])
+        : [[], [], [], []];
+
+    type JobAgg = {
+      clientJobId: string;
+      jobId: string | null;
+      title: string;
+      submissions: number;
+      shared: number;
+      placements: number;
+      lastActivityAt: string | null;
+    };
 
     type FirmAgg = {
       organizationId: string;
       name: string;
-      jobIds: Set<string>;
+      jobsCount: number;
       pendingCount: number;
       candidatesShared: number;
+      candidatesSubmitted: number;
+      placements: number;
+      lastActivityAt: string | null;
+      jobs: JobAgg[];
     };
 
     const byOrg = new Map<string, FirmAgg>();
@@ -46,32 +94,57 @@ export async function GET() {
         agg = {
           organizationId: e.organizationId,
           name: e.organization.name,
-          jobIds: new Set(),
+          jobsCount: 0,
           pendingCount: 0,
           candidatesShared: 0,
+          candidatesSubmitted: 0,
+          placements: 0,
+          lastActivityAt: null,
+          jobs: [],
         };
         byOrg.set(e.organizationId, agg);
       }
-      if (e.status === "ACCEPTED") agg.jobIds.add(e.clientJobId);
       if (e.status === "PENDING") agg.pendingCount += 1;
-    }
+      if (e.status === "ACCEPTED") {
+        const subs = e.jobId
+          ? submissionsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
+          : 0;
+        const shared = e.jobId
+          ? sharedByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
+          : 0;
+        const placed = e.jobId
+          ? placementsByJob.find((r) => r.jobId === e.jobId)?._count.id || 0
+          : 0;
+        const lastAt = e.jobId
+          ? lastActivityByJob.find((r) => r.jobId === e.jobId)?._max.updatedAt
+          : null;
 
-    for (const s of sharedSubs) {
-      const agg = byOrg.get(s.job.organizationId);
-      if (agg) agg.candidatesShared += 1;
+        agg.jobsCount += 1;
+        agg.candidatesSubmitted += subs;
+        agg.candidatesShared += shared;
+        agg.placements += placed;
+        if (lastAt) {
+          const iso = lastAt.toISOString();
+          if (!agg.lastActivityAt || iso > agg.lastActivityAt) {
+            agg.lastActivityAt = iso;
+          }
+        }
+        agg.jobs.push({
+          clientJobId: e.clientJobId,
+          jobId: e.jobId,
+          title: e.clientJob.title,
+          submissions: subs,
+          shared,
+          placements: placed,
+          lastActivityAt: lastAt ? lastAt.toISOString() : null,
+        });
+      }
     }
 
     const firms = Array.from(byOrg.values())
       // Only surface firms with at least one accepted engagement —
       // pure-pending firms haven't actually started working.
-      .filter((f) => f.jobIds.size > 0)
-      .map((f) => ({
-        organizationId: f.organizationId,
-        name: f.name,
-        jobsCount: f.jobIds.size,
-        pendingCount: f.pendingCount,
-        candidatesShared: f.candidatesShared,
-      }))
+      .filter((f) => f.jobsCount > 0)
       .sort(
         (a, b) =>
           b.candidatesShared - a.candidatesShared ||
