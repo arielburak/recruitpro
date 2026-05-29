@@ -158,9 +158,18 @@ export function CreateEventModal({
     setEndTime(addMinutes(v, durationMin));
   }
   function onEndChange(v: string) {
-    setEndTime(v);
     const d = diffMinutes(startTime, v);
-    if (d > 0) setDurationMin(d);
+    if (d > 0) {
+      setEndTime(v);
+      setDurationMin(d);
+      return;
+    }
+    // User tried to set end ≤ start (typical when the time picker
+    // gets nudged into nonsense). Snap visibly to start + default
+    // duration so the UI matches what would be saved, instead of
+    // leaving the form in a quietly-broken state.
+    setEndTime(addMinutes(startTime, DEFAULT_DURATION_MIN));
+    setDurationMin(DEFAULT_DURATION_MIN);
   }
 
   const [saving, setSaving] = useState(false);
@@ -178,10 +187,15 @@ export function CreateEventModal({
     const startStr = allDay ? "00:00" : startTime;
     const endStr = allDay ? "23:59" : endTime;
     const start = new Date(`${date}T${startStr}:00`);
-    const end = new Date(`${date}T${endStr}:00`);
+    let end = new Date(`${date}T${endStr}:00`);
+    // Auto-snap end to start + default duration when the user left
+    // end equal to (or earlier than) start. A "point in time" event
+    // — "at 14:00, remind me about Zack" — is a perfectly valid
+    // intent, and erroring out for it is more annoying than helpful.
+    // We extend silently to a 30-min block so the chip has a sane
+    // render and the DB constraint (end > start) is satisfied.
     if (end <= start) {
-      setError("End time must be after start time");
-      return;
+      end = new Date(start.getTime() + DEFAULT_DURATION_MIN * 60 * 1000);
     }
 
     setSaving(true);
