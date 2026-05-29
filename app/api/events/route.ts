@@ -81,6 +81,7 @@ export async function POST(request: Request) {
       timezone,
       kind,
       recurrence,
+      recurrenceInterval,
       recurrenceEndDate,
       clientId,
       candidateId,
@@ -132,6 +133,13 @@ export async function POST(request: Request) {
         kind: ALLOWED_KINDS.has(kind) ? kind : "EVENT",
         recurrence:
           recurrence && ALLOWED_RECURRENCE.has(recurrence) ? recurrence : null,
+        // Interval is the "every N" step in the recurrence unit. Clamp
+        // to >= 1 so a malformed payload can't turn a recurring event
+        // into a one-every-zero-days infinite loop in the expander.
+        recurrenceInterval:
+          recurrence && Number.isFinite(Number(recurrenceInterval)) && Number(recurrenceInterval) >= 1
+            ? Math.floor(Number(recurrenceInterval))
+            : 1,
         recurrenceEndDate: recurrenceEndDate ? new Date(recurrenceEndDate) : null,
         clientId: clientId || null,
         candidateId: candidateId || null,

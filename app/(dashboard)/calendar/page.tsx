@@ -195,9 +195,11 @@ type CalendarEvent = {
   kind: string;
   // Outlook-style recurrence. null = one-shot; otherwise the event
   // repeats from `startTime` at this cadence until
-  // `recurrenceEndDate` (or forever if null). The grid expands these
-  // into virtual chip occurrences on the client.
+  // `recurrenceEndDate` (or forever if null). recurrenceInterval is
+  // the step in the same unit (every 2 weeks, every 3 days, …). The
+  // grid expands these into virtual chip occurrences on the client.
   recurrence: string | null;
+  recurrenceInterval: number;
   recurrenceEndDate: string | null;
   client: { id: string; name: string } | null;
   candidate: { id: string; firstName: string; lastName: string } | null;
@@ -471,15 +473,38 @@ export default function CalendarPage() {
         base.getFullYear() === y
       );
     }
-    if (ev.recurrence === "DAILY") return true;
+    // `recurrenceInterval` is the step in the recurrence unit. For
+    // each cadence the predicate has two checks: the natural unit
+    // alignment (same weekday, same day-of-month, etc.) AND whether
+    // the offset from base is a whole multiple of the interval. An
+    // interval <= 0 is impossible to satisfy below — defensively
+    // clamp to 1 so a bad row never silently hides every occurrence.
+    const step = ev.recurrenceInterval && ev.recurrenceInterval >= 1 ? ev.recurrenceInterval : 1;
+    if (ev.recurrence === "DAILY") {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const baseDay = new Date(base.getFullYear(), base.getMonth(), base.getDate()).getTime();
+      const targetDay = target.getTime();
+      const diffDays = Math.round((targetDay - baseDay) / dayMs);
+      return diffDays >= 0 && diffDays % step === 0;
+    }
     if (ev.recurrence === "WEEKLY") {
-      return base.getDay() === target.getDay();
+      if (base.getDay() !== target.getDay()) return false;
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      const baseDay = new Date(base.getFullYear(), base.getMonth(), base.getDate()).getTime();
+      const diffWeeks = Math.round((target.getTime() - baseDay) / weekMs);
+      return diffWeeks >= 0 && diffWeeks % step === 0;
     }
     if (ev.recurrence === "MONTHLY") {
-      return base.getDate() === target.getDate();
+      if (base.getDate() !== target.getDate()) return false;
+      const diffMonths =
+        (target.getFullYear() - base.getFullYear()) * 12 +
+        (target.getMonth() - base.getMonth());
+      return diffMonths >= 0 && diffMonths % step === 0;
     }
     if (ev.recurrence === "YEARLY") {
-      return base.getMonth() === m && base.getDate() === day;
+      if (base.getMonth() !== m || base.getDate() !== day) return false;
+      const diffYears = target.getFullYear() - base.getFullYear();
+      return diffYears >= 0 && diffYears % step === 0;
     }
     return false;
   }

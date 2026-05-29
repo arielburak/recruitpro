@@ -57,6 +57,7 @@ export function CreateEventModal({
     kind: string;
     timezone?: string | null;
     recurrence?: string | null;
+    recurrenceInterval?: number | null;
     recurrenceEndDate?: string | null;
     client?: { id: string; name: string } | null;
     candidate?: { id: string; firstName: string; lastName: string } | null;
@@ -69,6 +70,10 @@ export function CreateEventModal({
     editing && editing.recurrence && RECURRENCE_OPTIONS.some((r) => r.value === editing.recurrence)
       ? (editing.recurrence as Recurrence)
       : null;
+  const editingRecurrenceInterval: number =
+    editing && typeof editing.recurrenceInterval === "number" && editing.recurrenceInterval >= 1
+      ? editing.recurrenceInterval
+      : 1;
   const editingRecurrenceEnd: string =
     editing && editing.recurrenceEndDate
       ? new Date(editing.recurrenceEndDate).toISOString().split("T")[0]
@@ -119,6 +124,11 @@ export function CreateEventModal({
   // optional "Until …" toggle so an indefinite series ("every week
   // forever") stays representable.
   const [recurrence, setRecurrence] = useState<Recurrence | null>(editingRecurrence);
+  // "Every N units" step. Stored as string so the input can be cleared
+  // mid-edit without forcing a 0/NaN — we coerce to >=1 on save.
+  const [recurrenceInterval, setRecurrenceInterval] = useState<string>(
+    String(editingRecurrenceInterval),
+  );
   const [recurrenceEnd, setRecurrenceEnd] = useState<string>(editingRecurrenceEnd);
 
   // Related-to picker. Pre-fill from `editing` if the event was
@@ -251,6 +261,11 @@ export function CreateEventModal({
         meetingLink: meetingLink.trim() || undefined,
         kind,
         recurrence: recurrence ?? null,
+        recurrenceInterval: (() => {
+          if (!recurrence) return 1;
+          const n = Number(recurrenceInterval);
+          return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+        })(),
         recurrenceEndDate: recurrence && recurrenceEnd ? recurrenceEnd : null,
         clientId: relateKind === "CLIENT" ? picked?.id : null,
         candidateId: relateKind === "CANDIDATE" ? picked?.id : null,
@@ -410,6 +425,35 @@ export function CreateEventModal({
             </label>
             {recurrence !== null && (
               <>
+                {/* Outlook-style "Every [N] [unit]" line. N defaults to
+                    1 so the toggle keeps the simple "every week" case
+                    when the user doesn't think about it; bumping it
+                    higher means "every 2 weeks", "every 3 days", etc. */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 shrink-0">Every</span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={365}
+                    value={recurrenceInterval}
+                    onChange={(e) => setRecurrenceInterval(e.target.value)}
+                    className="w-16 h-9 text-center"
+                  />
+                  <span className="text-xs text-gray-500 shrink-0">
+                    {(() => {
+                      const n = Number(recurrenceInterval) || 1;
+                      const plural = n !== 1;
+                      const word: Record<Recurrence, [string, string]> = {
+                        DAILY: ["day", "days"],
+                        WEEKLY: ["week", "weeks"],
+                        MONTHLY: ["month", "months"],
+                        YEARLY: ["year", "years"],
+                      };
+                      return plural ? word[recurrence][1] : word[recurrence][0];
+                    })()}
+                  </span>
+                </div>
                 <div className="flex gap-1.5">
                   {RECURRENCE_OPTIONS.map((r) => (
                     <button
