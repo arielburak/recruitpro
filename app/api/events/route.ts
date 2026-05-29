@@ -14,6 +14,7 @@ import { getOrgContext } from "@/lib/tenant";
 // All three are nullable so pure personal blocks work too.
 
 const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER", "MEETING"]);
+const ALLOWED_RECURRENCE = new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]);
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,12 +23,29 @@ export async function GET(request: NextRequest) {
     const start = sp.get("start");
     const end = sp.get("end");
 
-    const where: any = {
+    // Two-pass fetch when a range is given:
+    //   * non-recurring events whose startTime sits inside [start, end]
+    //   * ALL recurring events that began on/before `end`, even if
+    //     their base startTime is far in the past — they expand into
+    //     individual chips on the client. recurrenceEndDate gates the
+    //     upper bound so finished series don't keep showing up.
+    const baseWhere = {
       organizationId: ctx.organizationId,
       createdBy: ctx.userId,
     };
+    const where: any = { ...baseWhere };
     if (start && end) {
-      where.startTime = { gte: new Date(start), lte: new Date(end) };
+      where.OR = [
+        { recurrence: null, startTime: { gte: new Date(start), lte: new Date(end) } },
+        {
+          recurrence: { not: null },
+          startTime: { lte: new Date(end) },
+          OR: [
+            { recurrenceEndDate: null },
+            { recurrenceEndDate: { gte: new Date(start) } },
+          ],
+        },
+      ];
     }
 
     const events = await prisma.calendarEvent.findMany({
@@ -62,6 +80,8 @@ export async function POST(request: Request) {
       meetingLink,
       timezone,
       kind,
+      recurrence,
+      recurrenceEndDate,
       clientId,
       candidateId,
       jobId,
@@ -110,6 +130,9 @@ export async function POST(request: Request) {
         meetingLink: meetingLink || null,
         timezone: timezone || "America/Argentina/Buenos_Aires",
         kind: ALLOWED_KINDS.has(kind) ? kind : "EVENT",
+        recurrence:
+          recurrence && ALLOWED_RECURRENCE.has(recurrence) ? recurrence : null,
+        recurrenceEndDate: recurrenceEndDate ? new Date(recurrenceEndDate) : null,
         clientId: clientId || null,
         candidateId: candidateId || null,
         jobId: jobId || null,

@@ -1218,15 +1218,37 @@ export function PlacementDialog(props: Props) {
 
             {kind === "OS" && (
               <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-end-date">End date</Label>
-                <Input
-                  id="placement-end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={endDate !== ""}
+                    onChange={(e) => {
+                      // Outlook-style toggle: checking exposes the date
+                      // picker (default = today, the recruiter usually
+                      // sets the actual day next), unchecking clears
+                      // back to "ongoing" which is what feeds Active
+                      // MRR. Avoids the "leave blank" awkwardness of a
+                      // visible empty date input.
+                      if (e.target.checked) {
+                        setEndDate(todayIso());
+                      } else {
+                        setEndDate("");
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-gray-700">Has end date</span>
+                </label>
+                {endDate !== "" && (
+                  <Input
+                    id="placement-end-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                )}
                 <p className="text-[10px] text-gray-400">
-                  Leave blank while the engagement is ongoing — that&apos;s what counts as Active MRR.
+                  Off = engagement is ongoing — that&apos;s what counts as Active MRR.
                 </p>
               </div>
             )}

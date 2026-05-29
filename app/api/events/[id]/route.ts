@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/tenant";
 // override — these are personal blocks, not org records.
 
 const ALLOWED_KINDS = new Set(["EVENT", "FOLLOW_UP", "REMINDER", "MEETING"]);
+const ALLOWED_RECURRENCE = new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]);
 
 async function loadOwned(id: string, ctx: { organizationId: string; userId: string }) {
   return prisma.calendarEvent.findFirst({
@@ -52,6 +53,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if ("meetingLink" in body) data.meetingLink = body.meetingLink || null;
     if (typeof body.timezone === "string") data.timezone = body.timezone;
     if (typeof body.kind === "string" && ALLOWED_KINDS.has(body.kind)) data.kind = body.kind;
+    if ("recurrence" in body) {
+      // Outlook-style toggle on the form: null clears the series, a
+      // known string sets the cadence. Anything else is ignored so a
+      // typo can't silently break the expansion logic.
+      data.recurrence =
+        body.recurrence && ALLOWED_RECURRENCE.has(body.recurrence)
+          ? body.recurrence
+          : null;
+    }
+    if ("recurrenceEndDate" in body) {
+      data.recurrenceEndDate = body.recurrenceEndDate
+        ? new Date(body.recurrenceEndDate)
+        : null;
+    }
 
     // Optional relation re-assignment. Same org-scope guard as on POST.
     if ("clientId" in body) {
