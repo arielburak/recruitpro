@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, KeyRound } from "lucide-react";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
@@ -179,6 +179,37 @@ export default function ClientDetailPage() {
       setContacts(contacts.filter((c) => c.id !== id));
     } catch {
       setContactError("Failed to delete contact");
+    }
+  }
+
+  // Sends the contact a "you've been invited to the client portal"
+  // email (set-password link). Server is idempotent — re-inviting a
+  // pending contact just re-fires the email; an active contact is a
+  // no-op (the Invite button is hidden in that case anyway).
+  const [invitingContactId, setInvitingContactId] = useState<string | null>(null);
+  async function inviteContact(contactId: string) {
+    setInvitingContactId(contactId);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/invite-portal`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setContactError(body.error || "Failed to send invite");
+        return;
+      }
+      // Optimistic: flip portalStatus to "pending" so the button
+      // turns into "Pending" without a full refetch. Server-side the
+      // ClientUser row was created or refreshed.
+      setContacts((arr) =>
+        arr.map((c) =>
+          c.id === contactId ? { ...c, portalStatus: "pending" } : c,
+        ),
+      );
+    } catch {
+      setContactError("Failed to send invite");
+    } finally {
+      setInvitingContactId(null);
     }
   }
 
@@ -539,6 +570,7 @@ export default function ClientDetailPage() {
                       <TableHead>Email</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead>Primary</TableHead>
+                      <TableHead>Portal access</TableHead>
                       <TableHead className="w-[80px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -592,6 +624,7 @@ export default function ClientDetailPage() {
                             className="h-4 w-4 rounded border-gray-300 text-indigo-600"
                           />
                         </TableCell>
+                        <TableCell />
                         <TableCell>
                           <div className="flex gap-1">
                             <Button size="sm" variant="ghost" onClick={createContact} disabled={savingContact}>
@@ -650,6 +683,7 @@ export default function ClientDetailPage() {
                               className="h-4 w-4 rounded border-gray-300 text-indigo-600"
                             />
                           </TableCell>
+                          <TableCell />
                           <TableCell>
                             <div className="flex gap-1">
                               <Button size="sm" variant="ghost" onClick={() => saveContact(contact.id)} disabled={savingContact}>
@@ -684,6 +718,34 @@ export default function ClientDetailPage() {
                           <TableCell>
                             {contact.isPrimary && (
                               <Badge className="bg-indigo-100 text-indigo-800">Primary</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {contact.portalStatus === "active" ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                                <KeyRound className="h-3 w-3" />
+                                In portal
+                              </span>
+                            ) : contact.portalStatus === "pending" ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                                Pending
+                              </span>
+                            ) : contact.email ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1"
+                                disabled={invitingContactId === contact.id}
+                                onClick={() => inviteContact(contact.id)}
+                                title="Send portal invite"
+                              >
+                                <Mail className="h-3 w-3" />
+                                {invitingContactId === contact.id ? "Inviting…" : "Invite"}
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-gray-400 italic">
+                                Add an email to invite
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>

@@ -49,18 +49,25 @@ async function main() {
     const delNotifs = await tx.clientNotification.deleteMany({
       where: { clientUserId: { in: ids } },
     });
-    // ClientJob.postedBy points at ClientUser too — null it out instead
-    // of deleting the job, since the job may have engagements and
-    // candidate activity behind it.
-    const cleared = await tx.clientJob.updateMany({
-      where: { postedBy: { in: ids } },
-      data: { postedBy: null },
+    // ClientJob.postedById is non-nullable in the schema. If the
+    // ClientUser we're deleting authored any ClientJobs, those need
+    // a separate cleanup (re-assign or delete the jobs). Refuse to
+    // proceed in that case instead of silently FK-failing inside
+    // the transaction.
+    const authored = await tx.clientJob.count({
+      where: { postedById: { in: ids } },
     });
+    if (authored > 0) {
+      throw new Error(
+        `Refusing to delete: this ClientUser authored ${authored} ClientJob row(s). ` +
+        `Re-assign or remove those jobs first.`,
+      );
+    }
     const del = await tx.clientUser.deleteMany({ where: { id: { in: ids } } });
     console.log(
       `Deleted: ${del.count} ClientUser, ${delComments.count} comments, ` +
       `${delRatings.count} ratings, ${delNotifs.count} notifications. ` +
-      `Cleared ${cleared.count} ClientJob.postedBy references.`
+      `ClientJobMember rows cascade-deleted by the schema.`,
     );
   });
 
