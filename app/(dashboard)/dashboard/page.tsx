@@ -33,6 +33,7 @@ import {
   RecruiterLeaderboard,
 } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
+import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
 import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
 
 // Force dynamic rendering. The page already depends on getServerSession
@@ -523,19 +524,12 @@ export default async function DashboardPage() {
 
       {/* Main Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Distribution */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-indigo-500" />
-              Pipeline Distribution
-            </CardTitle>
-            <p className="text-xs text-gray-400">Candidates across all active searches</p>
-          </CardHeader>
-          <CardContent>
-            <PipelineChart data={pipelineChartData} />
-          </CardContent>
-        </Card>
+        {/* Pipeline Distribution — client-side so the date range
+            picker can re-aggregate without re-running the SSR
+            dashboard. Uses the shared DateRangePicker so the
+            "time" semantics match the Recruiter Performance widget
+            above. */}
+        <PipelineDistribution />
 
         {/* Activity Trend */}
         <Card className="border-0 shadow-sm">

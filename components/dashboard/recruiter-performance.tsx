@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Trophy,
   Send,
   Video,
   Handshake,
   Users,
-  Calendar as CalendarIcon,
   ChevronDown,
   TrendingUp,
   TrendingDown,
@@ -20,6 +17,16 @@ import {
   ArrowDown,
   X,
 } from "lucide-react";
+import {
+  RecruiterPerformanceDrilldown,
+  type DrilldownMetric,
+} from "./recruiter-performance-drilldown";
+import {
+  DateRangePicker,
+  resolveDateRange,
+  fmtRangeShort,
+  type DatePresetKey,
+} from "./date-range-picker";
 
 // Recruiter performance dashboard — the metrics surface a sales-ops
 // person would open every Monday. Independent client component so
@@ -65,150 +72,13 @@ type ApiResponse = {
   prior: { totals: Totals; from: string; to: string } | null;
 };
 
-type PresetKey =
-  | "today"
-  | "yesterday"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "thisWeek"
-  | "thisMonth"
-  | "lastMonth"
-  | "thisQuarter"
-  | "lastQuarter"
-  | "ytd"
-  | "lastYear"
-  | "all"
-  | "custom";
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "yesterday", label: "Yesterday" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "14d", label: "Last 14 days" },
-  { key: "30d", label: "Last 30 days" },
-  { key: "thisWeek", label: "This week" },
-  { key: "thisMonth", label: "This month" },
-  { key: "lastMonth", label: "Last month" },
-  { key: "thisQuarter", label: "This quarter" },
-  { key: "lastQuarter", label: "Last quarter" },
-  { key: "ytd", label: "Year to date" },
-  { key: "lastYear", label: "Last year" },
-  { key: "all", label: "All time" },
-  { key: "custom", label: "Custom range" },
-];
-
-// Start-of-day / end-of-day helpers — date inputs come in as YYYY-MM-DD
-// and we want the full calendar day inclusive on both ends.
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-function presetWindow(key: PresetKey, customFrom?: string, customTo?: string): { from: Date; to: Date } {
-  const now = new Date();
-  const today = startOfDay(now);
-  const eod = endOfDay(now);
-  switch (key) {
-    case "today":
-      return { from: today, to: eod };
-    case "yesterday": {
-      const y = new Date(today);
-      y.setDate(y.getDate() - 1);
-      return { from: y, to: endOfDay(y) };
-    }
-    case "7d": {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 6);
-      return { from, to: eod };
-    }
-    case "14d": {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 13);
-      return { from, to: eod };
-    }
-    case "30d": {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 29);
-      return { from, to: eod };
-    }
-    case "thisWeek": {
-      // Mon-Sun. JS getDay() returns 0 for Sun, 1 for Mon — shift so
-      // the week boundary feels right for a working calendar.
-      const dow = today.getDay();
-      const diff = (dow + 6) % 7;
-      const from = new Date(today);
-      from.setDate(from.getDate() - diff);
-      return { from, to: eod };
-    }
-    case "thisMonth": {
-      const from = new Date(today.getFullYear(), today.getMonth(), 1);
-      return { from, to: eod };
-    }
-    case "lastMonth": {
-      const from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const to = endOfDay(new Date(today.getFullYear(), today.getMonth(), 0));
-      return { from, to };
-    }
-    case "thisQuarter": {
-      const q = Math.floor(today.getMonth() / 3);
-      const from = new Date(today.getFullYear(), q * 3, 1);
-      return { from, to: eod };
-    }
-    case "lastQuarter": {
-      const q = Math.floor(today.getMonth() / 3);
-      const start = q === 0
-        ? new Date(today.getFullYear() - 1, 9, 1)
-        : new Date(today.getFullYear(), (q - 1) * 3, 1);
-      const endMonth = start.getMonth() + 3;
-      const end = endOfDay(new Date(start.getFullYear(), endMonth, 0));
-      return { from: start, to: end };
-    }
-    case "ytd": {
-      const from = new Date(today.getFullYear(), 0, 1);
-      return { from, to: eod };
-    }
-    case "lastYear": {
-      const from = new Date(today.getFullYear() - 1, 0, 1);
-      const to = endOfDay(new Date(today.getFullYear() - 1, 11, 31));
-      return { from, to };
-    }
-    case "all":
-      return { from: new Date(0), to: eod };
-    case "custom": {
-      // Fallback to last 30d if either side is missing — keeps the
-      // dropdown usable even when the user toggles to Custom and
-      // hasn't filled the inputs yet.
-      const from = customFrom ? startOfDay(new Date(customFrom)) : new Date(today.getTime() - 29 * 86400000);
-      const to = customTo ? endOfDay(new Date(customTo)) : eod;
-      return { from, to };
-    }
-  }
-}
-
-function fmtRangeShort(from: Date, to: Date): string {
-  const sameYear = from.getFullYear() === to.getFullYear();
-  const opts: Intl.DateTimeFormatOptions = {
-    month: "short",
-    day: "numeric",
-    ...(sameYear ? {} : { year: "numeric" }),
-  };
-  return `${from.toLocaleDateString("en-US", opts)} – ${to.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`;
-}
 
 type SortKey = "submissions" | "interviews" | "offers" | "placements" | "conversionPct";
 
 export function RecruiterPerformance() {
-  const [preset, setPreset] = useState<PresetKey>("30d");
+  const [preset, setPreset] = useState<DatePresetKey>("30d");
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
 
   const [compare, setCompare] = useState(true);
 
@@ -218,18 +88,21 @@ export function RecruiterPerformance() {
   const [recruiterFilterOpen, setRecruiterFilterOpen] = useState(false);
   const recruiterFilterRef = useRef<HTMLDivElement>(null);
 
+  // Drill-down drawer state. Clicking a number in the table opens
+  // the drawer pre-scoped to the same period + filter + the picked
+  // recruiter / metric.
+  const [drilldown, setDrilldown] = useState<{ recruiterId: string; metric: DrilldownMetric } | null>(null);
+
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [sortBy, setSortBy] = useState<SortKey>("placements");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Close popovers on outside click.
+  // Close the recruiter-filter popover on outside click. The date
+  // picker handles its own popover lifecycle inside DateRangePicker.
   useEffect(() => {
     function onDown(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
       if (
         recruiterFilterRef.current &&
         !recruiterFilterRef.current.contains(e.target as Node)
@@ -241,7 +114,7 @@ export function RecruiterPerformance() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const window = useMemo(() => presetWindow(preset, customFrom, customTo), [preset, customFrom, customTo]);
+  const window = useMemo(() => resolveDateRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -330,72 +203,19 @@ export function RecruiterPerformance() {
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {/* Date range picker */}
-          <div ref={pickerRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setPickerOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 border rounded-md hover:bg-gray-50"
-            >
-              <CalendarIcon className="h-3.5 w-3.5 text-gray-400" />
-              {PRESETS.find((p) => p.key === preset)?.label ?? "Pick range"}
-              <ChevronDown className="h-3 w-3 text-gray-400" />
-            </button>
-            {pickerOpen && (
-              <div className="absolute right-0 mt-1 z-30 w-56 bg-white border rounded-lg shadow-lg p-1">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => {
-                      setPreset(p.key);
-                      if (p.key !== "custom") setPickerOpen(false);
-                    }}
-                    className={`w-full text-left px-2 py-1.5 text-xs rounded ${
-                      preset === p.key
-                        ? "bg-indigo-50 text-indigo-700 font-medium"
-                        : "hover:bg-gray-50 text-gray-700"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                {preset === "custom" && (
-                  <div className="border-t mt-1 pt-2 px-2 pb-2 space-y-2">
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
-                        From
-                      </p>
-                      <Input
-                        type="date"
-                        value={customFrom}
-                        onChange={(e) => setCustomFrom(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
-                        To
-                      </p>
-                      <Input
-                        type="date"
-                        value={customTo}
-                        onChange={(e) => setCustomTo(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setPickerOpen(false)}
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Date range picker — shared with the other dashboard
+              widgets so the dashboard's mental model of "time" stays
+              consistent across charts. */}
+          <DateRangePicker
+            preset={preset}
+            customFrom={customFrom}
+            customTo={customTo}
+            onChange={({ preset: p, customFrom: cf, customTo: ct }) => {
+              setPreset(p);
+              setCustomFrom(cf || "");
+              setCustomTo(ct || "");
+            }}
+          />
 
           {/* Recruiter multi-select */}
           <div ref={recruiterFilterRef} className="relative">
@@ -603,18 +423,24 @@ export function RecruiterPerformance() {
                       <p className="font-medium text-gray-900">{r.name}</p>
                       <p className="text-[11px] text-gray-400">{r.email}</p>
                     </td>
-                    <td className="text-right px-3 py-3 text-gray-900">
-                      {r.submissions}
-                    </td>
-                    <td className="text-right px-3 py-3 text-gray-900">
-                      {r.interviews}
-                    </td>
-                    <td className="text-right px-3 py-3 text-amber-600 font-medium">
-                      {r.offers}
-                    </td>
-                    <td className="text-right px-3 py-3 text-emerald-600 font-semibold">
-                      {r.placements}
-                    </td>
+                    <DrilldownCell
+                      value={r.submissions}
+                      onOpen={() => setDrilldown({ recruiterId: r.userId, metric: "submissions" })}
+                    />
+                    <DrilldownCell
+                      value={r.interviews}
+                      onOpen={() => setDrilldown({ recruiterId: r.userId, metric: "interviews" })}
+                    />
+                    <DrilldownCell
+                      value={r.offers}
+                      tone="amber"
+                      onOpen={() => setDrilldown({ recruiterId: r.userId, metric: "offers" })}
+                    />
+                    <DrilldownCell
+                      value={r.placements}
+                      tone="emerald"
+                      onOpen={() => setDrilldown({ recruiterId: r.userId, metric: "placements" })}
+                    />
                     <td className="text-right px-5 py-3 text-gray-700">
                       {r.submissions > 0 ? `${r.conversionPct}%` : "—"}
                     </td>
@@ -625,6 +451,15 @@ export function RecruiterPerformance() {
           </div>
         )}
       </CardContent>
+      {drilldown && (
+        <RecruiterPerformanceDrilldown
+          metric={drilldown.metric}
+          recruiterId={drilldown.recruiterId}
+          from={window.from}
+          to={window.to}
+          onClose={() => setDrilldown(null)}
+        />
+      )}
     </Card>
   );
 }
@@ -697,6 +532,39 @@ function TotalTile({
         </div>
       )}
     </div>
+  );
+}
+
+function DrilldownCell({
+  value,
+  tone,
+  onOpen,
+}: {
+  value: number;
+  tone?: "amber" | "emerald";
+  onOpen: () => void;
+}) {
+  const cls =
+    tone === "amber"
+      ? "text-amber-600 font-medium"
+      : tone === "emerald"
+        ? "text-emerald-600 font-semibold"
+        : "text-gray-900";
+  return (
+    <td className="text-right px-3 py-3">
+      {value > 0 ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`${cls} hover:underline cursor-pointer`}
+          title="See the underlying rows"
+        >
+          {value}
+        </button>
+      ) : (
+        <span className="text-gray-400">{value}</span>
+      )}
+    </td>
   );
 }
 
