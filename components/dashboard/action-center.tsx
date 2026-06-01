@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Video,
-  AlertTriangle,
   DollarSign,
   ShieldAlert,
   ExternalLink,
@@ -22,16 +21,14 @@ import { formatCurrency } from "@/lib/utils";
 
 type Counts = {
   interviewsThisWeek: number;
-  staleSearches: number;
   paymentsOverdue: number;
   guaranteesExpiring: number;
   weekStart: string;
   weekEnd: string;
-  staleCutoff: string;
   guaranteeWindowEnd: string;
 };
 
-type TileKey = "interviews" | "stale" | "paymentsOverdue" | "guaranteesExpiring";
+type TileKey = "interviews" | "paymentsOverdue" | "guaranteesExpiring";
 
 const TILES: {
   key: TileKey;
@@ -48,14 +45,6 @@ const TILES: {
     icon: Video,
     accent: "bg-blue-50 text-blue-600",
     tone: "text-blue-700",
-  },
-  {
-    key: "stale",
-    label: "Stale searches",
-    sublabel: "No movement in 14+ days",
-    icon: AlertTriangle,
-    accent: "bg-amber-50 text-amber-600",
-    tone: "text-amber-700",
   },
   {
     key: "paymentsOverdue",
@@ -91,17 +80,15 @@ export function ActionCenter() {
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {TILES.map((t) => {
           const Icon = t.icon;
           const value = counts ? (counts as any)[
             t.key === "interviews"
               ? "interviewsThisWeek"
-              : t.key === "stale"
-                ? "staleSearches"
-                : t.key === "paymentsOverdue"
-                  ? "paymentsOverdue"
-                  : "guaranteesExpiring"
+              : t.key === "paymentsOverdue"
+                ? "paymentsOverdue"
+                : "guaranteesExpiring"
           ] as number : 0;
           const hasItems = value > 0;
           return (
@@ -214,16 +201,6 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                     title={`${iv.candidate.firstName} ${iv.candidate.lastName}`}
                     subtitle={`${iv.job.title}${iv.job.client?.name ? ` · ${iv.job.client.name}` : ""}`}
                     meta={[fmtDate(iv.startTime), iv.type]}
-                  />
-                ))}
-              {tile === "stale" &&
-                items.map((j: any) => (
-                  <ActionRow
-                    key={j.id}
-                    href={`/jobs/${j.id}`}
-                    title={j.title}
-                    subtitle={j.client?.name || "—"}
-                    meta={[`Last updated ${fmtDate(j.updatedAt)}`]}
                   />
                 ))}
               {tile === "paymentsOverdue" &&

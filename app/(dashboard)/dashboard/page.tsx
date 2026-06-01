@@ -485,10 +485,10 @@ export default async function DashboardPage() {
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
-      {/* Action Center — "what needs attention today". Four
-          drill-down tiles for interviews this week, stale searches,
-          overdue payments and guarantees expiring. MVP scope; more
-          tiles slot into the grid without breaking the layout. */}
+      {/* Action Center — "what needs attention today". Three
+          drill-down tiles for interviews this week, overdue payments
+          and guarantees expiring. MVP scope; more tiles slot into
+          the grid without breaking the layout. */}
       <ActionCenter />
 
       {/* KPI Cards */}
