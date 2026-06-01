@@ -233,6 +233,12 @@ export default function JobDetailPage() {
         body: JSON.stringify({
           ...editForm,
           feeAmount: editForm.feeAmount !== "" ? Number(editForm.feeAmount) : null,
+          // Final coercion in case the user submitted while the field
+          // was empty mid-edit.
+          openings:
+            (editForm.openings as any) === "" || (editForm.openings as any) < 1
+              ? 1
+              : editForm.openings,
         }),
       });
       if (!res.ok) {
@@ -1566,12 +1572,22 @@ export default function JobDetailPage() {
                           type="number"
                           min={1}
                           value={editForm.openings}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            // Mirror the create flow: allow empty
+                            // while editing, clamp on blur instead of
+                            // snapping mid-keystroke.
                             setEditForm({
                               ...editForm,
-                              openings: Math.max(1, Number(e.target.value) || 1),
-                            })
-                          }
+                              openings: v === "" ? ("" as any) : Math.max(1, Number(v) || 1),
+                            });
+                          }}
+                          onBlur={() => {
+                            const v = editForm.openings as any;
+                            if (v === "" || (typeof v === "number" && v < 1)) {
+                              setEditForm({ ...editForm, openings: 1 });
+                            }
+                          }}
                         />
                       </div>
                     </div>
