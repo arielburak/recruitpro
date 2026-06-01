@@ -60,7 +60,10 @@ function NewJobContent() {
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
   const [status, setStatus] = useState("OPEN");
-  const [openings, setOpenings] = useState(1);
+  // Stored as `number | ""` so the user can wipe the field while
+  // typing without us snapping it back to 1 mid-keystroke. Submit
+  // coerces empty → 1 below.
+  const [openings, setOpenings] = useState<number | "">(1);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Fee terms state (auto-filled from client defaults)
@@ -397,7 +400,7 @@ function NewJobContent() {
         location,
         workMode,
         status,
-        openings,
+        openings: openings === "" ? 1 : openings,
         currency,
         salary: fd.get("salary"),
         feeType,
@@ -691,7 +694,18 @@ function NewJobContent() {
                   type="number"
                   min={1}
                   value={openings}
-                  onChange={(e) => setOpenings(Math.max(1, Number(e.target.value) || 1))}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // Allow empty while typing; coerce + clamp only
+                    // when there's a real value. Onblur snaps back to
+                    // 1 if the user leaves the field blank.
+                    setOpenings(v === "" ? "" : Math.max(1, Number(v) || 1));
+                  }}
+                  onBlur={() => {
+                    if (openings === "" || (typeof openings === "number" && openings < 1)) {
+                      setOpenings(1);
+                    }
+                  }}
                 />
               </div>
               <div className="space-y-2">
