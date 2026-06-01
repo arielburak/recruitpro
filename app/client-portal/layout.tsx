@@ -5,7 +5,6 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Users2, Building2, Home } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
-import { useLogoUrl } from "@/components/logo-uploader";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
 
@@ -18,8 +17,6 @@ export default function ClientPortalLayout({
   const { data: session } = useSession();
   const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
-  // Only fetch the logo when the user is authenticated as a client user (avoids 401 on public pages)
-  const clientLogo = useLogoUrl(showNav ? "/api/client-portal/logo" : "");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -47,30 +44,13 @@ export default function ClientPortalLayout({
               </div>
             </Link>
 
-            {/* Company workspace badge.
-                One email → one Client (DB-enforced), so this is just an
-                identity badge — logo if uploaded, company name otherwise.
-                No dropdown, no switcher; the portal user only ever has
-                a single workspace. */}
-            {showNav && (session?.user as any)?.clientName && (
-              <div
-                className="hidden xl:flex items-center gap-2.5 pl-4 border-l border-gray-200 min-w-0 shrink"
-                title={(session?.user as any)?.clientName || ""}
-              >
-                {clientLogo ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={clientLogo}
-                    alt={(session?.user as any)?.clientName || ""}
-                    className="h-9 w-auto max-w-[140px] object-contain shrink-0"
-                  />
-                ) : (
-                  <span className="text-sm font-semibold text-gray-900 truncate max-w-[180px]">
-                    {(session?.user as any)?.clientName}
-                  </span>
-                )}
-              </div>
-            )}
+            {/* The workspace name used to live both in the brand
+                subtitle ("Newells Old Boys" under "Client Portal")
+                AND in a separate badge to the right. Duplicate
+                signal + truncated awkwardly at lg-xl widths. Brand
+                subtitle wins — it's always visible and never
+                clipped. Logo support comes back as a dedicated
+                surface later if needed. */}
 
             {showNav && (
               <nav className="hidden sm:flex items-center gap-0.5 min-w-0">
