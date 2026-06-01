@@ -64,6 +64,7 @@ export async function PUT(
       paymentDueDate,
       guaranteePeriod,
       notes,
+      recruiterId,
     } = body;
 
     // Any anchor or terms touch triggers a re-resolve of derived dates.
@@ -140,6 +141,20 @@ export async function PUT(
         ...(guaranteePeriod !== undefined && { guaranteePeriod }),
         ...(guaranteeExpiry !== undefined && { guaranteeExpiry }),
         ...(notes !== undefined && { notes }),
+        // Recruiter attribution. Validated against the org before
+        // assignment so a hand-crafted PUT can't credit a placement
+        // to a user from another firm. Empty string / null clears
+        // the override and reverts the UI to candidate.owner.
+        ...(recruiterId !== undefined && {
+          recruiterId: await (async () => {
+            if (!recruiterId) return null;
+            const u = await prisma.user.findFirst({
+              where: { id: recruiterId, organizationId: ctx.organizationId },
+              select: { id: true },
+            });
+            return u?.id || null;
+          })(),
+        }),
       },
     });
 

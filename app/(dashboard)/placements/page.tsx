@@ -310,6 +310,7 @@ export default function PlacementsPage() {
             kind: editingPlacement.kind,
             monthlyFee: editingPlacement.monthlyFee,
             endDate: editingPlacement.endDate,
+            recruiterId: editingPlacement.recruiterId,
           }}
           onSuccess={() => {
             setEditingPlacement(null);
@@ -501,7 +502,10 @@ export default function PlacementsPage() {
                       const isPaid = p.invoiceStatus === "PAID";
                       const paymentSoon = !isPaid && isWithin30Days(paymentDueDate);
                       const paymentOverdue = !isPaid && isExpired(paymentDueDate);
-                      const recruiterName = p.submission?.candidate?.owner?.name || "—";
+                      // Prefer the explicit per-placement recruiter
+                      // override, fall back to the candidate's owner
+                      // (the historical default).
+                      const recruiterName = p.recruiter?.name || p.submission?.candidate?.owner?.name || "—";
 
                       return (
                         <TableRow
@@ -632,7 +636,10 @@ export default function PlacementsPage() {
                         const candidateName = p.submission?.candidate
                           ? `${p.submission.candidate.firstName} ${p.submission.candidate.lastName}`
                           : "Unknown";
-                        const recruiterName = p.submission?.candidate?.owner?.name || "—";
+                        // Prefer the explicit per-placement recruiter
+                      // override, fall back to the candidate's owner
+                      // (the historical default).
+                      const recruiterName = p.recruiter?.name || p.submission?.candidate?.owner?.name || "—";
                         const ended = p.endDate && new Date(p.endDate).getTime() < todayMs;
                         return (
                           <TableRow
