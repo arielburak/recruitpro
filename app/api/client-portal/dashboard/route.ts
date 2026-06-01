@@ -72,10 +72,27 @@ export async function GET() {
         .then((rows) => rows.length),
     ]);
 
+    // Dedup the unified Jobs list: if a ClientJob already links to an
+    // agency Job via FirmEngagement, the agency Job shouldn't ALSO
+    // appear as a separate "agency-managed" row — that's the same
+    // logical search showing up twice (once posted by the client,
+    // once mirrored on the agency side). The ClientJob is canonical
+    // here because the client posted it; the engagement just tells
+    // us which agency picked it up.
+    const linkedAgencyJobIds = new Set<string>();
+    for (const cj of clientJobs) {
+      for (const eng of cj.engagements || []) {
+        if (eng.jobId) linkedAgencyJobIds.add(eng.jobId);
+      }
+    }
+    const dedupedAgencyJobs = agencyJobs.filter(
+      (j) => !linkedAgencyJobIds.has(j.id),
+    );
+
     return NextResponse.json({
       client,
       jobs: clientJobs,
-      agencyJobs: agencyJobs.map((j) => ({
+      agencyJobs: dedupedAgencyJobs.map((j) => ({
         id: j.id,
         title: j.title,
         status: j.status,

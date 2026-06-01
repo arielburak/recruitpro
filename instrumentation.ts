@@ -82,4 +82,24 @@ export async function register() {
   } catch (err) {
     console.error("[placed-client-stage] failed:", err);
   }
+
+  // One-shot: merge duplicate ClientJob rows that point at the same
+  // underlying agency Job (client posted FIRST + agency later ran
+  // "Invite Client" against the same engagement). PR #254 added the
+  // forward-path dedup; this cleans up pre-fix rows.
+  try {
+    const { runMergeDuplicateClientJobs } = await import(
+      "./lib/migrations/merge-duplicate-client-jobs"
+    );
+    const stats = await runMergeDuplicateClientJobs();
+    if (!stats.skipped) {
+      console.log(
+        `[merge-client-jobs] merged ${stats.duplicatesMerged}/${stats.duplicatesFound} duplicate pairs ` +
+          `(${stats.membersMoved} members, ${stats.commentsMoved} comments, ${stats.pendingInvitesDropped} pending invites) ` +
+          `in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[merge-client-jobs] failed:", err);
+  }
 }
