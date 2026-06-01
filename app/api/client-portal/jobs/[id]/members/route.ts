@@ -72,14 +72,14 @@ export async function PUT(
 
     // Any current member (or the creator) can mutate — collaborative
     // within the group. canAccessClientJob above already confirmed the
-    // caller is either the creator, in the members list, or hitting a
-    // legacy job with no members yet; we re-check creatorship here so
-    // a non-member from a legacy "everyone" job can't quietly create
-    // a restricted member list without joining first.
+    // caller is either the creator or in the members list. Legacy-open
+    // semantics ("zero members = visible to all") are gone everywhere
+    // else, so they don't apply here either — every active ClientJob
+    // has at least one member row (the migration backfills any
+    // historical row that was missing one).
     const isMember = job.members.some((m) => m.clientUserId === ctx.clientUserId);
     const isCreator = job.postedById === ctx.clientUserId;
-    const isLegacyOpen = job.members.length === 0;
-    const canManage = isCreator || isMember || isLegacyOpen;
+    const canManage = isCreator || isMember;
     if (!canManage) {
       return NextResponse.json(
         { error: "Only people already on this job can manage access." },

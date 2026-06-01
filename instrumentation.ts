@@ -46,4 +46,22 @@ export async function register() {
   } catch (err) {
     console.error("[grandfather-orgs] failed:", err);
   }
+
+  // One-shot: seed an explicit ClientJobMember row on any ClientJob
+  // that had none. Removed legacy-open semantics on the client-portal
+  // access helper — without this backfill, historical rows would
+  // silently turn invisible to every team member.
+  try {
+    const { runClientJobMemberBackfill } = await import(
+      "./lib/migrations/client-job-members"
+    );
+    const stats = await runClientJobMemberBackfill();
+    if (!stats.skipped) {
+      console.log(
+        `[client-job-members] seeded ${stats.seeded}/${stats.scanned} orphan jobs in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[client-job-members] failed:", err);
+  }
 }
