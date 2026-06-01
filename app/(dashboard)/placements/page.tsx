@@ -195,6 +195,29 @@ export default function PlacementsPage() {
     }
   }
 
+  // OS engagements that intersect the selected period. An engagement
+  // [engStart, engEnd-or-today] overlaps [periodStart, periodEnd] when
+  // engStart <= periodEnd AND (engEnd is null OR engEnd >= periodStart).
+  // The table used to list every OS placement regardless of period,
+  // which surfaced a Q2 engagement on a Q1 view — the user flagged
+  // that as wrong.
+  const osInPeriod = osPlacements.filter((p) => {
+    const start = p.startDate
+      ? new Date(p.startDate)
+      : p.estimatedStartDate
+        ? new Date(p.estimatedStartDate)
+        : new Date(p.createdAt);
+    if (start > periodEnd) return false;
+    if (p.endDate) {
+      const end = new Date(p.endDate);
+      if (end < periodStart) return false;
+    }
+    return true;
+  });
+  const activeOsInPeriod = osInPeriod.filter(
+    (p) => !(p.endDate && new Date(p.endDate).getTime() < todayMs),
+  ).length;
+
   // HH bookings (period) = sum of feeAmount on HH placements in period.
   let hhBookingsInPeriod = 0;
   for (const p of hhInPeriod) {
@@ -559,24 +582,28 @@ export default function PlacementsPage() {
           </Card>
 
           {/* OS Engagements — staff-aug placements with recurring
-              monthlyFee. NOT filtered by period: the recruiter wants
-              the full active book at a glance, with ended engagements
-              flagged. Sorted active-first, then by most-recent start. */}
+              monthlyFee. Filtered by overlap with the selected
+              period so a Q2-starting engagement doesn't show on a
+              Q1 view (and vice versa). Sorted active-first, then by
+              most-recent start. */}
           <Card>
             <div className="border-b bg-gray-50/60 px-4 py-2.5 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-gray-700">OS Engagements</p>
                 <p className="text-[11px] text-gray-400">
-                  {activeOsCount} active · {osPlacements.length} total
+                  {activeOsInPeriod} active · {osInPeriod.length} in{" "}
+                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
                 </p>
               </div>
             </div>
             <CardContent className="p-0">
-              {osPlacements.length === 0 ? (
+              {osInPeriod.length === 0 ? (
                 <div className="p-8 text-center">
                   <Trophy className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                   <p className="text-sm text-gray-500">
-                    No staff-aug engagements yet.
+                    {osPlacements.length === 0
+                      ? "No staff-aug engagements yet."
+                      : `No staff-aug engagements active in ${selectedYear}${selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}.`}
                   </p>
                 </div>
               ) : (
@@ -594,7 +621,7 @@ export default function PlacementsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...osPlacements]
+                    {[...osInPeriod]
                       .sort((a, b) => {
                         const aActive = !a.endDate || new Date(a.endDate).getTime() >= todayMs;
                         const bActive = !b.endDate || new Date(b.endDate).getTime() >= todayMs;

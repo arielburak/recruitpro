@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
+import { ensureClientHasActiveAdmin } from "@/lib/client-portal-roles";
 
 // GET my profile (works for both staffing and client users)
 export async function GET() {
@@ -16,7 +17,7 @@ export async function GET() {
       let cu = await prisma.clientUser.findUnique({
         where: { id: user.id },
         select: {
-          id: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
+          id: true, clientId: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
           client: { select: { name: true, industry: true } },
         },
       });
@@ -24,19 +25,28 @@ export async function GET() {
         cu = await prisma.clientUser.findFirst({
           where: { email: user.email, isActive: true },
           select: {
-            id: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
+            id: true, clientId: true, name: true, email: true, title: true, role: true, isActive: true, createdAt: true,
             client: { select: { name: true, industry: true } },
           },
         });
       }
       if (!cu) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+      // Self-heal: if this user's client has nobody managing the
+      // portal (zero active ADMINs), promote the oldest member to
+      // ADMIN — and if that's the caller themselves, return the
+      // promoted role so the UI unlocks immediately without a
+      // second round-trip.
+      const promotedId = await ensureClientHasActiveAdmin(prisma, cu.clientId);
+      const effectiveRole = promotedId === cu.id ? "ADMIN" : cu.role;
+
       return NextResponse.json({
         type: "client" as const,
         id: cu.id,
         name: cu.name,
         email: cu.email,
         title: cu.title,
-        role: cu.role,
+        role: effectiveRole,
         companyName: cu.client.name,
         industry: cu.client.industry,
         createdAt: cu.createdAt,

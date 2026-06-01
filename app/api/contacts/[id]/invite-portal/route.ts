@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendClientSetPasswordEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
+import { roleForNewClientUser } from "@/lib/client-portal-roles";
 
 // Invite a Contact to the client portal, or resend the invite if they
 // were already invited but never redeemed the token. State machine:
@@ -78,13 +79,17 @@ export async function POST(
     const fullName = `${contact.firstName} ${contact.lastName}`.trim() || email;
 
     if (!clientUser) {
+      // First-user-as-Admin rule: if the client has nobody managing
+      // the portal yet, this invite mints them as the team's first
+      // ADMIN so they can promote / invite others later.
+      const role = await roleForNewClientUser(prisma, contact.client.id, "USER");
       const created = await prisma.clientUser.create({
         data: {
           email,
           name: fullName,
           title: contact.title,
           clientId: contact.client.id,
-          role: "USER",
+          role,
         },
         select: {
           id: true,

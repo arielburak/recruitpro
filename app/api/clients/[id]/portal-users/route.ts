@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { roleForNewClientUser } from "@/lib/client-portal-roles";
 
 export async function POST(
   request: Request,
@@ -28,12 +29,15 @@ export async function POST(
       ? await bcrypt.hash(body.password, 12)
       : null;
 
+    // First-user-as-Admin rule (see lib/client-portal-roles).
+    const role = await roleForNewClientUser(prisma, clientId, "USER");
     const clientUser = await prisma.clientUser.create({
       data: {
         email: body.email,
         name: body.name,
         passwordHash,
         clientId,
+        role,
       },
     });
 

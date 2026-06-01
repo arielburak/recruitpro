@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
 import { sendClientTeamInviteEmail } from "@/lib/email";
+import { roleForNewClientUser } from "@/lib/client-portal-roles";
 
 // List all team members for this client
 export async function GET() {
@@ -78,9 +79,13 @@ export async function POST(request: Request) {
 
     // Only ADMINs can grant the ADMIN role. Anyone else's role
     // selection silently becomes USER — no surprise privilege
-    // escalation via a crafted payload.
-    const role: "ADMIN" | "USER" =
+    // escalation via a crafted payload. The helper below upgrades
+    // USER → ADMIN automatically when the client currently has no
+    // active admin, so a team that ends up admin-less still boots
+    // back into a managed state on the next invite.
+    const requestedRole: "ADMIN" | "USER" =
       ctx.role === "ADMIN" && body.role === "ADMIN" ? "ADMIN" : "USER";
+    const role = await roleForNewClientUser(prisma, ctx.clientId, requestedRole);
 
     // Check if user already exists for this client
     const existing = await prisma.clientUser.findFirst({

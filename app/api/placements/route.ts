@@ -13,6 +13,10 @@ export async function GET() {
       include: {
         job: { select: { id: true, title: true, currency: true } },
         client: { select: { id: true, name: true } },
+        // Explicit per-placement recruiter override. Falls back to
+        // candidate.owner client-side when null (legacy rows + manual
+        // placements without a linked candidate).
+        recruiter: { select: { id: true, name: true } },
         submission: {
           select: {
             id: true,
@@ -21,10 +25,6 @@ export async function GET() {
                 id: true,
                 firstName: true,
                 lastName: true,
-                // Recruiter who owns the candidate. Drives the per-row
-                // "Recruiter" column on /placements and the aggregate
-                // on the dashboard so attribution is visible without
-                // clicking through.
                 owner: { select: { id: true, name: true } },
               },
             },
@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       paymentDueDate,
       guaranteePeriod,
       notes,
+      recruiterId: rawRecruiterId,
     } = body;
 
     const kind = rawKind === "OS" ? "OS" : "HH";
@@ -240,6 +241,29 @@ export async function POST(request: Request) {
       ? new Date(paymentDueDate)
       : computePaymentDueDate(estimatedValue, startDateValue, paymentTerms);
 
+    // Resolve recruiter attribution. Order of preference:
+    //   1. Explicit body.recruiterId (the form override).
+    //   2. Candidate's owner (the default — most placements stay
+    //      attributed to whoever sourced).
+    //   3. Null (rare manual rows with no linked candidate).
+    // Validates against the org so a hand-crafted payload can't
+    // attribute the placement to a user from another firm.
+    let resolvedRecruiterId: string | null = null;
+    if (rawRecruiterId && typeof rawRecruiterId === "string") {
+      const u = await prisma.user.findFirst({
+        where: { id: rawRecruiterId, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (u) resolvedRecruiterId = u.id;
+    }
+    if (!resolvedRecruiterId && placementSubmissionId) {
+      const linked = await prisma.candidateSubmission.findUnique({
+        where: { id: placementSubmissionId },
+        select: { candidate: { select: { ownerId: true } } },
+      });
+      resolvedRecruiterId = linked?.candidate?.ownerId ?? null;
+    }
+
     // Kind-aware field selection. HH placements carry the historical
     // flat-fee shape; OS placements only keep the recurring-billing
     // fields (monthlyFee + endDate) — feeAmount / feePercentage /
@@ -258,6 +282,7 @@ export async function POST(request: Request) {
       salaryPeriod: salaryPeriod ?? undefined,
       salaryKind: salaryKind ?? undefined,
       notes,
+      recruiterId: resolvedRecruiterId,
     };
     if (kind === "OS") {
       placementData.monthlyFee = monthlyFee;
@@ -281,10 +306,21 @@ export async function POST(request: Request) {
       const placedStage = await prisma.pipelineStage.findFirst({
         where: { jobId: jobId!, name: "Placed" },
       });
+      // Mirror to the client-side pipeline too. Without this the
+      // client portal kanban keeps showing the candidate as "Offered"
+      // (the stage they were in before the placement was logged) even
+      // though the agency side correctly marks them Placed — bug the
+      // user flagged via the "Client: Offered" pill on a Placed card.
+      const placedClientStage = await prisma.clientPipelineStage.findFirst({
+        where: { clientId: clientId!, name: "Placed" },
+      });
       if (placedStage) {
         await prisma.candidateSubmission.update({
           where: { id: placementSubmissionId },
-          data: { stageId: placedStage.id },
+          data: {
+            stageId: placedStage.id,
+            ...(placedClientStage ? { clientStageId: placedClientStage.id } : {}),
+          },
         });
       }
     }
