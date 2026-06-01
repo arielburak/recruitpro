@@ -320,7 +320,7 @@ export default async function DashboardPage() {
       lightColor: "text-emerald-600",
       trend: placementTrend,
       trendLabel: "vs last 30d",
-      href: "/jobs",
+      href: "/placements",
     },
     {
       label: "Clients",

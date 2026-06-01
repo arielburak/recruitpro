@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
+import { roleForNewClientUser } from "@/lib/client-portal-roles";
 import { randomBytes } from "crypto";
 import {
   sendClientTeamInviteEmail,
@@ -145,13 +146,18 @@ export async function POST(
     // team they were added to but not which specific Job — the same
     // template is reused for /api/client-portal/team. Future polish:
     // a JD-aware variant.
+    // First-user-as-Admin rule. Adding someone to a Job that's
+    // also their first-ever portal access on this client → they
+    // become the client's first Admin so the team always has
+    // someone with manage privileges.
+    const role = await roleForNewClientUser(prisma, ctx.clientId, "USER");
     const clientUser = await prisma.clientUser.create({
       data: {
         email,
         name,
         title,
         clientId: ctx.clientId,
-        role: "USER",
+        role,
       },
     });
     await prisma.clientJobMember.create({

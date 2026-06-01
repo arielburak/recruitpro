@@ -114,6 +114,7 @@ model User {
   notifications         UserNotification[]
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
   createdCalendarEvents CalendarEvent[]       @relation("CalendarEventCreator")
+  attributedPlacements  Placement[]           @relation("PlacementRecruiter")
 
   @@index([organizationId])
   @@index([accountId])
@@ -841,6 +842,13 @@ model Placement {
   submissionId        String?         @unique
   jobId               String
   clientId            String
+  // Recruiter attributed to this placement. Defaults to the
+  // candidate's owner at create-time (so existing flows keep
+  // working), but the form lets the operator override per
+  // placement — useful when one user sourced and another closed.
+  // Nullable for back-compat with rows created before this field
+  // existed; UI falls back to candidate.owner when null.
+  recruiterId         String?
   organizationId      String
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
@@ -848,10 +856,12 @@ model Placement {
   submission   CandidateSubmission? @relation(fields: [submissionId], references: [id])
   job          Job                  @relation(fields: [jobId], references: [id])
   client       Client               @relation(fields: [clientId], references: [id])
+  recruiter    User?                @relation("PlacementRecruiter", fields: [recruiterId], references: [id])
   organization Organization         @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
   @@index([organizationId, createdAt(sort: Desc)])
+  @@index([recruiterId])
 }
 
 enum InvoiceStatus {
