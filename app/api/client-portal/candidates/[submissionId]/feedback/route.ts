@@ -3,14 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { notifyOnNewComment } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
+import { accessibleAgencyJobIds, type ClientCtx } from "@/lib/client-job-access";
 
 // Helper: verify the submission belongs to this client AND is shared
-async function verifyAccess(submissionId: string, clientId: string) {
+// AND lives on an agency Job the caller is a member of (or which sits
+// on a legacy-open ClientJob).
+async function verifyAccess(submissionId: string, ctx: ClientCtx) {
+  const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+  if (visibleAgencyJobIds.length === 0) return false;
   const submission = await prisma.candidateSubmission.findFirst({
     where: {
       id: submissionId,
       isSharedWithClient: true,
-      job: { clientId },
+      job: { clientId: ctx.clientId },
+      jobId: { in: visibleAgencyJobIds },
     },
     select: { id: true },
   });
@@ -27,7 +33,7 @@ export async function GET(
     const ctx = await getClientContext();
     const { submissionId } = await params;
 
-    const ok = await verifyAccess(submissionId, ctx.clientId);
+    const ok = await verifyAccess(submissionId, ctx);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const [ratings, comments] = await Promise.all([
@@ -77,7 +83,7 @@ export async function POST(
     const ctx = await getClientContext();
     const { submissionId } = await params;
 
-    const ok = await verifyAccess(submissionId, ctx.clientId);
+    const ok = await verifyAccess(submissionId, ctx);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await request.json();
