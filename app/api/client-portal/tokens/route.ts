@@ -171,10 +171,28 @@ export async function POST(request: Request) {
     // contacts to the same Job doesn't stack duplicates.
     let mirroredClientJobId: string | null = null;
     if (jobId && sourceJob) {
-      const existingMirror = await prisma.clientJob.findUnique({
+      let existingMirror = await prisma.clientJob.findUnique({
         where: { sourceJobId: jobId },
         select: { id: true },
       });
+      // Also dedup against a ClientJob the client posted themselves
+      // for the same underlying agency Job. Without this, if the
+      // client posted the search FIRST (creating a ClientJob) and
+      // then the agency runs "Invite Client" against the agency Job
+      // that backs the engagement, we'd create a SECOND ClientJob
+      // and the client portal would surface the same search twice.
+      if (!existingMirror) {
+        const originalLinkedByEngagement = await prisma.clientJob.findFirst({
+          where: {
+            clientId: client.id,
+            engagements: { some: { jobId } },
+          },
+          select: { id: true },
+        });
+        if (originalLinkedByEngagement) {
+          existingMirror = originalLinkedByEngagement;
+        }
+      }
       if (existingMirror) {
         mirroredClientJobId = existingMirror.id;
       } else {
