@@ -64,4 +64,22 @@ export async function register() {
   } catch (err) {
     console.error("[client-job-members] failed:", err);
   }
+
+  // One-shot: align clientStageId with "Placed" for every submission
+  // that's already been placed on the agency side. Forward path was
+  // fixed in PR #251 (POST /api/placements now mirrors the stage);
+  // this catches existing rows where the mirror never ran.
+  try {
+    const { runPlacedClientStageBackfill } = await import(
+      "./lib/migrations/placed-client-stage"
+    );
+    const stats = await runPlacedClientStageBackfill();
+    if (!stats.skipped) {
+      console.log(
+        `[placed-client-stage] aligned ${stats.updated}/${stats.scanned} placed submissions in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[placed-client-stage] failed:", err);
+  }
 }
