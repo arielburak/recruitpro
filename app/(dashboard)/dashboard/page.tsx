@@ -514,6 +514,13 @@ export default async function DashboardPage() {
         ))}
       </div>
 
+      {/* Recruiter performance — surfaces here right under the stat
+          strip so the metrics that drive comp / reviews are the
+          first thing a sales-ops lead sees. Self-contained client
+          widget so its filters (date range, recruiter picker,
+          compare-vs-prior) re-fetch independently of the SSR shell. */}
+      <RecruiterPerformance />
+
       {/* Main Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pipeline Distribution */}
