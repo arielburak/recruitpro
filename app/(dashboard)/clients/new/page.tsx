@@ -4,7 +4,9 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -350,12 +352,11 @@ function NewClientContent() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Industry</Label>
-                <Input
-                  name="industry"
-                  placeholder="Technology, Finance, etc."
-                  autoComplete="off"
+                <Combobox
                   value={formValues.industry}
-                  onChange={(e) => updateField("industry", e.target.value)}
+                  onChange={(v) => updateField("industry", v)}
+                  options={INDUSTRY_OPTIONS}
+                  placeholder="Technology, Finance, etc."
                 />
               </div>
               <div className="space-y-2">
