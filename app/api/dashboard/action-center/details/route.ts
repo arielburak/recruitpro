@@ -7,11 +7,7 @@ import { getOrgContext } from "@/lib/tenant";
 // to the headline numbers — no surprise mismatches between "3
 // payments overdue" and what the user sees when they click in.
 
-type Tile =
-  | "interviews"
-  | "stale"
-  | "paymentsOverdue"
-  | "guaranteesExpiring";
+type Tile = "interviews" | "paymentsOverdue" | "guaranteesExpiring";
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,45 +46,6 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { startTime: "asc" },
       });
-      return NextResponse.json({ tile, items });
-    }
-
-    if (tile === "stale") {
-      const staleCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-      const activeJobs = await prisma.job.findMany({
-        where: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } },
-        select: {
-          id: true,
-          title: true,
-          updatedAt: true,
-          client: { select: { name: true } },
-        },
-      });
-      const ids = activeJobs.map((j) => j.id);
-      const freshIds =
-        ids.length === 0
-          ? new Set<string>()
-          : new Set(
-              (
-                await prisma.candidateSubmission.findMany({
-                  where: {
-                    jobId: { in: ids },
-                    OR: [
-                      { createdAt: { gte: staleCutoff } },
-                      { updatedAt: { gte: staleCutoff } },
-                    ],
-                  },
-                  distinct: ["jobId"],
-                  select: { jobId: true },
-                })
-              ).map((s) => s.jobId),
-            );
-      const items = activeJobs
-        .filter((j) => !freshIds.has(j.id))
-        // Sort oldest-updated first so the worst-neglected search
-        // is at the top of the list — that's what the user wants
-        // to attack first.
-        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime());
       return NextResponse.json({ tile, items });
     }
 
