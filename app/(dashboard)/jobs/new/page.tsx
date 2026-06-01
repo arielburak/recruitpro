@@ -4,7 +4,9 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -866,10 +868,10 @@ function NewJobContent() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Industry</Label>
-                <Input
-                  autoComplete="off"
+                <Combobox
                   value={quickClientIndustry}
-                  onChange={(e) => setQuickClientIndustry(e.target.value)}
+                  onChange={setQuickClientIndustry}
+                  options={INDUSTRY_OPTIONS}
                   placeholder="Technology, Finance, etc."
                 />
               </div>

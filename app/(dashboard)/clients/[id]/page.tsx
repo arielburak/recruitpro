@@ -5,7 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -359,7 +361,12 @@ export default function ClientDetailPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Industry</Label>
-                    <Input value={clientForm.industry} onChange={(e) => setClientForm({ ...clientForm, industry: e.target.value })} placeholder="Technology, Finance..." />
+                    <Combobox
+                      value={clientForm.industry}
+                      onChange={(v) => setClientForm({ ...clientForm, industry: v })}
+                      options={INDUSTRY_OPTIONS}
+                      placeholder="Technology, Finance..."
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Website</Label>
