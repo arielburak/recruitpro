@@ -26,9 +26,9 @@ export default function ClientPortalLayout({
       <div className="h-0.5 bg-gradient-to-r from-emerald-500 to-teal-600" />
 
       <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/client-portal/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4 min-w-0">
+            <Link href="/client-portal/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/icon-emerald.svg?v=2" alt="Recruiting ATS" width={36} height={36} className="h-9 w-9 rounded-lg shrink-0" />
               <div>
@@ -54,7 +54,7 @@ export default function ClientPortalLayout({
                 a single workspace. */}
             {showNav && (session?.user as any)?.clientName && (
               <div
-                className="hidden lg:flex items-center gap-2.5 pl-4 border-l border-gray-200"
+                className="hidden xl:flex items-center gap-2.5 pl-4 border-l border-gray-200 min-w-0 shrink"
                 title={(session?.user as any)?.clientName || ""}
               >
                 {clientLogo ? (
@@ -62,10 +62,10 @@ export default function ClientPortalLayout({
                   <img
                     src={clientLogo}
                     alt={(session?.user as any)?.clientName || ""}
-                    className="h-16 w-auto max-w-[180px] object-contain"
+                    className="h-9 w-auto max-w-[140px] object-contain shrink-0"
                   />
                 ) : (
-                  <span className="text-sm font-semibold text-gray-900 truncate max-w-[220px]">
+                  <span className="text-sm font-semibold text-gray-900 truncate max-w-[180px]">
                     {(session?.user as any)?.clientName}
                   </span>
                 )}
@@ -73,51 +73,48 @@ export default function ClientPortalLayout({
             )}
 
             {showNav && (
-              <nav className="hidden sm:flex items-center gap-1 ml-4">
-                <NavLink href="/client-portal/dashboard" current={pathname === "/client-portal/dashboard"}>
+              <nav className="hidden sm:flex items-center gap-0.5 min-w-0">
+                <NavLink href="/client-portal/dashboard" current={pathname === "/client-portal/dashboard"} label="Dashboard">
                   <LayoutDashboard className="h-4 w-4" />
-                  Dashboard
                 </NavLink>
-                <NavLink href="/client-portal/jobs" current={pathname === "/client-portal/jobs" && !pathname.includes("/new")}>
+                <NavLink href="/client-portal/jobs" current={pathname === "/client-portal/jobs" && !pathname.includes("/new")} label="Jobs">
                   <List className="h-4 w-4" />
-                  Jobs
                 </NavLink>
                 <NavLink
                   href="/client-portal/candidates"
                   current={pathname.startsWith("/client-portal/candidates")}
+                  label="Candidates"
                 >
                   <Users className="h-4 w-4" />
-                  Candidates
                 </NavLink>
                 <NavLink
                   href="/client-portal/my-team"
                   current={pathname.startsWith("/client-portal/my-team")}
+                  label="My Team"
                 >
                   <Users2 className="h-4 w-4" />
-                  My Team
                 </NavLink>
                 <NavLink
                   href="/client-portal/engagements"
                   current={pathname.startsWith("/client-portal/engagements")}
+                  label="Engagements"
                 >
                   <Building2 className="h-4 w-4" />
-                  Engagements
                 </NavLink>
-                <NavLink href="/client-portal/jobs/new" current={pathname === "/client-portal/jobs/new"}>
+                <NavLink href="/client-portal/jobs/new" current={pathname === "/client-portal/jobs/new"} label="Post a Job">
                   <FolderOpen className="h-4 w-4" />
-                  Post a Job
                 </NavLink>
               </nav>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {showNav ? (
               <>
                 <NotificationBell />
                 <Link
                   href="/client-portal/settings"
-                  className={`flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 rounded-lg ${
+                  className={`flex items-center gap-1.5 text-sm transition-colors px-2.5 py-1.5 rounded-lg whitespace-nowrap ${
                     pathname === "/client-portal/settings"
                       ? "bg-emerald-50 text-emerald-700"
                       : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
@@ -125,15 +122,15 @@ export default function ClientPortalLayout({
                   title="Profile & Settings"
                 >
                   <User className="h-4 w-4" />
-                  <span className="hidden sm:inline">{session?.user?.name?.split(" ")[0] || "Profile"}</span>
+                  <span className="hidden xl:inline">{session?.user?.name?.split(" ")[0] || "Profile"}</span>
                 </Link>
                 <button
                   onClick={() => signOut({ callbackUrl: "/client-portal/login" })}
-                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-gray-100 whitespace-nowrap"
                   title="Sign out"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span className="hidden sm:inline">Sign Out</span>
+                  <span className="hidden xl:inline">Sign Out</span>
                 </button>
               </>
             ) : (
@@ -172,18 +169,24 @@ function NavLink({
   href,
   current,
   children,
+  label,
 }: {
   href: string;
   current: boolean;
   children: React.ReactNode;
+  label: string;
 }) {
   return (
     <Link
       href={href}
-      // whitespace-nowrap keeps multi-word labels ("My Team", "Post a
-      // Job") on a single line. Tighter px-2.5 plus the gap-0.5 on
-      // the parent nav lets six items + brand + user menu fit at
-      // standard laptop widths without overflowing.
+      title={label}
+      // Responsive nav item: icon-only until lg, icon + label from lg+.
+      // The previous layout always rendered the label which busted out
+      // around 1280px (six items + brand + user menu + sign out). The
+      // workspace badge moved up to xl; this drops textual nav to
+      // icons in the same middle zone so 1024-1279px viewports stay
+      // clean. whitespace-nowrap keeps multi-word labels ("My Team")
+      // on one line when they DO show.
       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
         current
           ? "bg-emerald-50 text-emerald-700"
@@ -191,6 +194,7 @@ function NavLink({
       }`}
     >
       {children}
+      <span className="hidden lg:inline">{label}</span>
     </Link>
   );
 }
