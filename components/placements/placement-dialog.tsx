@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -117,6 +117,10 @@ type EditProps = {
     kind?: "HH" | "OS" | null;
     monthlyFee?: string | number | null;
     endDate?: string | null;
+    // Explicit per-placement recruiter override. Null falls back to
+    // candidate.owner client-side (and DB-side); a real id pre-selects
+    // that user in the dropdown.
+    recruiterId?: string | null;
   };
   onSuccess?: () => void;
 };
@@ -229,12 +233,34 @@ export function PlacementDialog(props: Props) {
     email: string | null;
     currentTitle: string | null;
     currentCompany: string | null;
+    // Recruiter who owns the candidate. Used as the default for the
+    // placement Recruiter dropdown — most placements stay attributed
+    // to the sourcer, the picker is only there for hand-offs.
+    ownerId?: string | null;
   };
   const [candidateSearch, setCandidateSearch] = useState("");
   const [candidateResults, setCandidateResults] = useState<CandidateOption[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateOption | null>(null);
   const [candidateDropdownOpen, setCandidateDropdownOpen] = useState(false);
   const [searchingCandidates, setSearchingCandidates] = useState(false);
+
+  // Team picker for the Recruiter override. Fetched once on mount.
+  // recruiterId defaults to whoever owns the chosen candidate; the
+  // user can re-assign mid-form (handoff between sourcer and closer).
+  type TeamMember = { id: string; name: string; email: string };
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [recruiterId, setRecruiterId] = useState<string>("");
+  // Track whether the user has explicitly picked a recruiter so we
+  // don't auto-overwrite their choice when the candidate changes
+  // afterwards. Only the candidate-pick path sets the default.
+  const recruiterTouchedRef = useRef(false);
+
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => r.ok ? r.json() : { users: [] })
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
 
   // Resolve which "defaults" object to apply. Manual mode picks defaults off
   // the selected job; congrats mode uses the static defaults the caller passed.
@@ -338,6 +364,11 @@ export function PlacementDialog(props: Props) {
       setKind(i.kind === "OS" ? "OS" : "HH");
       setMonthlyFee(i.monthlyFee != null ? String(i.monthlyFee) : "");
       setEndDate(isoDate(i.endDate));
+      // Pre-fill the Recruiter dropdown with whatever attribution
+      // the placement was saved with. Mark touched so the
+      // candidate-pick default-effect doesn't clobber it on edit.
+      setRecruiterId(i.recruiterId || "");
+      recruiterTouchedRef.current = !!i.recruiterId;
     } else {
       const initEst = activeDefaults?.estimatedStartDate || todayIso();
       const initTerms = activeDefaults?.paymentTerms ?? 30;
@@ -524,6 +555,37 @@ export function PlacementDialog(props: Props) {
     }
   }, [props.open, props.mode]);
 
+  // Default the recruiter override to whoever owns the chosen
+  // candidate, but only if the user hasn't manually picked someone
+  // else first. Fetches the full candidate to get `ownerId` (search
+  // results don't carry it). Edit mode preloads recruiterId from
+  // props.initial below and marks the field touched so this effect
+  // doesn't overwrite it.
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    if (recruiterTouchedRef.current) return;
+    if (selectedCandidate.ownerId) {
+      setRecruiterId(selectedCandidate.ownerId);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/candidates/${selectedCandidate.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((full) => {
+        if (cancelled || !full?.ownerId) return;
+        setSelectedCandidate((curr) =>
+          curr && curr.id === selectedCandidate.id
+            ? { ...curr, ownerId: full.ownerId }
+            : curr,
+        );
+        if (!recruiterTouchedRef.current) setRecruiterId(full.ownerId);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCandidate]);
+
   // Live preview of when the guarantee expires. Read-only — server
   // computes the persisted value on save with the same logic.
   const guaranteeExpiryPreview = previewFromAnchor(startDate, estimatedStartDate, guaranteePeriod);
@@ -691,6 +753,10 @@ export function PlacementDialog(props: Props) {
             guaranteePeriod: guaranteePeriod === "" ? 90 : Number(guaranteePeriod),
             notes: notes || null,
           };
+
+    // Recruiter attribution. Always send (even null) so the API can
+    // clear an existing override → revert to candidate.owner fallback.
+    payload.recruiterId = recruiterId || null;
 
     if (props.mode === "congrats") {
       payload.submissionId = props.submissionId;
@@ -1313,6 +1379,41 @@ export function PlacementDialog(props: Props) {
                 )}
               </div>
             )}
+
+            {/* Recruiter attribution. Defaults to the candidate's
+                owner — the most common case (sourcer = closer). The
+                picker only matters when a placement gets handed off
+                between teammates so the reporting tile credits the
+                right person. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="placement-recruiter">Recruiter</Label>
+              <select
+                id="placement-recruiter"
+                value={recruiterId}
+                onChange={(e) => {
+                  recruiterTouchedRef.current = true;
+                  setRecruiterId(e.target.value);
+                }}
+                className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <option value="">
+                  {selectedCandidate?.ownerId
+                    ? "Default · candidate owner"
+                    : "Default · candidate owner (auto)"}
+                </option>
+                {teamMembers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+              {recruiterId && selectedCandidate?.ownerId && recruiterId !== selectedCandidate.ownerId && (
+                <p className="text-[10px] text-amber-600">
+                  Overriding the candidate&apos;s owner — reporting will credit
+                  the picked recruiter instead.
+                </p>
+              )}
+            </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs" htmlFor="placement-notes">Notes (optional)</Label>
