@@ -239,6 +239,27 @@ export default function ContactsPage() {
     return { total: contacts.length, active, pending, none };
   }, [contacts]);
 
+  // Group the filtered list by client so the screen reads "Close Up
+  // [2 contacts] · Paola, Evelyn / Lionpoint Partners [1 contact] ·
+  // Nick" instead of one long flat table where the eye has to re-scan
+  // the Client column to mentally cluster. Client groups are sorted
+  // alphabetically; contacts inside each group keep their original
+  // order (already sorted by the API).
+  const groupedByClient = useMemo(() => {
+    const byId = new Map<string, { clientId: string; clientName: string; rows: typeof filtered }>();
+    for (const c of filtered) {
+      let g = byId.get(c.clientId);
+      if (!g) {
+        g = { clientId: c.clientId, clientName: c.clientName, rows: [] };
+        byId.set(c.clientId, g);
+      }
+      g.rows.push(c);
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.clientName.localeCompare(b.clientName),
+    );
+  }, [filtered]);
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -368,7 +389,22 @@ export default function ContactsPage() {
               </div>
             </div>
           )}
-          <Card>
+          <div className="space-y-4">
+          {groupedByClient.map((group) => (
+          <Card key={group.clientId}>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link
+                  href={`/clients/${group.clientId}`}
+                  className="text-sm font-semibold text-gray-800 hover:text-indigo-600 truncate"
+                >
+                  {group.clientName}
+                </Link>
+                <span className="text-[11px] text-gray-400">
+                  · {group.rows.length} contact{group.rows.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
@@ -376,17 +412,16 @@ export default function ContactsPage() {
                     <TableHead className="w-9">
                       <input
                         type="checkbox"
-                        aria-label="Select all visible contacts"
+                        aria-label={`Select all ${group.clientName} contacts`}
                         checked={
-                          filtered.filter((c) => c.contactId).length > 0 &&
-                          filtered.filter((c) => c.contactId).every((c) => selectedIds.has(c.id))
+                          group.rows.filter((c) => c.contactId).length > 0 &&
+                          group.rows.filter((c) => c.contactId).every((c) => selectedIds.has(c.id))
                         }
-                        onChange={(e) => selectAllVisible(e.target.checked, filtered)}
+                        onChange={(e) => selectAllVisible(e.target.checked, group.rows)}
                         className="rounded border-gray-300"
                       />
                     </TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Client</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Portal access</TableHead>
@@ -394,7 +429,7 @@ export default function ContactsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((c) => {
+                  {group.rows.map((c) => {
                     const fb = inviteFeedback[c.id];
                     const canInvite = !!c.contactId && !!c.email && c.portalStatus !== "active";
                     return (
@@ -445,14 +480,6 @@ export default function ContactsPage() {
                               )}
                             </div>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/clients/${c.clientId}`}
-                            className="text-sm text-gray-700 hover:text-indigo-600"
-                          >
-                            {c.clientName}
-                          </Link>
                         </TableCell>
                         <TableCell>
                           {c.email ? (
@@ -533,6 +560,8 @@ export default function ContactsPage() {
               </Table>
             </CardContent>
           </Card>
+          ))}
+          </div>
         </>
       )}
     </div>
