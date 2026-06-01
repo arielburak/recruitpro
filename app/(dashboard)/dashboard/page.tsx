@@ -594,6 +594,11 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {/* Per-recruiter performance, scoped to a picked time range.
+          Renders client-side so the period filter is interactive
+          without re-running the whole server-side dashboard query. */}
+      <RecruiterPerformance />
+
       {/* Bottom Row: Recent Submissions + Activity + Feedback */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Submissions */}
