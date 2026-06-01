@@ -34,6 +34,7 @@ import {
 } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
 import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
+import { ActionCenter } from "@/components/dashboard/action-center";
 import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
 
 // Force dynamic rendering. The page already depends on getServerSession
@@ -484,6 +485,12 @@ export default async function DashboardPage() {
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
+      {/* Action Center — "what needs attention today". Four
+          drill-down tiles for interviews this week, stale searches,
+          overdue payments and guarantees expiring. MVP scope; more
+          tiles slot into the grid without breaking the layout. */}
+      <ActionCenter />
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {stats.map((stat) => (
@@ -547,7 +554,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Secondary Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Candidate Sources */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
@@ -574,24 +581,12 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recruiter Leaderboard */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Zap className="h-4 w-4 text-amber-500" />
-              Top Recruiters
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RecruiterLeaderboard data={recruiterData} />
-          </CardContent>
-        </Card>
+        {/* Legacy "Top Recruiters" leaderboard removed — the full
+            Recruiter Performance widget further up the page covers
+            the same data with filters + drill-down. Kept the
+            placeholder div so the surrounding grid spacing doesn't
+            collapse. */}
       </div>
-
-      {/* Per-recruiter performance, scoped to a picked time range.
-          Renders client-side so the period filter is interactive
-          without re-running the whole server-side dashboard query. */}
-      <RecruiterPerformance />
 
       {/* Bottom Row: Recent Submissions + Activity + Feedback */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
