@@ -1,16 +1,21 @@
 // Helpers for the per-JO membership feature on the client portal.
 //
 // Rule of thumb (no admin bypass — explicit decision):
-//   - Visibility: a ClientUser sees a JO only when they're an explicit
-//     member. The "admin" role grants team-management powers (inviting
-//     teammates, changing org info) but does NOT auto-grant access to
-//     every job — an admin from another branch / department shouldn't
-//     see a confidential search they were never invited to.
-//   - Legacy jobs (no member rows yet, created before this feature
-//     shipped) stay visible to all team members: "members is empty"
-//     reads as "no one explicitly restricted, defer to the workspace".
+//   - Visibility: a ClientUser sees a JO ONLY when they're an
+//     explicit member. The "admin" role grants team-management powers
+//     (inviting teammates, changing org info) but does NOT auto-grant
+//     access to every job — an admin from another branch / department
+//     shouldn't see a confidential search they were never invited to.
 //   - The creator (postedById) is always added as a member at create
 //     time so they can't lock themselves out of their own search.
+//   - **No more "legacy-open" fallback.** Previously a ClientJob with
+//     zero member rows was treated as visible-to-all on the
+//     assumption that legacy rows pre-dated the feature. That bridge
+//     was leaking: a teammate invited only to the portal (not to a
+//     specific Job) could see jobs that had no members. Every active
+//     ClientJob now requires at least one explicit member row, and
+//     the migration in lib/migrations/client-job-members.ts seeds
+//     any historical row that's missing one.
 //
 // Management gating (who can change the member list) lives in the
 // jobs/[id]/members route — same idea: it's not derived from the
@@ -30,10 +35,7 @@ export type ClientCtx = {
 export function clientJobAccessWhere(ctx: ClientCtx): Prisma.ClientJobWhereInput {
   return {
     clientId: ctx.clientId,
-    OR: [
-      { members: { none: {} } },
-      { members: { some: { clientUserId: ctx.clientUserId } } },
-    ],
+    members: { some: { clientUserId: ctx.clientUserId } },
   };
 }
 
@@ -45,7 +47,6 @@ export function canAccessClientJob(
   job: { clientId: string; members: { clientUserId: string }[] }
 ): boolean {
   if (job.clientId !== ctx.clientId) return false;
-  if (job.members.length === 0) return true;
   return job.members.some((m) => m.clientUserId === ctx.clientUserId);
 }
 

@@ -218,6 +218,13 @@ export async function POST(request: Request) {
             postedById: clientUser.id,
             createdByAgency: true,
             sourceJobId: jobId,
+            // Seed the explicit member list with the recipient so
+            // visibility is strictly opt-in from day one. Without
+            // this the row falls into the (deprecated) legacy-open
+            // bucket and every teammate at the client sees the job.
+            members: {
+              create: [{ clientUserId: clientUser.id }],
+            },
           },
           select: { id: true },
         });
