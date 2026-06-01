@@ -653,41 +653,38 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               </CardContent>
             </Card>
           ) : (
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-              <TabsList>
-                <TabsTrigger value="pipeline">
-                  Pipeline{jobCandidates.length > 0 ? ` (${jobCandidates.length})` : ""}
-                </TabsTrigger>
-                <TabsTrigger value="notes">
-                  Notes{job?.comments?.length ? ` (${job.comments.length})` : ""}
-                </TabsTrigger>
-                <TabsTrigger value="details">Details</TabsTrigger>
-                <TabsTrigger value="documents">
-                  Documents{documents.length > 0 ? ` (${documents.length})` : ""}
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Pipeline tab — read-only kanban of shared candidates,
-                  with a List toggle for scanning many at once. */}
-              <TabsContent value="pipeline" className="space-y-3">
-                {jobCandidates.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <div className="inline-flex rounded-md border bg-white p-0.5">
-                      {(["pipeline", "list"] as const).map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setCandidatesView(v)}
-                          className={`px-2.5 py-1 text-[11px] font-medium rounded ${
-                            candidatesView === v
-                              ? "bg-emerald-600 text-white"
-                              : "text-gray-600 hover:bg-gray-50"
-                          }`}
-                        >
-                          {v === "pipeline" ? "Pipeline" : "List"}
-                        </button>
-                      ))}
-                    </div>
+            <>
+              {/* Pipeline lives as its own section above the tabs — the
+                  recruiter wants the kanban prominent + always visible
+                  (parity with the agency-side intent). Notes / Details
+                  / Documents fall into a separate tabs strip below so
+                  the secondary panes don't compete with the pipeline
+                  for the primary surface. */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-700">
+                    Pipeline
+                    {jobCandidates.length > 0 ? ` · ${jobCandidates.length}` : ""}
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {jobCandidates.length > 0 && (
+                      <div className="inline-flex rounded-md border bg-white p-0.5">
+                        {(["pipeline", "list"] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setCandidatesView(v)}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded ${
+                              candidatesView === v
+                                ? "bg-emerald-600 text-white"
+                                : "text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {v === "pipeline" ? "Pipeline" : "List"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <Link
                       href={`/client-portal/candidates?clientJobId=${id}`}
                       className="text-xs text-emerald-600 hover:underline"
@@ -695,7 +692,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       View all →
                     </Link>
                   </div>
-                )}
+                </div>
                 <Card>
                   <CardContent className="p-0">
                     {jobCandidates.length === 0 ? (
@@ -738,7 +735,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     )}
                   </CardContent>
                 </Card>
-              </TabsContent>
+              </div>
+
+              <Tabs
+                value={activeTab === "pipeline" ? "notes" : activeTab}
+                onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+              >
+                <TabsList>
+                  <TabsTrigger value="notes">
+                    Notes{job?.comments?.length ? ` (${job.comments.length})` : ""}
+                  </TabsTrigger>
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="documents">
+                    Documents{documents.length > 0 ? ` (${documents.length})` : ""}
+                  </TabsTrigger>
+                </TabsList>
 
               {/* Notes tab — the chat-style thread for the client team.
                   Used to be always-visible above the page; moved here so
@@ -935,7 +946,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   </CardContent>
                 </Card>
               </TabsContent>
-            </Tabs>
+              </Tabs>
+            </>
           )}
         </div>
 
