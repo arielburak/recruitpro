@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 
 // List candidates shared with this client
 //
@@ -21,9 +22,38 @@ export async function GET(request: NextRequest) {
     const clientStageId = params.get("clientStageId") || params.get("stageId") || "";
     const flat = params.get("flat") === "true";
 
+    // Per-Job membership gate: a ClientUser only sees submissions for
+    // ClientJobs they're a member of (or legacy-open jobs with no
+    // member list). Pre-compute the set of agency Job IDs allowed
+    // by visibility, then intersect with whatever the caller is
+    // filtering by (raw `jobId` or `clientJobId` query params).
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+    const visibleSet = new Set(visibleAgencyJobIds);
+
+    // Start with the visible set; narrow via `jobId` / `clientJobId`
+    // if the caller provided them. Returns "__none__" sentinel when
+    // the intersection is empty so Prisma returns nothing.
+    let allowedJobIds: string[] = visibleAgencyJobIds;
+
+    if (jobId) {
+      allowedJobIds = visibleSet.has(jobId) ? [jobId] : [];
+    }
+
+    if (clientJobId) {
+      const linkedJobs = await prisma.firmEngagement.findMany({
+        where: { clientJobId, jobId: { not: null }, clientJob: { clientId: ctx.clientId } },
+        select: { jobId: true },
+      });
+      const requested = linkedJobs
+        .map((e) => e.jobId)
+        .filter((v): v is string => !!v);
+      allowedJobIds = requested.filter((id) => visibleSet.has(id));
+    }
+
     const where: any = {
       isSharedWithClient: true,
       job: { clientId: ctx.clientId },
+      jobId: allowedJobIds.length > 0 ? { in: allowedJobIds } : "__none__",
     };
 
     if (search.length >= 2) {
@@ -35,16 +65,6 @@ export async function GET(request: NextRequest) {
           { currentCompany: { contains: search, mode: "insensitive" as const } },
         ],
       };
-    }
-
-    if (jobId) where.jobId = jobId;
-    if (clientJobId) {
-      const linkedJobs = await prisma.firmEngagement.findMany({
-        where: { clientJobId, jobId: { not: null }, clientJob: { clientId: ctx.clientId } },
-        select: { jobId: true },
-      });
-      const ids = linkedJobs.map((e) => e.jobId).filter((v): v is string => !!v);
-      where.jobId = ids.length > 0 ? { in: ids } : "__none__";
     }
     if (clientStageId) where.clientStageId = clientStageId;
     if (firmId) where.job.organizationId = firmId;

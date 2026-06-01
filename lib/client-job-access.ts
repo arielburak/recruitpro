@@ -48,3 +48,40 @@ export function canAccessClientJob(
   if (job.members.length === 0) return true;
   return job.members.some((m) => m.clientUserId === ctx.clientUserId);
 }
+
+// The agency-side Job IDs whose linked ClientJob is visible to this
+// ClientUser. Use this to filter CandidateSubmission queries on the
+// client portal — a submission's jobId always points at the agency
+// Job, never at the ClientJob, so the portal needs the intersection
+// of "submissions shared with this client" AND "the underlying
+// ClientJob is one I can see".
+//
+// Returns a string[] of agency Job IDs. An empty array means "no
+// access" — callers should short-circuit the query (set jobId to a
+// sentinel like "__none__" so Prisma returns nothing).
+export async function accessibleAgencyJobIds(
+  prisma: any,
+  ctx: ClientCtx,
+): Promise<string[]> {
+  const accessibleClientJobs = await prisma.clientJob.findMany({
+    where: clientJobAccessWhere(ctx),
+    select: { id: true },
+  });
+  if (accessibleClientJobs.length === 0) return [];
+
+  const clientJobIds = accessibleClientJobs.map((j: { id: string }) => j.id);
+
+  // Only ACCEPTED FirmEngagements have an agency-side Job linked.
+  // PENDING / DECLINED rows don't back any candidate submissions yet.
+  const engagements = await prisma.firmEngagement.findMany({
+    where: {
+      clientJobId: { in: clientJobIds },
+      jobId: { not: null },
+      status: "ACCEPTED",
+    },
+    select: { jobId: true },
+  });
+  return engagements
+    .map((e: { jobId: string | null }) => e.jobId)
+    .filter((v: string | null): v is string => !!v);
+}

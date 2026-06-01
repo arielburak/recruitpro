@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 
 // GET candidate detail for a specific submission.
 // Only accessible if the submission is shared with the calling client user's client.
@@ -12,11 +13,18 @@ export async function GET(
     const ctx = await getClientContext();
     const { submissionId } = await params;
 
+    // Per-Job membership gate (see lib/client-job-access). Without
+    // this, a ClientUser could open any submission shared with their
+    // client just by knowing its id — even for ClientJobs they're
+    // not a member of.
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
         job: { clientId: ctx.clientId },
+        jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: {
         id: true,
