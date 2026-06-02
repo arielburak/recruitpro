@@ -750,7 +750,12 @@ export default function JobDetailPage() {
               <Badge className={JOB_STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
             </div>
             <p className="text-gray-500">
-              {job.client.name}
+              <Link
+                href={`/clients/${job.clientId}`}
+                className="hover:text-indigo-600 hover:underline"
+              >
+                {job.client.name}
+              </Link>
               {job.location && ` · ${job.location}`}
               {job.salary && ` · ${job.salary} (${job.currency || "USD"})`}
             </p>
@@ -1451,7 +1456,12 @@ export default function JobDetailPage() {
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                      <p className="text-sm font-semibold text-gray-900">{job.client.name}</p>
+                      <Link
+                        href={`/clients/${job.clientId}`}
+                        className="text-sm font-semibold text-gray-900 hover:text-indigo-600 hover:underline"
+                      >
+                        {job.client.name}
+                      </Link>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Status</p>
