@@ -64,7 +64,7 @@ const TILES: TileDef[] = [
   {
     key: "startingNext30Days",
     label: "Starting in 30 days",
-    sublabel: () => "Draft invoices · prep ahead",
+    sublabel: () => "First days · HH + OS",
     icon: CalendarClock,
     accent: "bg-blue-50 text-blue-600",
   },
@@ -248,13 +248,17 @@ function buildMeta(tile: TileKey, p: any): string[] {
     ];
   }
   if (tile === "startingNext30Days") {
-    return [
-      `Starts ${fmtDate(p.startDate)}`,
-      p.feeAmount
-        ? formatCurrency(Number(p.feeAmount), p.currency || "USD")
-        : "—",
-      p.invoiceStatus,
-    ];
+    // Estimated start is a soft fallback: shown when the firm date
+    // isn't set yet so the row still has a date to anchor on.
+    const effective = p.startDate || p.estimatedStartDate;
+    const datePrefix = p.startDate ? "Starts" : "Est. start";
+    const meta = [`${datePrefix} ${fmtDate(effective)}`, p.kind === "OS" ? "OS" : "HH"];
+    if (p.kind === "OS" && p.monthlyFee) {
+      meta.push(`${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`);
+    } else if (p.feeAmount) {
+      meta.push(formatCurrency(Number(p.feeAmount), p.currency || "USD"));
+    }
+    return meta;
   }
   // mrrAtRisk
   return [

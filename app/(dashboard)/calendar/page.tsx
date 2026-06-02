@@ -264,7 +264,13 @@ export default function CalendarPage() {
   const milestones: Milestone[] = (() => {
     const out: Milestone[] = [];
     for (const p of placements) {
-      if (p.startDate) out.push({ kind: "first_day", date: new Date(p.startDate), placement: p });
+      // Fall back to estimatedStartDate when the firm date isn't set
+      // yet — common for OS placements where the start often firms up
+      // later than the deal close. We still mark them as "first day"
+      // so they appear on the grid; the detail panel labels which
+      // anchor was used.
+      const startAnchor = p.startDate || p.estimatedStartDate;
+      if (startAnchor) out.push({ kind: "first_day", date: new Date(startAnchor), placement: p });
       if (p.paymentDueDate) out.push({ kind: "payment_due", date: new Date(p.paymentDueDate), placement: p });
       if (p.guaranteeExpiry) out.push({ kind: "guarantee_expiry", date: new Date(p.guaranteeExpiry), placement: p });
     }
