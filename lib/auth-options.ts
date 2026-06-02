@@ -345,6 +345,43 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
+      // Liveness check — a JWT outlives the row it points to in
+      // two real scenarios:
+      //
+      //   1. Tenant wipe during QA / staging resets: User row is
+      //      gone but the browser still holds a cookie signed
+      //      with the same NEXTAUTH_SECRET, so NextAuth would
+      //      otherwise treat it as authenticated and every page
+      //      load 500s on the first DB lookup.
+      //   2. A user being deactivated / deleted (account
+      //      lifecycle work that's still ahead of us) — same
+      //      problem in production.
+      //
+      // Cheap mitigation: one keyed lookup per session call on
+      // the side (staffing vs client) the token claims. If the
+      // row is gone, return null so NextAuth signs the user out
+      // on this very request — no manual cookie clearing
+      // required by anyone.
+      if (token?.id) {
+        if (token.isClientUser) {
+          const exists = await prisma.clientUser.findUnique({
+            where: { id: token.id as string },
+            select: { id: true, isActive: true },
+          });
+          if (!exists || !exists.isActive) {
+            return null as any;
+          }
+        } else {
+          const exists = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { id: true, isActive: true },
+          });
+          if (!exists || !exists.isActive) {
+            return null as any;
+          }
+        }
+      }
+
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
