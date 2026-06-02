@@ -33,6 +33,7 @@ import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
+import { OfferNotesPrompt } from "@/components/pipeline/offer-notes-prompt";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
 import { InterviewsList } from "@/components/interviews/interviews-list";
 import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
@@ -71,6 +72,9 @@ export default function CandidateDetailPage() {
     submission: any;
   } | null>(null);
   const [pendingInterview, setPendingInterview] = useState<{
+    submission: any;
+  } | null>(null);
+  const [pendingOffer, setPendingOffer] = useState<{
     submission: any;
   } | null>(null);
   // Interviews tab — create-new and edit-existing both run through the
@@ -171,6 +175,14 @@ export default function CandidateDetailPage() {
     if (newStage?.name === "Interviewing") {
       await persistStageChange(submission.id, newStageId);
       setPendingInterview({ submission });
+      return;
+    }
+
+    // Offered → flip the stage first, then prompt for offer details.
+    // Skip leaves the stage on Offered with no note attached.
+    if (newStage?.name === "Offered") {
+      await persistStageChange(submission.id, newStageId);
+      setPendingOffer({ submission });
       return;
     }
 
@@ -939,6 +951,16 @@ export default function CandidateDetailPage() {
             setPendingInterview(null);
             fetchCandidate();
           }}
+        />
+      )}
+
+      {pendingOffer && (
+        <OfferNotesPrompt
+          submissionId={pendingOffer.submission.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          jobTitle={pendingOffer.submission.job.title}
+          onClose={() => setPendingOffer(null)}
+          onSaved={fetchCandidate}
         />
       )}
 
