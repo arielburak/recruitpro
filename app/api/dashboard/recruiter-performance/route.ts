@@ -46,12 +46,13 @@ async function bucketMetrics(
       },
       select: { candidate: { select: { ownerId: true } } },
     }),
-    // "Offers" counts every move INTO the Offered stage in the
-    // window — not the candidates currently sitting at Offered.
-    // A candidate that was offered and then converted to a placement
-    // (or moved to Rejected) still counts here. We source from the
-    // Activity log because that's the only place that has the
-    // history of transitions. Backward-compat with rows logged
+    // "Offers" counts every distinct SUBMISSION that entered the
+    // Offered stage in the window — not every move event. A
+    // candidate that was bounced in/out of Offered on the same job
+    // still counts once. We dedup by metadata.submissionId
+    // post-query; legacy rows without submissionId fall back to a
+    // coarser (candidateId + jobTitle-from-description) key so they
+    // don't double-count either. Backward-compat with rows logged
     // before structured metadata: also match by the description's
     // canonical `to "Offered" in` substring.
     prisma.activity.findMany({
@@ -65,7 +66,15 @@ async function bucketMetrics(
           { description: { contains: 'to "Offered" in' } },
         ],
       },
-      select: { candidate: { select: { ownerId: true } } },
+      select: {
+        candidateId: true,
+        description: true,
+        metadata: true,
+        candidate: { select: { ownerId: true } },
+      },
+      // Newest first so the dedup keep-first logic gets the most
+      // recent transition per submission for free.
+      orderBy: { createdAt: "desc" },
     }),
     prisma.interview.findMany({
       where: {
@@ -97,6 +106,30 @@ async function bucketMetrics(
     return m;
   };
 
+  // Dedup the offers by submission so a candidate moved in/out of
+  // Offered on the same job only counts once. New rows carry
+  // metadata.submissionId; legacy rows fall back to a synthetic
+  // key combining candidateId + the job title scraped from the
+  // description. Coarse but good enough — a single candidate would
+  // need to have parallel submissions on multiple jobs to collide.
+  const seenOfferKeys = new Set<string>();
+  const offersMap = new Map<string, number>();
+  for (const a of offers) {
+    const ownerId = a.candidate?.ownerId;
+    if (!ownerId) continue;
+    const meta = (a.metadata as any) || {};
+    let key: string;
+    if (meta?.submissionId) {
+      key = `s:${meta.submissionId}`;
+    } else {
+      const jobMatch = /in "([^"]+)"/.exec(a.description || "");
+      key = `c:${a.candidateId}|j:${jobMatch?.[1] || ""}`;
+    }
+    if (seenOfferKeys.has(key)) continue;
+    seenOfferKeys.add(key);
+    offersMap.set(ownerId, (offersMap.get(ownerId) || 0) + 1);
+  }
+
   const placementMap = new Map<string, number>();
   for (const p of placements) {
     const id = p.recruiterId || p.submission?.candidate?.ownerId;
@@ -106,7 +139,7 @@ async function bucketMetrics(
 
   return {
     submissions: count(submissions),
-    offers: count(offers),
+    offers: offersMap,
     interviews: count(interviews),
     placements: placementMap,
   };

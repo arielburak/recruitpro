@@ -351,7 +351,7 @@ export function RecruiterPerformance() {
           value={data?.totals.offers ?? 0}
           prior={data?.prior?.totals.offers ?? null}
           loading={loading}
-          tooltip="Every candidate moved into the Offered stage during this period — including ones that later became Placements or were rejected. It's a 'reached an offer' count, not a 'currently sitting at Offered' count."
+          tooltip="Distinct candidate-job submissions that reached the Offered stage during this period — including ones that later became Placements or were rejected. Counted once per submission, so a candidate bounced in/out of Offered on the same job doesn't double-count."
         />
         <TotalTile
           icon={Trophy}
@@ -404,7 +404,7 @@ export function RecruiterPerformance() {
                     active={sortBy === "offers"}
                     dir={sortDir}
                     onClick={() => toggleSort("offers")}
-                    tooltip="Every move into the Offered stage during this period — even if the candidate later became a Placement or was rejected. It's 'reached an offer', not 'currently at Offered'."
+                    tooltip="Distinct submissions that reached the Offered stage in this period — counted once per candidate-job pair, even if they bounced in/out. Includes ones that later became Placements or were rejected."
                   />
                   <SortableHeader
                     label="Placements"
