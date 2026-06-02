@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
+import { Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
@@ -730,20 +731,7 @@ export default function JobDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* Back uses the browser history so you land wherever you
-              came from — /jobs list, /engagements drilldown, a
-              candidate page, etc. The fallback if there's no entry
-              (deep link, new tab) is the Jobs list. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (window.history.length > 1) router.back();
-              else router.push("/jobs");
-            }}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
+          <BackButton fallback="/jobs" />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{job.title}</h1>

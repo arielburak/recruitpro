@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, UserCircle, Pencil, Trash2, KeyRound, Send, MailPlus, Shield } from "lucide-react";
+import { Plus, UserCircle, Pencil, Trash2, KeyRound, Send, MailPlus, Shield } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 
@@ -217,11 +218,7 @@ export default function ClientContactsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={`/clients/${clientId}`}>
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back to {client?.name || "Client"}
-            </Button>
-          </Link>
+          <BackButton fallback={`/clients/${clientId}`} />
           <div>
             <h1 className="text-2xl font-bold">Contacts</h1>
             <p className="text-gray-500 text-sm">

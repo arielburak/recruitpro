@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatNotes } from "@/components/chat-notes";
 import {
-  ArrowLeft,
   Edit,
   Mail,
   Phone,
@@ -28,6 +27,7 @@ import {
   MessageSquare,
   Star,
 } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
@@ -263,11 +263,7 @@ export default function CandidateDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/candidates">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back
-            </Button>
-          </Link>
+          <BackButton fallback="/candidates" />
           <div>
             <h1 className="text-2xl font-bold">
               {candidate.firstName} {candidate.lastName}

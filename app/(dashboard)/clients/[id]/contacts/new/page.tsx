@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import Link from "next/link";
 
@@ -89,11 +90,7 @@ export default function NewContactPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/clients/${clientId}/contacts`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
-        </Link>
+        <BackButton fallback={`/clients/${clientId}/contacts`} />
         <div>
           <h1 className="text-2xl font-bold">Add contact</h1>
           {clientName && <p className="text-gray-500 text-sm">at {clientName}</p>}
