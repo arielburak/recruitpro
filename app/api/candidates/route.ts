@@ -130,13 +130,27 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = candidateSchema.parse(body);
 
+    // Resolve owner: accept an override from the form, but only if the
+    // user belongs to the same org as the creator. Falls back to the
+    // creator so unauthenticated or stale dropdown values can't move
+    // the candidate to a foreign tenant.
+    let resolvedOwnerId = ctx.userId;
+    if (data.ownerId && data.ownerId !== ctx.userId) {
+      const owner = await prisma.user.findFirst({
+        where: { id: data.ownerId, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (owner) resolvedOwnerId = owner.id;
+    }
+
+    const { ownerId: _omit, ...createData } = data;
     const candidate = await prisma.candidate.create({
       data: {
-        ...data,
+        ...createData,
         currentSalary: data.currentSalary ?? undefined,
         desiredSalary: data.desiredSalary ?? undefined,
         organizationId: ctx.organizationId,
-        ownerId: ctx.userId,
+        ownerId: resolvedOwnerId,
       },
     });
 

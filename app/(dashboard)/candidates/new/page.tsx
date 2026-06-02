@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
@@ -38,10 +39,20 @@ export default function NewCandidatePageWrapper() {
 function NewCandidatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
+
+  // Owner picker — recruiter that "owns" this candidate (will appear
+  // as their submissions/placements/metrics owner). Defaults to the
+  // creator; can be reassigned at creation time (e.g. sourcer adds
+  // a candidate "for" a closer).
+  type TeamMember = { id: string; name: string | null; email: string };
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [ownerId, setOwnerId] = useState<string>("");
 
   // Resume parsing state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -180,6 +191,22 @@ function NewCandidatePage() {
     }
   }, [searchParams]);
 
+  // Load team members for the Owner picker. Reuses the search endpoint
+  // every other team picker hits — empty query returns the first page.
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Default the picker to whoever is creating the candidate. Only set
+  // it once — if the user re-assigns mid-form we don't want to clobber
+  // their choice when the session re-validates.
+  useEffect(() => {
+    if (!ownerId && currentUserId) setOwnerId(currentUserId);
+  }, [currentUserId, ownerId]);
+
   function updateField(field: string, value: string) {
     setFormValues((prev) => ({ ...prev, [field]: value }));
   }
@@ -300,6 +327,7 @@ function NewCandidatePage() {
       source: formValues.source,
       summary: formValues.summary,
       skills,
+      ownerId: ownerId || undefined,
     };
 
     try {
@@ -332,20 +360,6 @@ function NewCandidatePage() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
-    // Require at least one way to contact the candidate. We don't force
-    // all three, so recruiters sourcing from LinkedIn-only (or a networking
-    // event with just an email) aren't forced to fabricate values — but we
-    // do guarantee every candidate is reachable and dedupe-able.
-    const hasContact =
-      formValues.email.trim() ||
-      formValues.phone.trim() ||
-      formValues.linkedIn.trim();
-    if (!hasContact) {
-      setError("Add at least one way to contact this candidate — email, phone or LinkedIn URL.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
 
     // Re-check duplicates across all three channels at submit time in
     // case the user typed past a field without blurring (e.g. submitted
@@ -447,12 +461,7 @@ function NewCandidatePage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center justify-between gap-2">
-                  <span>Email</span>
-                  <span className="text-[10.5px] font-normal text-gray-400 normal-case">
-                    email, phone or LinkedIn required
-                  </span>
-                </Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   name="email"
@@ -620,6 +629,30 @@ function NewCandidatePage() {
                   onChange={(v) => updateField("desiredSalary", v)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ownerId">Owner</Label>
+              <select
+                id="ownerId"
+                name="ownerId"
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {teamMembers.length === 0 && (
+                  <option value="">Loading team…</option>
+                )}
+                {teamMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.email}
+                    {m.id === currentUserId ? " (you)" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10.5px] text-gray-400">
+                Recruiter that will own this candidate's placements and metrics.
+              </p>
             </div>
 
             <div className="space-y-2">

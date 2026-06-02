@@ -15,6 +15,10 @@ export const candidateSchema = z.object({
   skills: z.array(z.string()).default([]),
   summary: z.string().optional(),
   source: z.string().optional(),
+  // Optional override for the recruiter that owns this candidate. When
+  // unset the API defaults to the creator; when set the API verifies
+  // the user is in the same org before assigning.
+  ownerId: z.string().optional(),
 });
 
 export type CandidateFormData = z.infer<typeof candidateSchema>;

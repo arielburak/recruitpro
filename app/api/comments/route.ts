@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
-import { notifyOnNewComment, notifyOnNewCandidateComment } from "@/lib/chat-notifications";
+import {
+  notifyOnNewComment,
+  notifyOnNewCandidateComment,
+  notifyOnNewJobComment,
+} from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
 
 export async function POST(request: Request) {
@@ -43,11 +47,14 @@ export async function POST(request: Request) {
       },
     });
 
-    // Fire-and-forget notifications. Two paths:
+    // Fire-and-forget notifications. Three paths:
     //   - Submission-scoped → full fanout (mentions + audience on the
     //     other side via notifyOnNewComment).
-    //   - Candidate-scoped → mention-only fanout (no client to share
-    //     with, candidate may be across many submissions).
+    //   - Candidate-scoped → mentions + candidate owner. No client
+    //     side because the candidate spans many submissions.
+    //   - Job-scoped → mentions + JobAssignment members. Internal-only.
+    const authorName =
+      ctx.userName || comment.user?.name || "A recruiter";
     if (body.submissionId) {
       notifyOnNewComment({
         submissionId: body.submissionId,
@@ -56,7 +63,7 @@ export async function POST(request: Request) {
         mentions,
         authorKind: "staffing",
         authorId: ctx.userId,
-        authorName: ctx.userName || comment.user?.name || "A recruiter",
+        authorName,
       }).catch((e) => console.error("[comments POST] notify failed:", e));
     } else if (body.candidateId) {
       notifyOnNewCandidateComment({
@@ -64,8 +71,20 @@ export async function POST(request: Request) {
         content,
         mentions,
         authorId: ctx.userId,
-        authorName: ctx.userName || comment.user?.name || "A recruiter",
-      }).catch((e) => console.error("[comments POST] candidate notify failed:", e));
+        authorName,
+      }).catch((e) =>
+        console.error("[comments POST] candidate notify failed:", e),
+      );
+    } else if (body.jobId) {
+      notifyOnNewJobComment({
+        jobId: body.jobId,
+        content,
+        mentions,
+        authorId: ctx.userId,
+        authorName,
+      }).catch((e) =>
+        console.error("[comments POST] job notify failed:", e),
+      );
     }
 
     // Activity log for the candidate's history tab. Job-level comments
