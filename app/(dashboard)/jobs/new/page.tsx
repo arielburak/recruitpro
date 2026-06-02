@@ -18,7 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
+import { Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE } from "@/lib/constants";
 import {
@@ -461,9 +462,7 @@ function NewJobContent() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/jobs">
-          <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
-        </Link>
+        <BackButton fallback="/jobs" />
         <h1 className="text-2xl font-bold">Create Job</h1>
       </div>
 

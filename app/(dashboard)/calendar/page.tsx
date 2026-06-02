@@ -676,7 +676,33 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Calendar</h1>
-          <p className="text-sm text-gray-500">Interviews, follow-ups and reminders</p>
+          <p className="text-sm text-gray-500">
+            {(() => {
+              // Inline count of scheduled interviews this Mon–Sun.
+              // Used to live in the dashboard Action Center; now
+              // surfaces where the user is actually planning their
+              // week.
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const monOffset = (today.getDay() + 6) % 7;
+              const weekStart = new Date(today);
+              weekStart.setDate(today.getDate() - monOffset);
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 6);
+              weekEnd.setHours(23, 59, 59, 999);
+              const count = interviews.filter((i) => {
+                const t = new Date(i.startTime).getTime();
+                return (
+                  i.status === "SCHEDULED" &&
+                  t >= weekStart.getTime() &&
+                  t <= weekEnd.getTime()
+                );
+              }).length;
+              return count === 0
+                ? "Interviews, follow-ups and reminders"
+                : `${count} interview${count === 1 ? "" : "s"} scheduled this week`;
+            })()}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button

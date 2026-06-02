@@ -34,7 +34,6 @@ import {
 } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
 import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
-import { ActionCenter } from "@/components/dashboard/action-center";
 import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
 
 // Force dynamic rendering. The page already depends on getServerSession
@@ -484,12 +483,6 @@ export default async function DashboardPage() {
       {isWithinFirstWeek && daysSinceSignup > 0 && (
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
-
-      {/* Action Center — "what needs attention today". Three
-          drill-down tiles for interviews this week, overdue payments
-          and guarantees expiring. MVP scope; more tiles slot into
-          the grid without breaking the layout. */}
-      <ActionCenter />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

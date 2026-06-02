@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/tenant";
+
+// Drill-down rows for the /placements operations strip. Mirrors the
+// predicates in /api/placements/operations exactly so the lists
+// reconcile with the tile counts.
+
+type Tile =
+  | "paymentsOverdue"
+  | "guaranteesExpiring"
+  | "startingNext30Days"
+  | "mrrAtRisk";
+
+export async function GET(request: NextRequest) {
+  try {
+    const ctx = await getOrgContext();
+    const sp = request.nextUrl.searchParams;
+    const tile = sp.get("tile") as Tile | null;
+    if (!tile) {
+      return NextResponse.json({ error: "tile required" }, { status: 400 });
+    }
+
+    const now = new Date();
+    const orgId = ctx.organizationId;
+
+    const baseSelect = {
+      id: true,
+      kind: true,
+      startDate: true,
+      estimatedStartDate: true,
+      paymentDueDate: true,
+      guaranteeExpiry: true,
+      endDate: true,
+      invoiceStatus: true,
+      feeAmount: true,
+      monthlyFee: true,
+      currency: true,
+      submission: {
+        select: {
+          candidate: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+        },
+      },
+      job: { select: { id: true, title: true } },
+      client: { select: { id: true, name: true } },
+    } as const;
+
+    if (tile === "paymentsOverdue") {
+      const items = await prisma.placement.findMany({
+        where: {
+          organizationId: orgId,
+          kind: "HH",
+          paymentDueDate: { lt: now },
+          invoiceStatus: { not: "PAID" },
+        },
+        select: baseSelect,
+        orderBy: { paymentDueDate: "asc" },
+      });
+      return NextResponse.json({ tile, items });
+    }
+
+    if (tile === "guaranteesExpiring") {
+      const windowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const items = await prisma.placement.findMany({
+        where: {
+          organizationId: orgId,
+          guaranteeExpiry: { gte: now, lte: windowEnd },
+        },
+        select: baseSelect,
+        orderBy: { guaranteeExpiry: "asc" },
+      });
+      return NextResponse.json({ tile, items });
+    }
+
+    if (tile === "startingNext30Days") {
+      const windowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const items = await prisma.placement.findMany({
+        where: {
+          organizationId: orgId,
+          kind: "HH",
+          startDate: { gte: now, lte: windowEnd },
+          invoiceStatus: "DRAFT",
+        },
+        select: baseSelect,
+        orderBy: { startDate: "asc" },
+      });
+      return NextResponse.json({ tile, items });
+    }
+
+    if (tile === "mrrAtRisk") {
+      const lookbackStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const items = await prisma.placement.findMany({
+        where: {
+          organizationId: orgId,
+          kind: "OS",
+          endDate: { gte: lookbackStart, lte: now },
+        },
+        select: baseSelect,
+        // Most recent loss first — easier to chase a recent leak than
+        // an old one where the client has already moved on.
+        orderBy: { endDate: "desc" },
+      });
+      return NextResponse.json({ tile, items });
+    }
+
+    return NextResponse.json({ error: "Unknown tile" }, { status: 400 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 401 });
+  }
+}

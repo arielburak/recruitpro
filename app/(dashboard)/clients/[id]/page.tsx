@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, KeyRound } from "lucide-react";
+import { Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, KeyRound } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
@@ -259,9 +260,7 @@ export default function ClientDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/clients">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
-          </Link>
+          <BackButton fallback="/clients" />
           <div>
             <h1 className="text-2xl font-bold">{client.name}</h1>
             {client.industry && <p className="text-gray-500">{client.industry}</p>}

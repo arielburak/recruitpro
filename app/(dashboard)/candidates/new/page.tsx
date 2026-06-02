@@ -22,7 +22,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, X, Upload, FileText, Sparkles, ExternalLink } from "lucide-react";
+import { X, Upload, FileText, Sparkles, ExternalLink } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import { SourceInput } from "@/components/ui/source-input";
@@ -377,11 +378,7 @@ function NewCandidatePage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/candidates">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
-        </Link>
+        <BackButton fallback="/candidates" />
         <h1 className="text-2xl font-bold">Add Candidate</h1>
       </div>
 

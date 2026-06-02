@@ -15,6 +15,7 @@ import {
 import { Trophy, DollarSign, Plus } from "lucide-react";
 import { formatCurrency, formatDate, formatDateOnly } from "@/lib/utils";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { PlacementsOperationsStrip } from "@/components/placements/operations-strip";
 // Currency conversion (fetchUsdRates / convertToUsd) was removed for
 // MVP — every placement is treated as already in USD. If multi-
 // currency reporting comes back later, see lib/exchange-rates.
@@ -322,6 +323,13 @@ export default function PlacementsPage() {
       {error && (
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md">{error}</div>
       )}
+
+      {/* Operations strip — point-in-time signals that the agency
+          needs to act on now (overdue invoices, expiring guarantees,
+          upcoming starts that need invoicing, recent MRR losses).
+          Lives above the period filter on purpose: these tiles are
+          always "today", not period-scoped revenue. */}
+      <PlacementsOperationsStrip />
 
       {/* Year + quarter filter — applies to both HH revenue and OS
           accrued revenue below. Lives on its own row so the two
