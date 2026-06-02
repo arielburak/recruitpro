@@ -160,6 +160,159 @@ function MultiFilter({
   );
 }
 
+// ─── Saved Views (sticky filters + named presets) ───
+//
+// Both bits of state live in localStorage so they survive reloads
+// without a backend round-trip. Per-browser only — moving to a new
+// machine starts fresh. That's a conscious trade-off for the MVP;
+// the alternative is a JobSavedView model in Prisma + endpoints,
+// which we'll add when the team actually starts sharing presets.
+
+const STORAGE_KEYS = {
+  // Latest filter combo the user had on /jobs. Restored on mount.
+  lastFilters: "recruitpro:jobs:lastFilters",
+  // Array of SavedView. Shown in the Views dropdown.
+  savedViews: "recruitpro:jobs:savedViews",
+} as const;
+
+type FilterSnapshot = {
+  statusFilter: string[];
+  workArrangementFilter: string[];
+  locationFilter: string[];
+  clientFilter: string[];
+  recruiterFilter: string[];
+  dateRange: DateRange;
+};
+
+type SavedView = {
+  id: string;
+  name: string;
+  filters: FilterSnapshot;
+};
+
+type FilterSetters = {
+  setStatusFilter: (v: string[]) => void;
+  setWorkArrangementFilter: (v: string[]) => void;
+  setLocationFilter: (v: string[]) => void;
+  setClientFilter: (v: string[]) => void;
+  setRecruiterFilter: (v: string[]) => void;
+  setDateRange: (v: DateRange) => void;
+};
+
+function applySnapshot(snap: Partial<FilterSnapshot>, setters: FilterSetters) {
+  setters.setStatusFilter(Array.isArray(snap.statusFilter) ? snap.statusFilter : []);
+  setters.setWorkArrangementFilter(
+    Array.isArray(snap.workArrangementFilter) ? snap.workArrangementFilter : [],
+  );
+  setters.setLocationFilter(Array.isArray(snap.locationFilter) ? snap.locationFilter : []);
+  setters.setClientFilter(Array.isArray(snap.clientFilter) ? snap.clientFilter : []);
+  setters.setRecruiterFilter(Array.isArray(snap.recruiterFilter) ? snap.recruiterFilter : []);
+  setters.setDateRange(
+    snap.dateRange && typeof snap.dateRange === "object"
+      ? { from: snap.dateRange.from ?? null, to: snap.dateRange.to ?? null }
+      : { from: null, to: null },
+  );
+}
+
+function ViewSwitcher({
+  views,
+  onApply,
+  onSave,
+  onDelete,
+  hasActiveFilters,
+}: {
+  views: SavedView[];
+  onApply: (view: SavedView | null) => void;
+  onSave: () => void;
+  onDelete: (id: string) => void;
+  hasActiveFilters: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-md border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:border-gray-300"
+      >
+        <span>Views</span>
+        <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 right-0 mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              onApply(null);
+              setOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-gray-700"
+          >
+            All jobs
+            <span className="block text-[10px] text-gray-400">No filters applied</span>
+          </button>
+          {views.length > 0 && (
+            <div className="border-t border-gray-100">
+              {views.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 group"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onApply(v);
+                      setOpen(false);
+                    }}
+                    className="flex-1 text-left text-sm text-gray-700 min-w-0 truncate"
+                  >
+                    {v.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Delete view "${v.name}"?`)) onDelete(v.id);
+                    }}
+                    className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                    title="Delete view"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onSave();
+              }}
+              disabled={!hasActiveFilters}
+              className="w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <Plus className="h-3 w-3" /> Save current as view…
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ───
 
 export default function JobsPage() {
@@ -208,16 +361,123 @@ export default function JobsPage() {
     setBulkDeleting(false);
   }
 
-  // Multi-select filters. Status defaults to Open + Active so the
-  // first thing the recruiter sees are the searches they're working
-  // on right now — closed / filled jobs are still reachable by
-  // clearing the filter (or toggling those statuses back in).
-  const [statusFilter, setStatusFilter] = useState<string[]>(["OPEN", "ACTIVE"]);
+  // Multi-select filters. Default is "no filter" (all jobs) — the
+  // user picks what they want and we remember it via localStorage
+  // (see Views switcher below). Earlier defaults baked in
+  // ["OPEN", "ACTIVE"] which surprised users who wanted the full
+  // history.
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [workArrangementFilter, setWorkArrangementFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [clientFilter, setClientFilter] = useState<string[]>([]);
   const [recruiterFilter, setRecruiterFilter] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
+
+  // Sticky filters — the page restores the last filter combo on
+  // every reload. Storage shape lives under STORAGE_KEYS.lastFilters.
+  // Hydration happens once on mount; subsequent state changes get
+  // written back in the persistence effect below. The mountedRef
+  // gate avoids writing the empty defaults over a stored snapshot
+  // before hydration has happened.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.lastFilters);
+      if (raw) {
+        const snap = JSON.parse(raw) as Partial<FilterSnapshot>;
+        applySnapshot(snap, {
+          setStatusFilter,
+          setWorkArrangementFilter,
+          setLocationFilter,
+          setClientFilter,
+          setRecruiterFilter,
+          setDateRange,
+        });
+      }
+    } catch {
+      // Stored snapshot was malformed — fall back to the empty
+      // defaults (= "All jobs"). Clear the bad blob so we don't
+      // keep trying to parse it.
+      try {
+        localStorage.removeItem(STORAGE_KEYS.lastFilters);
+      } catch {}
+    }
+    mountedRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    const snap: FilterSnapshot = {
+      statusFilter,
+      workArrangementFilter,
+      locationFilter,
+      clientFilter,
+      recruiterFilter,
+      dateRange,
+    };
+    try {
+      localStorage.setItem(STORAGE_KEYS.lastFilters, JSON.stringify(snap));
+    } catch {}
+  }, [statusFilter, workArrangementFilter, locationFilter, clientFilter, recruiterFilter, dateRange]);
+
+  // Named saved views — same localStorage backing, separate key.
+  // Each view is a snapshot of the filter state with a label. The
+  // built-in "All jobs" preset is synthetic and not stored.
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.savedViews);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setSavedViews(arr);
+      }
+    } catch {}
+  }, []);
+  function persistViews(next: SavedView[]) {
+    setSavedViews(next);
+    try {
+      localStorage.setItem(STORAGE_KEYS.savedViews, JSON.stringify(next));
+    } catch {}
+  }
+  function saveCurrentAsView() {
+    const name = window.prompt("View name?");
+    if (!name || !name.trim()) return;
+    const view: SavedView = {
+      id: `v_${Date.now()}`,
+      name: name.trim(),
+      filters: {
+        statusFilter,
+        workArrangementFilter,
+        locationFilter,
+        clientFilter,
+        recruiterFilter,
+        dateRange,
+      },
+    };
+    persistViews([...savedViews, view]);
+  }
+  function applyView(view: SavedView | null) {
+    // Null = "All jobs" → wipe everything.
+    if (!view) {
+      setStatusFilter([]);
+      setWorkArrangementFilter([]);
+      setLocationFilter([]);
+      setClientFilter([]);
+      setRecruiterFilter([]);
+      setDateRange({ from: null, to: null });
+      return;
+    }
+    applySnapshot(view.filters, {
+      setStatusFilter,
+      setWorkArrangementFilter,
+      setLocationFilter,
+      setClientFilter,
+      setRecruiterFilter,
+      setDateRange,
+    });
+  }
+  function deleteView(id: string) {
+    persistViews(savedViews.filter((v) => v.id !== id));
+  }
 
   useEffect(() => {
     fetch("/api/jobs")
@@ -406,6 +666,22 @@ export default function JobsPage() {
             onChange={setRecruiterFilter}
           />
           <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
+          <ViewSwitcher
+            views={savedViews}
+            onApply={applyView}
+            onSave={saveCurrentAsView}
+            onDelete={deleteView}
+            hasActiveFilters={
+              statusFilter.length +
+                workArrangementFilter.length +
+                locationFilter.length +
+                clientFilter.length +
+                recruiterFilter.length >
+                0 ||
+              !!dateRange.from ||
+              !!dateRange.to
+            }
+          />
         </div>
       </div>
 
