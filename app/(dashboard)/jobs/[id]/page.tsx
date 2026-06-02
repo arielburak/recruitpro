@@ -20,6 +20,7 @@ import { SubmissionsListView } from "@/components/pipeline/submissions-list-view
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
 import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
+import { OfferNotesPrompt } from "@/components/pipeline/offer-notes-prompt";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
 import { InterviewsList } from "@/components/interviews/interviews-list";
 import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
@@ -436,6 +437,13 @@ export default function JobDetailPage() {
   const [pendingInterview, setPendingInterview] = useState<{
     submission: any;
   } | null>(null);
+  // Same skip-friendly pattern for Offered: stage flip first, then
+  // prompt the user to capture base/bonus/start-date right when they
+  // know it instead of weeks later when the placement is being put
+  // together.
+  const [pendingOffer, setPendingOffer] = useState<{
+    submission: any;
+  } | null>(null);
   // Job-page Interviews tab: create-new (with candidate picker) and
   // edit-existing both run through InterviewDialog.
   const [showCreateInterview, setShowCreateInterview] = useState(false);
@@ -486,6 +494,7 @@ export default function JobDetailPage() {
     const notYetShared = submission && !submission.isSharedWithClient;
     const movingToPlaced = target?.name === "Placed";
     const movingToInterviewing = target?.name === "Interviewing";
+    const movingToOffered = target?.name === "Offered";
     const leavingPlaced =
       currentStage?.name === "Placed" && target?.name !== "Placed";
 
@@ -520,6 +529,13 @@ export default function JobDetailPage() {
     // can add later from /calendar.
     if (movingToInterviewing && submission) {
       setPendingInterview({ submission });
+    }
+
+    // Offered: stage flip first (above), then prompt to capture
+    // offer details as an internal note on this submission. Skip
+    // leaves the stage on Offered with no note attached.
+    if (movingToOffered && submission) {
+      setPendingOffer({ submission });
     }
   }
 
@@ -1357,6 +1373,15 @@ export default function JobDetailPage() {
                 setPendingInterview(null);
                 fetchJob();
               }}
+            />
+          )}
+          {pendingOffer && (
+            <OfferNotesPrompt
+              submissionId={pendingOffer.submission.id}
+              candidateName={`${pendingOffer.submission.candidate.firstName} ${pendingOffer.submission.candidate.lastName}`}
+              jobTitle={job.title}
+              onClose={() => setPendingOffer(null)}
+              onSaved={fetchJob}
             />
           )}
         </TabsContent>
