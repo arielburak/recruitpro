@@ -15,6 +15,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Info,
   X,
 } from "lucide-react";
 import {
@@ -332,6 +333,7 @@ export function RecruiterPerformance() {
           value={data?.totals.submissions ?? 0}
           prior={data?.prior?.totals.submissions ?? null}
           loading={loading}
+          tooltip="Candidates the recruiter put in front of a client in this period (counted at submission creation, attributed to the candidate's owner)."
         />
         <TotalTile
           icon={Video}
@@ -340,6 +342,7 @@ export function RecruiterPerformance() {
           value={data?.totals.interviews ?? 0}
           prior={data?.prior?.totals.interviews ?? null}
           loading={loading}
+          tooltip="Interviews scheduled with a start time in this period, for candidates owned by the recruiter."
         />
         <TotalTile
           icon={Handshake}
@@ -348,6 +351,7 @@ export function RecruiterPerformance() {
           value={data?.totals.offers ?? 0}
           prior={data?.prior?.totals.offers ?? null}
           loading={loading}
+          tooltip="Every candidate moved into the Offered stage during this period — including ones that later became Placements or were rejected. It's a 'reached an offer' count, not a 'currently sitting at Offered' count."
         />
         <TotalTile
           icon={Trophy}
@@ -356,6 +360,7 @@ export function RecruiterPerformance() {
           value={data?.totals.placements ?? 0}
           prior={data?.prior?.totals.placements ?? null}
           loading={loading}
+          tooltip="Placements created in this period. The placement's explicit Recruiter override takes precedence; otherwise it falls back to the candidate's owner."
         />
       </div>
 
@@ -383,6 +388,7 @@ export function RecruiterPerformance() {
                     active={sortBy === "submissions"}
                     dir={sortDir}
                     onClick={() => toggleSort("submissions")}
+                    tooltip="Candidates this recruiter put in front of a client in the period."
                   />
                   <SortableHeader
                     label="Interviews"
@@ -390,6 +396,7 @@ export function RecruiterPerformance() {
                     active={sortBy === "interviews"}
                     dir={sortDir}
                     onClick={() => toggleSort("interviews")}
+                    tooltip="Interviews scheduled with a start time in the period, for candidates owned by this recruiter."
                   />
                   <SortableHeader
                     label="Offers"
@@ -397,6 +404,7 @@ export function RecruiterPerformance() {
                     active={sortBy === "offers"}
                     dir={sortDir}
                     onClick={() => toggleSort("offers")}
+                    tooltip="Every move into the Offered stage during this period — even if the candidate later became a Placement or was rejected. It's 'reached an offer', not 'currently at Offered'."
                   />
                   <SortableHeader
                     label="Placements"
@@ -404,12 +412,14 @@ export function RecruiterPerformance() {
                     active={sortBy === "placements"}
                     dir={sortDir}
                     onClick={() => toggleSort("placements")}
+                    tooltip="Placements created in the period. Placement's Recruiter override wins; otherwise attributed to the candidate's owner."
                   />
                   <SortableHeader
                     label="Conv %"
                     active={sortBy === "conversionPct"}
                     dir={sortDir}
                     onClick={() => toggleSort("conversionPct")}
+                    tooltip="Conversion rate: Placements ÷ Submissions × 100. How often a candidate this recruiter put forward ends up placed."
                   />
                 </tr>
               </thead>
@@ -471,6 +481,7 @@ function TotalTile({
   value,
   prior,
   loading,
+  tooltip,
 }: {
   icon: any;
   color: "indigo" | "blue" | "amber" | "emerald";
@@ -478,6 +489,10 @@ function TotalTile({
   value: number;
   prior: number | null;
   loading: boolean;
+  // Plain-English explanation of how the metric is computed. Shows
+  // up on hover so an operator who didn't build this can read what
+  // the number actually means before relying on it.
+  tooltip?: string;
 }) {
   const colorMap = {
     indigo: "bg-indigo-50 text-indigo-600",
@@ -492,8 +507,18 @@ function TotalTile({
   return (
     <div className="rounded-xl border bg-white p-3 flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+        <span className="text-[11px] uppercase tracking-wider text-gray-400 font-medium inline-flex items-center gap-1">
           {label}
+          {tooltip && (
+            <Info
+              className="h-3 w-3 text-gray-300 hover:text-gray-500 cursor-help"
+              aria-label={tooltip}
+              // Native browser tooltip — works without extra portal/
+              // provider wiring. Plenty for a one-line explanation.
+              // eslint-disable-next-line react/no-unknown-property
+              {...({ title: tooltip } as any)}
+            />
+          )}
         </span>
         <div className={`flex h-6 w-6 items-center justify-center rounded-md ${colorMap[color]}`}>
           <Icon className="h-3 w-3" />
@@ -574,12 +599,16 @@ function SortableHeader({
   active,
   dir,
   onClick,
+  tooltip,
 }: {
   label: string;
   icon?: any;
   active: boolean;
   dir: "asc" | "desc";
   onClick: () => void;
+  // Hover-explanation for the column. Surfaces an Info icon when set
+  // so an operator can hover to see how the column is computed.
+  tooltip?: string;
 }) {
   const Arrow = !active ? ArrowUpDown : dir === "desc" ? ArrowDown : ArrowUp;
   return (
@@ -590,6 +619,16 @@ function SortableHeader({
       <span className="inline-flex items-center justify-end gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
+        {tooltip && (
+          <Info
+            className="h-2.5 w-2.5 text-gray-300 hover:text-gray-500 cursor-help"
+            aria-label={tooltip}
+            // Stop the click from triggering the column sort when the
+            // user is just trying to read the explanation.
+            onClick={(e) => e.stopPropagation()}
+            {...({ title: tooltip } as any)}
+          />
+        )}
         <Arrow className={`h-2.5 w-2.5 ${active ? "text-indigo-600" : "text-gray-300"}`} />
       </span>
     </th>

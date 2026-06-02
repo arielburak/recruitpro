@@ -47,9 +47,12 @@ type InterviewItem = {
 };
 type OfferItem = {
   id: string;
-  updatedAt: string;
+  offeredAt: string;
   candidate: { id: string; firstName: string; lastName: string };
-  job: { id: string; title: string; client: { name: string } | null };
+  jobId: string | null;
+  jobTitle: string | null;
+  clientName: string | null;
+  submissionId: string | null;
 };
 type PlacementItem = {
   id: string;
@@ -219,15 +222,20 @@ export function RecruiterPerformanceDrilldown({
                   />
                 ))}
               {data.metric === "offers" &&
-                (data.items as OfferItem[]).map((r) => (
-                  <DrilldownRow
-                    key={r.id}
-                    title={`${r.candidate.firstName} ${r.candidate.lastName}`}
-                    subtitle={`${r.job.title}${r.job.client?.name ? ` · ${r.job.client.name}` : ""}`}
-                    meta={[`Moved ${fmtDate(r.updatedAt)}`]}
-                    href={`/candidates/${r.candidate.id}`}
-                  />
-                ))}
+                (data.items as OfferItem[]).map((r) => {
+                  const subtitle = r.jobTitle
+                    ? `${r.jobTitle}${r.clientName ? ` · ${r.clientName}` : ""}`
+                    : "—";
+                  return (
+                    <DrilldownRow
+                      key={r.id}
+                      title={`${r.candidate.firstName} ${r.candidate.lastName}`}
+                      subtitle={subtitle}
+                      meta={[`Offered ${fmtDate(r.offeredAt)}`]}
+                      href={`/candidates/${r.candidate.id}`}
+                    />
+                  );
+                })}
               {data.metric === "placements" &&
                 (data.items as PlacementItem[]).map((r) => {
                   const candidateName = r.submission?.candidate
