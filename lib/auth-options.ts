@@ -41,6 +41,14 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       allowDangerousEmailAccountLinking: true,
+      // Force Google to show the account chooser AND the consent
+      // screen on every sign-in instead of silently re-using the
+      // last grant. Without this, switching between accounts (and
+      // re-checking what scopes the app asks for) is impossible
+      // once a user has signed in once on the browser.
+      authorization: {
+        params: { prompt: "select_account consent" },
+      },
     }),
     CredentialsProvider({
       id: "credentials",
