@@ -9,7 +9,11 @@ export async function GET(request: Request) {
     const q = url.searchParams.get("q") || "";
     const includeClients = url.searchParams.get("includeClients") === "true";
 
-    // Search team members
+    // Search team members. When `q` is empty we hand back the full
+    // active roster (capped at a sane upper bound) so client-side
+    // filtered pickers like SearchableSelect can resolve any member
+    // without paginating; when `q` is set we cap tightly because the
+    // caller is doing a typeahead.
     const users = await prisma.user.findMany({
       where: {
         organizationId: ctx.organizationId,
@@ -17,7 +21,8 @@ export async function GET(request: Request) {
         name: { contains: q, mode: "insensitive" },
       },
       select: { id: true, name: true, email: true, role: true },
-      take: 10,
+      orderBy: { name: "asc" },
+      take: q ? 25 : 200,
     });
 
     let clients: any[] = [];

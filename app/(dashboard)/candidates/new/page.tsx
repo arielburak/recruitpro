@@ -26,6 +26,7 @@ import { ArrowLeft, X, Upload, FileText, Sparkles, ExternalLink } from "lucide-r
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import { SourceInput } from "@/components/ui/source-input";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -633,25 +634,27 @@ function NewCandidatePage() {
 
             <div className="space-y-2">
               <Label htmlFor="ownerId">Owner</Label>
-              <select
-                id="ownerId"
-                name="ownerId"
+              <SearchableSelect
                 value={ownerId}
-                onChange={(e) => setOwnerId(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {teamMembers.length === 0 && (
-                  <option value="">Loading team…</option>
-                )}
-                {teamMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.email}
-                    {m.id === currentUserId ? " (you)" : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={setOwnerId}
+                includeAll={false}
+                placeholder={
+                  teamMembers.length === 0 ? "Loading team…" : "Select an owner"
+                }
+                searchPlaceholder="Search teammates…"
+                minWidth={0}
+                className="w-full"
+                options={teamMembers.map<SearchableSelectOption>((m) => ({
+                  value: m.id,
+                  label:
+                    (m.name || m.email) +
+                    (m.id === currentUserId ? " (you)" : ""),
+                  meta: m.name && m.email ? m.email : undefined,
+                }))}
+              />
               <p className="text-[10.5px] text-gray-400">
                 Recruiter that will own this candidate's placements and metrics.
+                Only members of this workspace.
               </p>
             </div>
 
