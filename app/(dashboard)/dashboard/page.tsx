@@ -11,15 +11,12 @@ import {
   Building2,
   UserPlus,
   Sparkles,
-  MessageSquare,
-  Star,
   TrendingUp,
   TrendingDown,
   Clock,
   Target,
   Zap,
   BarChart3,
-  PieChart as PieChartIcon,
   Activity,
   Upload,
 } from "lucide-react";
@@ -28,8 +25,6 @@ import Link from "next/link";
 import {
   PipelineChart,
   ActivityTrendChart,
-  SourceBreakdownChart,
-  JobStatusChart,
   RecruiterLeaderboard,
 } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
@@ -74,7 +69,6 @@ export default async function DashboardPage() {
     placements,
     totalClients,
     recentActivities,
-    recentFeedback,
     pendingEngagements,
     // New queries for charts
     candidatesThisMonth,
@@ -83,8 +77,6 @@ export default async function DashboardPage() {
     placementsLastMonth,
     pipelineData,
     activityByDay,
-    candidatesBySource,
-    jobsByStatus,
     recruiterStats,
     recentSubmissions,
   ] = await Promise.all([
@@ -109,24 +101,6 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 10,
       include: { user: { select: { name: true } } },
-    }),
-    prisma.comment.findMany({
-      where: {
-        type: "CLIENT_VISIBLE",
-        submission: { job: { organizationId: orgId } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: {
-        clientUser: { select: { name: true } },
-        user: { select: { name: true } },
-        submission: {
-          select: {
-            candidate: { select: { id: true, firstName: true, lastName: true } },
-            job: { select: { title: true, id: true } },
-          },
-        },
-      },
     }),
     prisma.firmEngagement.count({
       where: { organizationId: orgId, status: "PENDING" },
@@ -165,17 +139,6 @@ export default async function DashboardPage() {
     prisma.activity.findMany({
       where: { organizationId: orgId, createdAt: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) } },
       select: { createdAt: true },
-    }),
-    // Candidate sources
-    prisma.candidate.findMany({
-      where: { organizationId: orgId, source: { not: null } },
-      select: { source: true },
-    }),
-    // Jobs by status
-    prisma.job.groupBy({
-      by: ["status"],
-      where: { organizationId: orgId },
-      _count: { id: true },
     }),
     // Recruiter leaderboard. We pull every active user so we can join
     // a separate "placements per recruiter" aggregate below — `_count`
@@ -224,20 +187,6 @@ export default async function DashboardPage() {
     if (dayMap.has(key)) dayMap.set(key, (dayMap.get(key) || 0) + 1);
   }
   const activityTrendData = Array.from(dayMap.entries()).map(([date, count]) => ({ date, count }));
-
-  // Aggregate sources
-  const sourceMap = new Map<string, number>();
-  for (const c of candidatesBySource) {
-    const src = c.source || "Unknown";
-    sourceMap.set(src, (sourceMap.get(src) || 0) + 1);
-  }
-  const sourceChartData = Array.from(sourceMap.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // Job status chart data
-  const jobStatusData = jobsByStatus.map((j) => ({ status: j.status, count: j._count.id }));
 
   // Recruiter leaderboard
   // Placements attributed to each recruiter via the placed candidate's
@@ -546,43 +495,8 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Secondary Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Candidate Sources */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <PieChartIcon className="h-4 w-4 text-violet-500" />
-              Candidate Sources
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SourceBreakdownChart data={sourceChartData} />
-          </CardContent>
-        </Card>
-
-        {/* Job Status */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Briefcase className="h-4 w-4 text-blue-500" />
-              Jobs by Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <JobStatusChart data={jobStatusData} />
-          </CardContent>
-        </Card>
-
-        {/* Legacy "Top Recruiters" leaderboard removed — the full
-            Recruiter Performance widget further up the page covers
-            the same data with filters + drill-down. Kept the
-            placeholder div so the surrounding grid spacing doesn't
-            collapse. */}
-      </div>
-
-      {/* Bottom Row: Recent Submissions + Activity + Feedback */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Bottom Row: Recent Submissions + Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Submissions */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
@@ -655,74 +569,6 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Client Feedback */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <MessageSquare className="h-4 w-4 text-emerald-500" />
-              Client Feedback
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentFeedback.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No client feedback yet</p>
-            ) : (
-              <div className="space-y-3">
-                {recentFeedback.map((fb: any) => {
-                  let displayContent = fb.content;
-                  let rating = null;
-                  let clientName = fb.clientUser?.name || fb.user?.name || "Client";
-                  try {
-                    const parsed = JSON.parse(fb.content);
-                    if (parsed && typeof parsed === "object") {
-                      displayContent = parsed.text || "";
-                      rating = parsed.rating;
-                      if (parsed.clientName) clientName = parsed.clientName;
-                    }
-                  } catch {}
-
-                  return (
-                    <div key={fb.id} className="flex items-start gap-2.5 text-sm">
-                      <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                        <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-medium text-xs text-emerald-700">{clientName}</span>
-                          {rating && (
-                            <div className="flex gap-0.5">
-                              {[1, 2, 3, 4, 5].map((n) => (
-                                <Star
-                                  key={n}
-                                  className={`h-2.5 w-2.5 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {displayContent && (
-                          <p className="text-gray-600 text-xs mt-0.5 line-clamp-2">{displayContent}</p>
-                        )}
-                        {fb.submission && (
-                          <p className="text-[10px] text-gray-400 mt-1">
-                            on{" "}
-                            <Link href={`/candidates/${fb.submission.candidate.id}`} className="text-indigo-600 hover:underline">
-                              {fb.submission.candidate.firstName} {fb.submission.candidate.lastName}
-                            </Link>
-                            {" "}for{" "}
-                            <Link href={`/jobs/${fb.submission.job.id}`} className="text-indigo-600 hover:underline">
-                              {fb.submission.job.title}
-                            </Link>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
