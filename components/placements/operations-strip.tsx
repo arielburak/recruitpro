@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Video,
   DollarSign,
   ShieldAlert,
+  CalendarClock,
+  TrendingDown,
   ExternalLink,
   X,
   Loader2,
@@ -13,83 +14,92 @@ import {
 import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
 
-// "What needs attention today" widget. MVP scope: four operational
-// signals a recruiting agency wants in front of them every morning,
-// each clickable to a drawer with the list. Reuses the drill-down
-// slide-out pattern from the Recruiter Performance widget so the
-// dashboard's interaction model stays consistent.
+// Operational at-a-glance strip on the Placements page. Reuses the
+// drill-down drawer pattern from the dashboard's Action Center —
+// click a tile, see the underlying rows. MVP scope: four cash-flow /
+// risk signals that belong here (and used to live on the dashboard
+// where they didn't really fit).
 
-type Counts = {
-  interviewsThisWeek: number;
+type OperationsResponse = {
   paymentsOverdue: number;
+  receivablesTotal: number;
   guaranteesExpiring: number;
-  weekStart: string;
-  weekEnd: string;
-  guaranteeWindowEnd: string;
+  startingNext30Days: number;
+  mrrAtRisk: number;
+  mrrLost: number;
 };
 
-type TileKey = "interviews" | "paymentsOverdue" | "guaranteesExpiring";
+type TileKey =
+  | "paymentsOverdue"
+  | "guaranteesExpiring"
+  | "startingNext30Days"
+  | "mrrAtRisk";
 
-const TILES: {
+type TileDef = {
   key: TileKey;
   label: string;
-  sublabel: string;
+  sublabel: (data: OperationsResponse | null) => string;
   icon: any;
   accent: string;
-  tone: string;
-}[] = [
-  {
-    key: "interviews",
-    label: "Interviews this week",
-    sublabel: "Scheduled · Mon – Sun",
-    icon: Video,
-    accent: "bg-blue-50 text-blue-600",
-    tone: "text-blue-700",
-  },
+};
+
+const TILES: TileDef[] = [
   {
     key: "paymentsOverdue",
     label: "Payments overdue",
-    sublabel: "HH invoices past due",
+    sublabel: (d) =>
+      d && d.receivablesTotal > 0
+        ? `${formatCurrency(d.receivablesTotal, "USD")} outstanding`
+        : "HH invoices past due",
     icon: DollarSign,
     accent: "bg-rose-50 text-rose-600",
-    tone: "text-rose-700",
   },
   {
     key: "guaranteesExpiring",
     label: "Guarantees expiring",
-    sublabel: "Within 30 days",
+    sublabel: () => "Within 30 days",
     icon: ShieldAlert,
     accent: "bg-purple-50 text-purple-600",
-    tone: "text-purple-700",
+  },
+  {
+    key: "startingNext30Days",
+    label: "Starting in 30 days",
+    sublabel: () => "Draft invoices · prep ahead",
+    icon: CalendarClock,
+    accent: "bg-blue-50 text-blue-600",
+  },
+  {
+    key: "mrrAtRisk",
+    label: "MRR at risk",
+    sublabel: (d) =>
+      d && d.mrrLost > 0
+        ? `${formatCurrency(d.mrrLost, "USD")}/mo lost in last 30d`
+        : "OS endings · last 30 days",
+    icon: TrendingDown,
+    accent: "bg-amber-50 text-amber-600",
   },
 ];
 
-export function ActionCenter() {
-  const [counts, setCounts] = useState<Counts | null>(null);
+export function PlacementsOperationsStrip() {
+  const [data, setData] = useState<OperationsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [drill, setDrill] = useState<TileKey | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/dashboard/action-center")
+    fetch("/api/placements/operations")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: Counts | null) => setCounts(d))
-      .catch(() => setCounts(null))
+      .then((d: OperationsResponse | null) => setData(d))
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {TILES.map((t) => {
           const Icon = t.icon;
-          const value = counts ? (counts as any)[
-            t.key === "interviews"
-              ? "interviewsThisWeek"
-              : t.key === "paymentsOverdue"
-                ? "paymentsOverdue"
-                : "guaranteesExpiring"
-          ] as number : 0;
+          const value = data ? (data as any)[t.key] as number : 0;
           const hasItems = value > 0;
           return (
             <Card
@@ -113,7 +123,9 @@ export function ActionCenter() {
                 {loading ? <span className="text-gray-300">—</span> : value}
               </p>
               <p className="text-xs font-medium text-gray-700 mt-2">{t.label}</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{t.sublabel}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {t.sublabel(data)}
+              </p>
             </Card>
           );
         })}
@@ -130,7 +142,7 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/dashboard/action-center/details?tile=${tile}`)
+    fetch(`/api/placements/operations/details?tile=${tile}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => setData(null))
@@ -167,7 +179,7 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
               {meta.label}
             </p>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              {meta.sublabel} · {items.length} item{items.length === 1 ? "" : "s"}
+              {items.length} item{items.length === 1 ? "" : "s"}
             </p>
           </div>
           <button
@@ -193,57 +205,64 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {tile === "interviews" &&
-                items.map((iv: any) => (
+              {items.map((p: any) => {
+                const cand = p.submission?.candidate;
+                const title = cand
+                  ? `${cand.firstName} ${cand.lastName}`
+                  : "Placement";
+                const href = cand ? `/candidates/${cand.id}` : "/placements";
+                const subtitle = `${p.job?.title || "—"} · ${p.client?.name || "—"}`;
+                const meta = buildMeta(tile, p);
+                return (
                   <ActionRow
-                    key={iv.id}
-                    href={`/candidates/${iv.candidate.id}`}
-                    title={`${iv.candidate.firstName} ${iv.candidate.lastName}`}
-                    subtitle={`${iv.job.title}${iv.job.client?.name ? ` · ${iv.job.client.name}` : ""}`}
-                    meta={[fmtDate(iv.startTime), iv.type]}
+                    key={p.id}
+                    href={href}
+                    title={title}
+                    subtitle={subtitle}
+                    meta={meta}
                   />
-                ))}
-              {tile === "paymentsOverdue" &&
-                items.map((p: any) => {
-                  const cand = p.submission?.candidate;
-                  return (
-                    <ActionRow
-                      key={p.id}
-                      href={cand ? `/candidates/${cand.id}` : "/placements"}
-                      title={cand ? `${cand.firstName} ${cand.lastName}` : "Placement"}
-                      subtitle={`${p.job.title} · ${p.client.name}`}
-                      meta={[
-                        `Due ${fmtDate(p.paymentDueDate)}`,
-                        p.feeAmount
-                          ? formatCurrency(Number(p.feeAmount), p.currency || "USD")
-                          : "—",
-                        p.invoiceStatus,
-                      ]}
-                    />
-                  );
-                })}
-              {tile === "guaranteesExpiring" &&
-                items.map((p: any) => {
-                  const cand = p.submission?.candidate;
-                  return (
-                    <ActionRow
-                      key={p.id}
-                      href={cand ? `/candidates/${cand.id}` : "/placements"}
-                      title={cand ? `${cand.firstName} ${cand.lastName}` : "Placement"}
-                      subtitle={`${p.job.title} · ${p.client.name}`}
-                      meta={[
-                        `Expires ${fmtDate(p.guaranteeExpiry)}`,
-                        p.startDate ? `Started ${fmtDate(p.startDate)}` : "",
-                      ]}
-                    />
-                  );
-                })}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function buildMeta(tile: TileKey, p: any): string[] {
+  if (tile === "paymentsOverdue") {
+    return [
+      `Due ${fmtDate(p.paymentDueDate)}`,
+      p.feeAmount
+        ? formatCurrency(Number(p.feeAmount), p.currency || "USD")
+        : "—",
+      p.invoiceStatus,
+    ];
+  }
+  if (tile === "guaranteesExpiring") {
+    return [
+      `Expires ${fmtDate(p.guaranteeExpiry)}`,
+      p.startDate ? `Started ${fmtDate(p.startDate)}` : "",
+    ];
+  }
+  if (tile === "startingNext30Days") {
+    return [
+      `Starts ${fmtDate(p.startDate)}`,
+      p.feeAmount
+        ? formatCurrency(Number(p.feeAmount), p.currency || "USD")
+        : "—",
+      p.invoiceStatus,
+    ];
+  }
+  // mrrAtRisk
+  return [
+    `Ended ${fmtDate(p.endDate)}`,
+    p.monthlyFee
+      ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`
+      : "—",
+  ];
 }
 
 function ActionRow({
