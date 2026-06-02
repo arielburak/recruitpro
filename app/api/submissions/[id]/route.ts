@@ -129,6 +129,10 @@ export async function PATCH(
 
     // Log stage change — covers both explicit moves (body.stageId) and the
     // implicit advance to "Submitted" we trigger from the share toggle.
+    // Metadata carries the structured transition so reporting widgets
+    // (e.g. Recruiter Performance's "Offers" tile) can count every
+    // candidate that ever passed through a given stage, instead of
+    // only the ones currently sitting there.
     if (updateData.stageId) {
       await logActivity({
         action: "submission.stage_changed",
@@ -136,6 +140,12 @@ export async function PATCH(
         userId: ctx.userId,
         candidateId: submission.candidateId,
         organizationId: ctx.organizationId,
+        metadata: {
+          submissionId: id,
+          jobId: submission.job.id,
+          fromStage: submission.stage.name,
+          toStage: mirroredStageName || null,
+        },
       });
     }
 

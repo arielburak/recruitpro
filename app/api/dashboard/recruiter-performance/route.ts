@@ -46,11 +46,24 @@ async function bucketMetrics(
       },
       select: { candidate: { select: { ownerId: true } } },
     }),
-    prisma.candidateSubmission.findMany({
+    // "Offers" counts every move INTO the Offered stage in the
+    // window — not the candidates currently sitting at Offered.
+    // A candidate that was offered and then converted to a placement
+    // (or moved to Rejected) still counts here. We source from the
+    // Activity log because that's the only place that has the
+    // history of transitions. Backward-compat with rows logged
+    // before structured metadata: also match by the description's
+    // canonical `to "Offered" in` substring.
+    prisma.activity.findMany({
       where: {
-        updatedAt: { gte: from, lte: to },
-        stage: { name: "Offered" },
-        candidate: { organizationId, ownerId: { in: userIds } },
+        organizationId,
+        action: "submission.stage_changed",
+        createdAt: { gte: from, lte: to },
+        candidate: { ownerId: { in: userIds } },
+        OR: [
+          { metadata: { path: ["toStage"], equals: "Offered" } },
+          { description: { contains: 'to "Offered" in' } },
+        ],
       },
       select: { candidate: { select: { ownerId: true } } },
     }),

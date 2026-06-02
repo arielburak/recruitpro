@@ -90,21 +90,73 @@ export async function GET(request: NextRequest) {
     }
 
     if (metric === "offers") {
-      const rows = await prisma.candidateSubmission.findMany({
+      // Mirror the aggregate's semantic: every move INTO Offered in
+      // the window counts, regardless of where the submission sits
+      // now. Pull the matching Activity rows + their candidates;
+      // legacy-compat with description-only logs is the same OR
+      // we use in the count query.
+      const rows = await prisma.activity.findMany({
         where: {
-          updatedAt: { gte: from, lte: to },
-          stage: { name: "Offered" },
-          candidate: { organizationId: ctx.organizationId, ownerId: recruiterId },
+          organizationId: ctx.organizationId,
+          action: "submission.stage_changed",
+          createdAt: { gte: from, lte: to },
+          candidate: { ownerId: recruiterId },
+          OR: [
+            { metadata: { path: ["toStage"], equals: "Offered" } },
+            { description: { contains: 'to "Offered" in' } },
+          ],
         },
         select: {
           id: true,
-          updatedAt: true,
+          createdAt: true,
+          description: true,
+          metadata: true,
           candidate: { select: { id: true, firstName: true, lastName: true } },
-          job: { select: { id: true, title: true, client: { select: { name: true } } } },
         },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { createdAt: "desc" },
       });
-      return NextResponse.json({ metric, recruiter, items: rows });
+      // Normalise to a stable shape — the drill-down UI doesn't need
+      // to know whether the row came from structured metadata or
+      // from parsing the description. The job title is recoverable
+      // either way (metadata.jobId resolves through the Submission;
+      // legacy rows have the title quoted inside `description`).
+      const items = await Promise.all(
+        rows.map(async (a) => {
+          const meta = (a.metadata as any) || {};
+          let jobTitle: string | null = null;
+          let jobId: string | null = null;
+          let clientName: string | null = null;
+          if (meta?.submissionId) {
+            const sub = await prisma.candidateSubmission.findUnique({
+              where: { id: meta.submissionId },
+              select: {
+                id: true,
+                job: { select: { id: true, title: true, client: { select: { name: true } } } },
+              },
+            });
+            jobId = sub?.job?.id || null;
+            jobTitle = sub?.job?.title || null;
+            clientName = sub?.job?.client?.name || null;
+          }
+          // Legacy fallback: scrape `in "Job title"` from the
+          // description. Only used when metadata.submissionId is
+          // missing.
+          if (!jobTitle) {
+            const m = /in "([^"]+)"/.exec(a.description);
+            jobTitle = m?.[1] || null;
+          }
+          return {
+            id: a.id,
+            offeredAt: a.createdAt,
+            candidate: a.candidate,
+            jobId,
+            jobTitle,
+            clientName,
+            submissionId: meta?.submissionId || null,
+          };
+        }),
+      );
+      return NextResponse.json({ metric, recruiter, items });
     }
 
     if (metric === "placements") {
