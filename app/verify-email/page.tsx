@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
-type Status = "loading" | "success" | "already" | "expired" | "error";
+type Status = "loading" | "success" | "already" | "expired" | "invalid" | "error";
 
 function VerifyEmailContent() {
   const params = useSearchParams();
@@ -34,11 +34,17 @@ function VerifyEmailContent() {
         const data = await res.json();
         if (!res.ok) {
           const msg = data.error || "Verification failed";
-          // The API returns the same generic shape whether the token
-          // expired or never existed. We branch on the message string
-          // so we can offer a one-click resend on the expired case.
-          if (/expired/i.test(msg)) {
+          // The API returns a discriminator field so the UI can tell
+          // apart three failure modes that look identical in the
+          // status code: link timed out (resend works), link was
+          // already used / regenerated (sign in or ask for a new
+          // one), or something else (generic error). Don't sniff
+          // the message string — "Invalid or expired link" matches
+          // /expired/ even though it's the "already used" case.
+          if (data.reason === "expired") {
             setStatus("expired");
+          } else if (data.reason === "invalid") {
+            setStatus("invalid");
           } else {
             setStatus("error");
             setErrorMessage(msg);
@@ -159,6 +165,31 @@ function VerifyEmailContent() {
                 </button>
               </form>
             )}
+          </div>
+        )}
+        {status === "invalid" && (
+          <div className="space-y-4">
+            <XCircle className="h-12 w-12 text-gray-400 mx-auto" />
+            <h1 className="text-xl font-semibold text-gray-900">Link no longer valid</h1>
+            <p className="text-sm text-gray-500">
+              This verification link has already been used or replaced by a newer one. If you've
+              already verified your email, just sign in. Otherwise check your inbox for the most
+              recent link.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Go to sign in
+              </Link>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-md border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Go to dashboard
+              </Link>
+            </div>
           </div>
         )}
         {status === "error" && (

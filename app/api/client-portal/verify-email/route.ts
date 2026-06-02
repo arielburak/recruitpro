@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid or expired verification link" },
+        { error: "Invalid or expired verification link", reason: "invalid" },
         { status: 400 }
       );
     }
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       user.emailVerificationExpiresAt.getTime() < Date.now()
     ) {
       return NextResponse.json(
-        { error: "Verification link expired. Request a new one from the sign-in page." },
+        { error: "Verification link expired. Request a new one from the sign-in page.", reason: "expired" },
         { status: 400 }
       );
     }

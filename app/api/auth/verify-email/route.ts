@@ -26,10 +26,12 @@ export async function POST(request: Request) {
 
     // No matching token. Could be an already-used link (we clear the
     // token after success) or a forged one — same generic error so
-    // we don't leak which.
+    // we don't leak which. `reason` lets the UI distinguish "this
+    // link was already used / regenerated" from "this link timed
+    // out", which need different recovery paths (sign in vs resend).
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid or expired verification link" },
+        { error: "Invalid or expired verification link", reason: "invalid" },
         { status: 400 },
       );
     }
@@ -43,7 +45,7 @@ export async function POST(request: Request) {
       user.emailVerificationExpiresAt.getTime() < Date.now()
     ) {
       return NextResponse.json(
-        { error: "Verification link expired. Request a new one from the dashboard." },
+        { error: "Verification link expired. Request a new one from the dashboard.", reason: "expired" },
         { status: 400 },
       );
     }

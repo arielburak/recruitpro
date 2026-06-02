@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
-type Status = "loading" | "success" | "already" | "expired" | "error";
+type Status = "loading" | "success" | "already" | "expired" | "invalid" | "error";
 
 function VerifyContent() {
   const params = useSearchParams();
@@ -34,8 +34,14 @@ function VerifyContent() {
         const data = await res.json();
         if (!res.ok) {
           const msg = data.error || "Verification failed";
-          if (/expired/i.test(msg)) {
+          // Branch on the explicit `reason` discriminator from the
+          // API, not on the message string. Sniffing /expired/i
+          // catches "Invalid or expired link" (already-used case)
+          // by accident and shows the wrong recovery UI.
+          if (data.reason === "expired") {
             setStatus("expired");
+          } else if (data.reason === "invalid") {
+            setStatus("invalid");
           } else {
             setStatus("error");
             setErrorMessage(msg);
@@ -154,6 +160,22 @@ function VerifyContent() {
                 </button>
               </form>
             )}
+          </div>
+        )}
+        {status === "invalid" && (
+          <div className="space-y-4">
+            <XCircle className="h-12 w-12 text-gray-400 mx-auto" />
+            <h1 className="text-xl font-semibold text-gray-900">Link no longer valid</h1>
+            <p className="text-sm text-gray-500">
+              This verification link has already been used or replaced by a newer one. If you've
+              already verified your email, just sign in.
+            </p>
+            <Link
+              href="/client-portal/login"
+              className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              Sign in
+            </Link>
           </div>
         )}
         {status === "error" && (
