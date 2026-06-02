@@ -257,6 +257,215 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   // INTERNAL and CLIENT_INTERNAL only have the mention notifications handled above.
 }
 
+// Candidate-level comments (no submissionId — pinned to the
+// Candidate itself rather than a specific submission). Notifies:
+//   * Anyone @-mentioned.
+//   * The candidate's owner (the recruiter who "owns" them, gets
+//     every note even if not mentioned).
+//
+// There's no client side here because the candidate may belong to
+// any number of submissions; the chat is scoped to the staffing
+// firm internally.
+export async function notifyOnNewCandidateComment(args: {
+  candidateId: string;
+  content: string;
+  mentions: string[]; // staffing user IDs
+  authorId: string;
+  authorName: string;
+}) {
+  const { candidateId, content, mentions, authorId, authorName } = args;
+
+  const candidate = await prisma.candidate.findUnique({
+    where: { id: candidateId },
+    select: { id: true, firstName: true, lastName: true, ownerId: true },
+  });
+  if (!candidate) return;
+
+  const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${baseUrl}/candidates/${candidate.id}`;
+  const preview = stripMarkup(content);
+
+  // Recipient pool: explicit @-mentions + the candidate's owner. We
+  // dedupe by user id and skip the author so they don't notify
+  // themselves.
+  const recipientIds = new Set<string>(mentions);
+  if (candidate.ownerId) recipientIds.add(candidate.ownerId);
+  recipientIds.delete(authorId);
+  if (recipientIds.size === 0) return;
+
+  const mentionSet = new Set(mentions);
+  const recipients = await prisma.user.findMany({
+    where: { id: { in: Array.from(recipientIds) }, isActive: true },
+    select: { id: true, email: true, name: true },
+  });
+
+  for (const u of recipients) {
+    const isMention = mentionSet.has(u.id);
+    try {
+      await prisma.userNotification.create({
+        data: {
+          userId: u.id,
+          type: isMention ? "mention" : "comment_posted",
+          title: isMention
+            ? `${authorName} mentioned you`
+            : `${authorName} commented on ${candidateName}`,
+          body: truncate(preview, 140),
+          link: `/candidates/${candidate.id}`,
+        },
+      });
+    } catch (e) {
+      console.error("[chat-notify] candidate notification in-app failed:", e);
+    }
+    try {
+      await sendMentionEmail({
+        to: u.email,
+        mentionedBy: authorName,
+        candidateName,
+        jobTitle: "candidate-level note",
+        preview,
+        url,
+      });
+    } catch (e) {
+      console.error("[chat-notify] candidate notification email failed:", e);
+    }
+  }
+}
+
+// Job-level comments (no submissionId, no candidateId — pinned to
+// the Job's Notes tab). Notifies:
+//   * Anyone @-mentioned.
+//   * Every JobAssignment member ("recruiters working this search").
+//
+// Previously silent: a comment on the Notes tab never reached any
+// teammate working the same job. That meant @-mentions inside
+// job-level notes went nowhere AND assignees missed updates.
+export async function notifyOnNewJobComment(args: {
+  jobId: string;
+  content: string;
+  mentions: string[]; // staffing user IDs
+  authorId: string;
+  authorName: string;
+}) {
+  const { jobId, content, mentions, authorId, authorName } = args;
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    select: {
+      id: true,
+      title: true,
+      assignments: { select: { userId: true } },
+    },
+  });
+  if (!job) return;
+
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${baseUrl}/jobs/${job.id}`;
+  const preview = stripMarkup(content);
+
+  const recipientIds = new Set<string>(mentions);
+  for (const a of job.assignments) recipientIds.add(a.userId);
+  recipientIds.delete(authorId);
+  if (recipientIds.size === 0) return;
+
+  const mentionSet = new Set(mentions);
+  const recipients = await prisma.user.findMany({
+    where: { id: { in: Array.from(recipientIds) }, isActive: true },
+    select: { id: true, email: true, name: true },
+  });
+
+  for (const u of recipients) {
+    const isMention = mentionSet.has(u.id);
+    try {
+      await prisma.userNotification.create({
+        data: {
+          userId: u.id,
+          type: isMention ? "mention" : "comment_posted",
+          title: isMention
+            ? `${authorName} mentioned you in ${job.title}`
+            : `${authorName} commented on ${job.title}`,
+          body: truncate(preview, 140),
+          link: `/jobs/${job.id}`,
+        },
+      });
+    } catch (e) {
+      console.error("[chat-notify] job notification in-app failed:", e);
+    }
+    try {
+      await sendMentionEmail({
+        to: u.email,
+        mentionedBy: authorName,
+        candidateName: job.title,
+        jobTitle: "job-level note",
+        preview,
+        url,
+      });
+    } catch (e) {
+      console.error("[chat-notify] job notification email failed:", e);
+    }
+  }
+}
+
+// Mention-only fan-out for ClientJob Notes. These comments are
+// CLIENT_INTERNAL by design — the agency never sees them — so the
+// recipient pool is always ClientUsers. Job-access (members list)
+// gates who can be mentioned at the API layer; here we just deliver.
+export async function notifyOnNewClientJobComment(args: {
+  clientJobId: string;
+  content: string;
+  mentions: string[]; // ClientUser IDs
+  authorId: string; // ClientUser ID of the poster
+  authorName: string;
+}) {
+  const { clientJobId, content, mentions, authorId, authorName } = args;
+  if (mentions.length === 0) return;
+
+  const job = await prisma.clientJob.findUnique({
+    where: { id: clientJobId },
+    select: { id: true, title: true, clientId: true, client: { select: { name: true } } },
+  });
+  if (!job) return;
+
+  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+  const url = `${baseUrl}/client-portal/jobs/${job.id}`;
+  const preview = stripMarkup(content);
+
+  const mentioned = await prisma.clientUser.findMany({
+    where: { id: { in: mentions }, clientId: job.clientId, isActive: true },
+    select: { id: true, email: true, name: true },
+  });
+
+  for (const u of mentioned) {
+    if (u.id === authorId) continue;
+    try {
+      await prisma.clientNotification.create({
+        data: {
+          clientId: job.clientId,
+          clientUserId: u.id,
+          type: "mention",
+          title: `${authorName} mentioned you in ${job.title}`,
+          body: truncate(preview, 140),
+          link: `/client-portal/jobs/${job.id}`,
+        },
+      });
+    } catch (e) {
+      console.error("[chat-notify] client-job mention in-app failed:", e);
+    }
+    try {
+      await sendMentionEmail({
+        to: u.email,
+        mentionedBy: authorName,
+        candidateName: job.client?.name || "your team",
+        jobTitle: job.title,
+        preview,
+        url,
+      });
+    } catch (e) {
+      console.error("[chat-notify] client-job mention email failed:", e);
+    }
+  }
+}
+
 function stripMarkup(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }

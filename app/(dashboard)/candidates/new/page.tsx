@@ -2,8 +2,10 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -20,10 +22,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, X, Upload, FileText, Sparkles, ExternalLink } from "lucide-react";
+import { X, Upload, FileText, Sparkles, ExternalLink } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import { SourceInput } from "@/components/ui/source-input";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import Link from "next/link";
 
 export default function NewCandidatePageWrapper() {
@@ -37,10 +41,20 @@ export default function NewCandidatePageWrapper() {
 function NewCandidatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
+
+  // Owner picker — recruiter that "owns" this candidate (will appear
+  // as their submissions/placements/metrics owner). Defaults to the
+  // creator; can be reassigned at creation time (e.g. sourcer adds
+  // a candidate "for" a closer).
+  type TeamMember = { id: string; name: string | null; email: string };
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [ownerId, setOwnerId] = useState<string>("");
 
   // Resume parsing state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -164,7 +178,9 @@ function NewCandidatePage() {
     }
   }
 
-  // Pre-fill from URL search params (LinkedIn import redirect)
+  // Pre-fill from URL search params — used by duplicate-detection
+  // redirects and any future bookmarklet/extension that drops a
+  // recruiter into the form with linkedIn / source pre-set.
   useEffect(() => {
     const linkedIn = searchParams.get("linkedIn");
     const source = searchParams.get("source");
@@ -176,6 +192,22 @@ function NewCandidatePage() {
       }));
     }
   }, [searchParams]);
+
+  // Load team members for the Owner picker. Reuses the search endpoint
+  // every other team picker hits — empty query returns the first page.
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Default the picker to whoever is creating the candidate. Only set
+  // it once — if the user re-assigns mid-form we don't want to clobber
+  // their choice when the session re-validates.
+  useEffect(() => {
+    if (!ownerId && currentUserId) setOwnerId(currentUserId);
+  }, [currentUserId, ownerId]);
 
   function updateField(field: string, value: string) {
     setFormValues((prev) => ({ ...prev, [field]: value }));
@@ -297,6 +329,7 @@ function NewCandidatePage() {
       source: formValues.source,
       summary: formValues.summary,
       skills,
+      ownerId: ownerId || undefined,
     };
 
     try {
@@ -330,20 +363,6 @@ function NewCandidatePage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    // Require at least one way to contact the candidate. We don't force
-    // all three, so recruiters sourcing from LinkedIn-only (or a networking
-    // event with just an email) aren't forced to fabricate values — but we
-    // do guarantee every candidate is reachable and dedupe-able.
-    const hasContact =
-      formValues.email.trim() ||
-      formValues.phone.trim() ||
-      formValues.linkedIn.trim();
-    if (!hasContact) {
-      setError("Add at least one way to contact this candidate — email, phone or LinkedIn URL.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
     // Re-check duplicates across all three channels at submit time in
     // case the user typed past a field without blurring (e.g. submitted
     // via Enter). If any match, open the confirm dialog.
@@ -359,11 +378,7 @@ function NewCandidatePage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/candidates">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
-        </Link>
+        <BackButton fallback="/candidates" />
         <h1 className="text-2xl font-bold">Add Candidate</h1>
       </div>
 
@@ -407,7 +422,7 @@ function NewCandidatePage() {
         </CardContent>
       </Card>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader>
             <CardTitle>Candidate Information</CardTitle>
@@ -444,12 +459,7 @@ function NewCandidatePage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center justify-between gap-2">
-                  <span>Email</span>
-                  <span className="text-[10.5px] font-normal text-gray-400 normal-case">
-                    email, phone or LinkedIn required
-                  </span>
-                </Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   name="email"
@@ -603,24 +613,46 @@ function NewCandidatePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="currentSalary">Current Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
-                <Input
+                <MoneyInput
                   id="currentSalary"
-                  name="currentSalary"
-                  type="number"
                   value={formValues.currentSalary}
-                  onChange={(e) => updateField("currentSalary", e.target.value)}
+                  onChange={(v) => updateField("currentSalary", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="desiredSalary">Desired Salary ({getCurrency(formValues.salaryCurrency).symbol})</Label>
-                <Input
+                <MoneyInput
                   id="desiredSalary"
-                  name="desiredSalary"
-                  type="number"
                   value={formValues.desiredSalary}
-                  onChange={(e) => updateField("desiredSalary", e.target.value)}
+                  onChange={(v) => updateField("desiredSalary", v)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ownerId">Owner</Label>
+              <SearchableSelect
+                value={ownerId}
+                onChange={setOwnerId}
+                includeAll={false}
+                placeholder={
+                  teamMembers.length === 0 ? "Loading team…" : "Select an owner"
+                }
+                searchPlaceholder="Search teammates…"
+                minWidth={0}
+                className="w-full"
+                options={teamMembers.map<SearchableSelectOption>((m) => ({
+                  value: m.id,
+                  label:
+                    (m.name || m.email) +
+                    (m.id === currentUserId ? " (you)" : ""),
+                  meta: m.name && m.email ? m.email : undefined,
+                }))}
+              />
+              <p className="text-[10.5px] text-gray-400">
+                Recruiter that will own this candidate's placements and metrics.
+                Only members of this workspace.
+              </p>
             </div>
 
             <div className="space-y-2">

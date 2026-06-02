@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
-import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 
 // ─── Notion-style Multi-Select Filter ───
@@ -159,6 +160,159 @@ function MultiFilter({
   );
 }
 
+// ─── Saved Views (sticky filters + named presets) ───
+//
+// Both bits of state live in localStorage so they survive reloads
+// without a backend round-trip. Per-browser only — moving to a new
+// machine starts fresh. That's a conscious trade-off for the MVP;
+// the alternative is a JobSavedView model in Prisma + endpoints,
+// which we'll add when the team actually starts sharing presets.
+
+const STORAGE_KEYS = {
+  // Latest filter combo the user had on /jobs. Restored on mount.
+  lastFilters: "recruitpro:jobs:lastFilters",
+  // Array of SavedView. Shown in the Views dropdown.
+  savedViews: "recruitpro:jobs:savedViews",
+} as const;
+
+type FilterSnapshot = {
+  statusFilter: string[];
+  workArrangementFilter: string[];
+  locationFilter: string[];
+  clientFilter: string[];
+  recruiterFilter: string[];
+  dateRange: DateRange;
+};
+
+type SavedView = {
+  id: string;
+  name: string;
+  filters: FilterSnapshot;
+};
+
+type FilterSetters = {
+  setStatusFilter: (v: string[]) => void;
+  setWorkArrangementFilter: (v: string[]) => void;
+  setLocationFilter: (v: string[]) => void;
+  setClientFilter: (v: string[]) => void;
+  setRecruiterFilter: (v: string[]) => void;
+  setDateRange: (v: DateRange) => void;
+};
+
+function applySnapshot(snap: Partial<FilterSnapshot>, setters: FilterSetters) {
+  setters.setStatusFilter(Array.isArray(snap.statusFilter) ? snap.statusFilter : []);
+  setters.setWorkArrangementFilter(
+    Array.isArray(snap.workArrangementFilter) ? snap.workArrangementFilter : [],
+  );
+  setters.setLocationFilter(Array.isArray(snap.locationFilter) ? snap.locationFilter : []);
+  setters.setClientFilter(Array.isArray(snap.clientFilter) ? snap.clientFilter : []);
+  setters.setRecruiterFilter(Array.isArray(snap.recruiterFilter) ? snap.recruiterFilter : []);
+  setters.setDateRange(
+    snap.dateRange && typeof snap.dateRange === "object"
+      ? { from: snap.dateRange.from ?? null, to: snap.dateRange.to ?? null }
+      : { from: null, to: null },
+  );
+}
+
+function ViewSwitcher({
+  views,
+  onApply,
+  onSave,
+  onDelete,
+  hasActiveFilters,
+}: {
+  views: SavedView[];
+  onApply: (view: SavedView | null) => void;
+  onSave: () => void;
+  onDelete: (id: string) => void;
+  hasActiveFilters: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-md border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:border-gray-300"
+      >
+        <span>Views</span>
+        <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 right-0 mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              onApply(null);
+              setOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-gray-700"
+          >
+            All jobs
+            <span className="block text-[10px] text-gray-400">No filters applied</span>
+          </button>
+          {views.length > 0 && (
+            <div className="border-t border-gray-100">
+              {views.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 group"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onApply(v);
+                      setOpen(false);
+                    }}
+                    className="flex-1 text-left text-sm text-gray-700 min-w-0 truncate"
+                  >
+                    {v.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Delete view "${v.name}"?`)) onDelete(v.id);
+                    }}
+                    className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                    title="Delete view"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onSave();
+              }}
+              disabled={!hasActiveFilters}
+              className="w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <Plus className="h-3 w-3" /> Save current as view…
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ───
 
 export default function JobsPage() {
@@ -166,7 +320,52 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // Multi-select filters
+  // Bulk selection (checkbox column + action bar). Same pattern as
+  // /candidates: per-id Set, clear on every fresh fetch so a delete
+  // doesn't leave dangling ids.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible(checked: boolean, visibleIds: string[]) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      visibleIds.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  }
+  async function bulkDelete() {
+    if (selectedIds.size === 0 || bulkDeleting) return;
+    const n = selectedIds.size;
+    if (!confirm(`Delete ${n} job${n === 1 ? "" : "s"}? This removes their pipeline, submissions, interviews, and history. Cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch("/api/jobs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        const dead = new Set(selectedIds);
+        setJobs((arr) => arr.filter((j) => !dead.has(j.id)));
+        setSelectedIds(new Set());
+      }
+    } catch {}
+    setBulkDeleting(false);
+  }
+
+  // Multi-select filters. Default is "no filter" (all jobs) — the
+  // user picks what they want and we remember it via localStorage
+  // (see Views switcher below). Earlier defaults baked in
+  // ["OPEN", "ACTIVE"] which surprised users who wanted the full
+  // history.
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [workArrangementFilter, setWorkArrangementFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -174,11 +373,118 @@ export default function JobsPage() {
   const [recruiterFilter, setRecruiterFilter] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
 
+  // Sticky filters — the page restores the last filter combo on
+  // every reload. Storage shape lives under STORAGE_KEYS.lastFilters.
+  // Hydration happens once on mount; subsequent state changes get
+  // written back in the persistence effect below. The mountedRef
+  // gate avoids writing the empty defaults over a stored snapshot
+  // before hydration has happened.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.lastFilters);
+      if (raw) {
+        const snap = JSON.parse(raw) as Partial<FilterSnapshot>;
+        applySnapshot(snap, {
+          setStatusFilter,
+          setWorkArrangementFilter,
+          setLocationFilter,
+          setClientFilter,
+          setRecruiterFilter,
+          setDateRange,
+        });
+      }
+    } catch {
+      // Stored snapshot was malformed — fall back to the empty
+      // defaults (= "All jobs"). Clear the bad blob so we don't
+      // keep trying to parse it.
+      try {
+        localStorage.removeItem(STORAGE_KEYS.lastFilters);
+      } catch {}
+    }
+    mountedRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    const snap: FilterSnapshot = {
+      statusFilter,
+      workArrangementFilter,
+      locationFilter,
+      clientFilter,
+      recruiterFilter,
+      dateRange,
+    };
+    try {
+      localStorage.setItem(STORAGE_KEYS.lastFilters, JSON.stringify(snap));
+    } catch {}
+  }, [statusFilter, workArrangementFilter, locationFilter, clientFilter, recruiterFilter, dateRange]);
+
+  // Named saved views — same localStorage backing, separate key.
+  // Each view is a snapshot of the filter state with a label. The
+  // built-in "All jobs" preset is synthetic and not stored.
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.savedViews);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setSavedViews(arr);
+      }
+    } catch {}
+  }, []);
+  function persistViews(next: SavedView[]) {
+    setSavedViews(next);
+    try {
+      localStorage.setItem(STORAGE_KEYS.savedViews, JSON.stringify(next));
+    } catch {}
+  }
+  function saveCurrentAsView() {
+    const name = window.prompt("View name?");
+    if (!name || !name.trim()) return;
+    const view: SavedView = {
+      id: `v_${Date.now()}`,
+      name: name.trim(),
+      filters: {
+        statusFilter,
+        workArrangementFilter,
+        locationFilter,
+        clientFilter,
+        recruiterFilter,
+        dateRange,
+      },
+    };
+    persistViews([...savedViews, view]);
+  }
+  function applyView(view: SavedView | null) {
+    // Null = "All jobs" → wipe everything.
+    if (!view) {
+      setStatusFilter([]);
+      setWorkArrangementFilter([]);
+      setLocationFilter([]);
+      setClientFilter([]);
+      setRecruiterFilter([]);
+      setDateRange({ from: null, to: null });
+      return;
+    }
+    applySnapshot(view.filters, {
+      setStatusFilter,
+      setWorkArrangementFilter,
+      setLocationFilter,
+      setClientFilter,
+      setRecruiterFilter,
+      setDateRange,
+    });
+  }
+  function deleteView(id: string) {
+    persistViews(savedViews.filter((v) => v.id !== id));
+  }
+
   useEffect(() => {
     fetch("/api/jobs")
       .then((r) => r.json())
       .then((data) => {
         setJobs(data);
+        setSelectedIds(new Set());
         setLoading(false);
       });
   }, []);
@@ -189,6 +495,25 @@ export default function JobsPage() {
     if (!confirm(`Delete "${title}"? This will remove all pipeline data. This cannot be undone.`)) return;
     await fetch(`/api/jobs/${id}`, { method: "DELETE" });
     setJobs(jobs.filter((j) => j.id !== id));
+  }
+
+  // Inline status change from the list. Optimistic update, rollback on
+  // failure — the row is just a status badge so the recruiter doesn't
+  // need to drop into the job detail just to flip Open → On Hold.
+  async function changeStatus(id: string, status: string) {
+    const previous = jobs;
+    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status } : j)));
+    try {
+      const res = await fetch(`/api/jobs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+    } catch {
+      setJobs(previous);
+      alert("Couldn't update status. Try again.");
+    }
   }
 
   // Extract unique filter options with counts
@@ -288,9 +613,12 @@ export default function JobsPage() {
           <h1 className="text-2xl font-bold">Jobs / Searches</h1>
           <p className="text-sm text-gray-500">{jobs.length} total</p>
         </div>
-        <Link href="/jobs/new">
-          <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton type="jobs" disabled={jobs.length === 0} />
+          <Link href="/jobs/new">
+            <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
+          </Link>
+        </div>
       </div>
 
       {/* Search + Filter bar */}
@@ -338,6 +666,22 @@ export default function JobsPage() {
             onChange={setRecruiterFilter}
           />
           <DateRangeFilter value={dateRange} onChange={setDateRange} label="Created" />
+          <ViewSwitcher
+            views={savedViews}
+            onApply={applyView}
+            onSave={saveCurrentAsView}
+            onDelete={deleteView}
+            hasActiveFilters={
+              statusFilter.length +
+                workArrangementFilter.length +
+                locationFilter.length +
+                clientFilter.length +
+                recruiterFilter.length >
+                0 ||
+              !!dateRange.from ||
+              !!dateRange.to
+            }
+          />
         </div>
       </div>
 
@@ -367,6 +711,36 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Bulk action bar — same pattern as /candidates. Above the
+          table so the user can see it without scrolling once a row
+          is checked. */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <span className="text-sm font-medium text-indigo-900">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-indigo-700 hover:text-indigo-900"
+          >
+            Clear
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="jobs" ids={Array.from(selectedIds)} variant="subtle" />
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {bulkDeleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-1">
           {[...Array(6)].map((_, i) => (
@@ -389,7 +763,16 @@ export default function JobsPage() {
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-          <div className="grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="grid grid-cols-[36px_1fr_1fr_90px_80px_130px_100px_70px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider items-center">
+            <div>
+              <input
+                type="checkbox"
+                aria-label="Select all visible jobs"
+                checked={filtered.length > 0 && filtered.every((j: any) => selectedIds.has(j.id))}
+                onChange={(e) => selectAllVisible(e.target.checked, filtered.map((j: any) => j.id))}
+                className="rounded border-gray-300"
+              />
+            </div>
             <div>Title</div>
             <div>Client</div>
             <div>Status</div>
@@ -400,10 +783,22 @@ export default function JobsPage() {
           </div>
 
           {filtered.map((j: any, i: number) => (
-            <Link key={j.id} href={`/jobs/${j.id}`} className="block">
-              <div className={`group grid grid-cols-[1fr_1fr_90px_80px_130px_100px_70px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors cursor-pointer ${
+            <div
+              key={j.id}
+              className={`group grid grid-cols-[36px_1fr_1fr_90px_80px_130px_100px_70px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors ${
                 i < filtered.length - 1 ? "border-b border-gray-100" : ""
-              }`}>
+              } ${selectedIds.has(j.id) ? "bg-indigo-50/30" : ""}`}
+            >
+              <div onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${j.title}`}
+                  checked={selectedIds.has(j.id)}
+                  onChange={() => toggleSelected(j.id)}
+                  className="rounded border-gray-300"
+                />
+              </div>
+              <Link href={`/jobs/${j.id}`} className="contents">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{j.title}</p>
                 </div>
@@ -411,9 +806,32 @@ export default function JobsPage() {
                   <p className="text-sm text-gray-500 truncate">{j.client.name}</p>
                 </div>
                 <div>
-                  <Badge className={`${JOB_STATUS_COLORS[j.status]} text-[10px] px-1.5 py-0`}>
-                    {JOB_STATUS_LABELS[j.status]}
-                  </Badge>
+                  {/* Inline status — coloured to match the badge so the
+                      list still scans like before, but you can change
+                      it without leaving the page. preventDefault +
+                      stopPropagation so the row Link doesn't fire when
+                      the recruiter clicks the dropdown. */}
+                  <select
+                    value={j.status}
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
+                    className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
+                    aria-label={`Status for ${j.title}`}
+                  >
+                    {JOB_STATUS_SELECTABLE.map((value) => (
+                      <option key={value} value={value} className="bg-white text-gray-900">
+                        {JOB_STATUS_LABELS[value]}
+                      </option>
+                    ))}
+                    {/* Render the legacy CLOSED option only when this
+                        specific row still has it — otherwise it stays
+                        out of the picker. Once you flip it, it's gone. */}
+                    {j.status === "CLOSED" && (
+                      <option value="CLOSED" className="bg-white text-gray-900">
+                        {JOB_STATUS_LABELS.CLOSED}
+                      </option>
+                    )}
+                  </select>
                 </div>
                 <div>
                   <Badge className={`${WORK_ARRANGEMENT_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
@@ -446,8 +864,8 @@ export default function JobsPage() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}

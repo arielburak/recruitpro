@@ -18,6 +18,10 @@ type Props = {
   placeholder?: string;
   searchPlaceholder?: string;
   allLabel?: string; // label for the "all" option (value === "all")
+  // When false the "All" sentinel row is omitted. Use for required
+  // pickers (Owner, Recruiter assignment, …) where every option is
+  // a real entity and "any" wouldn't make sense.
+  includeAll?: boolean;
   className?: string;
   minWidth?: number;
   disabled?: boolean;
@@ -30,6 +34,7 @@ export function SearchableSelect({
   placeholder = "Select...",
   searchPlaceholder = "Search...",
   allLabel = "All",
+  includeAll = true,
   className,
   minWidth = 160,
   disabled,
@@ -39,11 +44,10 @@ export function SearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Add "All" option at the top
-  const allOptions: SearchableSelectOption[] = [
-    { value: "all", label: allLabel },
-    ...options,
-  ];
+  // Add "All" option at the top when filter-mode callers want it.
+  const allOptions: SearchableSelectOption[] = includeAll
+    ? [{ value: "all", label: allLabel }, ...options]
+    : options;
 
   const filtered = query.trim()
     ? allOptions.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))

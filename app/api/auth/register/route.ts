@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
 import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
-import { sendWelcomeEmail } from "@/lib/email";
+import { sendWelcomeEmail, sendEmailVerificationEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
   try {
@@ -45,6 +46,13 @@ export async function POST(request: Request) {
         },
       });
 
+      // Email verification: generate a 32-byte hex token + 24h expiry
+      // up front so the verification email can fire as part of signup.
+      const verificationToken = randomBytes(32).toString("hex");
+      const verificationExpiresAt = new Date(
+        Date.now() + 24 * 60 * 60 * 1000,
+      );
+
       const user = await tx.user.create({
         data: {
           email: data.email,
@@ -53,6 +61,8 @@ export async function POST(request: Request) {
           passwordHash,
           role: "ADMIN",
           organizationId: org.id,
+          emailVerificationToken: verificationToken,
+          emailVerificationExpiresAt: verificationExpiresAt,
         },
       });
 
@@ -70,14 +80,16 @@ export async function POST(request: Request) {
         },
       });
 
-      return { org, user, trialEndsAt };
+      return { org, user, trialEndsAt, verificationToken };
     });
 
     // Process any pending firm invites for this email
     await processPendingInvites(data.email, result.org.id, result.user.id).catch(() => {});
 
-    // Fire-and-forget welcome email. A delivery failure (e.g. bad address,
-    // transient Resend outage) shouldn't block account creation.
+    // Fire-and-forget welcome + verification emails. A delivery
+    // failure (bad address, transient Resend outage) shouldn't block
+    // account creation — the user can request a resend from the
+    // dashboard banner once they're logged in.
     const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
     sendWelcomeEmail({
       to: data.email,
@@ -87,6 +99,14 @@ export async function POST(request: Request) {
       trialEndsAt: result.trialEndsAt,
     }).catch((err) => {
       console.error("[register] welcome email failed:", err);
+    });
+
+    sendEmailVerificationEmail({
+      to: data.email,
+      recipientName: data.name,
+      verifyUrl: `${origin}/verify-email?token=${result.verificationToken}`,
+    }).catch((err) => {
+      console.error("[register] verification email failed:", err);
     });
 
     return NextResponse.json(

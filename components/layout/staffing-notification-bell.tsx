@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,16 @@ function timeAgo(iso: string) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  if (diff < 2_592_000) return `${Math.floor(diff / 604800)}w ago`;
+  // For anything older we drop the relative "ago" framing and show a
+  // short, locale-independent date so the row always reads cleanly
+  // (no "23/4/2026" intruders next to "5m ago" rows).
+  const date = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${months[date.getMonth()]} ${date.getDate()}`
+    : `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
 export function StaffingNotificationBell() {
@@ -31,6 +41,14 @@ export function StaffingNotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // Position of the popover relative to the viewport. Computed from
+  // the bell's bounding rect when we open so the portal can render
+  // the dropdown at document.body level and escape every parent
+  // stacking context.
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   async function load() {
     try {
@@ -51,13 +69,39 @@ export function StaffingNotificationBell() {
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // The popover is now portalled out of `ref`, so we have to
+      // explicitly include the button + popover in the "inside"
+      // check. Anything else closes.
+      const insideButton = !!buttonRef.current && buttonRef.current.contains(target);
+      const insidePopover = !!ref.current && ref.current.contains(target);
+      if (!insideButton && !insidePopover) {
         setOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Recompute popover position whenever it opens or the viewport
+  // changes. Using useLayoutEffect so the first render of the
+  // popover already has the right coordinates — no flicker from
+  // (0,0) to the real position.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    function update() {
+      const rect = buttonRef.current!.getBoundingClientRect();
+      // ml-2 → 8px gap from the right edge of the bell button.
+      setPopoverPos({ top: rect.top, left: rect.right + 8 });
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   async function markAllRead() {
     try {
@@ -88,9 +132,75 @@ export function StaffingNotificationBell() {
     setOpen(false);
   }
 
+  // The popover JSX is rendered once and portalled below so it can
+  // escape the sidebar's stacking context. Sidebar uses fixed
+  // positioning with no explicit z-index, so a plain z-60 child of
+  // the bell competed with sibling page content's stacking and
+  // sometimes lost — page headings ghosted through. Portalling to
+  // body sidesteps the issue entirely.
+  const popover = open && popoverPos ? (
+    <div
+      ref={ref}
+      style={{ top: popoverPos.top, left: popoverPos.left }}
+      className="fixed z-[1000] w-[22rem] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden text-gray-900"
+    >
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+        <p className="text-sm font-semibold">Notifications</p>
+        {unreadCount > 0 && (
+          <button
+            onClick={markAllRead}
+            className="text-[11px] text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
+          >
+            <CheckCheck className="h-3 w-3" />
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      <div className="max-h-96 overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="px-8 py-10 text-center">
+            <Bell className="block h-8 w-8 text-gray-200 mx-auto mb-3" />
+            <p className="text-xs text-gray-400 leading-relaxed">No notifications yet.</p>
+          </div>
+        ) : (
+          <ul>
+            {notifications.map((n) => (
+              <li key={n.id}>
+                {n.link ? (
+                  <Link
+                    href={n.link}
+                    onClick={() => handleClick(n)}
+                    className={cn(
+                      "block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
+                      !n.readAt && "bg-indigo-50/40"
+                    )}
+                  >
+                    <NotificationContent n={n} />
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => handleClick(n)}
+                    className={cn(
+                      "w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
+                      !n.readAt && "bg-indigo-50/40"
+                    )}
+                  >
+                    <NotificationContent n={n} />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
         className="relative rounded-md p-1.5 text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200"
         aria-label="Notifications"
@@ -103,61 +213,7 @@ export function StaffingNotificationBell() {
           </span>
         )}
       </button>
-
-      {open && (
-        <div className="absolute left-full top-0 ml-2 z-50 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden text-gray-900">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-            <p className="text-sm font-semibold">Notifications</p>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-[11px] text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
-              >
-                <CheckCheck className="h-3 w-3" />
-                Mark all read
-              </button>
-            )}
-          </div>
-
-          <div className="max-h-96 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-8 text-center">
-                <Bell className="h-8 w-8 text-gray-200 mx-auto mb-2" />
-                <p className="text-xs text-gray-400">No notifications yet.</p>
-              </div>
-            ) : (
-              <ul>
-                {notifications.map((n) => (
-                  <li key={n.id}>
-                    {n.link ? (
-                      <Link
-                        href={n.link}
-                        onClick={() => handleClick(n)}
-                        className={cn(
-                          "block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
-                          !n.readAt && "bg-indigo-50/40"
-                        )}
-                      >
-                        <NotificationContent n={n} />
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => handleClick(n)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
-                          !n.readAt && "bg-indigo-50/40"
-                        )}
-                      >
-                        <NotificationContent n={n} />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
+      {mounted && popover ? createPortal(popover, document.body) : null}
     </div>
   );
 }
@@ -167,7 +223,11 @@ function NotificationContent({ n }: { n: Notification }) {
     <div className="flex items-start gap-2.5">
       {!n.readAt && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
       <div className={cn("min-w-0 flex-1", n.readAt && "pl-3.5")}>
-        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+        {/* Wrap to two lines instead of truncating mid-sentence. The
+            old `truncate` on "Lionpoint Partners invited you to work…"
+            cut off everything past the firm name, which made the
+            notification look broken in the narrow popover. */}
+        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{n.title}</p>
         {n.body && <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{n.body}</p>}
         <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
       </div>

@@ -776,7 +776,7 @@ export default function ClientPortalPage() {
 
                       {!c.summary && (!c.skills || c.skills.length === 0) && selectedSubmission.comments.filter((c) => !!c.user?.name).length === 0 && (
                         <div className="text-center py-8">
-                          <User className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                          <User className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                           <p className="text-sm text-gray-400">
                             No additional profile information available.
                           </p>
@@ -823,7 +823,7 @@ export default function ClientPortalPage() {
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <FileText className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                          <FileText className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                           <p className="text-sm text-gray-400">
                             No documents have been uploaded for this candidate.
                           </p>
@@ -863,7 +863,7 @@ export default function ClientPortalPage() {
                         </div>
                       ) : (
                         <div className="text-center py-6 bg-gray-50 rounded-xl">
-                          <MessageSquare className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                          <MessageSquare className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
                           <p className="text-sm text-gray-400">
                             No feedback yet. Be the first to share your thoughts.
                           </p>
@@ -947,7 +947,7 @@ export default function ClientPortalPage() {
           ) : (
             <div className="flex items-center justify-center h-64 bg-white rounded-xl border border-gray-200">
               <div className="text-center">
-                <User className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                <User className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-gray-400">
                   Select a candidate to view their profile
                 </p>

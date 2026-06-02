@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { clientJobAccessWhere } from "@/lib/client-job-access";
 
 export async function GET() {
   try {
     const ctx = await getClientContext();
 
     const jobs = await prisma.clientJob.findMany({
-      where: { clientId: ctx.clientId },
+      // Visibility scope: admins see all, non-admins see jobs they're
+      // a member of (plus legacy jobs with no member list). Centralized
+      // in clientJobAccessWhere so every list endpoint applies the
+      // same rule.
+      where: clientJobAccessWhere(ctx),
       include: {
         postedBy: { select: { name: true } },
         engagements: {
@@ -21,6 +26,29 @@ export async function GET() {
         // track of who they've already reached out to.
         pendingFirmInvites: {
           select: { id: true, email: true, message: true, createdAt: true },
+        },
+        // Visible members for the JO's chip strip on the dashboard /
+        // detail page. Empty list = "everyone on the team".
+        members: {
+          select: {
+            clientUser: { select: { id: true, name: true, email: true, role: true } },
+          },
+        },
+        // Chat-style notes thread for the client team (replaces the
+        // legacy `notes` string). CLIENT_INTERNAL by definition — the
+        // agency side never sees these rows.
+        comments: {
+          where: { type: "CLIENT_INTERNAL" },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            content: true,
+            type: true,
+            mentions: true,
+            createdAt: true,
+            clientUserId: true,
+            clientUser: { select: { id: true, name: true, title: true } },
+          },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -109,6 +137,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Job title is required" }, { status: 400 });
     }
 
+    // Per-JO access: caller can pass an explicit memberIds list (the
+    // team members who can see this job). The creator is always
+    // included even if omitted from the payload — getting locked out
+    // of a job you just posted would be a baffling UX. memberIds is
+    // also filtered to only ClientUsers of THIS Client so a malicious
+    // caller can't smuggle in IDs from another workspace.
+    const rawMemberIds: string[] = Array.isArray(body.memberIds)
+      ? body.memberIds.filter((id: unknown): id is string => typeof id === "string")
+      : [];
+    const validMembers = rawMemberIds.length
+      ? await prisma.clientUser.findMany({
+          where: { id: { in: rawMemberIds }, clientId: ctx.clientId, isActive: true },
+          select: { id: true },
+        })
+      : [];
+    const memberIds = new Set<string>([
+      ctx.clientUserId,
+      ...validMembers.map((m) => m.id),
+    ]);
+
     const job = await prisma.clientJob.create({
       data: {
         title: body.title,
@@ -121,6 +169,9 @@ export async function POST(request: Request) {
         isRemote: body.workMode ? body.workMode !== "ON_SITE" : (body.isRemote || false),
         clientId: ctx.clientId,
         postedById: ctx.clientUserId,
+        members: {
+          create: Array.from(memberIds).map((cuId) => ({ clientUserId: cuId })),
+        },
       },
     });
 

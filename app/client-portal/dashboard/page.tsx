@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Briefcase,
   Users,
@@ -49,6 +50,32 @@ export default function ClientDashboardPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [teamMenuOpen, setTeamMenuOpen] = useState<string | null>(null);
+
+  // Firms Engaged drawer
+  const [firmsOpen, setFirmsOpen] = useState(false);
+  const [firms, setFirms] = useState<
+    | { organizationId: string; name: string; jobsCount: number; pendingCount: number; candidatesShared: number }[]
+    | null
+  >(null);
+  const [firmsLoading, setFirmsLoading] = useState(false);
+
+  async function openFirmsDrawer() {
+    setFirmsOpen(true);
+    if (firms !== null) return;
+    setFirmsLoading(true);
+    try {
+      const res = await fetch("/api/client-portal/firms-engaged");
+      if (res.ok) {
+        const data = await res.json();
+        setFirms(data.firms || []);
+      } else {
+        setFirms([]);
+      }
+    } catch {
+      setFirms([]);
+    }
+    setFirmsLoading(false);
+  }
 
   useEffect(() => {
     fetch("/api/client-portal/dashboard")
@@ -163,7 +190,15 @@ export default function ClientDashboardPage() {
     0
   );
 
-  const stats = [
+  type Stat = {
+    label: string;
+    value: number;
+    icon: typeof Briefcase;
+    gradient: string;
+    href?: string;
+    onClick?: () => void;
+  };
+  const stats: Stat[] = [
     {
       label: "Open Positions",
       value: openJobs,
@@ -183,7 +218,10 @@ export default function ClientDashboardPage() {
       value: activeRecruiters,
       icon: Handshake,
       gradient: "from-violet-500 to-purple-600",
-      href: null,
+      // No dedicated "recruiters" page in the client portal — open the
+      // same Firms Engaged drawer used by the Hiring Progress widget so
+      // the click does land somewhere useful instead of dead-ending.
+      onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined,
     },
     {
       label: "Total Jobs",
@@ -195,9 +233,49 @@ export default function ClientDashboardPage() {
   ];
 
   const hasJobs = data?.jobs && data.jobs.length > 0;
+  const hasAgencyJobs = (data?.agencyJobs?.length || 0) > 0;
+  const hasAnyJobs = hasJobs || hasAgencyJobs;
+
+  // Unified Jobs list. Two upstream sources:
+  //   - data.jobs        → ClientJob records the client posted themselves
+  //                        (with engagements / firm invites). Link to the
+  //                        ClientJob detail page so they can manage firms.
+  //   - data.agencyJobs  → Job records an agency runs ON BEHALF of the
+  //                        client. The ClientJob detail page can't render
+  //                        these, so they link to the filtered candidates
+  //                        view instead.
+  // We tag each row with a `_source` so the card knows which footer + link
+  // to render, and sort newest first across both sources.
+  const allJobs = hasAnyJobs
+    ? [
+        ...(data?.jobs || []).map((j: any) => ({ ...j, _source: "self" as const })),
+        ...(data?.agencyJobs || []).map((j: any) => ({ ...j, _source: "agency" as const })),
+      ].sort((a, b) => {
+        const at = new Date(a.createdAt || 0).getTime();
+        const bt = new Date(b.createdAt || 0).getTime();
+        return bt - at;
+      })
+    : [];
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Stub-Client onboarding banner. Appears when the workspace
+          was bootstrapped from a Google OAuth signup (or a
+          quick-share invite the recruiter sent) and we haven't
+          collected real company info yet. Inline form so the user
+          can complete it without leaving the dashboard. */}
+      {data?.client?.isStub && (
+        <StubOnboardingBanner
+          defaultName={data?.client?.name || ""}
+          defaultIndustry={data?.client?.industry || ""}
+          onSaved={() => {
+            // Hard reload so the header + every server-rendered
+            // surface picks up the new name without a stale render.
+            window.location.reload();
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -206,7 +284,7 @@ export default function ClientDashboardPage() {
           </h1>
           <p className="text-gray-500 text-sm">
             {data?.client?.industry ? `${data.client.industry} · ` : ""}
-            Manage your hiring pipeline
+            Hiring pipeline, shared searches and candidates from your recruiting firms
           </p>
         </div>
         <Link href="/client-portal/jobs/new">
@@ -219,26 +297,29 @@ export default function ClientDashboardPage() {
 
       {/* Pending Engagements Alert */}
       {pendingEngagements > 0 && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="p-2 bg-amber-100 rounded-xl flex-shrink-0">
-            <Clock className="h-5 w-5 text-amber-600" />
+        <Link href="/client-portal/jobs">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-md transition group">
+            <div className="p-2 bg-amber-100 rounded-xl flex-shrink-0">
+              <Clock className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-amber-900 text-sm">
+                {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
+              </p>
+              <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>
-          <div className="flex-1">
-            <p className="font-semibold text-amber-900 text-sm">
-              {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
-            </p>
-            <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
-          </div>
-        </div>
+        </Link>
       )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((stat) => {
+          const interactive = !!stat.href || !!stat.onClick;
           const inner = (
             <Card
-              key={stat.label}
-              className={`border-0 shadow-sm transition-all ${stat.href ? "hover:shadow-md hover:-translate-y-0.5 cursor-pointer" : ""}`}
+              className={`border-0 shadow-sm transition-all ${interactive ? "hover:shadow-md hover:-translate-y-0.5 cursor-pointer" : ""}`}
             >
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -251,18 +332,31 @@ export default function ClientDashboardPage() {
               </CardContent>
             </Card>
           );
-          return stat.href ? (
-            <Link key={stat.label} href={stat.href}>
-              {inner}
-            </Link>
-          ) : (
-            <div key={stat.label}>{inner}</div>
-          );
+          if (stat.href) {
+            return (
+              <Link key={stat.label} href={stat.href}>
+                {inner}
+              </Link>
+            );
+          }
+          if (stat.onClick) {
+            return (
+              <button
+                key={stat.label}
+                type="button"
+                onClick={stat.onClick}
+                className="text-left"
+              >
+                {inner}
+              </button>
+            );
+          }
+          return <div key={stat.label}>{inner}</div>;
         })}
       </div>
 
       {/* Quick Action / Empty State */}
-      {!hasJobs && (
+      {!hasAnyJobs && (
         <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 rounded-2xl p-8 text-white shadow-lg">
           <div className="flex items-start gap-4">
             <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
@@ -286,11 +380,26 @@ export default function ClientDashboardPage() {
         </div>
       )}
 
-      {/* Job Postings */}
-      {hasJobs && (
+      {/* Jobs — unified list of self-posted ClientJobs and agency-managed
+          Jobs. A small tag on each card identifies the source ("Posted by
+          you" vs "via Firm"); the card body / link target differ but the
+          visual layout is consistent so the section reads as one list. */}
+      {hasAnyJobs && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Your Job Postings</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Jobs</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {allJobs.length} total
+                {hasAgencyJobs && hasJobs ? (
+                  <> · {data.jobs.length} posted by you · {data.agencyJobs.length} from your recruiters</>
+                ) : hasAgencyJobs ? (
+                  <> · {data.agencyJobs.length} from your recruiters</>
+                ) : (
+                  <> · all posted by you</>
+                )}
+              </p>
+            </div>
             <Link href="/client-portal/jobs/new">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs">
                 <Plus className="h-3.5 w-3.5" />
@@ -300,18 +409,22 @@ export default function ClientDashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {data.jobs.map((job: any) => {
+            {allJobs.map((job: any) => {
+              const isAgency = job._source === "agency";
+              const detailHref = isAgency
+                ? `/client-portal/candidates?jobId=${job.id}`
+                : `/client-portal/jobs/${job.id}`;
               const accepted = job.engagements?.filter((e: any) => e.status === "ACCEPTED").length || 0;
               const pending = job.engagements?.filter((e: any) => e.status === "PENDING").length || 0;
               const total = job.engagements?.length || 0;
 
               return (
-                <Card key={job.id} className="border-0 shadow-sm hover:shadow-md transition-all group">
+                <Card key={`${job._source}-${job.id}`} className="border-0 shadow-sm hover:shadow-md transition-all group">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Link href={`/client-portal/jobs/${job.id}`}>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <Link href={detailHref}>
                             <h3 className="font-semibold text-gray-900 hover:text-emerald-600 transition">
                               {job.title}
                             </h3>
@@ -319,7 +432,7 @@ export default function ClientDashboardPage() {
                           <Badge
                             variant="secondary"
                             className={`text-[10px] ${
-                              job.status === "OPEN"
+                              job.status === "OPEN" || job.status === "ACTIVE"
                                 ? "bg-emerald-50 text-emerald-700"
                                 : job.status === "FILLED"
                                 ? "bg-blue-50 text-blue-700"
@@ -328,53 +441,79 @@ export default function ClientDashboardPage() {
                           >
                             {job.status}
                           </Badge>
+                          <span
+                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              isAgency
+                                ? "bg-violet-50 text-violet-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {isAgency
+                              ? job.firmName
+                                ? `via ${job.firmName}`
+                                : "via your recruiter"
+                              : "Posted by you"}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-3 flex-wrap">
                           {job.location && <span>{job.location}</span>}
                           {job.jobType && (
                             <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px]">{job.jobType}</span>
                           )}
                           {job.salaryRange && <span>{job.salaryRange}</span>}
-                          <span className="text-gray-400">Posted {formatDate(job.createdAt)}</span>
+                          {job.createdAt && (
+                            <span className="text-gray-400">Posted {formatDate(job.createdAt)}</span>
+                          )}
                         </div>
 
-                        {/* Engagement Summary */}
-                        {total > 0 && (
-                          <div className="flex items-center gap-4 text-xs">
-                            {accepted > 0 && (
-                              <div className="flex items-center gap-1 text-green-600">
-                                <CheckCircle className="h-3 w-3" />
-                                <span className="font-medium">{accepted} active</span>
+                        {isAgency ? (
+                          // Agency-managed: highlight the candidate share count
+                          // as the actionable signal (review them).
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                              <Users className="h-3 w-3" />
+                              {job.candidatesShared} candidate{job.candidatesShared === 1 ? "" : "s"} shared
+                            </span>
+                          </div>
+                        ) : (
+                          // Self-posted: engagement summary + firm badges.
+                          <>
+                            {total > 0 && (
+                              <div className="flex items-center gap-4 text-xs">
+                                {accepted > 0 && (
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    <CheckCircle className="h-3 w-3" />
+                                    <span className="font-medium">{accepted} active</span>
+                                  </div>
+                                )}
+                                {pending > 0 && (
+                                  <div className="flex items-center gap-1 text-amber-600">
+                                    <Clock className="h-3 w-3" />
+                                    <span className="font-medium">{pending} pending</span>
+                                  </div>
+                                )}
+                                <span className="text-gray-400">{total} firm{total !== 1 ? "s" : ""} invited</span>
                               </div>
                             )}
-                            {pending > 0 && (
-                              <div className="flex items-center gap-1 text-amber-600">
-                                <Clock className="h-3 w-3" />
-                                <span className="font-medium">{pending} pending</span>
+                            {job.engagements?.length > 0 && (
+                              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                {job.engagements.map((eng: any) => (
+                                  <div
+                                    key={eng.id}
+                                    className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${statusColor[eng.status]}`}
+                                  >
+                                    {statusIcon[eng.status]}
+                                    <span className="font-medium">{eng.organization.name}</span>
+                                  </div>
+                                ))}
                               </div>
                             )}
-                            <span className="text-gray-400">{total} firm{total !== 1 ? "s" : ""} invited</span>
-                          </div>
-                        )}
-
-                        {/* Firm Badges */}
-                        {job.engagements?.length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {job.engagements.map((eng: any) => (
-                              <div
-                                key={eng.id}
-                                className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${statusColor[eng.status]}`}
-                              >
-                                {statusIcon[eng.status]}
-                                <span className="font-medium">{eng.organization.name}</span>
-                              </div>
-                            ))}
-                          </div>
+                          </>
                         )}
                       </div>
 
-                      <Link href={`/client-portal/jobs/${job.id}`}>
+                      <Link href={detailHref}>
                         <Button variant="ghost" size="sm" className="gap-1 text-gray-400 group-hover:text-emerald-600 transition">
                           <Eye className="h-3.5 w-3.5" />
                           View
@@ -424,7 +563,7 @@ export default function ClientDashboardPage() {
                     <Input
                       value={inviteName}
                       onChange={(e) => setInviteName(e.target.value)}
-                      placeholder="John Smith"
+                      placeholder="e.g. María López"
                       className="text-sm"
                       required
                     />
@@ -567,16 +706,20 @@ export default function ClientDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[
-                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500" },
-                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500" },
-                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500" },
-                ].map((item) => {
+                {([
+                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", href: "/client-portal/jobs" },
+                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500", onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined },
+                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", href: "/client-portal/candidates" },
+                ] as Array<{ label: string; value: number; max: number; color: string; href?: string; onClick?: () => void }>).map((item) => {
                   const pct = Math.min((item.value / item.max) * 100, 100);
-                  return (
-                    <div key={item.label} className="space-y-1.5">
+                  const interactive = !!item.href || !!item.onClick;
+                  const Row = (
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{item.label}</span>
+                        <span className={`text-gray-600 ${interactive ? "group-hover:text-indigo-600" : ""} flex items-center gap-1.5`}>
+                          {item.label}
+                          {interactive && <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                        </span>
                         <span className="font-bold text-gray-900">{item.value}</span>
                       </div>
                       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -587,6 +730,27 @@ export default function ClientDashboardPage() {
                       </div>
                     </div>
                   );
+                  const wrapperClass = "group block w-full text-left rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-indigo-50/40 transition-colors";
+                  if (item.href) {
+                    return (
+                      <Link key={item.label} href={item.href} className={wrapperClass}>
+                        {Row}
+                      </Link>
+                    );
+                  }
+                  if (item.onClick) {
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={item.onClick}
+                        className={wrapperClass}
+                      >
+                        {Row}
+                      </button>
+                    );
+                  }
+                  return <div key={item.label}>{Row}</div>;
                 })}
               </div>
             </CardContent>
@@ -637,6 +801,144 @@ export default function ClientDashboardPage() {
           </Card>
         </div>
       )}
+
+      <Dialog open={firmsOpen} onOpenChange={setFirmsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Handshake className="h-4 w-4 text-indigo-500" />
+              Recruiting firms engaged
+            </DialogTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Firms actively sourcing for your open jobs. Counts include every job and candidate they&apos;ve worked with you on.
+            </p>
+          </DialogHeader>
+          {firmsLoading ? (
+            <div className="py-8 space-y-2">
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+              <div className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+            </div>
+          ) : !firms || firms.length === 0 ? (
+            <p className="py-8 text-sm text-gray-400 text-center">No firms engaged yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {firms.map((firm) => (
+                <div
+                  key={firm.organizationId}
+                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                    {firm.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{firm.name}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {firm.jobsCount} job{firm.jobsCount === 1 ? "" : "s"}
+                      {firm.pendingCount > 0 && (
+                        <> · <span className="text-amber-600">{firm.pendingCount} pending invite{firm.pendingCount === 1 ? "" : "s"}</span></>
+                      )}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold text-gray-900">{firm.candidatesShared}</p>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide">
+                      candidate{firm.candidatesShared === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Small inline form rendered at the top of the dashboard for stub
+// Clients (Google OAuth self-signups, quick-share invites that
+// haven't filled in real company info yet). Save → PATCH the new
+// /api/client-portal/setup endpoint → reload so the header / every
+// other server-rendered surface picks up the curated name.
+function StubOnboardingBanner({
+  defaultName,
+  defaultIndustry,
+  onSaved,
+}: {
+  defaultName: string;
+  defaultIndustry: string;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [industry, setIndustry] = useState(defaultIndustry);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/client-portal/setup", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), industry: industry.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Could not save");
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch {
+      setError("Something went wrong");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border border-emerald-200 rounded-2xl p-5">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="p-2 bg-emerald-100 rounded-lg shrink-0">
+          <Sparkles className="w-5 h-5 text-emerald-700" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-emerald-900">Tell us about your company</p>
+          <p className="text-sm text-emerald-800/80 mt-0.5">
+            We bootstrapped your workspace from your email domain. Confirm or update the details below so your recruiters see the right company name.
+          </p>
+        </div>
+      </div>
+      <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+        <div className="space-y-1">
+          <Label className="text-xs">Company name *</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Acme Inc."
+            required
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Industry</Label>
+          <Input
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            placeholder="e.g. Technology"
+          />
+        </div>
+        <Button
+          type="submit"
+          className="bg-emerald-600 hover:bg-emerald-700 md:mt-[22px]"
+          disabled={saving || !name.trim()}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </form>
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
     </div>
   );
 }

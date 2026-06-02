@@ -3,7 +3,13 @@ import { z } from "zod";
 export const jobSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
-  status: z.enum(["OPEN", "ACTIVE", "ON_HOLD", "FILLED", "CLOSED"]).default("OPEN"),
+  // Free-form recruiter notes — agency-side private scratchpad,
+  // never reaches the client portal even when the JO is shared.
+  notes: z.string().optional(),
+  status: z
+    .enum(["OPEN", "ACTIVE", "ON_HOLD", "FILLED", "CANCELLED", "LOST"])
+    .default("OPEN"),
+  openings: z.number().int().positive().default(1),
   currency: z.string().default("USD"),
   feeType: z.enum(["PERCENTAGE", "FLAT"]).default("PERCENTAGE"),
   feeAmount: z.number().optional().nullable(),

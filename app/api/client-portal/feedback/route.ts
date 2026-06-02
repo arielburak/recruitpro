@@ -27,9 +27,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // If authenticated client user with a score, use the rating model
+    // If authenticated client user with a score, use the rating model.
+    // `as any` sidesteps the Prisma generic-depth blow-up TS hits on
+    // candidateRating.upsert with a compound where-clause.
     if (rating && clientUserId) {
-      await prisma.candidateRating.upsert({
+      await (prisma.candidateRating as any).upsert({
         where: { submissionId_clientUserId: { submissionId, clientUserId } },
         create: { submissionId, clientUserId, score: rating, feedback: comment || "" },
         update: { score: rating, feedback: comment || "" },

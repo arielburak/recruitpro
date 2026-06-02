@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { Fragment, useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,19 @@ interface MentionUser {
 interface ChatNotesProps {
   comments: any[];
   candidateId?: string;
-  submissionId: string;
+  // submissionId is required for the per-job chat (the canonical
+  // use). When absent we treat the box as candidate-level: posts
+  // only carry `candidateId`, the CLIENT_VISIBLE tab is hidden
+  // because there's no client context to share with at this scope.
+  submissionId?: string;
+  // jobId scopes the thread to a Job (the Notes tab on /jobs/[id]).
+  // Distinct from submissionId: those are tied to a candidate-on-job;
+  // jobId covers standing notes about the search itself.
+  jobId?: string;
   onCommentAdded: () => void;
+  // Visual override — candidate-level notes usually live above the
+  // per-job chat and don't need the full chat height.
+  heightClass?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -40,6 +51,55 @@ function relativeTime(dateStr: string): string {
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Clock time shown next to every bubble (HH:MM in the viewer's locale,
+// 24h since recruiters scan a lot of messages and the colon-separated
+// form is faster to parse than AM/PM).
+function clockTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+// Tooltip on the timestamp — full date + time, used as `title`.
+function fullTimestamp(dateStr: string): string {
+  return new Date(dateStr).toLocaleString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Day-separator label for the divider between messages from different
+// calendar days. "Today" / "Yesterday" / weekday-and-date for the
+// current year / full date for older messages.
+function dayLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function sameDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 function initials(name: string): string {
@@ -95,9 +155,13 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommentAdded, heightClass }: ChatNotesProps) {
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
+  // Candidate-level scope means there's no client to share with, so
+  // we lock to the INTERNAL tab and don't render the CLIENT_VISIBLE
+  // one at all.
+  const candidateScope = !submissionId && !!candidateId;
   const [activeTab, setActiveTab] = useState<"INTERNAL" | "CLIENT_VISIBLE">("INTERNAL");
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -219,7 +283,9 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: text,
-          submissionId,
+          submissionId: submissionId || undefined,
+          candidateId: candidateScope ? candidateId : undefined,
+          jobId: jobId || undefined,
           type: activeTab,
           mentions: mentions.map((m) => m.id),
         }),
@@ -249,46 +315,59 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-[400px] border border-gray-200 rounded-lg bg-white overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
-        <button
-          onClick={() => setActiveTab("INTERNAL")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
-            activeTab === "INTERNAL"
-              ? "border-indigo-600 text-indigo-600 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-          }`}
-        >
+    <div className={`flex flex-col ${heightClass || "h-[400px]"} border border-gray-200 rounded-lg bg-white overflow-hidden`}>
+      {/* Tab bar — candidate-scope chats only have INTERNAL, so we
+          render a thinner header instead of the full tab strip. */}
+      {candidateScope ? (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0 text-xs font-medium text-gray-500">
           <Lock className="h-3.5 w-3.5" />
-          Internal Team
+          Internal candidate notes
           {internalCount > 0 && (
-            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              activeTab === "INTERNAL" ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-600"
-            }`}>
+            <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium bg-gray-200 text-gray-600">
               {internalCount}
             </span>
           )}
-        </button>
-        <button
-          onClick={() => setActiveTab("CLIENT_VISIBLE")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
-            activeTab === "CLIENT_VISIBLE"
-              ? "border-emerald-600 text-emerald-600 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-          }`}
-        >
-          <Globe className="h-3.5 w-3.5" />
-          Shared with Client
-          {clientCount > 0 && (
-            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-              activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-            }`}>
-              {clientCount}
-            </span>
-          )}
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
+          <button
+            onClick={() => setActiveTab("INTERNAL")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
+              activeTab === "INTERNAL"
+                ? "border-indigo-600 text-indigo-600 bg-white"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Internal Team
+            {internalCount > 0 && (
+              <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                activeTab === "INTERNAL" ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-600"
+              }`}>
+                {internalCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("CLIENT_VISIBLE")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 ${
+              activeTab === "CLIENT_VISIBLE"
+                ? "border-emerald-600 text-emerald-600 bg-white"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            Shared with Client
+            {clientCount > 0 && (
+              <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+              }`}>
+                {clientCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
@@ -306,69 +385,96 @@ export function ChatNotes({ comments, candidateId, submissionId, onCommentAdded 
             const { isClient, authorName, displayContent, rating, authorId } = parseComment(c);
             const isCurrentUser = authorId === currentUserId;
             const showHeader = shouldShowHeader(idx);
+            // Day separator: render a centered "Today"/"Yesterday"/date
+            // chip the first time we land on a new calendar day, so
+            // long-running threads read like a chat-history timeline.
+            const prev = idx > 0 ? filtered[idx - 1] : null;
+            const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
 
             return (
-              <div
-                key={c.id}
-                className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
-              >
-                <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
-                  {/* Avatar */}
-                  {showHeader ? (
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                        isClient
-                          ? "bg-emerald-100 text-emerald-700"
-                          : isCurrentUser
-                          ? "bg-indigo-600 text-white"
-                          : "bg-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {initials(authorName)}
-                    </div>
-                  ) : (
-                    <div className="w-8 shrink-0" />
-                  )}
-
-                  {/* Message body */}
-                  <div className={isCurrentUser ? "text-right" : ""}>
-                    {showHeader && (
-                      <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
-                        <span className="text-xs font-semibold text-gray-700">{authorName}</span>
-                        {isClient && (
-                          <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
-                            Client
-                          </Badge>
-                        )}
-                        <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
-                      </div>
-                    )}
-
-                    {rating && (
-                      <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <Star
-                            key={n}
-                            className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {displayContent && (
+              <Fragment key={c.id}>
+                {showDaySeparator && (
+                  <div className="flex items-center gap-2 my-3" aria-hidden="true">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
+                      {dayLabel(c.createdAt)}
+                    </span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+                )}
+                <div
+                  className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
+                >
+                  <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                    {/* Avatar */}
+                    {showHeader ? (
                       <div
-                        className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
-                          isCurrentUser
-                            ? "bg-indigo-600 text-white rounded-tr-md"
-                            : "bg-gray-100 text-gray-800 rounded-tl-md"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                          isClient
+                            ? "bg-emerald-100 text-emerald-700"
+                            : isCurrentUser
+                            ? "bg-indigo-600 text-white"
+                            : "bg-gray-200 text-gray-600"
                         }`}
                       >
-                        {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                        {initials(authorName)}
                       </div>
+                    ) : (
+                      <div className="w-8 shrink-0" />
                     )}
+
+                    {/* Message body */}
+                    <div className={isCurrentUser ? "text-right" : ""}>
+                      {showHeader && (
+                        <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                          <span className="text-xs font-semibold text-gray-700">{authorName}</span>
+                          {isClient && (
+                            <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
+                              Client
+                            </Badge>
+                          )}
+                          <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                        </div>
+                      )}
+
+                      {rating && (
+                        <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Star
+                              key={n}
+                              className={`h-3 w-3 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Bubble + always-visible clock time. Time sits on
+                          the opposite side of the bubble (after for
+                          incoming, before for outgoing) so it never
+                          interferes with the message text. */}
+                      {displayContent && (
+                        <div className={`flex items-end gap-1.5 ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                          <div
+                            className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
+                              isCurrentUser
+                                ? "bg-indigo-600 text-white rounded-tr-md"
+                                : "bg-gray-100 text-gray-800 rounded-tl-md"
+                            }`}
+                          >
+                            {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                          </div>
+                          <span
+                            className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
+                            title={fullTimestamp(c.createdAt)}
+                          >
+                            {clockTime(c.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Fragment>
             );
           })
         )}

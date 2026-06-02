@@ -2,14 +2,21 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { notifyOnNewComment } from "@/lib/chat-notifications";
+import { logActivity } from "@/lib/activity";
+import { accessibleAgencyJobIds, type ClientCtx } from "@/lib/client-job-access";
 
 // Helper: verify the submission belongs to this client AND is shared
-async function verifyAccess(submissionId: string, clientId: string) {
+// AND lives on an agency Job the caller is a member of (or which sits
+// on a legacy-open ClientJob).
+async function verifyAccess(submissionId: string, ctx: ClientCtx) {
+  const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+  if (visibleAgencyJobIds.length === 0) return false;
   const submission = await prisma.candidateSubmission.findFirst({
     where: {
       id: submissionId,
       isSharedWithClient: true,
-      job: { clientId },
+      job: { clientId: ctx.clientId },
+      jobId: { in: visibleAgencyJobIds },
     },
     select: { id: true },
   });
@@ -26,7 +33,7 @@ export async function GET(
     const ctx = await getClientContext();
     const { submissionId } = await params;
 
-    const ok = await verifyAccess(submissionId, ctx.clientId);
+    const ok = await verifyAccess(submissionId, ctx);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const [ratings, comments] = await Promise.all([
@@ -76,7 +83,7 @@ export async function POST(
     const ctx = await getClientContext();
     const { submissionId } = await params;
 
-    const ok = await verifyAccess(submissionId, ctx.clientId);
+    const ok = await verifyAccess(submissionId, ctx);
     if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await request.json();
@@ -95,8 +102,10 @@ export async function POST(
 
     // Upsert rating if score provided (ratings are always visible — they're
     // ratings, not comments. The sharing model for ratings is unchanged.)
+    // `as any` on the delegate sidesteps the Prisma generic-depth blow-up
+    // TS hits on candidateRating.upsert with a compound where-clause.
     if (score) {
-      await prisma.candidateRating.upsert({
+      await (prisma.candidateRating as any).upsert({
         where: {
           submissionId_clientUserId: {
             submissionId,
@@ -138,6 +147,40 @@ export async function POST(
         authorId: ctx.clientUserId,
         authorName: ctx.userName || "A teammate",
       }).catch((e) => console.error("[client feedback POST] notify failed:", e));
+
+      // Activity log: only surface CLIENT_VISIBLE posts on the
+      // agency-side candidate timeline. CLIENT_INTERNAL is the
+      // client's private team chat — leaking that into the agency's
+      // activity feed would defeat the whole point of having two tabs.
+      if (requestedType === "CLIENT_VISIBLE") {
+        try {
+          const sub = await prisma.candidateSubmission.findUnique({
+            where: { id: submissionId },
+            select: {
+              candidateId: true,
+              job: { select: { organizationId: true } },
+            },
+          });
+          if (sub?.candidateId && sub.job?.organizationId) {
+            const preview = comment.length > 80 ? comment.slice(0, 77) + "…" : comment;
+            await logActivity({
+              action: "comment.created",
+              description: `${ctx.userName || "A client"} posted a client-shared note: "${preview}"`,
+              candidateId: sub.candidateId,
+              organizationId: sub.job.organizationId,
+              metadata: {
+                type: requestedType,
+                mentions: mentions.length,
+                submissionId,
+                authorKind: "client",
+                clientUserId: ctx.clientUserId,
+              },
+            });
+          }
+        } catch (e) {
+          console.error("[client feedback POST] activity log failed:", e);
+        }
+      }
     }
 
     return NextResponse.json({ success: true });

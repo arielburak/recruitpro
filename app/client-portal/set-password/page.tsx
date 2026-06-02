@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { Briefcase, Lock } from "lucide-react";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 
 function SetPasswordForm() {
   const router = useRouter();
@@ -17,6 +19,26 @@ function SetPasswordForm() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Stub Clients (created via quick-invite when the recruiter only had
+  // the hiring contact's email) need company info filled in on first
+  // login. We probe the token to know whether to show those inputs.
+  const [isStub, setIsStub] = useState(false);
+  const [stubCompanyName, setStubCompanyName] = useState("");
+  const [stubIndustry, setStubIndustry] = useState("");
+
+  useEffect(() => {
+    if (!token || !email) return;
+    fetch(`/api/client-portal/set-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.isStub) {
+          setIsStub(true);
+          setStubCompanyName(data.currentName === "New Client" ? "" : data.currentName || "");
+          setStubIndustry(data.currentIndustry || "");
+        }
+      })
+      .catch(() => {});
+  }, [token, email]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -39,11 +61,24 @@ function SetPasswordForm() {
       return;
     }
 
+    if (isStub && !stubCompanyName.trim()) {
+      setError("Company name is required");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/client-portal/set-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, email, password }),
+        body: JSON.stringify({
+          token,
+          email,
+          password,
+          ...(isStub
+            ? { companyName: stubCompanyName.trim(), industry: stubIndustry.trim() }
+            : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -66,7 +101,12 @@ function SetPasswordForm() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      // Honor ?callbackUrl= so a brand-new portal user clicking a
+      // share email lands directly on the Job they were invited to,
+      // not the generic dashboard.
+      const cb = searchParams.get("callbackUrl");
+      const safeCb = cb && cb.startsWith("/") && !cb.startsWith("//") ? cb : null;
+      window.location.href = safeCb || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -92,7 +132,9 @@ function SetPasswordForm() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Set up your account</h1>
           <p className="text-gray-500 mt-2 text-sm">
-            Choose a password to access your client portal
+            {isStub
+              ? "Add your company name and pick a password to access your client portal."
+              : "Choose a password to access your client portal"}
           </p>
         </div>
 
@@ -105,6 +147,32 @@ function SetPasswordForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>
+            )}
+
+            {isStub && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="companyName">Company Name *</Label>
+                  <Input
+                    id="companyName"
+                    name="companyName"
+                    placeholder="Acme Inc."
+                    value={stubCompanyName}
+                    onChange={(e) => setStubCompanyName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="industry">Industry</Label>
+                  <Combobox
+                    id="industry"
+                    value={stubIndustry}
+                    onChange={setStubIndustry}
+                    options={INDUSTRY_OPTIONS}
+                    placeholder="Select or type…"
+                  />
+                </div>
+              </>
             )}
 
             <div className="space-y-2">

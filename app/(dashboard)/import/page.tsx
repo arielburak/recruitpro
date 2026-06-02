@@ -7,45 +7,336 @@ import { Badge } from "@/components/ui/badge";
 import {
   Upload,
   FileText,
-  Users,
-  Building,
-  Briefcase,
   CheckCircle,
   AlertCircle,
   Download,
+  ArrowLeft,
 } from "lucide-react";
+import { IMPORT_FIELDS, autoDetectMapping, detectSheetType, type ImportType } from "@/lib/import-fields";
+import { parseSpreadsheetFile, type ParsedSheet } from "@/lib/parse-spreadsheet";
 
+// In multi-sheet mode, each sheet gets its own auto-detected entity
+// type + its own mapping. The "Import all" path runs the imports in
+// dependency order (clients → jobs → candidates) so Jobs.client can
+// resolve against the Clients we just inserted.
+type SheetPlan = {
+  sheetName: string;
+  type: ImportType;
+  mapping: Record<string, string | null>;
+};
+
+// Badge row stays minimal on purpose — the headline formats every
+// ATS exports. Everything else (ODS, Numbers, JSONL, raw SQL dumps,
+// multi-file ZIPs, dBase, SYLK, Lotus, …) is auto-detected from the
+// file the user picks. Showing every supported extension would just
+// make this look like a checkbox dump.
 const SUPPORTED_FORMATS = [
   { name: "CSV", ext: ".csv" },
-  { name: "Excel", ext: ".xlsx / .xls" },
   { name: "TSV", ext: ".tsv" },
+  { name: "Excel", ext: ".xlsx / .xls" },
   { name: "JSON", ext: ".json" },
+  { name: "ZIP", ext: "" },
 ];
 
+// Cap matches what the server-side parser comfortably handles on
+// Vercel's serverless body limit. Generous enough for "I just exported
+// every candidate from another ATS" without inviting 500MB uploads.
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+type Preview = {
+  sheets: ParsedSheet[];
+  activeSheet: string;
+};
+
 export default function ImportPage() {
-  const [importType, setImportType] = useState<"candidates" | "clients" | "jobs">("candidates");
+  const [importType, setImportType] = useState<ImportType>("candidates");
   const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string>("");
+  // Per-sheet plan: each sheet keeps its own auto-detected entity
+  // type + mapping. In single-sheet mode this still works — there's
+  // just one entry. The selected sheet's plan is what powers the
+  // current mapping UI; editing the dropdowns updates that plan.
+  const [plans, setPlans] = useState<SheetPlan[]>([]);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
+
+  // Three logical stages, driven by what we have so far:
+  //   1. no file        → file picker
+  //   2. file + preview → mapping UI
+  //   3. result         → success / errors panel
+  const stage: "pick" | "map" | "done" = result ? "done" : preview ? "map" : "pick";
+
+  // Current sheet's plan — derived so the rest of the page can read
+  // mapping / type without juggling indexes.
+  const activePlan = preview
+    ? plans.find((p) => p.sheetName === preview.activeSheet) || null
+    : null;
+  const mapping = activePlan?.mapping || {};
+  const isMultiSheet = (preview?.sheets.length || 0) > 1;
+
+  function resetAll() {
+    setFile(null);
+    setPreview(null);
+    setParseError("");
+    setPlans([]);
+    setResult(null);
+  }
+
+  async function handleFileChosen(f: File | null) {
+    setResult(null);
+    setParseError("");
+    setPreview(null);
+    setPlans([]);
+    setFile(f);
+    if (!f) return;
+
+    if (f.size > MAX_FILE_BYTES) {
+      setParseError(`File exceeds the ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB limit.`);
+      setFile(null);
+      return;
+    }
+
+    setParsing(true);
+    try {
+      const parsed = await parseSpreadsheetFile(f);
+      const usable = parsed.sheets.filter((s) => s.headers.length > 0);
+      if (usable.length === 0) {
+        setParseError("Could not detect any columns in this file.");
+        setFile(null);
+        setParsing(false);
+        return;
+      }
+      // Auto-detect runs on every sheet regardless of how many we
+      // found. detectSheetType picks the most-likely entity from sheet
+      // name + header coverage, so a CSV named "candidates.csv" with
+      // a firstName/email/phone header lands as Candidates without
+      // the user telling us anything. They can override per sheet in
+      // the next stage if we got it wrong.
+      const initialPlans: SheetPlan[] = usable.map((s) => {
+        const detected = detectSheetType(s.name, s.headers);
+        return {
+          sheetName: s.name,
+          type: detected.type,
+          mapping: autoDetectMapping(detected.type, s.headers),
+        };
+      });
+      setPlans(initialPlans);
+      setPreview({ sheets: usable, activeSheet: usable[0].name });
+      setImportType(initialPlans[0].type);
+    } catch (e: any) {
+      setParseError(e.message || "Could not parse file");
+      setFile(null);
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function setMapping(next: Record<string, string | null>) {
+    if (!activePlan) return;
+    setPlans((current) =>
+      current.map((p) =>
+        p.sheetName === activePlan.sheetName ? { ...p, mapping: next } : p
+      )
+    );
+  }
+
+  function setPlanType(sheetName: string, type: ImportType) {
+    const sheet = preview?.sheets.find((s) => s.name === sheetName);
+    setPlans((current) =>
+      current.map((p) =>
+        p.sheetName === sheetName
+          ? { ...p, type, mapping: sheet ? autoDetectMapping(type, sheet.headers) : p.mapping }
+          : p
+      )
+    );
+    if (preview?.activeSheet === sheetName) setImportType(type);
+  }
+
+  // Sheet picker handler — when the user flips between tabs in a
+  // multi-sheet xlsx, sync the active tab + the type selector with
+  // the per-sheet plan we built up-front.
+  function onSheetChange(name: string) {
+    if (!preview) return;
+    const sheet = preview.sheets.find((s) => s.name === name) || preview.sheets[0];
+    setPreview({ ...preview, activeSheet: sheet.name });
+    const plan = plans.find((p) => p.sheetName === sheet.name);
+    if (plan) setImportType(plan.type);
+  }
+
+  async function postImport(type: ImportType, mappingPayload: Record<string, string | null>, records: any[]) {
+    return fetch("/api/import/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, mapping: mappingPayload, records }),
+    });
+  }
+
+  // Volume safety net: a single POST with 6k+ records would blow
+  // through Vercel's 60s function timeout because Prisma creates
+  // each row in a separate roundtrip to Neon. Splitting into
+  // chunks of 500 keeps every request comfortably under the
+  // timeout AND lets us show real progress to the user.
+  //
+  // Per-chunk results accumulate so the final panel shows the
+  // grand totals (imported / duplicates / flagged / skipped /
+  // errors) just like a single-call import would.
+  const CHUNK_SIZE = 500;
+  type ImportTotals = {
+    imported: number;
+    duplicates: number;
+    flagged: number;
+    skipped: number;
+    total: number;
+    errors: string[];
+  };
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  async function postChunked(
+    type: ImportType,
+    mappingPayload: Record<string, string | null>,
+    records: any[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<ImportTotals> {
+    const totals: ImportTotals = {
+      imported: 0,
+      duplicates: 0,
+      flagged: 0,
+      skipped: 0,
+      total: records.length,
+      errors: [],
+    };
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      const chunk = records.slice(i, i + CHUNK_SIZE);
+      const res = await postImport(type, mappingPayload, chunk);
+      const data = await res.json();
+      if (!res.ok) {
+        totals.errors.push(data.error || `Chunk ${i / CHUNK_SIZE + 1} failed`);
+        // Bail on first error — anything after this would compound
+        // confusion. The chunks we already imported stay.
+        onProgress?.(i + chunk.length, records.length);
+        break;
+      }
+      totals.imported += data.imported || 0;
+      totals.duplicates += data.duplicates || 0;
+      totals.flagged += data.flagged || 0;
+      totals.skipped += data.skipped || 0;
+      if (Array.isArray(data.errors)) {
+        totals.errors.push(...data.errors.slice(0, 5 - totals.errors.length));
+      }
+      onProgress?.(Math.min(i + CHUNK_SIZE, records.length), records.length);
+    }
+    return totals;
+  }
 
   async function handleImport() {
     if (!file) return;
     setImporting(true);
     setResult(null);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("type", importType);
-
+    setProgress(null);
     try {
-      const res = await fetch("/api/import/bulk", { method: "POST", body: formData });
-      const data = await res.json();
-      setResult(data);
+      let res: Response | null = null;
+      let totals: ImportTotals | null = null;
+      if (preview && activeSheet && activePlan) {
+        totals = await postChunked(
+          activePlan.type,
+          activePlan.mapping,
+          activeSheet.rows,
+          (done, total) => setProgress({ done, total })
+        );
+      } else {
+        // JSON files: no wizard, no client parse. Multipart it.
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("type", importType);
+        res = await fetch("/api/import/bulk", { method: "POST", body: fd });
+      }
+      if (totals) {
+        setResult(totals);
+      } else if (res) {
+        const data = await res.json();
+        setResult(data);
+      }
     } catch {
       setResult({ error: "Import failed. Please check your file format." });
     }
     setImporting(false);
+    setProgress(null);
   }
+
+  // Sequential multi-entity import: clients first (so jobs can match
+  // them by name), then jobs, then candidates. Anything else (each
+  // sheet only has one plan in practice) follows in stable order.
+  // No emails fire anywhere on this path — the bulk endpoint only
+  // writes rows; we audited that explicitly for the dry-test case.
+  async function handleImportAll() {
+    if (!preview || plans.length === 0) return;
+    setImporting(true);
+    setResult(null);
+    setProgress(null);
+
+    // Order matters: clients first (so jobs can match them by name),
+    // then jobs and candidates (so externalIds are in the DB), then
+    // the relationship sheet pinned last so its lookups against
+    // externalId hit populated tables.
+    const ORDER: ImportType[] = ["clients", "jobs", "candidates", "pipeline"];
+    const byType = (t: ImportType) =>
+      plans.filter((p) => p.type === t).map((p) => ({
+        plan: p,
+        sheet: preview.sheets.find((s) => s.name === p.sheetName),
+      })).filter((x) => x.sheet);
+    const ordered = ORDER.flatMap(byType);
+
+    const perSheet: { sheet: string; type: ImportType; imported: number; duplicates: number; flagged: number; skipped: number; total: number; error?: string }[] = [];
+    for (const { plan, sheet } of ordered) {
+      if (!sheet) continue;
+      try {
+        // Chunked import per sheet so a 6,000-row candidates tab
+        // doesn't blow through the 60s function timeout. Progress
+        // counter is sheet-local (resets per sheet) so the user
+        // sees movement on every tab.
+        const totals = await postChunked(
+          plan.type,
+          plan.mapping,
+          sheet.rows,
+          (done, total) => setProgress({ done, total })
+        );
+        perSheet.push({
+          sheet: sheet.name,
+          type: plan.type,
+          imported: totals.imported,
+          duplicates: totals.duplicates,
+          flagged: totals.flagged,
+          skipped: totals.skipped,
+          total: totals.total,
+          error: totals.errors[0],
+        });
+      } catch (e: any) {
+        perSheet.push({ sheet: sheet.name, type: plan.type, imported: 0, duplicates: 0, flagged: 0, skipped: 0, total: sheet.rows.length, error: e.message || "Failed" });
+      }
+    }
+
+    setResult({ multi: true, perSheet });
+    setImporting(false);
+    setProgress(null);
+  }
+
+  const fields = IMPORT_FIELDS[importType];
+  const requiredUnmapped = fields.some((f) => f.required && !mapping[f.key]);
+
+  // Whether the "Import all sheets" path is available: needs 2+
+  // sheets and every plan must have required fields wired up.
+  const allReady =
+    plans.length > 1 &&
+    plans.every((p) =>
+      IMPORT_FIELDS[p.type].filter((f) => f.required).every((f) => p.mapping[f.key])
+    );
+  // The current sheet view — derived so the rest of the JSX doesn't
+  // have to repeat the .find lookup.
+  const activeSheet = preview
+    ? preview.sheets.find((s) => s.name === preview.activeSheet) || preview.sheets[0]
+    : null;
 
   return (
     <div className="space-y-6">
@@ -56,7 +347,6 @@ export default function ImportPage() {
         </p>
       </div>
 
-      {/* Bulk Import */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -69,116 +359,427 @@ export default function ImportPage() {
             Export your data from your current ATS as a spreadsheet, then upload it here.
           </p>
 
-          {/* Supported formats */}
           <div className="flex flex-wrap gap-2">
             {SUPPORTED_FORMATS.map((fmt) => (
               <Badge key={fmt.name} variant="secondary" className="text-xs py-1 px-2.5">
                 {fmt.name}
-                <span className="ml-1 text-gray-400">({fmt.ext})</span>
+                {fmt.ext && <span className="ml-1 text-gray-400">({fmt.ext})</span>}
               </Badge>
             ))}
           </div>
 
-          {/* Import type selector */}
-          <div className="flex gap-2">
-            {[
-              { value: "candidates" as const, label: "Candidates", icon: Users },
-              { value: "clients" as const, label: "Clients", icon: Building },
-              { value: "jobs" as const, label: "Jobs", icon: Briefcase },
-            ].map(({ value, label, icon: Icon }) => (
-              <button
-                key={value}
-                onClick={() => { setImportType(value); setResult(null); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  importType === value
-                    ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200"
-                    : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Stage 1 — file picker. No entity-type selector here: we
+              detect the type (or types) from the file itself, then
+              let the user override per-sheet in stage 2. Showing
+              tabs at this point only set the wrong expectation that
+              you have to pre-categorize. */}
+          {stage === "pick" && (
+            <>
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
+                <Upload className="h-8 w-8 text-gray-300 mb-2" />
+                <span className="text-sm font-medium text-gray-700">
+                  {file ? file.name : "Click to upload an export from your ATS"}
+                </span>
+                <span className="text-xs text-gray-400 mt-1">
+                  CSV · TSV · Excel · JSON · ZIP (max 25MB)
+                </span>
+                <span className="text-[11px] text-gray-400 mt-2">
+                  One type or many — we&apos;ll detect candidates, clients, and jobs from your file.
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".csv,.tsv,.json,.jsonl,.ndjson,.txt,.xlsx,.xls,.xlsm,.xlsb,.ods,.fods,.numbers,.dbf,.dif,.sylk,.slk,.prn,.eth,.rtf,.wk1,.wk3,.wk4,.123,.zip,.sql"
+                  onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
+                />
+              </label>
 
-          {/* Expected columns */}
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs font-medium text-gray-500 mb-1">Expected CSV columns for {importType}:</p>
-            <p className="text-xs text-gray-400">
-              {importType === "candidates" && "firstName, lastName, email, phone, linkedIn, location, title, company, skills, source, summary"}
-              {importType === "clients" && "name, industry, website, contactName, contactEmail, contactPhone, notes"}
-              {importType === "jobs" && "title, description, client, salary, location"}
-            </p>
-          </div>
+              {parsing && (
+                <p className="text-xs text-gray-400">Parsing file…</p>
+              )}
+              {parseError && (
+                <div className="bg-red-50 text-red-700 text-sm p-3 rounded-md flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>{parseError}</span>
+                </div>
+              )}
+            </>
+          )}
 
-          {/* File upload */}
-          <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg p-8 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition">
-            <Upload className="h-8 w-8 text-gray-300 mb-2" />
-            <span className="text-sm font-medium text-gray-700">
-              {file ? file.name : "Click to upload a CSV, Excel, TSV or JSON file"}
-            </span>
-            <span className="text-xs text-gray-400 mt-1">
-              CSV, XLSX, XLS, TSV, JSON (max 10MB)
-            </span>
-            <input
-              type="file"
-              className="hidden"
-              accept=".csv,.xlsx,.xls,.tsv,.json"
-              onChange={(e) => {
-                setFile(e.target.files?.[0] || null);
-                setResult(null);
-              }}
-            />
-          </label>
-
-          {file && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm">
-                <FileText className="h-4 w-4 text-gray-400" />
-                <span className="text-gray-700">{file.name}</span>
-                <span className="text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
+          {/* Stage 2 — header mapping + preview. */}
+          {stage === "map" && preview && activeSheet && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4 text-gray-400" />
+                  <span className="text-gray-700">{file?.name}</span>
+                  <span className="text-gray-400">
+                    · {activeSheet.rows.length} row{activeSheet.rows.length === 1 ? "" : "s"} · {activeSheet.headers.length} columns
+                  </span>
+                </div>
+                <button
+                  onClick={resetAll}
+                  className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                  Choose a different file
+                </button>
               </div>
-              <Button onClick={handleImport} disabled={importing}>
-                {importing ? "Importing..." : `Import ${importType}`}
-              </Button>
+
+              {/* Multi-sheet detected: per-sheet plan summary +
+                  one-click "Import all" CTA. Each row shows what we
+                  detected (entity type) + whether the required
+                  fields are mapped. Sheet name still doubles as the
+                  active picker. */}
+              {isMultiSheet && (
+                <div className="bg-indigo-50/50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-indigo-900 font-medium">
+                    Found {plans.length} sections in this file. Each will import as the type below — change it if we got something wrong.
+                  </p>
+                  <div className="space-y-1.5">
+                    {plans.map((p) => {
+                      const sheet = preview.sheets.find((s) => s.name === p.sheetName);
+                      const isActive = p.sheetName === preview.activeSheet;
+                      const missing = IMPORT_FIELDS[p.type].filter((f) => f.required && !p.mapping[f.key]);
+                      const ready = missing.length === 0;
+                      return (
+                        <div
+                          key={p.sheetName}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded ${
+                            isActive ? "bg-white ring-1 ring-indigo-300" : "bg-white/60"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onSheetChange(p.sheetName)}
+                            className="text-sm font-medium text-gray-900 hover:text-indigo-700"
+                          >
+                            {p.sheetName}
+                          </button>
+                          <span className="text-[10px] text-gray-400">
+                            {sheet?.rows.length || 0} rows
+                          </span>
+                          <select
+                            value={p.type}
+                            onChange={(e) => setPlanType(p.sheetName, e.target.value as ImportType)}
+                            className="ml-auto text-xs border rounded px-1.5 py-0.5 bg-white"
+                          >
+                            <option value="candidates">Candidates</option>
+                            <option value="clients">Clients</option>
+                            <option value="jobs">Jobs</option>
+                            <option value="pipeline">Pipeline (relationships)</option>
+                          </select>
+                          {ready ? (
+                            <span className="text-[10px] font-medium text-emerald-700 px-1.5 py-0.5 rounded bg-emerald-50">
+                              Ready
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[10px] font-medium text-amber-700 px-1.5 py-0.5 rounded bg-amber-50"
+                              title={`Missing: ${missing.map((f) => f.label).join(", ")}`}
+                            >
+                              Map {missing.length} field{missing.length === 1 ? "" : "s"}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {progress && progress.total > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-gray-500">
+                        <span>
+                          {progress.done.toLocaleString()} / {progress.total.toLocaleString()} rows in current sheet
+                        </span>
+                        <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-500 transition-all duration-300"
+                          style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <Button
+                    onClick={handleImportAll}
+                    disabled={importing || !allReady}
+                    className="w-full"
+                  >
+                    {importing
+                      ? "Importing all sheets…"
+                      : allReady
+                        ? `Import all ${plans.length} sheets`
+                        : "Resolve the unmapped fields below first"}
+                  </Button>
+                </div>
+              )}
+
+              {/* Single-sheet detection strip — the file only has one
+                  table inside, so we show one inline selector with the
+                  type we auto-detected and let the user override it
+                  in place. Skipped for multi-sheet uploads, which get
+                  the richer per-sheet panel above. */}
+              {!isMultiSheet && activePlan && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50/50 border border-indigo-200 rounded-lg text-sm">
+                  <span className="text-indigo-900 font-medium">Detected as</span>
+                  <select
+                    value={activePlan.type}
+                    onChange={(e) => setPlanType(activePlan.sheetName, e.target.value as ImportType)}
+                    className="text-sm border border-indigo-200 rounded px-2 py-0.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  >
+                    <option value="candidates">Candidates</option>
+                    <option value="clients">Clients</option>
+                    <option value="jobs">Jobs</option>
+                    <option value="pipeline">Pipeline (relationships)</option>
+                  </select>
+                  <span className="text-xs text-gray-500 ml-1">
+                    — change it if we picked the wrong type.
+                  </span>
+                </div>
+              )}
+
+              {/* Sheet picker — single-sheet xlsx and CSV/TSV use
+                  the compact picker; multi-sheet workbooks use the
+                  plan summary above (more informative). */}
+              {preview.sheets.length > 1 && !isMultiSheet && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+                    Sheet
+                  </span>
+                  {preview.sheets.map((s) => {
+                    const isActive = s.name === preview.activeSheet;
+                    return (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => onSheetChange(s.name)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                          isActive
+                            ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200"
+                            : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                        }`}
+                        title={`${s.rows.length} row${s.rows.length === 1 ? "" : "s"} · ${s.headers.length} columns`}
+                      >
+                        {s.name}
+                        <span className={`ml-1 text-[10px] ${isActive ? "text-indigo-500" : "text-gray-400"}`}>
+                          {s.rows.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Mapping table. Each ATS field on the left, a dropdown
+                  on the right offering every detected header (plus
+                  "skip"). Required rows get a red asterisk so the user
+                  can't miss what they need to wire up. */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+                    Map your columns to ATS fields
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    We auto-matched what we could. Adjust anything that looks off.
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {fields.map((field) => (
+                    <div key={field.key} className="flex items-center gap-4 px-4 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          {field.label}
+                          {field.required && <span className="text-red-500 ml-1">*</span>}
+                        </p>
+                        {field.hint && (
+                          <p className="text-[11px] text-gray-400">{field.hint}</p>
+                        )}
+                      </div>
+                      <select
+                        value={mapping[field.key] || ""}
+                        onChange={(e) =>
+                          setMapping({ ...mapping, [field.key]: e.target.value || null })
+                        }
+                        className={`text-sm border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 min-w-[200px] ${
+                          field.required && !mapping[field.key]
+                            ? "border-red-300"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        <option value="">— Skip this field —</option>
+                        {activeSheet.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* First-5 preview using the active mapping. Lets the
+                  user sanity-check that "phone" really maps to a phone
+                  column and not, say, the LinkedIn one. */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+                    Preview · first {Math.min(activeSheet.rows.length, 5)} of {activeSheet.rows.length}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50/60">
+                        {fields.map((f) => (
+                          <th key={f.key} className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
+                            {f.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeSheet.rows.slice(0, 5).map((row, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          {fields.map((f) => {
+                            const header = mapping[f.key];
+                            const val = header ? row[header] : "";
+                            return (
+                              <td key={f.key} className="px-3 py-1.5 text-gray-700 whitespace-nowrap max-w-[200px] truncate" title={val || ""}>
+                                {val || <span className="text-gray-300">—</span>}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {requiredUnmapped && (
+                <div className="bg-amber-50 text-amber-700 text-sm p-3 rounded-md flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>Map every required field (marked with *) before importing.</span>
+                </div>
+              )}
+
+              {progress && progress.total > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-gray-500">
+                    <span>
+                      Importing batch — {progress.done.toLocaleString()} / {progress.total.toLocaleString()} rows
+                    </span>
+                    <span>{Math.round((progress.done / progress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-500 transition-all duration-300"
+                      style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button onClick={handleImport} disabled={importing || requiredUnmapped}>
+                  {importing ? "Importing..." : `Import ${activeSheet.rows.length} ${importType}`}
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Results */}
-          {result && (
-            <div className={`rounded-lg p-4 ${result.error ? "bg-red-50" : "bg-green-50"}`}>
-              {result.error ? (
-                <div className="flex items-center gap-2 text-red-700">
-                  <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                  <span className="text-sm">{result.error}</span>
-                </div>
-              ) : (
-                <div className="space-y-2">
+          {/* Stage 3 — result panel. */}
+          {stage === "done" && result && (
+            <div className="space-y-3">
+              {result.multi ? (
+                <div className="rounded-lg p-4 bg-green-50 space-y-2">
                   <div className="flex items-center gap-2 text-green-700">
                     <CheckCircle className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm font-medium">
-                      Import complete! {result.imported} of {result.total} records imported.
-                    </span>
+                    <span className="text-sm font-medium">All sheets processed</span>
                   </div>
-                  {result.skipped > 0 && (
-                    <p className="text-xs text-green-600 ml-7">
-                      {result.skipped} records skipped (duplicates or missing required fields)
-                    </p>
-                  )}
-                  {result.errors?.length > 0 && (
-                    <div className="ml-7">
-                      <p className="text-xs text-amber-600">Some errors occurred:</p>
-                      {result.errors.map((err: string, i: number) => (
-                        <p key={i} className="text-xs text-amber-500">{err}</p>
-                      ))}
+                  <div className="ml-7 space-y-1 text-xs text-gray-700">
+                    {result.perSheet.map((r: any) => (
+                      <div key={r.sheet} className="flex items-center gap-2">
+                        <span className="font-medium">{r.sheet}</span>
+                        <span className="text-gray-400">({r.type})</span>
+                        <span className="ml-auto">
+                          {r.error ? (
+                            <span className="text-red-600">{r.error}</span>
+                          ) : (
+                            <>
+                              <span className="text-green-700">{r.imported} imported</span>
+                              {r.duplicates > 0 && (
+                                <span className="text-gray-500" title="Already in your workspace">
+                                  {" "}· {r.duplicates} duplicates
+                                </span>
+                              )}
+                              {r.flagged > 0 && (
+                                <span className="text-amber-600" title="Same title at the same client — imported anyway">
+                                  {" "}· {r.flagged} flagged
+                                </span>
+                              )}
+                              {r.skipped > 0 && (
+                                <span className="text-amber-600"> · {r.skipped} skipped</span>
+                              )}
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className={`rounded-lg p-4 ${result.error ? "bg-red-50" : "bg-green-50"}`}>
+                  {result.error ? (
+                    <div className="flex items-center gap-2 text-red-700">
+                      <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                      <span className="text-sm">{result.error}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-green-700">
+                        <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                        <span className="text-sm font-medium">
+                          Import complete! {result.imported} of {result.total} records imported.
+                        </span>
+                      </div>
+                      {result.duplicates > 0 && (
+                        <p className="text-xs text-gray-600 ml-7">
+                          {result.duplicates} already in your workspace — skipped to avoid duplicates.
+                        </p>
+                      )}
+                      {result.flagged > 0 && (
+                        <p className="text-xs text-amber-700 ml-7">
+                          {result.flagged} look like duplicates of records already in your workspace. Imported anyway — review them if any were unintended.
+                        </p>
+                      )}
+                      {result.skipped > 0 && (
+                        <p className="text-xs text-amber-700 ml-7">
+                          {result.skipped} skipped due to missing required fields or errors.
+                        </p>
+                      )}
+                      {result.errors?.length > 0 && (
+                        <div className="ml-7">
+                          <p className="text-xs text-amber-600">Some errors occurred:</p>
+                          {result.errors.map((err: string, i: number) => (
+                            <p key={i} className="text-xs text-amber-500">{err}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
+              <Button variant="outline" size="sm" onClick={resetAll}>
+                Import more
+              </Button>
             </div>
           )}
 
-          {/* Download template */}
+          {/* Template downloads — always visible so the user can grab
+              one before they start. */}
           <div className="border-t pt-4">
             <p className="text-xs text-gray-400 mb-2">Need a template?</p>
             <div className="flex gap-2">

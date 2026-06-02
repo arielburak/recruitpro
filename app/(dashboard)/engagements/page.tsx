@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,23 +14,70 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  ArrowRight,
   Briefcase,
   Mail,
+  Send,
+  Handshake,
+  Trophy,
+  ChevronRight,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+
+// Agency view of the engagements graph, the mirror of the client
+// portal /engagements page. Same layout: aggregate strip, Pending
+// section with Accept/Decline, Active engagements list (per-client
+// cards with stats + click-through to /engagements/[clientId] for
+// the per-job breakdown), Declined compact list. Same shape both
+// sides so jumping between the agency and client perspective
+// feels symmetric.
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return "—";
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const days = Math.floor((now - then) / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function clientInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || "")
+    .join("");
+}
 
 export default function EngagementsPage() {
   const router = useRouter();
   const [engagements, setEngagements] = useState<any[]>([]);
+  const [clientGroups, setClientGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/engagements")
-      .then((res) => res.json())
-      .then((data) => setEngagements(Array.isArray(data) ? data : []))
+    // Two parallel fetches: the per-engagement list drives the
+    // Pending and Declined sections (each invite is its own row with
+    // Accept/Decline actions), and the per-Client rollup drives the
+    // "Active engagements" cards so multiple Jobs at the same hiring
+    // company collapse into one row with a drill-down detail page.
+    Promise.all([
+      fetch("/api/engagements").then((r) => r.json()),
+      fetch("/api/engagements/by-client").then((r) => r.json()),
+    ])
+      .then(([list, grouped]) => {
+        setEngagements(Array.isArray(list) ? list : []);
+        setClientGroups(grouped?.clients || []);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -56,15 +104,21 @@ export default function EngagementsPage() {
         return;
       }
 
-      // Refresh list
-      const updated = await fetch("/api/engagements").then((r) => r.json());
+      // Refresh both lists so the just-actioned row moves into the
+      // right bucket (declined → bottom; accepted → active card via
+      // by-client rollup).
+      const [updated, grouped] = await Promise.all([
+        fetch("/api/engagements").then((r) => r.json()),
+        fetch("/api/engagements/by-client").then((r) => r.json()),
+      ]);
       setEngagements(Array.isArray(updated) ? updated : []);
+      setClientGroups(grouped?.clients || []);
     } catch {}
     setResponding(null);
   }
 
   const pending = engagements.filter((e) => e.status === "PENDING");
-  const responded = engagements.filter((e) => e.status !== "PENDING");
+  const declined = engagements.filter((e) => e.status === "DECLINED");
 
   if (loading) {
     return (
@@ -77,16 +131,33 @@ export default function EngagementsPage() {
     );
   }
 
+  const totals = clientGroups.reduce(
+    (acc: any, c: any) => ({
+      jobs: acc.jobs + c.jobsCount,
+      submitted: acc.submitted + c.submitted,
+      offers: acc.offers + c.offers,
+      placements: acc.placements + c.placements,
+    }),
+    { jobs: 0, submitted: 0, offers: 0, placements: 0 }
+  );
+
+  const isEmpty = engagements.length === 0 && clientGroups.length === 0;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Inbox className="h-6 w-6 text-indigo-600" />
-          Engagement Requests
-        </h1>
-        <p className="text-gray-500 text-sm">
-          Job requests from hiring companies looking for recruiting help
-        </p>
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+          <Inbox className="h-5 w-5 text-indigo-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Engagements</h1>
+          <p className="text-sm text-gray-500">
+            {isEmpty
+              ? "No engagement requests yet."
+              : `${clientGroups.length} client${clientGroups.length === 1 ? "" : "s"} working across ${totals.jobs} job${totals.jobs === 1 ? "" : "s"}.`}
+          </p>
+        </div>
       </div>
 
       {subscriptionError && (
@@ -109,6 +180,37 @@ export default function EngagementsPage() {
         </div>
       )}
 
+      {/* Aggregate strip */}
+      {clientGroups.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Clients engaged
+            </div>
+            <div className="text-xl font-semibold text-gray-900">{clientGroups.length}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Submitted
+            </div>
+            <div className="text-xl font-semibold text-gray-900">{totals.submitted}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Offers
+            </div>
+            <div className="text-xl font-semibold text-amber-600">{totals.offers}</div>
+          </div>
+          <div className="rounded-xl border bg-white px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
+              Placements
+            </div>
+            <div className="text-xl font-semibold text-emerald-600">{totals.placements}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending — incoming invites needing Accept / Decline */}
       {pending.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
@@ -127,7 +229,7 @@ export default function EngagementsPage() {
                       <span className="text-xs text-gray-400">{formatDate(eng.invitedAt)}</span>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900">{eng.clientJob.title}</h3>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 flex-wrap">
                       <span className="flex items-center gap-1">
                         <Building2 className="h-3.5 w-3.5" />
                         {eng.clientJob.client.name}
@@ -189,15 +291,78 @@ export default function EngagementsPage() {
         </div>
       )}
 
-      {responded.length > 0 && (
+      {/* Active engagements — per-Client cards with totals + drill-down
+          to /engagements/[clientId] for the per-job breakdown. */}
+      {clientGroups.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-            Past Engagements ({responded.length})
+            Active engagements ({clientGroups.length} client{clientGroups.length === 1 ? "" : "s"})
           </h2>
-          {responded.map((eng) => (
-            <Card key={eng.id} className={eng.status === "ACCEPTED" ? "border-l-4 border-l-green-400" : ""}>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
+          {clientGroups.map((c: any) => (
+            <Link
+              key={c.clientId}
+              href={`/engagements/${c.clientId}`}
+              className="block group"
+            >
+              <Card className="transition-colors group-hover:border-emerald-200 border-l-4 border-l-green-400">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                    {clientInitials(c.clientName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 truncate group-hover:text-emerald-700">
+                        {c.clientName}
+                      </h3>
+                      {c.industry && (
+                        <span className="text-xs font-normal text-gray-400">
+                          {c.industry}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                      <span className="inline-flex items-center gap-1">
+                        <Briefcase className="h-3 w-3 text-gray-400" />
+                        {c.jobsCount} job{c.jobsCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Send className="h-3 w-3 text-gray-400" />
+                        {c.submitted} submitted
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Handshake className="h-3 w-3 text-gray-400" />
+                        {c.offers} offer{c.offers === 1 ? "" : "s"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Trophy className="h-3 w-3 text-gray-400" />
+                        {c.placements} placement{c.placements === 1 ? "" : "s"}
+                      </span>
+                      {c.lastActivityAt && (
+                        <span className="inline-flex items-center gap-1 ml-auto text-gray-400">
+                          <Clock className="h-3 w-3" />
+                          Last activity {relativeDate(c.lastActivityAt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 shrink-0" />
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* Declined */}
+      {declined.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+            Declined
+          </h2>
+          {declined.map((eng) => (
+            <Card key={eng.id}>
+              <CardContent className="p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h3 className="font-medium text-gray-900">{eng.clientJob.title}</h3>
                   <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
                     <Building2 className="h-3.5 w-3.5" />
@@ -205,33 +370,23 @@ export default function EngagementsPage() {
                     <span>· {formatDate(eng.respondedAt || eng.invitedAt)}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={eng.status === "ACCEPTED" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}>
-                    {eng.status === "ACCEPTED" ? (
-                      <><CheckCircle className="h-3 w-3 mr-1" /> Accepted</>
-                    ) : (
-                      <><XCircle className="h-3 w-3 mr-1" /> Declined</>
-                    )}
-                  </Badge>
-                  {eng.status === "ACCEPTED" && eng.jobId && (
-                    <Button size="sm" variant="ghost" className="gap-1 text-xs" onClick={() => router.push(`/jobs/${eng.jobId}`)}>
-                      View Job <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
+                <Badge className="bg-gray-100 text-gray-500">
+                  <XCircle className="h-3 w-3 mr-1" /> Declined
+                </Badge>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {engagements.length === 0 && (
+      {/* Empty state */}
+      {isEmpty && (
         <Card>
           <CardContent className="p-12 text-center">
             <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <h3 className="text-lg font-semibold text-gray-900 mb-1">No engagement requests yet</h3>
             <p className="text-gray-500 text-sm">
-              When hiring companies invite your firm to work on their searches, they'll appear here.
+              When hiring companies invite your firm to work on their searches, they&apos;ll appear here.
             </p>
           </CardContent>
         </Card>

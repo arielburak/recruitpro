@@ -15,7 +15,9 @@ import {
   Check,
   ChevronDown,
   ArrowUpDown,
+  Trash2,
 } from "lucide-react";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
 
 // ─── Types ───
@@ -263,6 +265,56 @@ export default function CandidatesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Bulk selection for the row checkboxes + floating action bar.
+  // Keyed by candidate id; clearing on every reload so a delete of
+  // the visible page doesn't leave dangling ids selected.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible(checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) candidates.forEach((c) => next.add(c.id));
+      else candidates.forEach((c) => next.delete(c.id));
+      return next;
+    });
+  }
+
+  async function bulkDelete() {
+    if (selectedIds.size === 0 || bulkDeleting) return;
+    const n = selectedIds.size;
+    if (!confirm(`Delete ${n} candidate${n === 1 ? "" : "s"}? This removes their submissions, interviews, and history. Cannot be undone.`)) {
+      return;
+    }
+    setBulkDeleting(true);
+    try {
+      const res = await fetch("/api/candidates/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        // Optimistic local update so the page doesn't go blank while
+        // the refetch happens.
+        const deletedSet = new Set(selectedIds);
+        setCandidates((cs) => cs.filter((c) => !deletedSet.has(c.id)));
+        setSelectedIds(new Set());
+      }
+    } catch {}
+    setBulkDeleting(false);
+  }
+
+  // CSV export uses the shared <ExportCsvButton/> component below —
+  // no per-page handler needed.
+
   // Filter state
   const [ownerFilter, setOwnerFilter] = useState<string[]>([]);
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -309,6 +361,7 @@ export default function CandidatesPage() {
     const data = await res.json();
     setCandidates(data.candidates || []);
     setTotal(data.total || 0);
+    setSelectedIds(new Set());
     setLoading(false);
   }, [page, search, sort, ownerFilter, locationFilter, jobFilter, clientFilter, stageFilter, dateRange]);
 
@@ -375,11 +428,14 @@ export default function CandidatesPage() {
           <h1 className="text-2xl font-bold">Candidates</h1>
           <p className="text-sm text-gray-500">{total} total</p>
         </div>
-        <Link href="/candidates/new">
-          <Button size="sm">
-            <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton type="candidates" disabled={candidates.length === 0} />
+          <Link href="/candidates/new">
+            <Button size="sm">
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Search + Filter bar */}
@@ -462,6 +518,36 @@ export default function CandidatesPage() {
         </div>
       )}
 
+      {/* Bulk action bar — only renders when at least one candidate
+          is selected. Stays above the table so it doesn't get lost
+          when the user scrolls the rows. */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <span className="text-sm font-medium text-indigo-900">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-indigo-700 hover:text-indigo-900"
+          >
+            Clear
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkDeleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {bulkDeleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="space-y-1">
@@ -492,7 +578,16 @@ export default function CandidatesPage() {
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_1fr_140px_100px_80px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="grid grid-cols-[36px_1fr_1fr_140px_100px_80px] gap-0 bg-gray-50 border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider items-center">
+            <div>
+              <input
+                type="checkbox"
+                aria-label="Select all visible candidates"
+                checked={candidates.length > 0 && candidates.every((c) => selectedIds.has(c.id))}
+                onChange={(e) => selectAllVisible(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </div>
             <div>Name</div>
             <div>Title / Company</div>
             <div>Location</div>
@@ -502,14 +597,26 @@ export default function CandidatesPage() {
 
           {/* Rows */}
           {candidates.map((c, i) => (
-            <Link key={c.id} href={`/candidates/${c.id}`}>
-              <div
-                className={`grid grid-cols-[1fr_1fr_140px_100px_80px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors cursor-pointer ${
-                  i < candidates.length - 1 ? "border-b border-gray-100" : ""
-                }`}
-              >
+            <div
+              key={c.id}
+              className={`grid grid-cols-[36px_1fr_1fr_140px_100px_80px] gap-0 px-4 py-2.5 items-center hover:bg-indigo-50/50 transition-colors ${
+                i < candidates.length - 1 ? "border-b border-gray-100" : ""
+              } ${selectedIds.has(c.id) ? "bg-indigo-50/30" : ""}`}
+            >
+              {/* Checkbox — stops click propagation so the row link
+                  below doesn't fire while toggling selection. */}
+              <div onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${c.firstName} ${c.lastName}`}
+                  checked={selectedIds.has(c.id)}
+                  onChange={() => toggleSelected(c.id)}
+                  className="rounded border-gray-300"
+                />
+              </div>
+              <Link href={`/candidates/${c.id}`} className="contents">
                 {/* Name + email */}
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0 cursor-pointer">
                   <div className="w-7 h-7 bg-gradient-to-br from-indigo-500 to-violet-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
                     {c.firstName[0]}
                     {c.lastName[0]}
@@ -565,8 +672,8 @@ export default function CandidatesPage() {
                     <span className="text-xs text-gray-300">—</span>
                   )}
                 </div>
-              </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}

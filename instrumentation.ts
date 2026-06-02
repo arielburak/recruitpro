@@ -46,4 +46,60 @@ export async function register() {
   } catch (err) {
     console.error("[grandfather-orgs] failed:", err);
   }
+
+  // One-shot: seed an explicit ClientJobMember row on any ClientJob
+  // that had none. Removed legacy-open semantics on the client-portal
+  // access helper — without this backfill, historical rows would
+  // silently turn invisible to every team member.
+  try {
+    const { runClientJobMemberBackfill } = await import(
+      "./lib/migrations/client-job-members"
+    );
+    const stats = await runClientJobMemberBackfill();
+    if (!stats.skipped) {
+      console.log(
+        `[client-job-members] seeded ${stats.seeded}/${stats.scanned} orphan jobs in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[client-job-members] failed:", err);
+  }
+
+  // One-shot: align clientStageId with "Placed" for every submission
+  // that's already been placed on the agency side. Forward path was
+  // fixed in PR #251 (POST /api/placements now mirrors the stage);
+  // this catches existing rows where the mirror never ran.
+  try {
+    const { runPlacedClientStageBackfill } = await import(
+      "./lib/migrations/placed-client-stage"
+    );
+    const stats = await runPlacedClientStageBackfill();
+    if (!stats.skipped) {
+      console.log(
+        `[placed-client-stage] aligned ${stats.updated}/${stats.scanned} placed submissions in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[placed-client-stage] failed:", err);
+  }
+
+  // One-shot: merge duplicate ClientJob rows that point at the same
+  // underlying agency Job (client posted FIRST + agency later ran
+  // "Invite Client" against the same engagement). PR #254 added the
+  // forward-path dedup; this cleans up pre-fix rows.
+  try {
+    const { runMergeDuplicateClientJobs } = await import(
+      "./lib/migrations/merge-duplicate-client-jobs"
+    );
+    const stats = await runMergeDuplicateClientJobs();
+    if (!stats.skipped) {
+      console.log(
+        `[merge-client-jobs] merged ${stats.duplicatesMerged}/${stats.duplicatesFound} duplicate pairs ` +
+          `(${stats.membersMoved} members, ${stats.commentsMoved} comments, ${stats.pendingInvitesDropped} pending invites) ` +
+          `in ${stats.durationMs}ms`
+      );
+    }
+  } catch (err) {
+    console.error("[merge-client-jobs] failed:", err);
+  }
 }

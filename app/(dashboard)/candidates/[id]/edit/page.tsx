@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, X } from "lucide-react";
+import { X } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
 import Link from "next/link";
@@ -94,11 +95,7 @@ export default function EditCandidatePage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/candidates/${params.id}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
-        </Link>
+        <BackButton fallback={`/candidates/${params.id}`} />
         <h1 className="text-2xl font-bold">Edit Candidate</h1>
       </div>
 

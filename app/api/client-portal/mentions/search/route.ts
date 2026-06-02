@@ -5,7 +5,13 @@ import { getClientContext } from "@/lib/tenant";
 // Search users for @mention autocomplete in the client portal.
 // scope=internal → only ClientUser of the caller's client
 // scope=shared   → ClientUser of the client + staffing Users from firms with an engagement on this submission's job
-// Optional: ?submissionId=xxx (required for shared scope to scope staffing users)
+//
+// Optional filters:
+//   ?submissionId=xxx — required for shared scope to scope staffing users.
+//   ?clientJobId=xxx  — narrows the client-user results to people with
+//     access to this Job (per ClientJobMember + admin bypass). Used by
+//     the ClientJob Notes chat so you can't @ someone who can't even
+//     see the search.
 export async function GET(request: NextRequest) {
   try {
     const ctx = await getClientContext();
@@ -13,8 +19,31 @@ export async function GET(request: NextRequest) {
     const scope = params.get("scope") === "shared" ? "shared" : "internal";
     const q = (params.get("q") || "").trim();
     const submissionId = params.get("submissionId") || "";
+    const clientJobId = params.get("clientJobId") || "";
 
     const results: Array<{ id: string; name: string; email: string; kind: "client" | "staffing"; title?: string | null }> = [];
+
+    // Job-access filter for the per-Job mention case. Stricter than
+    // view access on purpose: view defaults to "whole team" when no
+    // members are listed (legacy mode), but @-mentions need to ping
+    // someone deliberately, so we only allow people the user has
+    // actively put on the search — the CREATOR plus anyone in the
+    // explicit members list. No ADMIN bypass: management role
+    // doesn't auto-grant search-level access (see lib/client-job-access).
+    let jobMemberIds: Set<string> | null = null;
+    if (clientJobId) {
+      const job = await prisma.clientJob.findFirst({
+        where: { id: clientJobId, clientId: ctx.clientId },
+        include: { members: { select: { clientUserId: true } } },
+      });
+      if (!job) {
+        return NextResponse.json([]);
+      }
+      jobMemberIds = new Set<string>([
+        job.postedById,
+        ...job.members.map((m) => m.clientUserId),
+      ]);
+    }
 
     // Client team members always available
     const clientUsers = await prisma.clientUser.findMany({
@@ -32,13 +61,19 @@ export async function GET(request: NextRequest) {
         // Exclude the current user
         NOT: { id: ctx.clientUserId },
       },
-      select: { id: true, name: true, email: true, title: true },
-      take: 8,
+      select: { id: true, name: true, email: true, title: true, role: true },
+      take: 16,
       orderBy: { name: "asc" },
     });
 
     for (const u of clientUsers) {
+      // Per-Job filter — only the creator and explicitly added
+      // members can be mentioned. No ADMIN bypass on purpose.
+      if (jobMemberIds && !jobMemberIds.has(u.id)) {
+        continue;
+      }
       results.push({ id: u.id, name: u.name, email: u.email, title: u.title, kind: "client" });
+      if (results.length >= 8) break;
     }
 
     if (scope === "shared" && submissionId) {

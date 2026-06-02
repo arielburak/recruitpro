@@ -9,6 +9,42 @@ datasource db {
 
 // ─── MULTI-TENANCY ───
 
+// One per real human. Holds the authentication primitives (email,
+// password, verification state) that used to be duplicated on User
+// and ClientUser. A single Account can have N memberships: agency-
+// side (User rows pointing at an Organization) and/or client-side
+// (ClientUser rows pointing at a Client). That solves two problems:
+//
+//   1. The same person can be a recruiter at one firm AND a hiring
+//      contact at another (or even at the same firm, when the agency
+//      also hires for itself). Today that requires duplicate logins.
+//
+//   2. The same hiring contact can sit at multiple Clients. Today
+//      ClientUser.email is globally unique, so we error out on the
+//      second invite. With Account in the middle, the second invite
+//      just adds another ClientUser membership.
+//
+// This PR introduces the model and backfills 1:1. Auth, login flow
+// and the smart-invite paths follow in separate PRs so each step is
+// reversible.
+model Account {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  // Verification state — moved over from the two old tables. Email-
+  // password signups land with token + expiry set; verifiedAt is set
+  // once they click. OAuth (Google) and invite-via-set-password flows
+  // backfill verifiedAt directly because the email is already proven.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users       User[]
+  clientUsers ClientUser[]
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -22,6 +58,10 @@ model Organization {
 
   users        User[]
   clients      Client[]
+  // Hiring companies this agency is engaged with (decoupled from
+  // Client.organizationId so the same hiring company can be worked
+  // on by multiple agencies). See OrganizationClient.
+  clientEngagements OrganizationClient[]
   candidates   Candidate[]
   contacts     Contact[]
   jobs         Job[]
@@ -30,6 +70,7 @@ model Organization {
   activities   Activity[]
   engagements  FirmEngagement[]
   interviews   Interview[]
+  calendarEvents CalendarEvent[]
 }
 
 model User {
@@ -41,10 +82,25 @@ model User {
   role           UserRole @default(USER)
   avatar         String?
   isActive       Boolean  @default(true)
+  // Email verification. Email/password signups land with all three
+  // nullable: verifiedAt becomes a timestamp once the token in the
+  // verification email is clicked. Google OAuth users skip the email
+  // round-trip — we set verifiedAt at user-creation time because
+  // Google has already verified the address. Token + expiry are
+  // cleared on success.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
+  // Link to the unified Account. Nullable while we migrate — the
+  // backfill script in scripts/migrate-account-identity.ts populates
+  // every existing row. Future PRs make this non-null and migrate
+  // password / verification reads to the Account side.
+  accountId      String?
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  account               Account?              @relation(fields: [accountId], references: [id])
   organization          Organization          @relation(fields: [organizationId], references: [id])
   candidates            Candidate[]
   submissions           CandidateSubmission[] @relation("SubmittedBy")
@@ -57,8 +113,11 @@ model User {
   integrations          UserIntegration[]
   notifications         UserNotification[]
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
+  createdCalendarEvents CalendarEvent[]       @relation("CalendarEventCreator")
+  attributedPlacements  Placement[]           @relation("PlacementRecruiter")
 
   @@index([organizationId])
+  @@index([accountId])
 }
 
 // In-app notifications for staffing users (one per user, personal inbox).
@@ -133,6 +192,16 @@ model Client {
   defaultGuaranteePeriod Int?  @default(90)
   isOffLimits    Boolean  @default(false)
   bdStatus       String?
+  // True when the Client was created via the quick-share flow on Job /new
+  // (just an email, no real company info). The invited hiring manager
+  // enriches name / industry on first login, which clears this flag.
+  isStub         Boolean  @default(false)
+  // organizationId is kept as audit metadata ("created by this org")
+  // but is NOT the authoritative ownership signal anymore. A real-
+  // world hiring company exists once in the DB and multiple agencies
+  // can engage with it concurrently — see OrganizationClient. New
+  // agency-side queries filter by the OrganizationClient join, not
+  // by this column.
   organizationId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -147,8 +216,40 @@ model Client {
   clientJobs   ClientJob[]
   pipelineStages ClientPipelineStage[]
   notifications  ClientNotification[]
+  // Agencies engaged with this hiring company. One Client can be
+  // worked on by multiple agencies in parallel — each agency only
+  // sees their OWN Jobs at the client (Job.organizationId scope)
+  // and the ClientJobs the client explicitly shared (FirmEngagement).
+  engagedOrganizations OrganizationClient[]
+  calendarEvents       CalendarEvent[]
 
   @@index([organizationId])
+}
+
+// Join between an agency Organization and a hiring-company Client.
+// Models the "which agencies work with this client" relationship.
+// Listing/access on the agency side filters via this join instead of
+// Client.organizationId — that way a hiring company (e.g. Acme) lives
+// once in the DB and any agency can engage with it without the system
+// duplicating the Client record.
+model OrganizationClient {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  addedAt        DateTime @default(now())
+  // Foreign-system identifier the agency used for this Client (e.g.
+  // OpenCATS company_id). Lets a bulk-import re-wire pipeline rows
+  // back to the right Client even when several Clients in the
+  // workspace share a name.
+  externalId     String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, clientId])
+  @@unique([organizationId, externalId])
+  @@index([organizationId])
+  @@index([clientId])
 }
 
 // ─── CONTACTS (people at hiring companies) ───
@@ -179,24 +280,42 @@ model Contact {
 
 model ClientUser {
   id           String   @id @default(cuid())
-  email        String
+  // Globally unique today. Will be removed in a follow-up PR once
+  // every read path goes through Account — at that point the same
+  // email can have ClientUser memberships at multiple Clients, since
+  // identity lives on Account and ClientUser becomes purely a
+  // (account, client, role) link.
+  email        String   @unique
   name         String
   title        String?
   passwordHash String?
   role         UserRole @default(USER)
   clientId     String
   isActive     Boolean  @default(true)
+  // Email verification mirrors User: token + expiry are populated at
+  // self-signup time and cleared on verify. The invited path
+  // (set-password via mail token) and OAuth backfill emailVerifiedAt
+  // at first activation since the email itself is proof of ownership.
+  emailVerifiedAt            DateTime?
+  emailVerificationToken     String?   @unique
+  emailVerificationExpiresAt DateTime?
+  // Link to the unified Account. Nullable while we migrate. See User.accountId.
+  accountId    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  account    Account?          @relation(fields: [accountId], references: [id])
   client     Client            @relation(fields: [clientId], references: [id])
   comments   Comment[]
   ratings    CandidateRating[]
   clientJobs ClientJob[]
   notifications ClientNotification[]
+  // Per-JO access — the JOs this team member was explicitly added to.
+  // See ClientJobMember; combined with role=ADMIN as a global bypass.
+  jobMemberships ClientJobMember[]
 
-  @@unique([email, clientId])
   @@index([clientId])
+  @@index([accountId])
 }
 
 model ClientPortalToken {
@@ -234,6 +353,11 @@ model Candidate {
   source         String?
   isOffLimits    Boolean  @default(false)
   tags           String[] @default([])
+  // Foreign-system identifier (e.g. OpenCATS candidate_id) used by
+  // bulk imports to re-wire candidate↔job pipeline rows. Optional;
+  // when set, it's unique per organization so a follow-up import can
+  // resolve "the same OpenCATS row" reliably.
+  externalId     String?
   organizationId String
   ownerId        String
   createdAt      DateTime @default(now())
@@ -246,7 +370,9 @@ model Candidate {
   comments     Comment[]             @relation("CandidateComments")
   activities   Activity[]            @relation("CandidateActivities")
   interviews   Interview[]
+  calendarEvents CalendarEvent[]
 
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([ownerId])
   @@index([organizationId, lastName, firstName])
@@ -258,16 +384,38 @@ model Job {
   id             String    @id @default(cuid())
   title          String
   description    String?
+  // Free-form recruiter notes scoped to this Job. Agency-side only —
+  // the client portal has its own ClientJob.notes that doesn't sync
+  // here, so an "HM has a side commission" note stays internal to
+  // the firm.
+  notes          String?
   status         JobStatus @default(OPEN)
+  // Number of seats the client signed for on this search. The
+  // placement flow uses it to decide when to auto-flip status to
+  // FILLED: a single-seat job goes to FILLED as soon as one
+  // placement is created, while multi-seat jobs stay Active until
+  // every seat is placed. Defaults to 1 — the typical agency search.
+  openings       Int       @default(1)
   currency       String    @default("USD")
   feeType        FeeType   @default(PERCENTAGE)
   feeAmount      Decimal?
+  // Optional per-job override of the client's defaultPaymentTerms /
+  // defaultGuaranteePeriod. Used heavily for Staff Aug clients where
+  // every search negotiates its own terms (client.default* are null).
+  // Recruiting jobs usually leave these null and inherit from the
+  // client. Placement fallback chain: job.* ?? client.default*.
+  paymentTerms   Int?
+  guaranteePeriod Int?
   salary         String?
   location       String?
   workMode       String    @default("ON_SITE")
   clientId         String
   hiringManagerId  String?
   organizationId   String
+  // Foreign-system identifier (e.g. OpenCATS joborder_id). Same shape
+  // and purpose as Candidate.externalId — bulk-imports use it to
+  // resolve pipeline rows to the right Job.
+  externalId       String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -276,16 +424,23 @@ model Job {
   organization   Organization        @relation(fields: [organizationId], references: [id])
   stages         PipelineStage[]
   submissions    CandidateSubmission[]
+  comments       Comment[]           @relation("JobComments")
   assignments    JobAssignment[]
   placements     Placement[]
   documents      Document[]
   interviews     Interview[]
+  calendarEvents CalendarEvent[]
   // Populated when the Job was born out of a client-portal invite. Used
   // to enforce person-level privacy on Job visibility — if any of the
   // linked engagements has invitedUserId set, only the assignees see
   // the Job (admins included).
   firmEngagements FirmEngagement[]
+  // Mirror row created in the client portal when the recruiter uses
+  // "Invite Client" from /jobs/[id]. The client sees this in their
+  // portal but can't edit it — the agency owns the source of truth.
+  clientJobMirror ClientJob? @relation("ClientJobMirror")
 
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([clientId])
   @@index([organizationId, status])
@@ -296,6 +451,12 @@ enum JobStatus {
   ACTIVE
   ON_HOLD
   FILLED
+  CANCELLED
+  LOST
+  // Kept only so legacy rows that still have CLOSED type-check.
+  // New saves can't write it (see lib/validations/job.ts and the
+  // PATCH allowlist) — recruiters flip legacy CLOSED rows to one
+  // of the active statuses via the inline dropdown on /jobs.
   CLOSED
 }
 
@@ -428,6 +589,16 @@ model Comment {
   mentions     String[]    @default([])
   candidateId  String?
   submissionId String?
+  // Job-level notes — the chat-style thread on /jobs/[id] (no
+  // submission required). Lets the recruiter capture standing
+  // observations about a search ("HM cobra una comisión", "salary
+  // cap real es 180k", etc.) with authorship + timestamps + mentions.
+  jobId        String?
+  // ClientJob-level notes — the chat-style thread on the client
+  // portal job page. Private to the hiring company's team and never
+  // synced to the agency side (those have their own Job.notes /
+  // jobId thread). CommentType is always CLIENT_INTERNAL here.
+  clientJobId  String?
   userId       String?
   clientUserId String?
   createdAt    DateTime    @default(now())
@@ -435,11 +606,15 @@ model Comment {
 
   candidate  Candidate?            @relation("CandidateComments", fields: [candidateId], references: [id])
   submission CandidateSubmission?  @relation("SubmissionComments", fields: [submissionId], references: [id])
+  job        Job?                  @relation("JobComments", fields: [jobId], references: [id])
+  clientJob  ClientJob?            @relation("ClientJobComments", fields: [clientJobId], references: [id])
   user       User?                 @relation(fields: [userId], references: [id])
   clientUser ClientUser?           @relation(fields: [clientUserId], references: [id])
 
   @@index([candidateId])
   @@index([submissionId])
+  @@index([jobId])
+  @@index([clientJobId])
 }
 
 enum CommentType {
@@ -475,6 +650,13 @@ model Interview {
   // meetings.
   microsoftEventId          String?
   microsoftCalendarOwnerId  String?
+  // True iff the candidate was emailed a calendar invite for this
+  // interview (the "Send calendar invite by email" checkbox was on
+  // at create time AND the candidate had an email to receive it).
+  // Backfilled false for pre-existing rows because we don't have a
+  // historical record either way — better to under-report than to
+  // claim we emailed candidates we didn't.
+  inviteSent     Boolean         @default(false)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -486,6 +668,9 @@ model Interview {
   interviewers    InterviewAssignment[]
   clientContacts  InterviewClientContact[]
   feedback        InterviewFeedback[]
+  // Attachments uploaded against the interview (agenda, prep doc,
+  // NDA, etc.). Cascade-deleted with the interview.
+  documents       Document[]
 
   @@index([organizationId, startTime])
   @@index([candidateId])
@@ -558,6 +743,10 @@ model Document {
   jobId        String?
   clientJobId  String?
   clientId     String?
+  // Attachments on a scheduled interview (think Outlook-style invite
+  // attachments: agenda, prep doc, NDA, JD reference). Null for
+  // documents pinned to candidates / jobs / clients.
+  interviewId  String?
   uploadedBy   String
   createdAt    DateTime @default(now())
 
@@ -565,11 +754,13 @@ model Document {
   job       Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   client    Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  interview Interview? @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
   @@index([candidateId])
   @@index([jobId])
   @@index([clientJobId])
   @@index([clientId])
+  @@index([interviewId])
 }
 
 // ─── ACTIVITIES ───
@@ -600,9 +791,45 @@ model Placement {
   // startDate is the confirmed start once the candidate actually shows up.
   estimatedStartDate  DateTime?
   startDate           DateTime?
+  // What flavour of engagement this placement records. "HH" = headhunting
+  // / contingent recruiting: one-time fee on hire (the historical default,
+  // and what every existing row is). "OS" = outsourcing / staff aug: the
+  // candidate stays on the agency's payroll and we bill the client a
+  // recurring monthlyFee. Different fields are meaningful per kind:
+  //   - HH  → feeAmount / feePercentage / paymentTerms / guaranteePeriod
+  //   - OS  → monthlyFee / endDate (null = still active)
+  // The form pre-picks `kind` from Client.engagementType (RECRUITING → HH;
+  // STAFF_AUG → OS) and the create API rejects mixed payloads so an OS
+  // row can't accidentally get a giant flat feeAmount.
+  kind                String          @default("HH")
+  monthlyFee          Decimal?
+  // When the OS engagement ended (left, contract over, etc.). null on
+  // HH placements and on active OS engagements. Used to compute MRR
+  // (active when null) and to bound revenue accrual per period.
+  endDate             DateTime?
   feeAmount           Decimal?
   feePercentage       Decimal?
   salary              Decimal?
+  // Optional currency override. Falls back to job.currency at display time
+  // when null — most placements just inherit the search's currency, but
+  // we keep this column so a placement closed in a different currency
+  // (e.g. ARS contract on a USD-default client) can be represented
+  // faithfully without rewriting the job.
+  currency            String?
+  // How to interpret the `salary` value. Recruiting fees are always
+  // calculated against the candidate's ANNUAL salary, but recruiters in
+  // some markets (LATAM especially) quote and store the salary as a
+  // monthly figure. When MONTHLY, the fee calc multiplies by 12 before
+  // applying the percentage. Default ANNUAL keeps the US-friendly path.
+  salaryPeriod        String?         @default("ANNUAL")
+  // Gross vs net interpretation of the `salary` value. Argentina (and
+  // a few other LATAM markets) quotes either depending on context —
+  // candidates often negotiate take-home (NET), employers think in
+  // gross. Recruiting fees are calculated against the GROSS figure,
+  // so when NET is stored we convert via the AR payroll ratio
+  // (~17% worker contributions → gross = net / 0.83) at fee-calc
+  // time. Default BRUTO keeps the US-friendly path.
+  salaryKind          SalaryKind      @default(BRUTO)
   // paymentTerms is the number of days between startDate (or estimated)
   // and when the agency expects to be paid. paymentDueDate is the
   // resolved date — kept on the row so reporting doesn't have to compute it.
@@ -615,6 +842,13 @@ model Placement {
   submissionId        String?         @unique
   jobId               String
   clientId            String
+  // Recruiter attributed to this placement. Defaults to the
+  // candidate's owner at create-time (so existing flows keep
+  // working), but the form lets the operator override per
+  // placement — useful when one user sourced and another closed.
+  // Nullable for back-compat with rows created before this field
+  // existed; UI falls back to candidate.owner when null.
+  recruiterId         String?
   organizationId      String
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
@@ -622,16 +856,23 @@ model Placement {
   submission   CandidateSubmission? @relation(fields: [submissionId], references: [id])
   job          Job                  @relation(fields: [jobId], references: [id])
   client       Client               @relation(fields: [clientId], references: [id])
+  recruiter    User?                @relation("PlacementRecruiter", fields: [recruiterId], references: [id])
   organization Organization         @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
   @@index([organizationId, createdAt(sort: Desc)])
+  @@index([recruiterId])
 }
 
 enum InvoiceStatus {
   DRAFT
   SENT
   PAID
+}
+
+enum SalaryKind {
+  BRUTO   // gross — what the employer pays before payroll deductions
+  NETO    // net — what the candidate takes home after worker contributions
 }
 
 // ─── CLIENT JOBS (posted by clients directly) ───
@@ -641,6 +882,11 @@ model ClientJob {
   title          String
   description    String?
   requirements   String?
+  // Free-form notes from the client-portal side. Strictly private to
+  // the hiring company — Job.notes on the agency side never syncs
+  // back, so the client can keep "HM is impossible to schedule with"
+  // observations without leaking to the firms they engage.
+  notes          String?
   location       String?
   salaryRange    String?
   salaryCurrency String   @default("USD")
@@ -649,17 +895,53 @@ model ClientJob {
   status       String   @default("OPEN")
   clientId     String
   postedById   String
+  // True when the row was mirrored over from an agency-side Job via
+  // the "Invite Client" flow on /jobs/[id]. The client sees the search
+  // in their portal but can't edit description / requirements /
+  // documents — the agency owns the source of truth. Notes (chat) and
+  // team management stay editable because those are about how the
+  // client team collaborates around the search, not about the search
+  // itself.
+  createdByAgency Boolean @default(false)
+  // FK to the originating agency Job when createdByAgency is true.
+  // Nullable + onDelete: SetNull so deleting the agency Job leaves the
+  // client's view of the engagement intact instead of cascading.
+  sourceJobId    String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   client             Client              @relation(fields: [clientId], references: [id])
   postedBy           ClientUser          @relation(fields: [postedById], references: [id])
+  sourceJob          Job?                @relation("ClientJobMirror", fields: [sourceJobId], references: [id], onDelete: SetNull)
   engagements        FirmEngagement[]
   pendingFirmInvites PendingFirmInvite[]
   documents          Document[]
+  // Per-JO member access: ClientUsers explicitly listed here can see
+  // this job. If the array is empty, ALL team members of the Client
+  // can see it (backwards-compatible default for jobs created before
+  // this feature shipped). Admins always see everything regardless.
+  members            ClientJobMember[]
+  // Chat-style notes thread for the client team. Replaces the legacy
+  // free-form `notes` string above; that field is kept for historical
+  // rows and is backfilled into Comment rows on first migration.
+  comments           Comment[]           @relation("ClientJobComments")
 
   @@index([clientId])
   @@index([status])
+}
+
+model ClientJobMember {
+  id           String   @id @default(cuid())
+  clientJobId  String
+  clientUserId String
+  addedAt      DateTime @default(now())
+
+  clientJob  ClientJob  @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+  clientUser ClientUser @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+
+  @@unique([clientJobId, clientUserId])
+  @@index([clientJobId])
+  @@index([clientUserId])
 }
 
 // ─── FIRM ENGAGEMENTS (links client jobs to recruiting firms) ───
@@ -773,4 +1055,78 @@ model UserInvite {
 
   @@index([token])
   @@index([organizationId])
+}
+
+// ─── CALENDAR EVENTS ───
+//
+// Generic personal calendar events (Outlook / Google-style) that live
+// alongside Interviews on the recruiter's /calendar grid. Use cases:
+// follow-up reminders, internal team syncs, blocking time, "call so-
+// and-so back next week" notes. Interviews stay their own model
+// because they carry candidate / submission / feedback / external
+// invite semantics; events deliberately don't — they're a personal
+// block.
+//
+// Visibility is per-user: every event belongs to its creator and
+// only the creator sees it. No invitee list, no email fan-out (the
+// agency policy is "don't email the candidate from generic events"
+// — Interviews are the only path that mails anyone).
+//
+// Optional relations are nullable on purpose so the same model
+// handles:
+//   - "FU with Acme" → clientId set
+//   - "Touch base with John Doe" → candidateId set
+//   - "Team weekly on Sales VP" → jobId set
+//   - Pure personal block → none set
+// Relations use onDelete: SetNull so dropping a Job / Candidate /
+// Client doesn't nuke the recruiter's reminders alongside it.
+model CalendarEvent {
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  startTime      DateTime
+  endTime        DateTime
+  allDay         Boolean  @default(false)
+  location       String?
+  meetingLink    String?
+  timezone       String   @default("America/Argentina/Buenos_Aires")
+  // High-level kind for the chip color + icon. Free-form string instead
+  // of an enum so we can iterate without a migration; the UI maps
+  // unknown values to the neutral "EVENT" style.
+  kind           String   @default("EVENT") // EVENT | FOLLOW_UP | REMINDER | MEETING
+  // Optional recurrence. null = one-shot event (the historical
+  // default). When set, the event repeats from `startTime` forever
+  // until `recurrenceEndDate` (also optional). Supported values:
+  // DAILY | WEEKLY | MONTHLY | YEARLY. Expansion into individual
+  // calendar chips happens client-side from the base row + this
+  // string — no fan-out rows in the DB.
+  // `recurrenceInterval` is the step between occurrences in the same
+  // unit (every N days / weeks / months / years). 1 = the simple
+  // "every week" case; 2 = "every other week"; 3 = "every 3 weeks";
+  // etc. Defaults to 1 so existing rows keep their current cadence.
+  recurrence            String?
+  recurrenceInterval    Int       @default(1)
+  recurrenceEndDate     DateTime?
+
+  clientId       String?
+  candidateId    String?
+  jobId          String?
+
+  organizationId String
+  createdBy      String
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  candidate    Candidate?   @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id])
+  creator      User         @relation("CalendarEventCreator", fields: [createdBy], references: [id])
+
+  @@index([organizationId, startTime])
+  @@index([createdBy, startTime])
+  @@index([clientId])
+  @@index([candidateId])
+  @@index([jobId])
 }

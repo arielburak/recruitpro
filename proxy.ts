@@ -23,13 +23,14 @@ export async function proxy(request: NextRequest) {
   }
 
   // Client portal public pages (login, set-password, reset-password) — always allow
-  const clientPublicPaths = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
+  const clientPublicPaths = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password", "/client-portal/verify-email"];
   if (clientPublicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Client portal API routes that don't need session (register, check-account)
-  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password"];
+  // Client portal API routes that don't need session (register, check-account,
+  // verify-email + resend — the recipient has no session yet by definition).
+  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password", "/api/client-portal/verify-email", "/api/client-portal/resend-verification"];
   if (clientPublicApis.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
@@ -43,13 +44,30 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     const isClientPortal = pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal");
-    const loginUrl = isClientPortal ? "/client-portal/login" : "/login";
-    return NextResponse.redirect(new URL(loginUrl, request.url));
+    const loginPath = isClientPortal ? "/client-portal/login" : "/login";
+    const loginUrl = new URL(loginPath, request.url);
+    // Preserve the original destination so deep links survive the login
+    // detour — e.g. clicking a share email at /client-portal/go?clientId=...
+    // when not yet authed should resume on /go after sign-in, not dashboard.
+    if (pathname.startsWith("/client-portal") && pathname !== loginPath) {
+      const target = pathname + (request.nextUrl.search || "");
+      loginUrl.searchParams.set("callbackUrl", target);
+    }
+    return NextResponse.redirect(loginUrl);
   }
 
   // Shared API routes accessible to both staffing and client users
   const sharedApiRoutes = ["/api/profile"];
   const isSharedApi = sharedApiRoutes.some((p) => pathname.startsWith(p));
+
+  // Agency-owned APIs that happen to live under /api/client-portal/* because
+  // they manage client-portal data on the agency's behalf (e.g. issuing
+  // set-password invites for a Client's portal account). They use
+  // getOrgContext() internally, so let staffing users through — the
+  // "no client-portal access for agency users" rule below would otherwise
+  // 401 them.
+  const agencyClientPortalApis = ["/api/client-portal/tokens"];
+  const isAgencyClientPortalApi = agencyClientPortalApis.some((p) => pathname.startsWith(p));
 
   // Client users can only access client portal (plus shared APIs)
   if (
@@ -63,11 +81,13 @@ export async function proxy(request: NextRequest) {
 
   // Staffing firm users accessing client portal → redirect to client login
   // (they need to sign out of staffing and sign in as client)
-  // But allow shared APIs like /api/profile
+  // But allow shared APIs like /api/profile, plus agency-owned APIs that
+  // happen to be namespaced under /api/client-portal/*.
   if (
     !token.isClientUser &&
     (pathname.startsWith("/client-portal") || pathname.startsWith("/api/client-portal")) &&
-    !isSharedApi
+    !isSharedApi &&
+    !isAgencyClientPortalApi
   ) {
     // For pages, redirect to client login
     if (pathname.startsWith("/client-portal")) {

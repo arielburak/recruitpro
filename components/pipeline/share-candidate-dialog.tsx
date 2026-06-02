@@ -131,7 +131,7 @@ export function ShareCandidateDialog({ open, onOpenChange, submission, onShared 
           <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-800 flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
-              The candidate will appear in the client portal at <strong>Under Review</strong>. They can move it through
+              The candidate will appear in the client portal at <strong>Submitted</strong>. They can move it through
               their own pipeline (Interviewing, Offered, Placed, etc.).
             </span>
           </div>

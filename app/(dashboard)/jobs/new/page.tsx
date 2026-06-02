@@ -4,6 +4,9 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
+import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,8 +18,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
+import { Upload, FileText, X, Loader2, Search, Check, ExternalLink, Plus } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
+import { JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE } from "@/lib/constants";
+import {
+  saveJobDraft,
+  loadJobDraft,
+  clearJobDraft,
+  saveJdFile,
+  loadJdFile,
+  clearJdFile,
+} from "@/lib/job-draft-storage";
 import Link from "next/link";
 
 type JobDuplicateMatch = {
@@ -28,26 +41,6 @@ type JobDuplicateMatch = {
   client: { id: string; name: string };
 };
 
-// Key under which we stash the in-progress Job form state when the recruiter
-// hops over to the Create Client page, so they don't lose their typing/parsing
-// when they come back.
-const JOB_DRAFT_KEY = "newJobDraft";
-
-type JobDraft = {
-  title: string;
-  titleFromDoc: boolean;
-  description: string;
-  descriptionFromDoc: boolean;
-  location: string;
-  workMode: string;
-  currency: string;
-  feeType: string;
-  feeAmount: string;
-  termsAutoFilled: boolean;
-  parseStatus: string;
-  jdFileName?: string | null;
-};
-
 function NewJobContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,7 +49,6 @@ function NewJobContent() {
   const [error, setError] = useState("");
   const [clients, setClients] = useState<any[]>([]);
   const [jdFile, setJdFile] = useState<File | null>(null);
-  const [jdFileMissing, setJdFileMissing] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseStatus, setParseStatus] = useState("");
   const [description, setDescription] = useState("");
@@ -68,6 +60,11 @@ function NewJobContent() {
   const [descriptionFromDoc, setDescriptionFromDoc] = useState(false);
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
+  const [status, setStatus] = useState("OPEN");
+  // Stored as `number | ""` so the user can wipe the field while
+  // typing without us snapping it back to 1 mid-keystroke. Submit
+  // coerces empty → 1 below.
+  const [openings, setOpenings] = useState<number | "">(1);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Fee terms state (auto-filled from client defaults)
@@ -81,6 +78,14 @@ function NewJobContent() {
   const [clientSearch, setClientSearch] = useState("");
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const clientRef = useRef<HTMLDivElement>(null);
+
+  // Client mode used to be a toggle between "quick-share by email"
+  // (which auto-created a stub Client + invited the hiring contact)
+  // and "pick existing client." That mixed creating-a-job with
+  // inviting-a-contact, which read as confusing in the create flow —
+  // recruiters expected to JUST create the job and worry about who
+  // gets access later. The Invite Client flow lives on /jobs/[id]
+  // post-creation now. Here we only let you pick an existing Client.
 
   // Duplicate-job detection: matches existing jobs with the same
   // (client, title) within the firm.
@@ -156,14 +161,127 @@ function NewJobContent() {
   }
 
   // Hand off to the full Create Client form so the recruiter can set fee
-  // defaults / industry / website etc., then come back and have those terms
-  // auto-fill on this Job. We stash the in-progress Job draft in
-  // sessionStorage because the File object can't survive navigation; the
-  // parsed text and structured fields do, so the recruiter only loses the
-  // raw upload, not their work.
-  function goCreateClient(name: string) {
-    const trimmed = name.trim();
-    const draft: JobDraft = {
+  // Quick-create dialog state. We used to navigate to /clients/new
+  // here and store a JobDraft in sessionStorage, but the navigation
+  // forced the user to re-upload the JD file on return (File objects
+  // can't be serialized to localStorage/sessionStorage). Opening a
+  // dialog instead keeps /jobs/new mounted so the File survives.
+  const [quickClientOpen, setQuickClientOpen] = useState(false);
+  const [quickClientName, setQuickClientName] = useState("");
+  const [quickClientIndustry, setQuickClientIndustry] = useState("");
+  const [quickClientType, setQuickClientType] = useState<"RECRUITING" | "STAFF_AUG">("RECRUITING");
+  // Default fee terms — only used + sent when engagement type is
+  // RECRUITING (Staff Aug negotiates per job, so the client-level
+  // defaults stay null). Kept in dialog-local state so cancelling
+  // doesn't pollute anything.
+  const [quickClientCurrency, setQuickClientCurrency] = useState("USD");
+  const [quickClientFeeType, setQuickClientFeeType] = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
+  const [quickClientFeeAmount, setQuickClientFeeAmount] = useState("");
+  const [quickClientPaymentTerms, setQuickClientPaymentTerms] = useState("");
+  const [quickClientGuarantee, setQuickClientGuarantee] = useState("");
+  const [quickClientSaving, setQuickClientSaving] = useState(false);
+  const [quickClientError, setQuickClientError] = useState<string>("");
+
+  function openQuickClient(name: string) {
+    setQuickClientName(name.trim());
+    setQuickClientIndustry("");
+    setQuickClientType("RECRUITING");
+    setQuickClientCurrency("USD");
+    setQuickClientFeeType("PERCENTAGE");
+    setQuickClientFeeAmount("");
+    setQuickClientPaymentTerms("");
+    setQuickClientGuarantee("");
+    setQuickClientError("");
+    setQuickClientOpen(true);
+  }
+
+  async function saveQuickClient() {
+    const name = quickClientName.trim();
+    if (!name) {
+      setQuickClientError("Company name is required");
+      return;
+    }
+    setQuickClientSaving(true);
+    setQuickClientError("");
+    try {
+      // Only forward fee defaults for Recruiting clients. Staff Aug
+      // intentionally leaves them null so the per-job form is the
+      // authoritative place — sending values here would seed a
+      // misleading client-level default.
+      const isRecruiting = quickClientType === "RECRUITING";
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          industry: quickClientIndustry.trim() || undefined,
+          engagementType: quickClientType,
+          defaultCurrency: isRecruiting ? quickClientCurrency : null,
+          defaultFeeType: isRecruiting ? quickClientFeeType : null,
+          defaultFeeAmount:
+            isRecruiting && quickClientFeeAmount.trim() !== ""
+              ? Number(quickClientFeeAmount)
+              : null,
+          defaultPaymentTerms:
+            isRecruiting && quickClientPaymentTerms.trim() !== ""
+              ? Number(quickClientPaymentTerms)
+              : null,
+          defaultGuaranteePeriod:
+            isRecruiting && quickClientGuarantee.trim() !== ""
+              ? Number(quickClientGuarantee)
+              : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setQuickClientError(data.error || "Could not create client");
+        return;
+      }
+      // Insert the new client into the local list and select it. No
+      // refetch needed — the API returns the full row.
+      setClients((cur) => [...cur, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedClientId(data.id);
+      setClientSearch("");
+      setClientDropdownOpen(false);
+      setQuickClientOpen(false);
+    } catch (e: any) {
+      setQuickClientError(e.message || "Could not create client");
+    } finally {
+      setQuickClientSaving(false);
+    }
+  }
+
+  // Persistent draft: restore form fields from localStorage and the JD
+  // File from IndexedDB on mount. Lets the recruiter close the tab,
+  // come back later, navigate away mid-flow, etc., without losing
+  // anything they typed or uploaded. Cleared on successful submit.
+  useEffect(() => {
+    const draft = loadJobDraft();
+    if (draft) {
+      if (draft.title) setTitle(draft.title);
+      if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
+      if (draft.description) setDescription(draft.description);
+      if (draft.descriptionFromDoc) setDescriptionFromDoc(draft.descriptionFromDoc);
+      if (draft.location) setLocation(draft.location);
+      if (draft.workMode) setWorkMode(draft.workMode);
+      if (draft.currency) setCurrency(draft.currency);
+      if (draft.feeType) setFeeType(draft.feeType as any);
+      if (draft.feeAmount) setFeeAmount(draft.feeAmount);
+      if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
+      if (draft.parseStatus) setParseStatus(draft.parseStatus);
+    }
+    // JD File lives in IndexedDB — it's binary, can't share storage
+    // with the JSON draft. Best-effort: if there's no saved file we
+    // just leave jdFile null.
+    loadJdFile().then((file) => {
+      if (file) setJdFile(file);
+    });
+  }, []);
+
+  // Auto-save the field draft on every change. localStorage writes are
+  // cheap so debouncing isn't worth the complexity.
+  useEffect(() => {
+    saveJobDraft({
       title,
       titleFromDoc,
       description,
@@ -176,46 +294,23 @@ function NewJobContent() {
       termsAutoFilled,
       parseStatus,
       jdFileName: jdFile?.name || null,
-    };
-    try {
-      sessionStorage.setItem(JOB_DRAFT_KEY, JSON.stringify(draft));
-    } catch {}
-    const params = new URLSearchParams({ returnTo: "/jobs/new" });
-    if (trimmed) params.set("name", trimmed);
-    router.push(`/clients/new?${params.toString()}`);
-  }
+    });
+  }, [
+    title,
+    titleFromDoc,
+    description,
+    descriptionFromDoc,
+    location,
+    workMode,
+    currency,
+    feeType,
+    feeAmount,
+    termsAutoFilled,
+    parseStatus,
+    jdFile,
+  ]);
 
   useEffect(() => {
-    // Restore draft saved before hopping to /clients/new. Run before the
-    // client fetch resolves so the user sees their fields immediately. If
-    // we also have a preselected client (i.e. we just came back from
-    // creating one), the client-driven fee defaults below will overwrite
-    // whatever was in the draft — that's intentional, the new client's
-    // terms are the whole reason we made this round-trip.
-    let draft: JobDraft | null = null;
-    try {
-      const raw = sessionStorage.getItem(JOB_DRAFT_KEY);
-      if (raw) draft = JSON.parse(raw) as JobDraft;
-    } catch {}
-    if (draft) {
-      sessionStorage.removeItem(JOB_DRAFT_KEY);
-      if (draft.title) setTitle(draft.title);
-      if (draft.titleFromDoc) setTitleFromDoc(draft.titleFromDoc);
-      if (draft.description) setDescription(draft.description);
-      if (draft.descriptionFromDoc) setDescriptionFromDoc(draft.descriptionFromDoc);
-      if (draft.location) setLocation(draft.location);
-      if (draft.workMode) setWorkMode(draft.workMode);
-      if (draft.currency) setCurrency(draft.currency);
-      if (draft.feeType) setFeeType(draft.feeType);
-      if (draft.feeAmount) setFeeAmount(draft.feeAmount);
-      if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
-      if (draft.parseStatus) setParseStatus(draft.parseStatus);
-      // The actual File can't survive navigation; tell the user what was
-      // there before so they know to re-upload if they want to keep the
-      // attachment.
-      if (draft.jdFileName) setJdFileMissing(draft.jdFileName);
-    }
-
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
@@ -238,6 +333,9 @@ function NewJobContent() {
 
   async function handleFileUpload(file: File) {
     setJdFile(file);
+    // Persist the binary so a refresh / tab-close doesn't drop it.
+    // Fire-and-forget — failure here doesn't block the parse flow.
+    void saveJdFile(file);
     setParsing(true);
     setParseStatus("Extracting text...");
 
@@ -250,20 +348,26 @@ function NewJobContent() {
       if (data.text && data.text.trim()) {
         setDescription(data.text.trim());
         setDescriptionFromDoc(true);
-        // Heuristic title extraction is noisy enough that overwriting the
-        // recruiter's typed title causes more pain than it saves. Trust the
-        // user — only fill location/workMode (which the regex extractors
-        // hit reliably).
+        // On the create flow the recruiter explicitly uploaded a JD —
+        // treat the document as the source of truth for everything the
+        // extractor can pull out, including the title, even if there
+        // was already a value in the field. (Edit-mode re-parse still
+        // skips title — that's a different intent.)
         if (data.fields) {
+          if (data.fields.title) {
+            setTitle(data.fields.title);
+            setTitleFromDoc(true);
+          }
           if (data.fields.location) setLocation(data.fields.location);
           if (data.fields.workMode) setWorkMode(data.fields.workMode);
         }
         setParseStatus(`Text extracted (${data.text.trim().length} characters)`);
 
-        // If the user already typed a title, run duplicate check now that
-        // the client is selected and we have the parsed JD context.
-        if (title.trim() && selectedClientId) {
-          void checkJobDuplicate({ title: title.trim() });
+        // Run the duplicate check against whatever title we now have
+        // (parsed or typed), as long as a client is selected.
+        const titleForCheck = (data.fields?.title || title).trim();
+        if (titleForCheck && selectedClientId) {
+          void checkJobDuplicate({ title: titleForCheck });
         }
       } else if (data.error) {
         setParseStatus(`Could not extract text: ${data.error}`);
@@ -281,6 +385,12 @@ function NewJobContent() {
     setLoading(true);
     setError("");
 
+    if (!selectedClientId) {
+      setError("Pick a client first");
+      setLoading(false);
+      return;
+    }
+
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -290,6 +400,8 @@ function NewJobContent() {
         clientId: selectedClientId,
         location,
         workMode,
+        status,
+        openings: openings === "" ? 1 : openings,
         currency,
         salary: fd.get("salary"),
         feeType,
@@ -318,6 +430,12 @@ function NewJobContent() {
       }
     }
 
+    // The Job is created — drop the persistent draft so the next
+    // /jobs/new visit starts fresh. Fire-and-forget; navigation
+    // shouldn't wait on the IndexedDB delete.
+    clearJobDraft();
+    void clearJdFile();
+
     router.push(`/jobs/${job.id}`);
   }
 
@@ -329,11 +447,13 @@ function NewJobContent() {
 
     // Re-check for duplicates at submit time in case the user never
     // blurred the title field.
-    const matches = await checkJobDuplicate();
-    if (matches.length > 0) {
-      pendingFormData.current = fd;
-      setShowDuplicateDialog(true);
-      return;
+    {
+      const matches = await checkJobDuplicate();
+      if (matches.length > 0) {
+        pendingFormData.current = fd;
+        setShowDuplicateDialog(true);
+        return;
+      }
     }
 
     await actuallyCreate(fd);
@@ -342,13 +462,11 @@ function NewJobContent() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/jobs">
-          <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
-        </Link>
+        <BackButton fallback="/jobs" />
         <h1 className="text-2xl font-bold">Create Job</h1>
       </div>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader><CardTitle>Job Order Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -369,7 +487,7 @@ function NewJobContent() {
                       </p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setJdFile(null); setParseStatus(""); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
+                  <button type="button" onClick={() => { setJdFile(null); setParseStatus(""); void clearJdFile(); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -423,33 +541,45 @@ function NewJobContent() {
               <Label>Client *</Label>
               <input type="hidden" name="clientId" value={selectedClientId} />
               <div ref={clientRef} className="relative">
-                {selectedClient && !clientDropdownOpen ? (
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-9 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder="Search clients..."
+                  value={clientDropdownOpen ? clientSearch : selectedClient?.name || ""}
+                  onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
+                  onFocus={() => {
+                    if (!clientDropdownOpen) {
+                      setClientSearch("");
+                      setClientDropdownOpen(true);
+                    }
+                  }}
+                />
+                {selectedClientId && !clientDropdownOpen && (
                   <button
                     type="button"
-                    onClick={() => { setClientDropdownOpen(true); setClientSearch(""); }}
-                    className="flex items-center justify-between w-full border rounded-md px-3 py-2 text-sm text-left bg-background hover:bg-gray-50 transition-colors"
+                    aria-label="Clear client"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedClientId("");
+                      setClientSearch("");
+                      setCurrency("USD");
+                      setFeeType("PERCENTAGE");
+                      setFeeAmount("");
+                      setTermsAutoFilled(false);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
                   >
-                    <span className="font-medium">{selectedClient.name}</span>
-                    <X className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); setSelectedClientId(""); setClientSearch(""); setCurrency("USD"); setFeeType("PERCENTAGE"); setFeeAmount(""); setTermsAutoFilled(false); }} />
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Search clients..."
-                      value={clientSearch}
-                      onChange={(e) => { setClientSearch(e.target.value); setClientDropdownOpen(true); }}
-                      onFocus={() => setClientDropdownOpen(true)}
-                      autoFocus={clientDropdownOpen}
-                    />
-                  </div>
                 )}
                 {clientDropdownOpen && (
                   <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
-                    {filteredClients.length === 0 && !clientSearch.trim() && (
-                      <div className="px-3 py-2 text-sm text-gray-500">No clients yet</div>
+                    {filteredClients.length === 0 && !clientSearch.trim() && clients.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-gray-500">No clients yet — add one below.</div>
+                    )}
+                    {filteredClients.length === 0 && clientSearch.trim() && (
+                      <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
                     )}
                     {filteredClients.map((c) => (
                       <button
@@ -462,26 +592,23 @@ function NewJobContent() {
                         {c.id === selectedClientId && <Check className="h-4 w-4 text-indigo-600" />}
                       </button>
                     ))}
-                    {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) && (
-                      <button
-                        type="button"
-                        onClick={() => goCreateClient(clientSearch)}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>
-                          Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client
-                        </span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => openQuickClient(clientSearch)}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left border-t border-gray-100 bg-gray-50 hover:bg-emerald-50 text-emerald-700 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>
+                        {clientSearch.trim() && !filteredClients.some((c) => c.name.toLowerCase() === clientSearch.trim().toLowerCase()) ? (
+                          <>Create &ldquo;<span className="font-semibold">{clientSearch.trim()}</span>&rdquo; as a new client</>
+                        ) : (
+                          <>Add a new client</>
+                        )}
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
-              {jdFileMissing && (
-                <p className="text-xs text-amber-600">
-                  Your previous JD file <span className="font-medium">{jdFileMissing}</span> wasn&apos;t restored after creating the client. Re-upload it to keep it as an attachment — the parsed text is still here.
-                </p>
-              )}
             </div>
 
             {checkingDuplicate && (
@@ -547,6 +674,40 @@ function NewJobContent() {
                 </select>
               </div>
               <div className="space-y-2">
+                <Label>Status</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  {JOB_STATUS_SELECTABLE.map((v) => (
+                    <option key={v} value={v}>
+                      {JOB_STATUS_LABELS[v]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Openings</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={openings}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // Allow empty while typing; coerce + clamp only
+                    // when there's a real value. Onblur snaps back to
+                    // 1 if the user leaves the field blank.
+                    setOpenings(v === "" ? "" : Math.max(1, Number(v) || 1));
+                  }}
+                  onBlur={() => {
+                    if (openings === "" || (typeof openings === "number" && openings < 1)) {
+                      setOpenings(1);
+                    }
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Salary Range</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
@@ -586,19 +747,12 @@ function NewJobContent() {
               </div>
               <div className="space-y-2">
                 <Label>Fee Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                    {feeType === "FLAT" ? "$" : "%"}
-                  </span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="25"
-                    className="pl-7"
-                    value={feeAmount}
-                    onChange={(e) => setFeeAmount(e.target.value)}
-                  />
-                </div>
+                <MoneyInput
+                  prefix={feeType === "FLAT" ? "$" : "%"}
+                  placeholder="25"
+                  value={feeAmount}
+                  onChange={setFeeAmount}
+                />
               </div>
             </div>
             <div className="space-y-2">
@@ -624,7 +778,9 @@ function NewJobContent() {
             </div>
             <div className="flex justify-end gap-2 pt-4">
               <Link href="/jobs"><Button type="button" variant="outline">Cancel</Button></Link>
-              <Button type="submit" disabled={loading || parsing}>{loading ? "Creating..." : "Create Job"}</Button>
+              <Button type="submit" disabled={loading || parsing}>
+                {loading ? "Creating..." : "Create Job"}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -685,6 +841,139 @@ function NewJobContent() {
               disabled={loading}
             >
               {loading ? "Creating..." : "Create anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick-create client. Captures everything the recruiter
+          normally fills at the client level: name, industry,
+          engagement type, and — for Recruiting — the default fee
+          terms that will pre-fill every Job and Placement at this
+          client. Staff Aug clients skip the terms section because
+          those clients negotiate fees per-job, so a client-level
+          default would be misleading. Website / contacts / notes
+          stay on the full /clients/[id] page. */}
+      <Dialog open={quickClientOpen} onOpenChange={(open) => {
+        if (!quickClientSaving) setQuickClientOpen(open);
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Quick-create client</DialogTitle>
+            <DialogDescription>
+              Add the company and (for Recruiting) the default fee terms. Website, contacts and other details live on the client page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
+            {quickClientError && (
+              <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">{quickClientError}</div>
+            )}
+            <div className="space-y-2">
+              <Label>Company Name *</Label>
+              <Input
+                autoFocus
+                autoComplete="off"
+                value={quickClientName}
+                onChange={(e) => setQuickClientName(e.target.value)}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Industry</Label>
+                <Combobox
+                  value={quickClientIndustry}
+                  onChange={setQuickClientIndustry}
+                  options={INDUSTRY_OPTIONS}
+                  placeholder="Technology, Finance, etc."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Engagement type</Label>
+                <select
+                  value={quickClientType}
+                  onChange={(e) => setQuickClientType(e.target.value as "RECRUITING" | "STAFF_AUG")}
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                >
+                  <option value="RECRUITING">Recruiting</option>
+                  <option value="STAFF_AUG">Staff Aug</option>
+                </select>
+              </div>
+            </div>
+
+            {quickClientType === "RECRUITING" && (
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-1">Default fee terms</h3>
+                <p className="text-xs text-gray-400 mb-3">Pre-fill every Job and Placement at this client. Override per-job as needed.</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Currency</Label>
+                    <CurrencyPicker
+                      value={quickClientCurrency}
+                      onChange={(c) => setQuickClientCurrency(c)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Fee Type</Label>
+                    <select
+                      value={quickClientFeeType}
+                      onChange={(e) => setQuickClientFeeType(e.target.value as "PERCENTAGE" | "FLAT")}
+                      className="w-full border rounded-md px-3 py-2 text-sm"
+                    >
+                      <option value="PERCENTAGE">Percentage</option>
+                      <option value="FLAT">Flat Fee</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Fee Amount</Label>
+                    <MoneyInput
+                      prefix={quickClientFeeType === "FLAT" ? "$" : "%"}
+                      placeholder="e.g. 15"
+                      value={quickClientFeeAmount}
+                      onChange={setQuickClientFeeAmount}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Payment terms (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="30"
+                      value={quickClientPaymentTerms}
+                      onChange={(e) => setQuickClientPaymentTerms(e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Days from start date to invoice due (Net 30 = 30).</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Guarantee period (days)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="90"
+                      value={quickClientGuarantee}
+                      onChange={(e) => setQuickClientGuarantee(e.target.value)}
+                    />
+                    <p className="text-[10px] text-gray-400">Replacement window after the candidate starts.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setQuickClientOpen(false)}
+              disabled={quickClientSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={saveQuickClient}
+              disabled={quickClientSaving || !quickClientName.trim()}
+            >
+              {quickClientSaving ? "Saving..." : "Create client"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { findSimilarClients } from "@/lib/client-dedup";
 
 function phoneDigits(value: string): string {
   return value.replace(/\D/g, "");
@@ -47,16 +48,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ matches: [] });
     }
 
-    const orgFilter = { organizationId: ctx.organizationId };
+    // Scope duplicate-detection to clients THIS agency is engaged
+    // with. "Is this client already on our roster?" is the question
+    // we're answering — not "does it exist anywhere in the system".
+    const orgFilter = {
+      engagedOrganizations: { some: { organizationId: ctx.organizationId } },
+    };
     const queries: Promise<any[]>[] = [];
 
     if (name) {
+      // Two name queries: exact (case-insensitive) for the strict
+      // dupe, and normalized for the loose dupe ("Lionpoint" vs
+      // "Lionpoint Partners"). The normalized version returns ids
+      // only, then we hydrate to MATCH_SELECT shape.
       queries.push(
         prisma.client.findMany({
           where: { ...orgFilter, name: { equals: name, mode: "insensitive" } },
           select: MATCH_SELECT,
           take: 5,
         })
+      );
+      queries.push(
+        (async () => {
+          const similar = await findSimilarClients(ctx.organizationId, name);
+          if (similar.length === 0) return [];
+          return prisma.client.findMany({
+            where: { id: { in: similar.map((s) => s.id) } },
+            select: MATCH_SELECT,
+          });
+        })()
       );
     }
 

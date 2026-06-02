@@ -17,7 +17,17 @@ export async function GET(request: NextRequest) {
     const end = searchParams.get("end");
     const status = searchParams.get("status");
 
-    const where: any = { organizationId: ctx.organizationId };
+    // The calendar is a per-user view: each recruiter only sees the
+    // interviews they own (createdBy) or were invited to as an
+    // interviewer. The full org-wide list lives elsewhere (e.g. the
+    // job-level Interviews tab) where that wider scope makes sense.
+    const where: any = {
+      organizationId: ctx.organizationId,
+      OR: [
+        { createdBy: ctx.userId },
+        { interviewers: { some: { userId: ctx.userId } } },
+      ],
+    };
 
     if (start && end) {
       where.startTime = {
@@ -42,6 +52,10 @@ export async function GET(request: NextRequest) {
         clientContacts: {
           include: { contact: { select: { id: true, firstName: true, lastName: true, email: true, title: true } } },
         },
+        // Count attachments so the calendar chip can show a paperclip
+        // indicator without forcing the recruiter to open the
+        // interview just to find out it has files.
+        _count: { select: { documents: true } },
       },
       orderBy: { startTime: "asc" },
     });
@@ -109,6 +123,18 @@ export async function POST(request: Request) {
     let microsoftEventId: string | null = null;
     let microsoftCalendarOwnerId: string | null = null;
 
+    // Calendar attendees policy (MVP):
+    //
+    // - Client contacts NEVER get added as calendar attendees. The
+    //   agency's policy is "client doesn't get an invite from us";
+    //   the InterviewClientContact rows still get persisted for
+    //   tracking purposes, they just don't reach Google/MS Graph.
+    // - Candidate is opt-in via `notifyAttendees`. When false (the
+    //   default for client-interview tracking), no one external is
+    //   added — the event is just a block on the recruiter's own
+    //   calendar.
+    // - Interviewers (internal agency staff) are always included so
+    //   they get the standard "you're on this meeting" experience.
     async function collectAttendees() {
       const attendees: { email: string; displayName?: string }[] = [];
 
@@ -116,26 +142,11 @@ export async function POST(request: Request) {
         where: { id: candidateId },
         select: { email: true, firstName: true, lastName: true },
       });
-      if (candidateData?.email) {
+      if (notifyAttendees && candidateData?.email) {
         attendees.push({
           email: candidateData.email,
           displayName: `${candidateData.firstName} ${candidateData.lastName}`,
         });
-      }
-
-      if (clientContactIds?.length) {
-        const contacts = await prisma.contact.findMany({
-          where: { id: { in: clientContactIds } },
-          select: { email: true, firstName: true, lastName: true },
-        });
-        for (const c of contacts) {
-          if (c.email) {
-            attendees.push({
-              email: c.email,
-              displayName: `${c.firstName} ${c.lastName}`,
-            });
-          }
-        }
       }
 
       if (interviewerIds?.length) {
@@ -199,6 +210,79 @@ export async function POST(request: Request) {
       }
     }
 
+    // Mirror the event to the OTHER calendar (silent, no attendees)
+    // when the recruiter has both Google and Outlook connected. The
+    // candidate / client only ever get a single invite — from the
+    // platform that owns the Meet/Teams link — but the recruiter
+    // sees the interview as a block in both of their personal
+    // calendars. Skips if no integration is connected for that side
+    // or if we already created the primary event on it.
+    async function mirrorTo(other: "google" | "microsoft") {
+      try {
+        if (other === "google" && !googleEventId) {
+          const t = await getValidAccessToken(ctx.userId);
+          if (!t) return;
+          const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              summary: title,
+              description: notes || undefined,
+              start: { dateTime: new Date(startTime).toISOString(), timeZone: interviewTz },
+              end: { dateTime: new Date(endTime).toISOString(), timeZone: interviewTz },
+              reminders: { useDefault: true },
+            }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            googleEventId = d.id;
+            googleCalendarOwnerId = ctx.userId;
+          }
+        }
+        if (other === "microsoft" && !microsoftEventId) {
+          const t = await getMsAccessToken(ctx.userId);
+          if (!t) return;
+          const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${t}`,
+              "Content-Type": "application/json",
+              Prefer: `outlook.timezone="${interviewTz}"`,
+            },
+            body: JSON.stringify({
+              subject: title,
+              body: { contentType: "Text", content: notes || "" },
+              start: { dateTime: new Date(startTime).toISOString(), timeZone: interviewTz },
+              end: { dateTime: new Date(endTime).toISOString(), timeZone: interviewTz },
+              isReminderOn: true,
+              reminderMinutesBeforeStart: 10,
+            }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            microsoftEventId = d.id;
+            microsoftCalendarOwnerId = ctx.userId;
+          }
+        }
+      } catch (e) {
+        // Mirror failures are non-fatal — the primary event already
+        // landed and the interview row is about to be created. The
+        // recruiter just won't see this one in their secondary
+        // calendar, which is a soft degradation, not a broken flow.
+        console.error("[interview] mirror failed:", e);
+      }
+    }
+    // If primary event was Google → mirror to MS, and vice versa.
+    // Manual-link / no-platform interviews mirror to both, so the
+    // recruiter still gets the block in whichever calendar(s) they
+    // have connected.
+    if (googleEventId && !microsoftEventId) await mirrorTo("microsoft");
+    if (microsoftEventId && !googleEventId) await mirrorTo("google");
+    if (!googleEventId && !microsoftEventId) {
+      await mirrorTo("google");
+      await mirrorTo("microsoft");
+    }
+
     const interview = await prisma.interview.create({
       data: {
         title,
@@ -218,6 +302,11 @@ export async function POST(request: Request) {
         googleCalendarOwnerId,
         microsoftEventId,
         microsoftCalendarOwnerId,
+        // Record the user's intent at create time. The calendar UI
+        // uses this to mark "internal only" interviews so a
+        // recruiter scanning their week can tell whether the
+        // candidate was actually emailed.
+        inviteSent: Boolean(notifyAttendees),
         interviewers: interviewerIds?.length
           ? {
               create: interviewerIds.map((userId: string) => ({ userId })),

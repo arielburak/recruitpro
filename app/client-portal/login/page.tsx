@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import {
   Briefcase,
   CheckCircle2,
@@ -122,15 +124,48 @@ function ClientPortalLoginInner() {
   const [isInvitedUser, setIsInvitedUser] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [clearingSession, setClearingSession] = useState(false);
+  // Set when the credentials sign-in succeeds on password but the
+  // server throws EMAIL_NOT_VERIFIED. We surface a dedicated panel
+  // (instead of a generic red error) with a one-click "resend
+  // verification email" so the user can recover without help.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string>("");
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [verificationResent, setVerificationResent] = useState(false);
+  // Controlled Industry field on the sign-up form. The Combobox lets
+  // the user pick a standard bucket from INDUSTRY_OPTIONS or type
+  // their own — both produce the same string value submitted to
+  // /api/client-portal/register.
+  const [industry, setIndustry] = useState("");
+
+  async function resendVerification() {
+    if (!unverifiedEmail || resendingVerification) return;
+    setResendingVerification(true);
+    try {
+      await fetch("/api/client-portal/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: unverifiedEmail }),
+      });
+      setVerificationResent(true);
+    } catch {}
+    setResendingVerification(false);
+  }
 
   // If there's a client session already, go straight to dashboard
+  // (or honor ?callbackUrl= for share-email deep links).
   // If there's a staffing session, don't touch it — just warn the user
   // that they need to sign out of staffing first to log in as client
+  const callbackUrl = searchParams.get("callbackUrl");
+  // Only honor relative URLs to avoid open-redirect via callbackUrl.
+  const safeCallback =
+    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+      ? callbackUrl
+      : null;
   useEffect(() => {
     if (session?.user && (session.user as any).isClientUser) {
-      router.replace("/client-portal/dashboard");
+      router.replace(safeCallback || "/client-portal/dashboard");
     }
-  }, [session, router]);
+  }, [session, router, safeCallback]);
 
   const hasStaffingSession = !!(session?.user && !(session.user as any).isClientUser);
 
@@ -153,6 +188,16 @@ function ClientPortalLoginInner() {
       });
 
       if (result?.error) {
+        // NextAuth surfaces our thrown EMAIL_NOT_VERIFIED message via
+        // result.error. Disambiguate that from a generic invalid-creds
+        // case so we can offer a one-click resend instead of leaving
+        // the user stuck without context.
+        if (result.error === "EMAIL_NOT_VERIFIED") {
+          setUnverifiedEmail(String(fd.get("email") || ""));
+          setError("");
+          setLoading(false);
+          return;
+        }
         // Check if user exists but has no password
         try {
           const checkRes = await fetch("/api/client-portal/check-account", {
@@ -173,7 +218,7 @@ function ClientPortalLoginInner() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      window.location.href = safeCallback || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -214,7 +259,7 @@ function ClientPortalLoginInner() {
           title: fd.get("title") as string,
           email,
           password,
-          industry: fd.get("industry") as string,
+          industry,
         }),
       });
 
@@ -225,12 +270,26 @@ function ClientPortalLoginInner() {
         return;
       }
 
+      const data = await res.json().catch(() => ({}));
+
+      // New accounts ship in unverified state — the credentials provider
+      // would refuse to sign them in until they click the verify link.
+      // Skip the auto-login attempt and surface the "check your email"
+      // panel instead so the UX matches the actual constraint.
+      if (data?.needsVerification) {
+        setUnverifiedEmail(email);
+        setMode("login");
+        setLoading(false);
+        return;
+      }
+
       // If a staffing session is active, transparently sign out first
       if (hasStaffingSession) {
         await signOut({ redirect: false });
       }
 
-      // Auto-login
+      // Auto-login (legacy path for pre-verification accounts; new
+      // accounts go through the verify panel above).
       const result = await signIn("client-credentials", {
         email,
         password,
@@ -244,7 +303,7 @@ function ClientPortalLoginInner() {
         return;
       }
 
-      window.location.href = "/client-portal/dashboard";
+      window.location.href = safeCallback || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");
       setLoading(false);
@@ -375,7 +434,7 @@ function ClientPortalLoginInner() {
                   type="button"
                   onClick={() => {
                     markClientOAuth();
-                    signIn("google", { callbackUrl: "/client-portal/dashboard" });
+                    signIn("google", { callbackUrl: safeCallback || "/client-portal/dashboard" });
                   }}
                   className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium text-gray-700"
                 >
@@ -401,6 +460,26 @@ function ClientPortalLoginInner() {
               <form onSubmit={handleLogin} className="space-y-4">
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
                 {success && <div className="bg-green-50 text-green-600 text-sm p-3 rounded-lg">{success}</div>}
+                {unverifiedEmail && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm p-3 rounded-lg space-y-2">
+                    <p className="font-medium">Verify your email to sign in</p>
+                    <p className="text-xs text-amber-800/80">
+                      We sent a confirmation link to <strong>{unverifiedEmail}</strong>. Click it to activate your account.
+                    </p>
+                    {verificationResent ? (
+                      <p className="text-xs text-emerald-700">A new link is on its way. Check your inbox.</p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={resendVerification}
+                        disabled={resendingVerification}
+                        className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline-offset-2 hover:underline disabled:opacity-50"
+                      >
+                        {resendingVerification ? "Sending…" : "Resend verification email"}
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input id="email" name="email" type="email" placeholder="you@company.com" required />
@@ -456,7 +535,13 @@ function ClientPortalLoginInner() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="industry">Industry</Label>
-                      <Input id="industry" name="industry" placeholder="Technology" />
+                      <Combobox
+                        id="industry"
+                        value={industry}
+                        onChange={setIndustry}
+                        options={INDUSTRY_OPTIONS}
+                        placeholder="Technology"
+                      />
                     </div>
                   </>
                 )}

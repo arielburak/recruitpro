@@ -12,7 +12,7 @@ export async function PUT(
     const body = await request.json();
 
     // Verify interview belongs to a job owned by this client
-    const existing = await prisma.interview.findFirst({
+    const existing = await (prisma.interview as any).findFirst({
       where: { id, job: { clientId: ctx.clientId } },
     });
 
@@ -31,7 +31,7 @@ export async function PUT(
     if (body.timezone !== undefined) data.timezone = body.timezone;
     if (body.notes !== undefined) data.notes = body.notes || null;
 
-    const updated = await prisma.interview.update({
+    const updated = await (prisma.interview as any).update({
       where: { id },
       data,
       select: {
@@ -74,7 +74,7 @@ export async function PUT(
       candidateName: `${updated.candidate.firstName} ${updated.candidate.lastName}`,
       jobTitle: updated.job.title,
       createdBy: updated.creator?.name || "Unknown",
-      interviewers: updated.interviewers.map((a) => a.user.name),
+      interviewers: updated.interviewers.map((a: any) => a.user.name),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

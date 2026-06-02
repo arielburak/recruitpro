@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { clientAccessWhere } from "@/lib/client-access";
+import { findSimilarClients } from "@/lib/client-dedup";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,26 +15,28 @@ export async function GET(request: NextRequest) {
     const pageSize = 20;
     const paginated = !!pageParam || !!search;
 
-    const where: any = { organizationId: ctx.organizationId };
+    // Access via engagement, not via Client.organizationId. A hiring
+    // company lives once in the DB; agencies that engaged with it see
+    // it via the OrganizationClient join.
+    const where: any = clientAccessWhere(ctx.organizationId);
     if (search) {
-      // Match by company info OR by any contact linked to the company.
-      // Legacy inline contactName/Email fields are intentionally out of
-      // the filter — they're no longer the source of truth.
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { industry: { contains: search, mode: "insensitive" } },
-        {
-          contacts: {
-            some: {
-              OR: [
-                { firstName: { contains: search, mode: "insensitive" } },
-                { lastName: { contains: search, mode: "insensitive" } },
-                { email: { contains: search, mode: "insensitive" } },
-              ],
+      where.AND = [{
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { industry: { contains: search, mode: "insensitive" } },
+          {
+            contacts: {
+              some: {
+                OR: [
+                  { firstName: { contains: search, mode: "insensitive" } },
+                  { lastName: { contains: search, mode: "insensitive" } },
+                  { email: { contains: search, mode: "insensitive" } },
+                ],
+              },
             },
           },
-        },
-      ];
+        ],
+      }];
     }
 
     // Include the primary contact so the list row can show a real
@@ -83,20 +87,51 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = clientSchema.parse(body);
 
-    const client = await prisma.client.create({
-      data: { ...data, organizationId: ctx.organizationId },
-    });
+    // Duplicate guard: refuse to silently create another row when the
+    // org already has a Client that normalizes to the same name. The
+    // recruiter has to either pick "use existing" (front-end calls the
+    // existing client's ID) or set force=true on the retry to
+    // acknowledge they really meant to create a separate row. Without
+    // this we end up with the Lionpoint / Lionpoint Partners /
+    // Lionpointpartners situation that needed a one-time merge script
+    // to untangle.
+    if (!body.force) {
+      const dupes = await findSimilarClients(ctx.organizationId, data.name);
+      if (dupes.length > 0) {
+        return NextResponse.json(
+          {
+            error: "duplicate_name",
+            message: `An existing client looks like the same company. Use it instead, or confirm to create anyway.`,
+            duplicates: dupes,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
-    // Seed the canonical 9 pipeline stages for the client portal
-    await prisma.clientPipelineStage.createMany({
-      data: DEFAULT_STAGES.map((s, i) => ({
-        name: s.name,
-        order: i,
-        color: s.color,
-        isTerminal: s.isTerminal,
-        kind: s.kind,
-        clientId: client.id,
-      })),
+    // Create the Client + the engagement in one transaction so a
+    // failed engagement insert doesn't leave a Client orphaned from
+    // its creator. Client.organizationId is kept as audit metadata
+    // ("created by this org") but the OrganizationClient row is what
+    // grants visibility going forward.
+    const client = await prisma.$transaction(async (tx) => {
+      const c = await tx.client.create({
+        data: { ...data, organizationId: ctx.organizationId },
+      });
+      await tx.organizationClient.create({
+        data: { organizationId: ctx.organizationId, clientId: c.id },
+      });
+      await tx.clientPipelineStage.createMany({
+        data: DEFAULT_STAGES.map((s, i) => ({
+          name: s.name,
+          order: i,
+          color: s.color,
+          isTerminal: s.isTerminal,
+          kind: s.kind,
+          clientId: c.id,
+        })),
+      });
+      return c;
     });
 
     return NextResponse.json(client, { status: 201 });

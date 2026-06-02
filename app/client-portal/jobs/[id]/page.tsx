@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState, use, useRef } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { ClientJobChat } from "@/components/client-portal/client-job-chat";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
+import { ReadOnlyPipeline } from "@/components/client-portal/read-only-pipeline";
 import { formatDate } from "@/lib/utils";
 
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
@@ -72,6 +76,8 @@ type InviteLookup = {
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { data: session } = useSession();
+  const currentClientUserId = (session?.user as any)?.id || "";
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -82,9 +88,10 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [inviteSuggestions, setInviteSuggestions] = useState<InviteSuggestion[]>([]);
   const [inviteLookup, setInviteLookup] = useState<InviteLookup | null>(null);
   const [lookupPending, setLookupPending] = useState(false);
-  // Per-firm collapsed state for the grouped contacts list. Firms default
-  // to expanded when the total list is short, collapsed otherwise.
-  const [collapsedFirms, setCollapsedFirms] = useState<Set<string>>(new Set());
+  // Active selection in the "Previously engaged firms" dropdown.
+  // When set, the recruiter-contacts list filters to that firm only.
+  // null = show all firms (default).
+  const [selectedFirm, setSelectedFirm] = useState<string | null>(null);
 
   // Team member management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -96,8 +103,54 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Candidates for this job
+  // Per-JO access management. Sidebar shows the current member list;
+  // clicking "Manage" opens a dialog with checkboxes for the whole
+  // team. Empty member list = the legacy "everyone can see this job"
+  // state, surfaced as a hint at the top of the card.
+  const [showManageAccess, setShowManageAccess] = useState(false);
+  const [accessIds, setAccessIds] = useState<string[]>([]);
+  const [savingAccess, setSavingAccess] = useState(false);
+
+  function openManageAccess() {
+    const ids = (job?.members || [])
+      .map((m: any) => m.clientUser?.id)
+      .filter((id: any): id is string => typeof id === "string");
+    setAccessIds(ids);
+    setShowManageAccess(true);
+  }
+
+  function toggleAccessId(id: string) {
+    setAccessIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  async function saveAccess() {
+    if (savingAccess) return;
+    setSavingAccess(true);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: accessIds }),
+      });
+      if (res.ok) {
+        setShowManageAccess(false);
+        await fetchJob();
+      }
+    } catch {}
+    setSavingAccess(false);
+  }
+
+  // Candidates for this job + the client's pipeline stages, used by
+  // the read-only pipeline view that mirrors the agency's kanban.
   const [jobCandidates, setJobCandidates] = useState<any[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<any[]>([]);
+  // Toggle between the pipeline (kanban) and the flat candidate list.
+  const [candidatesView, setCandidatesView] = useState<"pipeline" | "list">("pipeline");
+  // Tab in the main column. Mirrors the agency-side job page (Pipeline /
+  // Notes / Details / Documents) so the client doesn't have to scroll
+  // a page-high stack to find anything. Pipeline is the default tab
+  // because that's the question the hiring manager comes to answer.
+  const [activeTab, setActiveTab] = useState<"pipeline" | "notes" | "details" | "documents">("pipeline");
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -156,6 +209,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     fetchTeam();
     fetchDocuments();
     fetchJobCandidates();
+    fetchPipelineStages();
   }, [id]);
 
   // Debounced lookup: as the user types an email, resolve it against the
@@ -199,12 +253,50 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     };
   }, [inviteEmail, id, inviteSuggestions]);
 
+  // Auto-clear the selected firm chip when the typed email clearly
+  // doesn't belong to it. Two signals:
+  //   1. The email matches a known suggestion attached to a different
+  //      firm (immediate — no round-trip needed).
+  //   2. The live lookup resolved a firmName that differs from the
+  //      selected one.
+  // We deliberately do NOT clear on a partial / unmatched email so the
+  // recruiter can still invite a brand-new person at the selected firm
+  // without losing their picked context mid-typing.
+  useEffect(() => {
+    if (!selectedFirm) return;
+    const raw = inviteEmail.trim().toLowerCase();
+    if (!raw) return;
+    const suggestion = inviteSuggestions.find((s) => s.email && s.email === raw);
+    if (suggestion?.firmName && suggestion.firmName !== selectedFirm) {
+      setSelectedFirm(null);
+      return;
+    }
+    if (
+      inviteLookup &&
+      inviteLookup.email === raw &&
+      inviteLookup.firmName &&
+      inviteLookup.firmName !== selectedFirm
+    ) {
+      setSelectedFirm(null);
+    }
+  }, [inviteEmail, selectedFirm, inviteSuggestions, inviteLookup]);
+
   async function fetchJobCandidates() {
     try {
       const res = await fetch(`/api/client-portal/candidates?flat=true&clientJobId=${id}`);
       if (res.ok) {
         const data = await res.json();
         setJobCandidates(Array.isArray(data) ? data : []);
+      }
+    } catch {}
+  }
+
+  async function fetchPipelineStages() {
+    try {
+      const res = await fetch("/api/client-portal/pipeline-stages");
+      if (res.ok) {
+        const data = await res.json();
+        setPipelineStages(Array.isArray(data) ? data : []);
       }
     } catch {}
   }
@@ -277,24 +369,40 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setAddingMember(true);
     setMemberResult(null);
     try {
-      const res = await fetch("/api/client-portal/team", {
+      // Job-scoped endpoint: handles three cases (new email → portal
+      // invite + this Job's access; existing user → grant + email;
+      // already a member → noop). The flat /api/client-portal/team
+      // path was only adding people at the team level, never granting
+      // access to THIS Job, so they didn't actually see the search.
+      const res = await fetch(`/api/client-portal/jobs/${id}/add-member`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: memberName.trim(), email: memberEmail.trim(), title: memberTitle.trim() || undefined }),
+        body: JSON.stringify({
+          name: memberName.trim(),
+          email: memberEmail.trim(),
+          title: memberTitle.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setMemberResult({ type: "error", message: data.error || "Failed to add" });
       } else {
+        const msg =
+          data.mode === "invited"
+            ? "Member invited and added to this job."
+            : data.mode === "granted"
+              ? "Added to this job. We let them know by email."
+              : "Already on this search.";
         setMemberResult({
           type: "success",
-          message: data.reactivated ? "Team member reactivated!" : "Member invited!",
-          link: data.inviteLink,
+          message: msg,
+          link: data.inviteUrl,
         });
         setMemberName("");
         setMemberTitle("");
         setMemberEmail("");
         fetchTeam();
+        fetchJob();
       }
     } catch {
       setMemberResult({ type: "error", message: "Something went wrong" });
@@ -423,7 +531,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!editing && (
+          {/* Edit hidden when the search was mirrored from an agency
+              Job — that side owns the source of truth. */}
+          {!editing && !job.createdByAgency && (
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
               <Pencil className="h-3 w-3" />
               Edit
@@ -435,9 +545,31 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left - Job Details */}
-        <div className="lg:col-span-2 space-y-4">
+      {/* Provenance banner for agency-mirrored jobs. The client can
+          still post notes and review the pipeline; description,
+          requirements and files belong to the firm. */}
+      {job.createdByAgency && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-2.5 text-xs text-indigo-800 flex items-center gap-2">
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+          <span>
+            This search was set up by
+            {(() => {
+              const firmName = job.engagements?.find((e: any) => e.status === "ACCEPTED")?.organization?.name;
+              return firmName ? <strong className="font-semibold"> {firmName}</strong> : <span> your recruiting firm</span>;
+            })()}.
+            You can review candidates and post internal notes; editing the search itself happens on their side.
+          </span>
+        </div>
+      )}
+
+      {/* Stacked layout — pipeline + tabs take the full width up top
+          because that's what the hiring manager actually came for;
+          team / access / firms surfaces sit below in a 3-col strip.
+          The old 2/3 + 1/3 split was squeezing the kanban into a
+          cramped column while the sidebar carried mostly admin
+          actions the user reaches for occasionally. */}
+      <div className="space-y-6">
+        <div className="space-y-4">
           {editing ? (
             <Card>
               <CardContent className="p-5 space-y-4">
@@ -522,214 +654,313 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             </Card>
           ) : (
             <>
-              {job.description && (
-                <Card>
-                  <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
-                </Card>
-              )}
-              {job.requirements && (
-                <Card>
-                  <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
-                </Card>
-              )}
-              {job.salaryRange && (
-                <Card>
-                  <CardContent className="p-4">
-                    <span className="text-sm text-gray-500">Salary Range: </span>
-                    <span className="font-medium">{job.salaryRange}</span>
-                    <span className="ml-2 text-xs text-gray-500">
-                      {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
-                    </span>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Candidates shared for this job */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Candidates {jobCandidates.length > 0 && <span className="text-gray-400">({jobCandidates.length})</span>}
-                  </CardTitle>
-                  {jobCandidates.length > 0 && (
-                    <Link href={`/client-portal/candidates?clientJobId=${id}`} className="text-xs text-emerald-600 hover:underline">
+              {/* Pipeline lives as its own section above the tabs — the
+                  recruiter wants the kanban prominent + always visible
+                  (parity with the agency-side intent). Notes / Details
+                  / Documents fall into a separate tabs strip below so
+                  the secondary panes don't compete with the pipeline
+                  for the primary surface. */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-700">
+                    Pipeline
+                    {jobCandidates.length > 0 ? ` · ${jobCandidates.length}` : ""}
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {jobCandidates.length > 0 && (
+                      <div className="inline-flex rounded-md border bg-white p-0.5">
+                        {(["pipeline", "list"] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setCandidatesView(v)}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded ${
+                              candidatesView === v
+                                ? "bg-emerald-600 text-white"
+                                : "text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            {v === "pipeline" ? "Pipeline" : "List"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <Link
+                      href={`/client-portal/candidates?clientJobId=${id}`}
+                      className="text-xs text-emerald-600 hover:underline"
+                    >
                       View all →
                     </Link>
-                  )}
-                </CardHeader>
-                <CardContent className="p-0">
-                  {jobCandidates.length === 0 ? (
-                    <div className="p-6 text-center">
-                      <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">No candidates shared yet.</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Your recruiting firms will share candidates here as they find them.
-                      </p>
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Candidate</TableHead>
-                          <TableHead>Stage</TableHead>
-                          <TableHead>Firm</TableHead>
-                          <TableHead>Location</TableHead>
-                          <TableHead>Rating</TableHead>
-                          <TableHead>Shared</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {jobCandidates.map((row) => (
-                          <CandidateTableRow
-                            key={row.submissionId}
-                            row={row}
-                            showJob={false}
-                            onRated={fetchJobCandidates}
-                          />
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
+                  </div>
+                </div>
+                <Card>
+                  <CardContent className="p-0">
+                    {jobCandidates.length === 0 ? (
+                      <div className="p-8 text-center">
+                        <Users className="block h-8 w-8 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500">No candidates shared yet.</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Your recruiting firms will share candidates here as they find them.
+                        </p>
+                      </div>
+                    ) : candidatesView === "pipeline" ? (
+                      <div className="p-4">
+                        <ReadOnlyPipeline
+                          stages={pipelineStages}
+                          submissions={jobCandidates}
+                        />
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Candidate</TableHead>
+                            <TableHead>Stage</TableHead>
+                            <TableHead>Firm</TableHead>
+                            <TableHead>Location</TableHead>
+                            <TableHead>Shared</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {jobCandidates.map((row) => (
+                            <CandidateTableRow
+                              key={row.submissionId}
+                              row={row}
+                              showJob={false}
+                              onRated={fetchJobCandidates}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
-              {/* Documents */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Job Description File
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
-                    if (jdDoc) {
-                      return (
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{jdDoc.name}</p>
-                              <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
+              <Tabs
+                value={activeTab === "pipeline" ? "notes" : activeTab}
+                onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+              >
+                <TabsList>
+                  <TabsTrigger value="notes">
+                    Notes{job?.comments?.length ? ` (${job.comments.length})` : ""}
+                  </TabsTrigger>
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="documents">
+                    Documents{documents.length > 0 ? ` (${documents.length})` : ""}
+                  </TabsTrigger>
+                </TabsList>
+
+              {/* Notes tab — the chat-style thread for the client team.
+                  Used to be always-visible above the page; moved here so
+                  the page can open straight on Pipeline (the question
+                  the hiring manager actually came for). */}
+              <TabsContent value="notes" className="space-y-3">
+                <ClientJobChat
+                  jobId={id}
+                  comments={job?.comments || []}
+                  onCommentAdded={fetchJob}
+                  currentClientUserId={currentClientUserId}
+                />
+              </TabsContent>
+
+              {/* Details tab — description / requirements / salary. The
+                  empty-state CTA also lives here so "Add details" is
+                  always one click away. */}
+              <TabsContent value="details" className="space-y-4">
+                {job.description && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm text-gray-500">Description</CardTitle></CardHeader>
+                    <CardContent><p className="text-sm whitespace-pre-wrap">{job.description}</p></CardContent>
+                  </Card>
+                )}
+                {job.requirements && (
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm text-gray-500">Requirements</CardTitle></CardHeader>
+                    <CardContent><p className="text-sm whitespace-pre-wrap">{job.requirements}</p></CardContent>
+                  </Card>
+                )}
+                {job.salaryRange && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <span className="text-sm text-gray-500">Salary Range: </span>
+                      <span className="font-medium">{job.salaryRange}</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        {getCurrency(job.salaryCurrency).flag} {job.salaryCurrency || "USD"}
+                      </span>
+                    </CardContent>
+                  </Card>
+                )}
+                {!job.description && !job.requirements && !job.salaryRange && (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <p className="text-sm text-gray-400 mb-2">No description added yet</p>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
+                        <Pencil className="h-3 w-3" />
+                        Add Details
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Documents tab — JD file + additional attachments. Both
+                  upload-enabled because right now every ClientJob is
+                  authored by the client (postedById is always a
+                  ClientUser). Read-only-when-agency-authored will land
+                  when we add the agency-pushed Job flow. */}
+              <TabsContent value="documents" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Job Description File
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const jdDoc = documents.find((d) => d.category === "JOB_DESCRIPTION");
+                      if (jdDoc) {
+                        return (
+                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{jdDoc.name}</p>
+                                <p className="text-xs text-gray-400">{(jdDoc.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
+                                <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
+                              </a>
+                              {/* Delete only when the search lives on
+                                  the client side. Agency-mirrored docs
+                                  belong to the firm. */}
+                              {!job.createdByAgency && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <a href={jdDoc.downloadUrl || jdDoc.url} target="_blank" rel="noopener noreferrer" download>
-                              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
-                            </a>
-                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                        );
+                      }
+                      // No JD yet. Show the upload affordance only when
+                      // this client team owns the search. For agency-
+                      // mirrored ones we just show a soft empty-state.
+                      if (job.createdByAgency) {
+                        return (
+                          <div className="border border-dashed rounded-lg p-5 text-center text-xs text-gray-400">
+                            No JD shared yet. Your recruiting firm will upload it on their side.
                           </div>
-                        </div>
+                        );
+                      }
+                      return (
+                        <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
+                          {uploadingJD ? (
+                            <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
+                          ) : (
+                            <Upload className="h-5 w-5 text-gray-400 mb-2" />
+                          )}
+                          <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
+                          <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.txt"
+                            disabled={uploadingJD}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadDocument(file, "JOB_DESCRIPTION");
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
                       );
-                    }
-                    return (
-                      <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
-                        {uploadingJD ? (
-                          <Loader2 className="h-5 w-5 text-emerald-500 animate-spin mb-2" />
-                        ) : (
-                          <Upload className="h-5 w-5 text-gray-400 mb-2" />
-                        )}
-                        <span className="text-sm text-gray-500">{uploadingJD ? "Uploading..." : "Upload Job Description"}</span>
-                        <span className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT (max 10MB)</span>
+                    })()}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Additional Documents
+                    </CardTitle>
+                    {!job.createdByAgency && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          disabled={uploadingAdditional}
+                          onClick={() => additionalFileInputRef.current?.click()}
+                        >
+                          {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          {uploadingAdditional ? "Uploading..." : "Add"}
+                        </Button>
                         <input
+                          ref={additionalFileInputRef}
                           type="file"
                           className="hidden"
-                          accept=".pdf,.doc,.docx,.txt"
-                          disabled={uploadingJD}
+                          accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
+                          disabled={uploadingAdditional}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) uploadDocument(file, "JOB_DESCRIPTION");
+                            if (file) uploadDocument(file, "ADDITIONAL");
                             e.target.value = "";
                           }}
                         />
-                      </label>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-
-              {/* Additional Documents */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm text-gray-500 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Additional Documents
-                  </CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1 text-xs"
-                    disabled={uploadingAdditional}
-                    onClick={() => additionalFileInputRef.current?.click()}
-                  >
-                    {uploadingAdditional ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                    {uploadingAdditional ? "Uploading..." : "Add"}
-                  </Button>
-                  <input
-                    ref={additionalFileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
-                    disabled={uploadingAdditional}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) uploadDocument(file, "ADDITIONAL");
-                      e.target.value = "";
-                    }}
-                  />
-                </CardHeader>
-                <CardContent>
-                  {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <FileText className="h-4 w-4 text-gray-500 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{doc.name}</p>
-                              <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                      </>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {documents.filter((d) => d.category === "ADDITIONAL").length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-3">No additional documents</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {documents.filter((d) => d.category === "ADDITIONAL").map((doc) => (
+                          <div key={doc.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileText className="h-4 w-4 text-gray-500 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{doc.name}</p>
+                                <p className="text-[11px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
+                                <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
+                              </a>
+                              {!job.createdByAgency && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
-                              <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
-                            </a>
-                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {!job.description && !job.requirements && !job.salaryRange && (
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <p className="text-sm text-gray-400 mb-2">No description added yet</p>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={startEditing}>
-                      <Pencil className="h-3 w-3" />
-                      Add Details
-                    </Button>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
-              )}
+              </TabsContent>
+              </Tabs>
             </>
           )}
         </div>
 
-        {/* Right sidebar */}
-        <div className="space-y-4">
-          {/* Your Internal Team */}
+        {/* Supporting cards below the main pipeline. Three-column on
+            large screens, stacked on mobile. Used to be a permanent
+            right sidebar; moved here so the pipeline gets the full
+            width up top. */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Your Internal Team — hidden while the Job access panel is
+              in edit mode below, because that surface already lists
+              the same people with explicit access checkboxes. Showing
+              both side-by-side just duplicates the roster. */}
+          {!showManageAccess && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -823,6 +1054,126 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               )}
             </CardContent>
           </Card>
+          )}
+
+          {/* Job access — who on the team can see this JO. Skipped on
+              solo workspaces (no one else to restrict against). Shows
+              the explicit member list with a clear "restricted" copy +
+              count of the total team, or a banner pointing out the
+              legacy "everyone" state for jobs created before this
+              feature existed. The creator gets a subtle (owner) tag so
+              it's obvious which badge is the JO's author vs. someone
+              that was added later. */}
+          {teamMembers.length > 1 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Users className="h-4 w-4 text-emerald-600" />
+                  Job access
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  onClick={() => (showManageAccess ? setShowManageAccess(false) : openManageAccess())}
+                >
+                  {showManageAccess ? "Close" : "Manage"}
+                </Button>
+              </CardHeader>
+              <CardContent className="pt-1">
+                {!showManageAccess && (
+                  (job?.members?.length || 0) === 0 ? (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {(job?.members || []).map((m: any) => {
+                        const isCreator = job?.postedById === m.clientUser.id;
+                        return (
+                          <span
+                            key={m.clientUser.id}
+                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-sm px-3 py-1.5 rounded-lg"
+                            title={m.clientUser.email}
+                          >
+                            {m.clientUser.name}
+                            {isCreator && (
+                              <span className="text-[11px] text-emerald-600/70 font-normal">
+                                (owner)
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+
+                {showManageAccess && (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-gray-500">
+                      Tick the people who should see this job. Unchecking everyone reverts to the legacy &quot;visible to the whole team&quot; state — useful if you accidentally restricted it.
+                    </p>
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                      {teamMembers
+                        .filter((m: any) => m.isActive !== false)
+                        .map((m: any) => {
+                          const checked = accessIds.includes(m.id);
+                          const isCreator = job?.postedById === m.id;
+                          return (
+                            <label
+                              key={m.id}
+                              className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer ${
+                                isCreator ? "bg-gray-50" : "hover:bg-gray-50"
+                              }`}
+                              title={isCreator ? "Always a member — the job's creator can't be removed." : undefined}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked || isCreator}
+                                disabled={isCreator}
+                                onChange={() => toggleAccessId(m.id)}
+                                className="rounded border-gray-300"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-gray-900 truncate">
+                                  {m.name}
+                                  {isCreator && (
+                                    <span className="ml-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                                      creator
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">{m.email}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        onClick={() => setShowManageAccess(false)}
+                        disabled={savingAccess}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                        onClick={saveAccess}
+                        disabled={savingAccess}
+                      >
+                        {savingAccess ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Recruiting Firms */}
           <Card>
@@ -1001,12 +1352,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </p>
 
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email or search</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
                     type="email"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="recruiter@firm.com or search by name / firm"
+                    placeholder="name@firm.com"
                     className="text-sm"
                     autoComplete="off"
                   />
@@ -1083,67 +1434,61 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       </p>
                     );
                   }
-                  const q = inviteEmail.trim().toLowerCase();
-                  const matches = inviteSuggestions.filter((s) =>
-                    !q ||
-                    (s.email || "").toLowerCase().includes(q) ||
-                    (s.firmName || "").toLowerCase().includes(q) ||
-                    (s.name || "").toLowerCase().includes(q)
-                  );
-                  // Group by firmName. People we don't have a firm for
-                  // (pending email invites that never registered) fall
-                  // into a trailing "No firm yet" bucket.
-                  const NO_FIRM_KEY = "__no_firm__";
-                  const groups = new Map<string, { label: string; items: InviteSuggestion[] }>();
-                  for (const m of matches) {
-                    const key = m.firmName || NO_FIRM_KEY;
-                    const label = m.firmName || "No firm yet";
-                    const g = groups.get(key) || { label, items: [] };
-                    g.items.push(m);
-                    groups.set(key, g);
-                  }
-                  const groupList = Array.from(groups.entries())
-                    .sort((a, b) => {
-                      if (a[0] === NO_FIRM_KEY) return 1;
-                      if (b[0] === NO_FIRM_KEY) return -1;
-                      return a[1].label.localeCompare(b[1].label);
-                    });
-                  // Collapse policy: when the book gets busy (≥4 firms
-                  // or ≥10 people), only the largest firm stays
-                  // expanded by default so the form doesn't grow off-
-                  // screen. User can click any firm header to toggle.
-                  const totalFirms = groupList.length;
-                  const totalPeople = matches.length;
-                  const startsCollapsed = totalFirms >= 4 || totalPeople >= 10;
-                  const largestFirmKey = groupList.length > 0
-                    ? groupList.reduce((a, b) => (b[1].items.length > a[1].items.length ? b : a))[0]
-                    : null;
-                  const isCollapsed = (key: string) => {
-                    if (collapsedFirms.has(key)) return true;
-                    if (!startsCollapsed) return false;
-                    return key !== largestFirmKey;
-                  };
-                  const toggleFirm = (key: string) => {
-                    setCollapsedFirms((prev) => {
-                      const next = new Set(prev);
-                      const currentlyCollapsed = isCollapsed(key);
-                      if (currentlyCollapsed) next.delete(key);
-                      else next.add(key);
-                      // If we're starting from the collapse-policy
-                      // default and clicking to expand, we need to
-                      // explicitly uncollapse the default-collapsed
-                      // ones. Handled by deleting the key above.
-                      return next;
-                    });
-                  };
 
-                  if (matches.length === 0) {
+                  // Build the "firms previously engaged" list from
+                  // every suggestion (person-level + firm-only legacy).
+                  // The dropdown surfaces each firm + how many real
+                  // contacts you have at that firm, so picking one
+                  // narrows the recruiter list below. Firms with zero
+                  // real contacts are filtered out — surfacing
+                  // "Morabits · no saved contacts" only confused users
+                  // because there's nothing to click after picking it.
+                  type FirmSummary = { name: string; contactCount: number };
+                  const firmMap = new Map<string, FirmSummary>();
+                  for (const s of inviteSuggestions) {
+                    if (!s.firmName) continue;
+                    if (s.firmOnly) continue;
+                    const existing = firmMap.get(s.firmName) || {
+                      name: s.firmName,
+                      contactCount: 0,
+                    };
+                    existing.contactCount += 1;
+                    firmMap.set(s.firmName, existing);
+                  }
+                  const firmOptions = Array.from(firmMap.values()).sort((a, b) =>
+                    a.name.localeCompare(b.name)
+                  );
+
+                  // If we have inviteSuggestions but none with a real
+                  // contact behind a firm, the dropdown would be empty
+                  // — fall back to the "no saved contacts" empty state
+                  // shown when the suggestions list itself is empty.
+                  if (firmOptions.length === 0) {
                     return (
-                      <p className="text-[11px] text-gray-400">
-                        No contacts match &ldquo;{q}&rdquo;.
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        You haven&apos;t invited anyone from this client yet.
+                        The first recruiter you invite shows up here for one-
+                        click reuse on future jobs.
                       </p>
                     );
                   }
+
+                  // Filter the person-level contact list by:
+                  //   1. Selected firm (if any) — gates first.
+                  //   2. Free-text query from the email input.
+                  // firm-only legacy rows never show up here — they're
+                  // surfaced only via the dropdown.
+                  const q = inviteEmail.trim().toLowerCase();
+                  const filteredContacts = inviteSuggestions.filter((s) => {
+                    if (s.firmOnly) return false;
+                    if (selectedFirm && s.firmName !== selectedFirm) return false;
+                    if (!q) return true;
+                    return (
+                      (s.email || "").toLowerCase().includes(q) ||
+                      (s.firmName || "").toLowerCase().includes(q) ||
+                      (s.name || "").toLowerCase().includes(q)
+                    );
+                  });
 
                   const statusPill: Record<InviteStatus, { label: string; className: string }> = {
                     accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
@@ -1152,114 +1497,105 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
                   };
 
+                  const selectedFirmInfo = selectedFirm
+                    ? firmMap.get(selectedFirm) || null
+                    : null;
+
                   return (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                          Your recruiter contacts
-                        </p>
-                        <span className="text-[10px] text-gray-400">{totalPeople}</span>
+                    <div className="space-y-2">
+                      {/* Firms dropdown — every agency this client
+                          has engaged before. Picking one filters the
+                          recruiter contacts below. */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1 block">
+                          Previously engaged firms ({firmOptions.length})
+                        </label>
+                        <select
+                          value={selectedFirm || ""}
+                          onChange={(e) => setSelectedFirm(e.target.value || null)}
+                          className="w-full h-9 px-2.5 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                        >
+                          <option value="">Select a firm…</option>
+                          {firmOptions.map((f) => (
+                            <option key={f.name} value={f.name}>
+                              {f.name} · {f.contactCount} contact{f.contactCount === 1 ? "" : "s"}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-gray-50/60 divide-y divide-gray-100 overflow-hidden">
-                        {groupList.map(([key, g]) => {
-                          const collapsed = isCollapsed(key);
-                          return (
-                            <div key={key}>
-                              <button
-                                type="button"
-                                onClick={() => toggleFirm(key)}
-                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
-                              >
-                                <span className="flex items-center gap-1.5 min-w-0">
-                                  {collapsed
-                                    ? <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
-                                    : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />}
-                                  <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
-                                  <span className="font-medium truncate">{g.label}</span>
-                                </span>
-                                <span className="text-[10px] text-gray-400 shrink-0">{g.items.length}</span>
-                              </button>
-                              {!collapsed && (
-                                <ul className="bg-white">
-                                  {g.items.map((s) => {
-                                    const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
-                                    return (
-                                      <li key={s.key}>
-                                        <button
-                                          type="button"
-                                          disabled={s.alreadyOnThisJob}
-                                          onClick={() => {
-                                            if (s.alreadyOnThisJob) return;
-                                            // Firm-only rows have no email to prefill;
-                                            // clicking them clears the input so the
-                                            // user can type the specific person.
-                                            setInviteEmail(s.email || "");
-                                          }}
-                                          className={`w-full text-left px-2.5 py-1.5 transition-colors ${
-                                            s.alreadyOnThisJob
-                                              ? "opacity-60 cursor-not-allowed"
-                                              : selected
-                                              ? "bg-indigo-50"
-                                              : "hover:bg-indigo-50/70"
-                                          }`}
-                                        >
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1">
-                                              {s.firmOnly ? (
-                                                <>
-                                                  <p className="text-xs font-medium text-gray-800 truncate">
-                                                    {s.firmName}
-                                                  </p>
-                                                  <p className="text-[10px] text-gray-400 truncate">
-                                                    Previously engaged · type the specific person&apos;s email
-                                                  </p>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <p className={`text-xs font-medium truncate ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                                    {s.name || s.email}
-                                                  </p>
-                                                  {s.name && (
-                                                    <p className="text-[10px] text-gray-400 truncate">
-                                                      {s.email}
-                                                    </p>
-                                                  )}
-                                                </>
-                                              )}
-                                            </div>
-                                            {(() => {
-                                              if (s.alreadyOnThisJob) {
-                                                return (
-                                                  <span className="text-[10px] font-medium text-indigo-600 shrink-0">
-                                                    on this job
-                                                  </span>
-                                                );
-                                              }
-                                              if (s.firmOnly) {
-                                                return (
-                                                  <span className="text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                                                    firm only
-                                                  </span>
-                                                );
-                                              }
-                                              const p = statusPill[s.status];
-                                              return (
-                                                <span className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded ${p.className}`}>
-                                                  {p.label}
-                                                </span>
-                                              );
-                                            })()}
-                                          </div>
-                                        </button>
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+
+                      {/* Recruiter contacts — only rendered once the
+                          user has actively picked a firm. Default
+                          state (no firm selected) shows nothing, so
+                          the modal stays compact and the user
+                          consciously narrows before scanning a list. */}
+                      {selectedFirm && (
+                        filteredContacts.length === 0 ? (
+                          <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
+                            No contacts at {selectedFirmInfo?.name} match &ldquo;{q}&rdquo;.
+                          </p>
+                        ) : (
+                          <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+                            {filteredContacts.map((s) => {
+                              const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
+                              return (
+                                <button
+                                  key={s.key}
+                                  type="button"
+                                  disabled={s.alreadyOnThisJob}
+                                  onClick={() => {
+                                    if (s.alreadyOnThisJob) return;
+                                    setInviteEmail(s.email || "");
+                                  }}
+                                  className={`w-full text-left px-2.5 py-2 transition-colors ${
+                                    s.alreadyOnThisJob
+                                      ? "opacity-60 cursor-not-allowed"
+                                      : selected
+                                      ? "bg-indigo-50"
+                                      : "hover:bg-indigo-50/70"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                        {s.name || s.email}
+                                      </p>
+                                      {s.name && (
+                                        <p className="text-[11px] text-gray-500 break-all">
+                                          {s.email}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {(() => {
+                                      // Pill policy: only render when there's something
+                                      // the user actually needs to know. "accepted" is
+                                      // the default state for anyone who's worked with
+                                      // this client (we just filtered them in), so a
+                                      // pill there is noise. Pending / declined /
+                                      // awaiting-signup / on-this-job all stay because
+                                      // they change the action the user should take.
+                                      if (s.alreadyOnThisJob) {
+                                        return (
+                                          <span className="text-[10px] font-medium text-indigo-600 shrink-0 mt-0.5">
+                                            on this job
+                                          </span>
+                                        );
+                                      }
+                                      if (s.status === "accepted") return null;
+                                      const p = statusPill[s.status];
+                                      return (
+                                        <span className={`text-[10px] font-medium shrink-0 mt-0.5 px-1.5 py-0.5 rounded ${p.className}`}>
+                                          {p.label}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
                     </div>
                   );
                 })()}
@@ -1305,3 +1641,4 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     </div>
   );
 }
+

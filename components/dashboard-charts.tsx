@@ -166,7 +166,11 @@ export function JobStatusChart({ data }: { data: { status: string; count: number
   );
 }
 
-export function RecruiterLeaderboard({ data }: { data: { name: string; candidates: number; submissions: number }[] }) {
+export function RecruiterLeaderboard({
+  data,
+}: {
+  data: { name: string; candidates: number; submissions: number; placements: number }[];
+}) {
   if (!data || data.length === 0) return <EmptyChart label="No recruiter data yet" />;
 
   return (
@@ -186,6 +190,9 @@ export function RecruiterLeaderboard({ data }: { data: { name: string; candidate
             <div className="flex gap-3 text-xs text-gray-500">
               <span>{recruiter.candidates} candidates</span>
               <span>{recruiter.submissions} submissions</span>
+              <span className="font-semibold text-emerald-600">
+                {recruiter.placements} placement{recruiter.placements === 1 ? "" : "s"}
+              </span>
             </div>
           </div>
         </div>

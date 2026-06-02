@@ -443,8 +443,8 @@ function Features() {
       tab: "Smart Parsing",
       icon: Sparkles,
       title: "Smart resume parsing",
-      desc: "Upload a resume (PDF, DOCX, TXT) and watch the form auto-fill. Name, email, phone, skills, experience — extracted in seconds using pattern matching. Also import directly from LinkedIn.",
-      bullets: ["PDF, DOCX, TXT support", "Skills & experience extraction", "LinkedIn profile import", "Bulk import from any ATS"],
+      desc: "Upload a resume (PDF, DOCX, TXT) and watch the form auto-fill. Name, email, phone, skills, experience — extracted in seconds using pattern matching.",
+      bullets: ["PDF, DOCX, TXT support", "Skills & experience extraction", "Auto-redact for client shares", "Bulk import from any ATS"],
       mockup: (
         <div className="space-y-3">
           <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
@@ -1011,7 +1011,7 @@ function FAQ() {
 
   const questions = [
     { q: "How does the free trial work?", a: "You get 5 days of full access to try Recruiting ATS. A credit card is required at signup — we won't charge you until the trial ends. Solo is $15/seat/month (1 seat) and Team is $19/seat/month (2–10 seats). Cancel any time before the trial ends and you won't be billed." },
-    { q: "Can I import data from my current ATS?", a: "Yes. We support CSV and JSON imports for candidates, clients, and jobs. We have templates for Bullhorn, Zoho, Lever, Greenhouse, Loxo, and Ashby exports." },
+    { q: "Can I import data from my current ATS?", a: "Yes. We support CSV, TSV, Excel, and JSON imports for candidates, clients, and jobs. Most ATSs export to one of these — drop the file in and we'll map the columns." },
     { q: "How does the client portal work?", a: "The client portal is included with every Recruiting ATS plan. You invite each hiring client by email. They see the candidates you share, rate them, leave comments, chat with you, and track progress — all without ever touching your internal pipeline. Salary info is auto-redacted. Your clients don't pay a cent and don't need an account until you invite them." },
     { q: "Is my data secure?", a: "Yes. All data is encrypted in transit (TLS) and at rest. We run on managed Postgres (Neon) with per-organization isolation. We&apos;re not SOC 2 certified yet — that&apos;s on the roadmap, and we&apos;ll be transparent about it when we are." },
     { q: "What happens when I cancel?", a: "You can export all your data anytime. When you cancel, you retain read-only access through your billing period end. We never hold your data hostage." },

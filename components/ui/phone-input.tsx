@@ -220,14 +220,36 @@ export function PhoneInput({
     }
   }, [value]);
 
-  // After hydration, swap the SSR fallback prefix ("+54") for one derived
-  // from the user's browser locale — but only when there's no value yet and
-  // the user hasn't already picked a country. This avoids the awkward case
-  // where a US recruiter sees "+54" pre-filled.
+  // After hydration, swap the SSR fallback prefix ("+54") for one
+  // derived from the user's location — but only when there's no value
+  // yet and the user hasn't already picked a country. Order of
+  // preference: geo-IP from the server (Vercel sets the country
+  // header), then browser locale, then timezone. The geo-IP path is
+  // more accurate (US recruiters with English locales in Argentina
+  // get +54, not +1) but the locale fallback still handles local dev.
   useEffect(() => {
     if (value || defaultValue || number) return;
-    const detected = detectBrowserDialCode();
-    if (detected && detected !== prefix) setPrefix(detected);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/geo/country");
+        if (!res.ok) throw new Error();
+        const data: { country: string | null } = await res.json();
+        if (cancelled) return;
+        if (data.country && COUNTRY_TO_DIAL[data.country]) {
+          setPrefix(COUNTRY_TO_DIAL[data.country]);
+          return;
+        }
+        throw new Error("no geo country");
+      } catch {
+        if (cancelled) return;
+        const detected = detectBrowserDialCode();
+        if (detected && detected !== prefix) setPrefix(detected);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // Run once on mount; later edits should keep the user's choice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

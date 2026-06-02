@@ -6,6 +6,26 @@ const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
+// Outbound-mail safety rails. Set these in any env where real
+// addresses could land in the To field while we're still testing:
+//
+//   DISABLE_OUTBOUND_EMAIL=1   — drop every send, log the subject/body
+//                                so the flow still completes without
+//                                contacting anyone.
+//   EMAIL_ALLOWLIST=a@x,b@y    — only addresses in this comma list go
+//                                out; the rest are dropped with a log.
+//                                Lets us test with our own inboxes
+//                                without ever risking a client mail.
+//
+// Production should leave both unset.
+const outboundDisabled =
+  process.env.DISABLE_OUTBOUND_EMAIL === "1" ||
+  process.env.DISABLE_OUTBOUND_EMAIL === "true";
+const allowlist = (process.env.EMAIL_ALLOWLIST || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 type SendArgs = {
   to: string;
   subject: string;
@@ -13,12 +33,24 @@ type SendArgs = {
 };
 
 async function sendEmail({ to, subject, html }: SendArgs) {
+  if (outboundDisabled) {
+    console.warn(
+      `[email] DISABLE_OUTBOUND_EMAIL set — dropping mail to ${to}: ${subject}`
+    );
+    return { skipped: true as const, reason: "disabled" };
+  }
+  if (allowlist.length > 0 && !allowlist.includes(to.trim().toLowerCase())) {
+    console.warn(
+      `[email] ${to} not in EMAIL_ALLOWLIST — dropping mail: ${subject}`
+    );
+    return { skipped: true as const, reason: "allowlist" };
+  }
   if (!resend) {
     console.warn(
       `[email] RESEND_API_KEY not set — would have sent to ${to}: ${subject}`
     );
     console.log(`[email] HTML body:\n${html}`);
-    return { skipped: true as const };
+    return { skipped: true as const, reason: "no_key" };
   }
 
   const { data, error } = await resend.emails.send({
@@ -370,6 +402,41 @@ export async function sendClientTeamInviteEmail({
   });
 }
 
+// Sent when an existing teammate gets added to a specific Job on
+// the client portal. Different from the team-invite path (no
+// set-password — they already have a portal account); this just
+// tells them "you can now see this search" and links straight to it.
+export async function sendClientJobAccessGrantedEmail({
+  to,
+  memberName,
+  inviterName,
+  companyName,
+  jobTitle,
+  jobUrl,
+}: {
+  to: string;
+  memberName: string;
+  inviterName: string;
+  companyName: string;
+  jobTitle: string;
+  jobUrl: string;
+}) {
+  const html = wrapTemplate(
+    `${inviterName} added you to ${jobTitle}`,
+    `<p>Hi ${memberName},</p>
+     <p><strong>${inviterName}</strong> just gave you access to <strong>${jobTitle}</strong> on ${companyName}'s portal.</p>
+     <p>You can now review shared candidates, post notes for the team, and follow the pipeline.</p>`,
+    jobUrl,
+    "Open the search"
+  );
+
+  return sendEmail({
+    to,
+    subject: `${inviterName} added you to ${jobTitle}`,
+    html,
+  });
+}
+
 export async function sendNewMessageEmail({
   to,
   fromName,
@@ -574,6 +641,31 @@ export async function sendCandidateFeedbackEmail({
   });
 }
 
+export async function sendEmailVerificationEmail({
+  to,
+  recipientName,
+  verifyUrl,
+}: {
+  to: string;
+  recipientName: string;
+  verifyUrl: string;
+}) {
+  const firstName = recipientName?.split(" ")[0] || recipientName;
+  const html = wrapTemplate(
+    `Verify your email`,
+    `<p>Hi ${firstName},</p>
+     <p>Thanks for signing up. Please confirm this email address belongs to you so we can keep your account secure.</p>
+     <p>This link expires in 24 hours.</p>`,
+    verifyUrl,
+    "Verify email"
+  );
+  return sendEmail({
+    to,
+    subject: `Verify your email — ${appName}`,
+    html,
+  });
+}
+
 export async function sendWelcomeEmail({
   to,
   recipientName,
@@ -588,21 +680,29 @@ export async function sendWelcomeEmail({
   trialEndsAt?: Date;
 }) {
   const firstName = recipientName?.split(" ")[0] || recipientName;
+
+  // Deep-link to the specific create flows so the recruiter
+  // doesn't have to hunt for them. dashboardUrl is the full
+  // origin + /dashboard, so we strip the path and rebuild.
+  const origin = dashboardUrl.replace(/\/dashboard\/?$/, "");
+  const addClientUrl = `${origin}/clients/new`;
+  const addJobUrl = `${origin}/jobs/new`;
+  const inviteTeamUrl = `${origin}/settings/team`;
+
   const trialLine = trialEndsAt
-    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong> — no credit card needed.</p>`
+    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong>. We won't charge anything until it ends — cancel any time before then and you won't be billed.</p>`
     : "";
 
   const html = wrapTemplate(
-    `Welcome to ${appName}, ${firstName}`,
-    `<p>Thanks for signing up — <strong>${organizationName}</strong> is all set on ${appName}.</p>
+    `Welcome, ${firstName}`,
+    `<p><strong>${organizationName}</strong> is live on ${appName}. Here's the fastest path to your first placement:</p>
      ${trialLine}
-     <p>Three things to try first:</p>
-     <ul style="color: #4b5563; padding-left: 20px; line-height: 1.7;">
-       <li>Add your first client and post a job</li>
-       <li>Import candidates (CSV, resume parser, or manually)</li>
-       <li>Invite a teammate and start working the pipeline</li>
-     </ul>
-     <p>Everything lives in one place: your candidates, your clients, and the conversations with both.</p>`,
+     <ol style="color: #4b5563; padding-left: 20px; line-height: 1.9;">
+       <li><a href="${addClientUrl}" style="color: #4f46e5; font-weight: 600;">Add your first client</a> — set fee structure + payment terms once, reuse for every search.</li>
+       <li><a href="${addJobUrl}" style="color: #4f46e5; font-weight: 600;">Post your first job</a> — upload the JD and the parser fills the form for you.</li>
+       <li><a href="${inviteTeamUrl}" style="color: #4f46e5; font-weight: 600;">Invite a teammate</a> — collaborate on the same pipeline + share notes.</li>
+     </ol>
+     <p>Reply to this email if anything's confusing or missing — we read every message and ship fast.</p>`,
     dashboardUrl,
     "Open Dashboard"
   );

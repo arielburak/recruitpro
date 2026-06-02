@@ -21,8 +21,46 @@ export async function GET(
         documents: true,
         submissions: {
           include: {
-            job: { select: { title: true, id: true, clientId: true, client: { select: { name: true } } } },
-            stage: { select: { name: true, color: true } },
+            job: {
+              select: {
+                title: true,
+                id: true,
+                clientId: true,
+                // Fee/terms/currency surface on the candidate page so
+                // the Placement dialog can prefill exactly the way the
+                // board flow does. Fallback chain at use time: job →
+                // client defaults → undefined.
+                feeAmount: true,
+                feeType: true,
+                currency: true,
+                paymentTerms: true,
+                guaranteePeriod: true,
+                client: {
+                  select: {
+                    name: true,
+                    defaultPaymentTerms: true,
+                    defaultGuaranteePeriod: true,
+                    defaultCurrency: true,
+                  },
+                },
+                // Stages of the job's pipeline so the candidate page can
+                // render an inline stage selector for each submission.
+                stages: {
+                  select: { id: true, name: true, color: true, order: true },
+                  orderBy: { order: "asc" },
+                },
+              },
+            },
+            stage: { select: { id: true, name: true, color: true } },
+            // Mirror the per-row data the /jobs/[id] List view shows so
+            // the candidate's Jobs tab can read like a mini submissions
+            // table: share status (+ when), the client's perceived stage
+            // when shared, and activity counters.
+            clientStage: { select: { id: true, name: true, color: true } },
+            _count: { select: { comments: true, ratings: true } },
+            // Linked placement (if any). The candidate page warns before
+            // leaving Placed because that deletes the placement.
+            placement: { select: { id: true } },
             ratings: {
               select: { score: true, feedback: true, clientUser: { select: { name: true } } },
             },
@@ -56,6 +94,27 @@ export async function GET(
           orderBy: { createdAt: "desc" },
           take: 20,
           include: { user: { select: { name: true } } },
+        },
+        // Interview history per candidate. The candidate page surfaces
+        // this as a dedicated tab so the recruiter can see every
+        // session a candidate sat through across jobs, not just the
+        // current stage. Ordered chronologically (earliest first) so
+        // the timeline reads top-to-bottom in real time order.
+        interviews: {
+          orderBy: { startTime: "asc" },
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            type: true,
+            status: true,
+            notes: true,
+            meetingLink: true,
+            location: true,
+            timezone: true,
+            job: { select: { id: true, title: true } },
+          },
         },
       },
     });

@@ -27,10 +27,12 @@ import {
   Shield,
   ShieldOff,
   Lock,
+  Send,
+  UserCheck,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
-type SettingsTab = "profile" | "team" | "organization";
+type SettingsTab = "profile" | "organization";
 
 export default function ClientPortalSettingsPage() {
   const { data: session } = useSession();
@@ -71,6 +73,8 @@ export default function ClientPortalSettingsPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
+  const [contactMatch, setContactMatch] = useState<{ name: string; title: string | null; email: string } | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -96,6 +100,33 @@ export default function ClientPortalSettingsPage() {
       if (res.ok) setTeam(await res.json());
     } catch {}
   }
+
+  // When the recruiter types an email into the invite form, debounce
+  // and check whether that email already exists as a Contact on the
+  // agency side. If so, we pre-fill name/title so they don't retype.
+  useEffect(() => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@") || !email.includes(".")) {
+      setContactMatch(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/client-portal/contact-lookup?email=${encodeURIComponent(email)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.match) {
+          setContactMatch(null);
+          return;
+        }
+        setContactMatch(data.match);
+        // Only auto-fill empty fields — don't clobber what the user already typed.
+        setInviteName((prev) => (prev.trim() ? prev : data.match.name));
+        setInviteTitle((prev) => (prev.trim() ? prev : data.match.title || ""));
+      } catch {}
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [inviteEmail]);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -185,6 +216,7 @@ export default function ClientPortalSettingsPage() {
         setInviteTitle("");
         setInviteEmail("");
         setInviteRole("USER");
+        setContactMatch(null);
         fetchTeam();
       }
     } catch {
@@ -214,6 +246,34 @@ export default function ClientPortalSettingsPage() {
     fetchTeam();
   }
 
+  async function cancelInvite(memberId: string, email: string) {
+    if (!confirm(`Cancel invite for ${email}? They won't be able to use any previously sent link.`)) return;
+    const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Failed to cancel invite");
+    }
+    setMemberMenu(null);
+    fetchTeam();
+  }
+
+  async function resendInvite(memberId: string) {
+    setResendingId(memberId);
+    try {
+      const res = await fetch(`/api/client-portal/team/${memberId}/resend`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to resend invite");
+      } else {
+        alert(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
+      }
+    } catch {
+      alert("Something went wrong");
+    }
+    setResendingId(null);
+    setMemberMenu(null);
+  }
+
   async function changeMemberRole(memberId: string, newRole: "ADMIN" | "USER") {
     const res = await fetch(`/api/client-portal/team/${memberId}`, {
       method: "PATCH",
@@ -241,7 +301,6 @@ export default function ClientPortalSettingsPage() {
 
   const tabs: { id: SettingsTab; label: string; icon: any; adminOnly?: boolean }[] = [
     { id: "profile", label: "Profile", icon: User },
-    { id: "team", label: "Team", icon: Users, adminOnly: true },
     { id: "organization", label: "Organization", icon: Building2, adminOnly: true },
   ];
   const visibleTabs = tabs.filter((t) => !t.adminOnly || isAdmin);
@@ -410,176 +469,6 @@ export default function ClientPortalSettingsPage() {
           />
           )}
 
-          {/* ========== TEAM TAB ========== */}
-          {activeTab === "team" && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-emerald-500" />
-                Team Members
-              </CardTitle>
-              {isAdmin ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={() => { setShowInvite(!showInvite); setInviteResult(null); }}
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Add Member
-                </Button>
-              ) : (
-                <Badge variant="secondary" className="text-[10px] gap-1 bg-gray-100 text-gray-500">
-                  <Lock className="h-3 w-3" />
-                  Admin only
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent>
-              {isAdmin && showInvite && (
-                <div className="mb-4 p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg">
-                  <form onSubmit={inviteMember} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Name *</Label>
-                        <Input value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="John Smith" className="text-sm" required />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Job Title</Label>
-                        <Input value={inviteTitle} onChange={(e) => setInviteTitle(e.target.value)} placeholder="Hiring Manager" className="text-sm" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Email *</Label>
-                        <Input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="john@company.com" className="text-sm" required />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Permission</Label>
-                        <select
-                          value={inviteRole}
-                          onChange={(e) => setInviteRole(e.target.value as "USER" | "ADMIN")}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm"
-                        >
-                          <option value="USER">User</option>
-                          <option value="ADMIN">Admin</option>
-                        </select>
-                      </div>
-                    </div>
-                    <Button type="submit" size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5" disabled={inviting}>
-                      <Mail className="h-3.5 w-3.5" />
-                      {inviting ? "Sending..." : "Send Invitation"}
-                    </Button>
-                  </form>
-                  {inviteResult && (
-                    <div className={`mt-3 text-xs p-2.5 rounded-lg ${inviteResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
-                      <p>{inviteResult.message}</p>
-                      {inviteResult.link && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <input readOnly value={inviteResult.link} className="flex-1 bg-white border rounded px-2 py-1 text-[11px] text-gray-600 truncate" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(inviteResult.link!);
-                              setCopiedLink(true);
-                              setTimeout(() => setCopiedLink(false), 2000);
-                            }}
-                            className="shrink-0 p-1 rounded hover:bg-green-100"
-                          >
-                            {copiedLink ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5 text-gray-400" />}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {team.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">
-                  {isAdmin
-                    ? "No team members yet. Click \"Add Member\" to invite colleagues."
-                    : "No team members yet. Contact your admin to invite colleagues."}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {team.map((member) => (
-                    <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                      <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
-                        {member.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{member.name}</p>
-                        {member.title && <p className="text-[11px] text-gray-500 truncate">{member.title}</p>}
-                        <p className="text-xs text-gray-400 truncate">{member.email}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Badge
-                          variant={member.role === "ADMIN" ? "default" : "secondary"}
-                          className="text-[10px]"
-                        >
-                          {member.role === "ADMIN" ? "Admin" : "User"}
-                        </Badge>
-                        {!member.isActive && <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Inactive</Badge>}
-                        {isAdmin && (
-                          <div className="relative">
-                            <button
-                              onClick={() => setMemberMenu(memberMenu === member.id ? null : member.id)}
-                              className="p-1 rounded hover:bg-gray-200"
-                            >
-                              <MoreHorizontal className="h-4 w-4 text-gray-400" />
-                            </button>
-                            {memberMenu === member.id && (
-                              <div className="absolute right-0 top-8 z-10 bg-white border rounded-lg shadow-lg py-1 w-44">
-                                {member.role === "USER" ? (
-                                  <button
-                                    onClick={() => changeMemberRole(member.id, "ADMIN")}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <Shield className="h-3.5 w-3.5" /> Promote to Admin
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => changeMemberRole(member.id, "USER")}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <ShieldOff className="h-3.5 w-3.5" /> Demote to User
-                                  </button>
-                                )}
-                                {member.isActive ? (
-                                  <button
-                                    onClick={() => toggleMember(member.id, false)}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <UserX className="h-3.5 w-3.5" /> Deactivate
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => toggleMember(member.id, true)}
-                                    className="w-full text-left px-3 py-1.5 text-sm text-emerald-600 hover:bg-gray-50 flex items-center gap-2"
-                                  >
-                                    <CheckCircle className="h-3.5 w-3.5" /> Reactivate
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => removeMember(member.id)}
-                                  className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                >
-                                  <X className="h-3.5 w-3.5" /> Remove
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          )}
-          {/* ========== END TEAM TAB ========== */}
         </div>
 
         {/* Right Sidebar — only on Profile tab */}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,13 @@ function timeAgo(iso: string) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString();
+  if (diff < 2_592_000) return `${Math.floor(diff / 604800)}w ago`;
+  const date = new Date(iso);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${months[date.getMonth()]} ${date.getDate()}`
+    : `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
 
 export function NotificationBell() {
@@ -31,6 +38,12 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // Popover is portalled to document.body to escape parent stacking
+  // contexts. We track its viewport-relative position here.
+  const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   async function load() {
     try {
@@ -52,13 +65,38 @@ export function NotificationBell() {
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insideButton = !!buttonRef.current && buttonRef.current.contains(target);
+      const insidePopover = !!ref.current && ref.current.contains(target);
+      if (!insideButton && !insidePopover) {
         setOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Position popover below + right-aligned to the bell, like before
+  // (`right-0 top-11` in the absolute version). Recompute on resize
+  // / scroll while open.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    function update() {
+      const rect = buttonRef.current!.getBoundingClientRect();
+      const rightEdge = window.innerWidth - rect.right;
+      // top-11 → 44px below the button origin in the original markup.
+      // Mirror that by anchoring 8px below the bell's bottom edge so
+      // it stays consistent at every header height.
+      setPopoverPos({ top: rect.bottom + 8, right: rightEdge });
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   async function markAllRead() {
     try {
@@ -89,9 +127,69 @@ export function NotificationBell() {
     setOpen(false);
   }
 
+  const popover = open && popoverPos ? (
+    <div
+      ref={ref}
+      style={{ top: popoverPos.top, right: popoverPos.right }}
+      className="fixed z-[1000] w-[22rem] bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden"
+    >
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+        <p className="text-sm font-semibold text-gray-900">Notifications</p>
+        {unreadCount > 0 && (
+          <button
+            onClick={markAllRead}
+            className="text-[11px] text-emerald-600 hover:text-emerald-700 inline-flex items-center gap-1"
+          >
+            <CheckCheck className="h-3 w-3" />
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      <div className="max-h-96 overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="px-8 py-10 text-center">
+            <Bell className="block h-8 w-8 text-gray-200 mx-auto mb-3" />
+            <p className="text-xs text-gray-400 leading-relaxed">No notifications yet.</p>
+          </div>
+        ) : (
+          <ul>
+            {notifications.map((n) => (
+              <li key={n.id}>
+                {n.link ? (
+                  <Link
+                    href={n.link}
+                    onClick={() => handleClick(n)}
+                    className={cn(
+                      "block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
+                      !n.readAt && "bg-emerald-50/40"
+                    )}
+                  >
+                    <NotificationContent n={n} />
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => handleClick(n)}
+                    className={cn(
+                      "w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
+                      !n.readAt && "bg-emerald-50/40"
+                    )}
+                  >
+                    <NotificationContent n={n} />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
         className="relative p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
         aria-label="Notifications"
@@ -104,61 +202,7 @@ export function NotificationBell() {
           </span>
         )}
       </button>
-
-      {open && (
-        <div className="absolute right-0 top-11 z-50 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-            <p className="text-sm font-semibold text-gray-900">Notifications</p>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-[11px] text-emerald-600 hover:text-emerald-700 inline-flex items-center gap-1"
-              >
-                <CheckCheck className="h-3 w-3" />
-                Mark all read
-              </button>
-            )}
-          </div>
-
-          <div className="max-h-96 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-8 text-center">
-                <Bell className="h-8 w-8 text-gray-200 mx-auto mb-2" />
-                <p className="text-xs text-gray-400">No notifications yet.</p>
-              </div>
-            ) : (
-              <ul>
-                {notifications.map((n) => (
-                  <li key={n.id}>
-                    {n.link ? (
-                      <Link
-                        href={n.link}
-                        onClick={() => handleClick(n)}
-                        className={cn(
-                          "block px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
-                          !n.readAt && "bg-emerald-50/40"
-                        )}
-                      >
-                        <NotificationContent n={n} />
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => handleClick(n)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0",
-                          !n.readAt && "bg-emerald-50/40"
-                        )}
-                      >
-                        <NotificationContent n={n} />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
+      {mounted && popover ? createPortal(popover, document.body) : null}
     </div>
   );
 }
@@ -168,7 +212,7 @@ function NotificationContent({ n }: { n: Notification }) {
     <div className="flex items-start gap-2.5">
       {!n.readAt && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
       <div className={cn("min-w-0 flex-1", n.readAt && "pl-3.5")}>
-        <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{n.title}</p>
         {n.body && <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{n.body}</p>}
         <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
       </div>

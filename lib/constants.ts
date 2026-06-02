@@ -51,7 +51,6 @@ export const DEFAULT_STAGES: StageSpec[] = [
   { name: "Sourced",         color: "#94a3b8", isTerminal: false, kind: null },
   { name: "Internal Review", color: "#60a5fa", isTerminal: false, kind: null },
   { name: "Submitted",       color: "#a78bfa", isTerminal: false, kind: null },
-  { name: "Under Review",    color: "#f59e0b", isTerminal: false, kind: null },
   { name: "Interviewing",    color: "#3b82f6", isTerminal: false, kind: null },
   { name: "Offered",         color: "#8b5cf6", isTerminal: false, kind: null },
   { name: "Placed",          color: "#10b981", isTerminal: true,  kind: "positive" },
@@ -59,29 +58,86 @@ export const DEFAULT_STAGES: StageSpec[] = [
   { name: "Rejected",        color: "#6b7280", isTerminal: true,  kind: "negative" },
 ];
 
-// Aliases from legacy stage names to the canonical set. Used by the migration
-// script to remap existing PipelineStage rows.
+// Stages the client side ever sees. Everything before "Submitted" is
+// agency-internal work (sourcing, screening) and never reaches the
+// client portal. The pipeline view in /client-portal/jobs/[id] and the
+// auto-mirror of clientStage both filter by this list — keep it
+// consistent with DEFAULT_STAGES.
+export const CLIENT_VISIBLE_STAGE_NAMES = [
+  "Submitted",
+  "Interviewing",
+  "Offered",
+  "Placed",
+  "Lost",
+  "Rejected",
+] as const;
+export const CLIENT_VISIBLE_STAGE_SET: ReadonlySet<string> = new Set(
+  CLIENT_VISIBLE_STAGE_NAMES
+);
+
+// Aliases from legacy stage names to the canonical set. Used by the
+// migration script to remap existing PipelineStage rows. "Under Review"
+// is folded into "Submitted" — it used to sit between Submitted and
+// Interviewing but recruiters never used it in practice, the flow goes
+// straight from Submitted to Interviewing or Rejected.
 export const LEGACY_STAGE_ALIASES: Record<string, string> = {
   Interview: "Interviewing",
   Offer: "Offered",
   Contacted: "Internal Review",
+  "Under Review": "Submitted",
 };
 
+// User-facing statuses recruiters can pick. Order matches the
+// flow: signed → working → outcome (positive or negative).
 export const JOB_STATUS_LABELS: Record<string, string> = {
   OPEN: "Open",
   ACTIVE: "Active",
   ON_HOLD: "On Hold",
   FILLED: "Filled",
+  CANCELLED: "Cancelled",
+  LOST: "Lost",
+  // Legacy — included so old rows still render, hidden from
+  // selectable options via JOB_STATUS_SELECTABLE below.
   CLOSED: "Closed",
 };
+
+// Subset that's offered in create / edit dropdowns. CLOSED is
+// rendered for legacy rows but you can't save a new job as CLOSED.
+export const JOB_STATUS_SELECTABLE: readonly string[] = [
+  "OPEN",
+  "ACTIVE",
+  "ON_HOLD",
+  "FILLED",
+  "CANCELLED",
+  "LOST",
+];
 
 export const JOB_STATUS_COLORS: Record<string, string> = {
   OPEN: "bg-blue-100 text-blue-800",
   ACTIVE: "bg-green-100 text-green-800",
   ON_HOLD: "bg-yellow-100 text-yellow-800",
   FILLED: "bg-purple-100 text-purple-800",
+  CANCELLED: "bg-red-100 text-red-800",
+  LOST: "bg-rose-100 text-rose-800",
   CLOSED: "bg-gray-100 text-gray-800",
 };
+
+// AR payroll: worker pays ~17% in contributions (Jubilación 11% +
+// Ley 19032 / PAMI 3% + Obra Social 3%). So gross × 0.83 = net,
+// and net / 0.83 = gross. Used to normalise a NETO salary back to
+// BRUTO before fees are calculated.
+export const AR_NET_TO_GROSS = 1 / 0.83;
+
+// Currencies where the Bruto/Neto toggle is shown on the Placement
+// form. ARS is the obvious case; if other LATAM markets need it
+// later just add them here. Other currencies hide the toggle and
+// default the placement to BRUTO so US-flow users don't see a knob
+// they don't need.
+export const SALARY_KIND_CURRENCIES = new Set(["ARS"]);
+
+export function netToGross(net: number): number {
+  return net * AR_NET_TO_GROSS;
+}
 
 export const WORK_ARRANGEMENT_LABELS: Record<string, string> = {
   ON_SITE: "On-site",
@@ -98,6 +154,7 @@ export const WORK_ARRANGEMENT_COLORS: Record<string, string> = {
 // Industry verticals a recruiting firm may focus on. Stored as the raw label
 // so it renders directly without an extra lookup.
 export const INDUSTRY_OPTIONS: string[] = [
+  "Recruitment & Staffing",
   "Technology & Engineering",
   "Finance & Banking",
   "Healthcare & Life Sciences",
@@ -116,10 +173,8 @@ export const INDUSTRY_OPTIONS: string[] = [
 // Recruiting firm headcount bucket. Stored as the label so we don't need a
 // separate mapping table for reads.
 export const COMPANY_SIZE_OPTIONS: string[] = [
-  "Just me",
-  "2–5",
-  "6–10",
-  "11–25",
-  "26–50",
-  "50+",
+  "Under 10",
+  "10–50",
+  "50–200",
+  "200+",
 ];

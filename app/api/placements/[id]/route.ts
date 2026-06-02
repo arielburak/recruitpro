@@ -47,14 +47,24 @@ export async function PUT(
     const {
       estimatedStartDate,
       startDate,
+      // OS-specific fields (kind = "OS"). The form only sends these when
+      // the user is editing an OS placement; on HH they stay undefined
+      // and the existing flat-fee fields below take over.
+      kind,
+      monthlyFee,
+      endDate,
       feeAmount,
       feePercentage,
       salary,
+      currency,
+      salaryPeriod,
+      salaryKind,
       invoiceStatus,
       paymentTerms,
       paymentDueDate,
       guaranteePeriod,
       notes,
+      recruiterId,
     } = body;
 
     // Any anchor or terms touch triggers a re-resolve of derived dates.
@@ -90,15 +100,18 @@ export async function PUT(
       const pt = paymentTerms !== undefined ? paymentTerms : current.paymentTerms;
 
       if (touchesGuarantee && sd) {
+        // UTC date math — see /api/placements POST. These values
+        // represent calendar days, not moments in time, so local
+        // getDate/setDate would silently flip them across UTC.
         guaranteeExpiry = new Date(sd);
-        guaranteeExpiry.setDate(guaranteeExpiry.getDate() + gp);
+        guaranteeExpiry.setUTCDate(guaranteeExpiry.getUTCDate() + gp);
       }
 
       if (touchesPaymentDue && pt != null) {
         const anchor = sd ?? esd;
         if (anchor) {
           resolvedDue = new Date(anchor);
-          resolvedDue.setDate(resolvedDue.getDate() + pt);
+          resolvedDue.setUTCDate(resolvedDue.getUTCDate() + pt);
         }
       }
     }
@@ -110,9 +123,15 @@ export async function PUT(
           estimatedStartDate: estimatedStartDate ? new Date(estimatedStartDate) : null,
         }),
         ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
+        ...(kind !== undefined && { kind: kind === "OS" ? "OS" : "HH" }),
+        ...(monthlyFee !== undefined && { monthlyFee }),
+        ...(endDate !== undefined && { endDate: endDate ? new Date(endDate) : null }),
         ...(feeAmount !== undefined && { feeAmount }),
         ...(feePercentage !== undefined && { feePercentage }),
         ...(salary !== undefined && { salary }),
+        ...(currency !== undefined && { currency }),
+        ...(salaryPeriod !== undefined && { salaryPeriod }),
+        ...(salaryKind !== undefined && { salaryKind }),
         ...(invoiceStatus !== undefined && { invoiceStatus }),
         ...(paymentTerms !== undefined && { paymentTerms }),
         ...(paymentDueDate !== undefined && {
@@ -122,6 +141,20 @@ export async function PUT(
         ...(guaranteePeriod !== undefined && { guaranteePeriod }),
         ...(guaranteeExpiry !== undefined && { guaranteeExpiry }),
         ...(notes !== undefined && { notes }),
+        // Recruiter attribution. Validated against the org before
+        // assignment so a hand-crafted PUT can't credit a placement
+        // to a user from another firm. Empty string / null clears
+        // the override and reverts the UI to candidate.owner.
+        ...(recruiterId !== undefined && {
+          recruiterId: await (async () => {
+            if (!recruiterId) return null;
+            const u = await prisma.user.findFirst({
+              where: { id: recruiterId, organizationId: ctx.organizationId },
+              select: { id: true },
+            });
+            return u?.id || null;
+          })(),
+        }),
       },
     });
 
@@ -148,11 +181,55 @@ export async function DELETE(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    const deleted = await prisma.placement.deleteMany({
+    // Pull the placement first — we need submissionId + jobId to roll
+    // back the linked submission's stage out of "Placed" so the board
+    // doesn't keep showing the candidate there after the placement is
+    // gone. (Placements + submissions are intentionally a 1-1 record;
+    // losing one but not the other leaves an inconsistent UI.)
+    const placement = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
+      select: { id: true, submissionId: true, jobId: true },
     });
 
-    if (deleted.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (placement.submissionId) {
+      const submission = await prisma.candidateSubmission.findUnique({
+        where: { id: placement.submissionId },
+        select: { id: true, stage: { select: { name: true } } },
+      });
+
+      // Only rewrite the stage if the submission still sits at "Placed".
+      // If the recruiter already moved them somewhere else, respect that.
+      if (submission && submission.stage.name === "Placed") {
+        // Prefer "Offered" — the natural step right before "Placed" in
+        // the default pipeline, so the rollback feels like an undo. If
+        // the job's pipeline has been customised and "Offered" isn't
+        // there, fall back to the highest-order non-terminal stage
+        // (which is whatever sits right before Placed in this job).
+        const rollback =
+          (await prisma.pipelineStage.findFirst({
+            where: { jobId: placement.jobId, name: "Offered" },
+            select: { id: true },
+          })) ||
+          (await prisma.pipelineStage.findFirst({
+            where: {
+              jobId: placement.jobId,
+              name: { notIn: ["Placed", "Lost", "Rejected"] },
+            },
+            orderBy: { order: "desc" },
+            select: { id: true },
+          }));
+        if (rollback) {
+          await prisma.candidateSubmission.update({
+            where: { id: submission.id },
+            data: { stageId: rollback.id },
+          });
+        }
+      }
+    }
+
+    await prisma.placement.delete({ where: { id } });
 
     await logActivity({
       action: "PLACEMENT_DELETED",

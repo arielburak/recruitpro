@@ -4,6 +4,9 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
+import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -257,7 +260,13 @@ function NewClientContent() {
         </div>
       )}
 
-      <form onSubmit={onSubmit}>
+      {/* autoComplete="off" on the form (and again on each text input
+          below) tells the browser to stop offering its own history-
+          based suggestions. The screenshots showed "Nicolas Cuello /
+          Paul Rakovich / Merge IT" dropping into the Company Name
+          input — those are Chrome remembering values from same-name
+          inputs across other sites, not anything from the app. */}
+      <form onSubmit={onSubmit} autoComplete="off">
         <Card>
           <CardHeader>
             <CardTitle>Company Information</CardTitle>
@@ -326,6 +335,7 @@ function NewClientContent() {
               <Input
                 name="name"
                 required
+                autoComplete="off"
                 value={formValues.name}
                 className={
                   flaggedFields.has("name")
@@ -342,11 +352,11 @@ function NewClientContent() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Industry</Label>
-                <Input
-                  name="industry"
-                  placeholder="Technology, Finance, etc."
+                <Combobox
                   value={formValues.industry}
-                  onChange={(e) => updateField("industry", e.target.value)}
+                  onChange={(v) => updateField("industry", v)}
+                  options={INDUSTRY_OPTIONS}
+                  placeholder="Technology, Finance, etc."
                 />
               </div>
               <div className="space-y-2">
@@ -354,6 +364,7 @@ function NewClientContent() {
                 <Input
                   name="website"
                   placeholder="https://"
+                  autoComplete="off"
                   value={formValues.website}
                   className={
                     flaggedFields.has("website")
@@ -446,20 +457,12 @@ function NewClientContent() {
                   </div>
                   <div className="space-y-2">
                     <Label>Fee Amount</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                        {defaultFeeType === "FLAT" ? "$" : "%"}
-                      </span>
-                      <Input
-                        name="defaultFeeAmount"
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 15"
-                        className="pl-7"
-                        value={formValues.defaultFeeAmount}
-                        onChange={(e) => updateField("defaultFeeAmount", e.target.value)}
-                      />
-                    </div>
+                    <MoneyInput
+                      prefix={defaultFeeType === "FLAT" ? "$" : "%"}
+                      placeholder="e.g. 15"
+                      value={formValues.defaultFeeAmount}
+                      onChange={(v) => updateField("defaultFeeAmount", v)}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mt-3">

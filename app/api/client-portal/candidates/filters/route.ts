@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 
 // Returns filter options for the candidates page:
 // - jobs the client has that have at least one shared candidate
@@ -10,11 +11,18 @@ export async function GET() {
   try {
     const ctx = await getClientContext();
 
+    // Per-Job membership gate — the dropdowns on the candidates page
+    // should only offer jobs / firms the user actually has access to.
+    // Without this filter, a ClientUser with no membership on a Job
+    // could still see its name in the Job filter dropdown.
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+
     const [submissions, clientStages] = await Promise.all([
       prisma.candidateSubmission.findMany({
         where: {
           isSharedWithClient: true,
           job: { clientId: ctx.clientId },
+          jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
         },
         select: {
           jobId: true,

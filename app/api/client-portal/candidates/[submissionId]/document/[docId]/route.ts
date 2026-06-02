@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 
 // GET — stream a candidate document to the client portal user.
 //
@@ -17,12 +18,17 @@ export async function GET(
     const ctx = await getClientContext();
     const { submissionId, docId } = await params;
 
-    // Verify the submission belongs to this client AND is shared
+    // Same per-Job membership gate as the rest of the client-portal
+    // candidate endpoints — the user needs to be a member (or the
+    // ClientJob is legacy-open) to fetch a document on the shared
+    // submission.
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
         job: { clientId: ctx.clientId },
+        jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: { candidateId: true },
     });

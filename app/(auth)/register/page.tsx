@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { ArrowLeft, Briefcase, Building2, ChevronRight, CheckCircle2, Users, Globe, UserPlus, Sparkles, Mail } from "lucide-react";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
@@ -20,6 +21,9 @@ export default function RegisterPage() {
   // selector leads with that distinction so hiring companies don't get
   // stuck typing company details they can't use.
   const [step, setStep] = useState<"select" | "agency" | "client-info">("select");
+  // Controlled Industry so the user can either pick a standard
+  // bucket from INDUSTRY_OPTIONS or type a custom value.
+  const [industry, setIndustry] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,7 +39,7 @@ export default function RegisterPage() {
       title: formData.get("title") as string,
       email,
       password,
-      industry: formData.get("industry") as string,
+      industry,
       companySize: formData.get("companySize") as string,
     };
 
@@ -298,18 +302,13 @@ export default function RegisterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="industry">Industry</Label>
-                <select
+                <Combobox
                   id="industry"
-                  name="industry"
-                  required
-                  defaultValue=""
-                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  <option value="" disabled>Select…</option>
-                  {INDUSTRY_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
+                  value={industry}
+                  onChange={setIndustry}
+                  options={INDUSTRY_OPTIONS}
+                  placeholder="Select or type…"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="companySize">Team Size</Label>
@@ -334,7 +333,7 @@ export default function RegisterPage() {
                 <Input
                   id="name"
                   name="name"
-                  placeholder="John Smith"
+                  placeholder="e.g. María López"
                   className="focus-visible:ring-indigo-500"
                   required
                 />

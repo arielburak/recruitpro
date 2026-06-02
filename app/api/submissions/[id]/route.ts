@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendCandidateSharedEmail } from "@/lib/email";
+import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
 
 export async function PATCH(
   request: Request,
@@ -29,6 +30,28 @@ export async function PATCH(
     const updateData: any = {};
     if (body.stageId) updateData.stageId = body.stageId;
     if (body.notes !== undefined) updateData.notes = body.notes;
+
+    // If the recruiter is moving the submission OUT of "Placed", the
+    // linked placement record (if any) goes too. Placements only make
+    // sense for candidates still at Placed; leaving an orphan record
+    // would show stale revenue in /placements and a ghost in the
+    // candidate's history. The client side prompts for confirmation
+    // before sending the PATCH; here we just enforce the invariant.
+    let deletedPlacementId: string | null = null;
+    if (
+      updateData.stageId &&
+      updateData.stageId !== submission.stageId &&
+      submission.stage.name === "Placed"
+    ) {
+      const linkedPlacement = await prisma.placement.findUnique({
+        where: { submissionId: id },
+        select: { id: true },
+      });
+      if (linkedPlacement) {
+        await prisma.placement.delete({ where: { id: linkedPlacement.id } });
+        deletedPlacementId = linkedPlacement.id;
+      }
+    }
 
     const isTogglingShare = body.isSharedWithClient !== undefined;
     const wasShared = submission.isSharedWithClient;
@@ -70,6 +93,35 @@ export async function PATCH(
       }
     }
 
+    // Mirror agency stage → client stage on the way through. Whenever
+    // the recruiter advances the candidate into a stage the client is
+    // allowed to see (Submitted, Interviewing, Offered, …), find the
+    // matching ClientPipelineStage by name on the same Client and set
+    // clientStageId so the read-only kanban in the client portal
+    // tracks the agency view automatically. Pre-Submitted moves
+    // (Sourced, Internal Review) leave clientStageId alone — those
+    // stages don't belong on the client side at all.
+    let mirroredStageName: string | null = null;
+    if (updateData.stageId && submission.job.clientId) {
+      const newStage = await prisma.pipelineStage.findUnique({
+        where: { id: updateData.stageId },
+        select: { name: true },
+      });
+      mirroredStageName = newStage?.name || null;
+      if (newStage && CLIENT_VISIBLE_STAGE_SET.has(newStage.name)) {
+        const clientStage = await prisma.clientPipelineStage.findFirst({
+          where: {
+            clientId: submission.job.clientId,
+            name: { equals: newStage.name, mode: "insensitive" },
+          },
+          select: { id: true },
+        });
+        if (clientStage) {
+          updateData.clientStageId = clientStage.id;
+        }
+      }
+    }
+
     await prisma.candidateSubmission.update({
       where: { id },
       data: updateData,
@@ -77,15 +129,31 @@ export async function PATCH(
 
     // Log stage change — covers both explicit moves (body.stageId) and the
     // implicit advance to "Submitted" we trigger from the share toggle.
+    // Metadata carries the structured transition so reporting widgets
+    // (e.g. Recruiter Performance's "Offers" tile) can count every
+    // candidate that ever passed through a given stage, instead of
+    // only the ones currently sitting there.
     if (updateData.stageId) {
-      const newStage = await prisma.pipelineStage.findUnique({
-        where: { id: updateData.stageId },
-      });
       await logActivity({
         action: "submission.stage_changed",
-        description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${newStage?.name}" in "${submission.job.title}"`,
+        description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${mirroredStageName || "another stage"}" in "${submission.job.title}"`,
         userId: ctx.userId,
         candidateId: submission.candidateId,
+        organizationId: ctx.organizationId,
+        metadata: {
+          submissionId: id,
+          jobId: submission.job.id,
+          fromStage: submission.stage.name,
+          toStage: mirroredStageName || null,
+        },
+      });
+    }
+
+    if (deletedPlacementId) {
+      await logActivity({
+        action: "PLACEMENT_DELETED",
+        description: `Placement removed because ${submission.candidate.firstName} ${submission.candidate.lastName} was moved out of "Placed"`,
+        userId: ctx.userId,
         organizationId: ctx.organizationId,
       });
     }

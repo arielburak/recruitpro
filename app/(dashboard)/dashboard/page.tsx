@@ -11,26 +11,34 @@ import {
   Building2,
   UserPlus,
   Sparkles,
-  MessageSquare,
-  Star,
   TrendingUp,
   TrendingDown,
   Clock,
   Target,
   Zap,
   BarChart3,
-  PieChart as PieChartIcon,
   Activity,
+  Upload,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
 import {
   PipelineChart,
   ActivityTrendChart,
-  SourceBreakdownChart,
-  JobStatusChart,
   RecruiterLeaderboard,
 } from "@/components/dashboard-charts";
+import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
+import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
+import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
+
+// Force dynamic rendering. The page already depends on getServerSession
+// + prisma so Next.js auto-detects this, but stating it explicitly
+// prevents an accidental static-render upstream from quietly caching
+// a snapshot of the dashboard across deploys (we hit exactly that
+// pattern while debugging the migration banner: browser kept serving
+// a stale HTML from before the banner was added).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -42,13 +50,25 @@ export default async function DashboardPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
+  // Org age drives the first-week migration banner (see MigrateBanner).
+  // We fetch this outside the Promise.all so the banner can render
+  // even if any of the dashboard stat queries fail — it's a hint, not
+  // a hard dependency.
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { createdAt: true },
+  });
+  const daysSinceSignup = org
+    ? Math.floor((now.getTime() - new Date(org.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : Infinity;
+  const isWithinFirstWeek = daysSinceSignup <= 7;
+
   const [
     activeJobs,
     totalCandidates,
     placements,
     totalClients,
     recentActivities,
-    recentFeedback,
     pendingEngagements,
     // New queries for charts
     candidatesThisMonth,
@@ -57,8 +77,6 @@ export default async function DashboardPage() {
     placementsLastMonth,
     pipelineData,
     activityByDay,
-    candidatesBySource,
-    jobsByStatus,
     recruiterStats,
     recentSubmissions,
   ] = await Promise.all([
@@ -72,30 +90,17 @@ export default async function DashboardPage() {
         stage: { name: "Placed" },
       },
     }),
-    prisma.client.count({ where: { organizationId: orgId } }),
+    // Shared-Client model (PR #139): a Client now belongs to many
+    // agencies via OrganizationClient. The dashboard's "Clients"
+    // count is meant to be "clients THIS firm is engaged with",
+    // not "every Client row in the DB" — that's why an agency with
+    // 11 engaged clients was seeing 338 (the global pool).
+    prisma.organizationClient.count({ where: { organizationId: orgId } }),
     prisma.activity.findMany({
       where: { organizationId: orgId },
       orderBy: { createdAt: "desc" },
       take: 10,
       include: { user: { select: { name: true } } },
-    }),
-    prisma.comment.findMany({
-      where: {
-        type: "CLIENT_VISIBLE",
-        submission: { job: { organizationId: orgId } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: {
-        clientUser: { select: { name: true } },
-        user: { select: { name: true } },
-        submission: {
-          select: {
-            candidate: { select: { id: true, firstName: true, lastName: true } },
-            job: { select: { title: true, id: true } },
-          },
-        },
-      },
     }),
     prisma.firmEngagement.count({
       where: { organizationId: orgId, status: "PENDING" },
@@ -135,21 +140,15 @@ export default async function DashboardPage() {
       where: { organizationId: orgId, createdAt: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) } },
       select: { createdAt: true },
     }),
-    // Candidate sources
-    prisma.candidate.findMany({
-      where: { organizationId: orgId, source: { not: null } },
-      select: { source: true },
-    }),
-    // Jobs by status
-    prisma.job.groupBy({
-      by: ["status"],
-      where: { organizationId: orgId },
-      _count: { id: true },
-    }),
-    // Recruiter leaderboard
+    // Recruiter leaderboard. We pull every active user so we can join
+    // a separate "placements per recruiter" aggregate below — `_count`
+    // can't reach across the submission → candidate.owner relation in
+    // a single query, so the placement count is wired in after the
+    // fetch.
     prisma.user.findMany({
       where: { organizationId: orgId, isActive: true },
       select: {
+        id: true,
         name: true,
         _count: { select: { candidates: true, submissions: true } },
       },
@@ -189,36 +188,47 @@ export default async function DashboardPage() {
   }
   const activityTrendData = Array.from(dayMap.entries()).map(([date, count]) => ({ date, count }));
 
-  // Aggregate sources
-  const sourceMap = new Map<string, number>();
-  for (const c of candidatesBySource) {
-    const src = c.source || "Unknown";
-    sourceMap.set(src, (sourceMap.get(src) || 0) + 1);
-  }
-  const sourceChartData = Array.from(sourceMap.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // Job status chart data
-  const jobStatusData = jobsByStatus.map((j) => ({ status: j.status, count: j._count.id }));
-
   // Recruiter leaderboard
+  // Placements attributed to each recruiter via the placed candidate's
+  // owner. groupBy on Placement directly can't traverse through the
+  // submission → candidate join, so we pull the placements and bucket
+  // by candidate.ownerId in JS — cheap given the volume.
+  const placementsWithOwner = await prisma.placement.findMany({
+    where: { organizationId: orgId },
+    select: {
+      submission: { select: { candidate: { select: { ownerId: true } } } },
+    },
+  });
+  const placementsByRecruiter = new Map<string, number>();
+  for (const p of placementsWithOwner) {
+    const ownerId = p.submission?.candidate?.ownerId;
+    if (!ownerId) continue;
+    placementsByRecruiter.set(ownerId, (placementsByRecruiter.get(ownerId) || 0) + 1);
+  }
+
   const recruiterData = recruiterStats.map((r) => ({
     name: r.name,
     candidates: r._count.candidates,
     submissions: r._count.submissions,
+    placements: placementsByRecruiter.get(r.id) || 0,
   }));
 
   const isNewUser = totalCandidates === 0 && activeJobs === 0 && totalClients === 0;
 
-  // Calculate trends
-  const candidateTrend = candidatesLastMonth > 0
-    ? Math.round(((candidatesThisMonth - candidatesLastMonth) / candidatesLastMonth) * 100)
-    : candidatesThisMonth > 0 ? 100 : 0;
-  const placementTrend = placementsLastMonth > 0
-    ? Math.round(((placementsThisMonth - placementsLastMonth) / placementsLastMonth) * 100)
-    : placementsThisMonth > 0 ? 100 : 0;
+  // Trend calculation policy: only show a MoM % when both windows
+  // have enough events to make the ratio meaningful. With ≥ 3 events
+  // in BOTH the current and prior 30-day windows the % is real signal;
+  // anything below that is noise from sparse data, test churn, or
+  // "we just launched and there's no history yet." Returning null
+  // tells the card to render the absolute number alone — cleaner than
+  // a misleading "+100% / -73%" pulled from a tiny sample.
+  function meaningfulTrend(current: number, prior: number): number | null {
+    const MIN_SAMPLE = 3;
+    if (current < MIN_SAMPLE || prior < MIN_SAMPLE) return null;
+    return Math.round(((current - prior) / prior) * 100);
+  }
+  const candidateTrend = meaningfulTrend(candidatesThisMonth, candidatesLastMonth);
+  const placementTrend = meaningfulTrend(placementsThisMonth, placementsLastMonth);
 
   const totalInPipeline = pipelineChartData.reduce((sum, d) => sum + d.count, 0);
 
@@ -261,7 +271,7 @@ export default async function DashboardPage() {
       lightColor: "text-emerald-600",
       trend: placementTrend,
       trendLabel: "vs last 30d",
-      href: "/jobs",
+      href: "/placements",
     },
     {
       label: "Clients",
@@ -387,6 +397,42 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {/* First-week migration nudge. Day-0 is inlined as plain JSX
+          here (no client component, no localStorage) so it ships in
+          the initial HTML and can't be hidden by any client-side
+          path. Day 1+ keeps using the dismissable Client Component. */}
+      {isWithinFirstWeek && daysSinceSignup <= 0 && (
+        <div className="bg-gradient-to-r from-cyan-50 via-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-5">
+          <div className="flex items-start gap-4 pr-6">
+            <div className="p-2.5 bg-sky-100 rounded-xl shrink-0">
+              <Upload className="w-5 h-5 text-sky-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sky-900">Coming from another ATS?</p>
+              <p className="text-sm text-sky-800/80 mt-0.5">
+                Bring your candidates, clients, and open searches over in one shot — CSV or TSV from Bullhorn,
+                JobAdder, Loxo, Crelate, or wherever you live today. The mapping wizard handles renamed columns.
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <Link
+                  href="/import"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Start importing
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+                <span className="text-[11px] text-sky-700/70">
+                  Your first day — 7 days left
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {isWithinFirstWeek && daysSinceSignup > 0 && (
+        <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {stats.map((stat) => (
@@ -397,7 +443,11 @@ export default async function DashboardPage() {
                   <div className={`p-2 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-sm`}>
                     <stat.icon className="h-4 w-4 text-white" />
                   </div>
-                  {"trend" in stat && stat.trend !== undefined && stat.trend !== 0 && (
+                  {/* trend === null is the explicit "not enough sample
+                      to draw a meaningful % from" signal — render
+                      nothing. trend === 0 is "flat exactly" which is
+                      also worth hiding (a 0% chip is visual noise). */}
+                  {"trend" in stat && stat.trend !== undefined && stat.trend !== null && stat.trend !== 0 && (
                     <div className={`flex items-center gap-0.5 text-xs font-medium ${
                       stat.trend > 0 ? "text-emerald-600" : "text-red-500"
                     }`}>
@@ -414,21 +464,21 @@ export default async function DashboardPage() {
         ))}
       </div>
 
+      {/* Recruiter performance — surfaces here right under the stat
+          strip so the metrics that drive comp / reviews are the
+          first thing a sales-ops lead sees. Self-contained client
+          widget so its filters (date range, recruiter picker,
+          compare-vs-prior) re-fetch independently of the SSR shell. */}
+      <RecruiterPerformance />
+
       {/* Main Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Distribution */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-indigo-500" />
-              Pipeline Distribution
-            </CardTitle>
-            <p className="text-xs text-gray-400">Candidates across all active searches</p>
-          </CardHeader>
-          <CardContent>
-            <PipelineChart data={pipelineChartData} />
-          </CardContent>
-        </Card>
+        {/* Pipeline Distribution — client-side so the date range
+            picker can re-aggregate without re-running the SSR
+            dashboard. Uses the shared DateRangePicker so the
+            "time" semantics match the Recruiter Performance widget
+            above. */}
+        <PipelineDistribution />
 
         {/* Activity Trend */}
         <Card className="border-0 shadow-sm">
@@ -445,50 +495,8 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Secondary Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Candidate Sources */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <PieChartIcon className="h-4 w-4 text-violet-500" />
-              Candidate Sources
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SourceBreakdownChart data={sourceChartData} />
-          </CardContent>
-        </Card>
-
-        {/* Job Status */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Briefcase className="h-4 w-4 text-blue-500" />
-              Jobs by Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <JobStatusChart data={jobStatusData} />
-          </CardContent>
-        </Card>
-
-        {/* Recruiter Leaderboard */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Zap className="h-4 w-4 text-amber-500" />
-              Top Recruiters
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RecruiterLeaderboard data={recruiterData} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bottom Row: Recent Submissions + Activity + Feedback */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Bottom Row: Recent Submissions + Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Submissions */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
@@ -561,74 +569,6 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Client Feedback */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <MessageSquare className="h-4 w-4 text-emerald-500" />
-              Client Feedback
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentFeedback.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No client feedback yet</p>
-            ) : (
-              <div className="space-y-3">
-                {recentFeedback.map((fb: any) => {
-                  let displayContent = fb.content;
-                  let rating = null;
-                  let clientName = fb.clientUser?.name || fb.user?.name || "Client";
-                  try {
-                    const parsed = JSON.parse(fb.content);
-                    if (parsed && typeof parsed === "object") {
-                      displayContent = parsed.text || "";
-                      rating = parsed.rating;
-                      if (parsed.clientName) clientName = parsed.clientName;
-                    }
-                  } catch {}
-
-                  return (
-                    <div key={fb.id} className="flex items-start gap-2.5 text-sm">
-                      <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                        <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-medium text-xs text-emerald-700">{clientName}</span>
-                          {rating && (
-                            <div className="flex gap-0.5">
-                              {[1, 2, 3, 4, 5].map((n) => (
-                                <Star
-                                  key={n}
-                                  className={`h-2.5 w-2.5 ${n <= rating ? "text-yellow-500 fill-yellow-500" : "text-gray-200"}`}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {displayContent && (
-                          <p className="text-gray-600 text-xs mt-0.5 line-clamp-2">{displayContent}</p>
-                        )}
-                        {fb.submission && (
-                          <p className="text-[10px] text-gray-400 mt-1">
-                            on{" "}
-                            <Link href={`/candidates/${fb.submission.candidate.id}`} className="text-indigo-600 hover:underline">
-                              {fb.submission.candidate.firstName} {fb.submission.candidate.lastName}
-                            </Link>
-                            {" "}for{" "}
-                            <Link href={`/jobs/${fb.submission.job.id}`} className="text-indigo-600 hover:underline">
-                              {fb.submission.job.title}
-                            </Link>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

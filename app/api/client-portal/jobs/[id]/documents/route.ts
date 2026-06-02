@@ -70,11 +70,20 @@ export async function POST(
 
     const job = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
-      select: { id: true, title: true },
+      select: { id: true, title: true, createdByAgency: true },
     });
 
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+    if (job.createdByAgency) {
+      return NextResponse.json(
+        {
+          error:
+            "Files on this search are managed by your recruiting firm. Ask them to upload or replace the document.",
+        },
+        { status: 403 }
+      );
     }
 
     const formData = await request.formData();
@@ -174,14 +183,25 @@ export async function DELETE(
       return NextResponse.json({ error: "documentId required" }, { status: 400 });
     }
 
-    // Verify the job belongs to this client
+    // Verify the job belongs to this client AND isn't an agency-
+    // pushed mirror — deleting docs the firm uploaded would feel
+    // like sabotage from their side.
     const job = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
-      select: { id: true },
+      select: { id: true, createdByAgency: true },
     });
 
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+    if (job.createdByAgency) {
+      return NextResponse.json(
+        {
+          error:
+            "Files on this search are managed by your recruiting firm.",
+        },
+        { status: 403 }
+      );
     }
 
     const document = await prisma.document.findFirst({

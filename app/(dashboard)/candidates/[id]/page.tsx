@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatNotes } from "@/components/chat-notes";
 import {
-  ArrowLeft,
   Edit,
   Mail,
   Phone,
@@ -23,9 +22,21 @@ import {
   Download,
   X,
   Plus,
+  Share2,
+  CheckCircle2,
+  MessageSquare,
+  Star,
 } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
+import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
+import { PlacementDialog } from "@/components/placements/placement-dialog";
+import { QuickInterviewDialog } from "@/components/calendar/quick-interview-dialog";
+import { OfferNotesPrompt } from "@/components/pipeline/offer-notes-prompt";
+import { InterviewDialog } from "@/components/interviews/interview-dialog";
+import { InterviewsList } from "@/components/interviews/interviews-list";
+import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -35,7 +46,44 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  // Deep-link support: ?tab=notes&sub={submissionId} jumps straight
+  // into the Notes tab with that submission's per-job chat selected.
+  // Used by the message-icon shortcuts on /jobs/[id] kanban cards
+  // and the candidates list view, so the recruiter goes from
+  // "I want to see the chat for this person" to actually reading it
+  // in one click.
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "overview";
+  const initialSub = searchParams.get("sub");
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(initialSub);
+  // Mirrors the board's pendingShareMove: when the recruiter changes
+  // the stage to "Submitted" from this surface and the candidate
+  // hasn't been shared with the client yet, we open the same Share
+  // confirmation dialog instead of silently moving the stage. After
+  // the share goes through, persistStageChange completes the move.
+  const [pendingShareMove, setPendingShareMove] = useState<{
+    submission: any;
+    stageId: string;
+  } | null>(null);
+  // Same idea for Placed (open the PlacementDialog) and Interviewing
+  // (open the QuickInterviewDialog). Pulls the dialogs from the board
+  // so the UX is identical regardless of which surface fired the move.
+  const [pendingPlacement, setPendingPlacement] = useState<{
+    submission: any;
+  } | null>(null);
+  const [pendingInterview, setPendingInterview] = useState<{
+    submission: any;
+  } | null>(null);
+  const [pendingOffer, setPendingOffer] = useState<{
+    submission: any;
+  } | null>(null);
+  // Interviews tab — create-new and edit-existing both run through the
+  // same CandidateInterviewDialog. `showCreateInterview` opens it in
+  // create mode (with the candidate's submissions as the job picker);
+  // `editingInterview` opens it in edit mode pre-filled from the row.
+  const [showCreateInterview, setShowCreateInterview] = useState(false);
+  const [interviewsView, setInterviewsView] = useState<"list" | "calendar">("list");
+  const [editingInterview, setEditingInterview] = useState<any | null>(null);
 
   useEffect(() => {
     fetchCandidate();
@@ -64,16 +112,118 @@ export default function CandidateDetailPage() {
   }
 
   function getTotalCommentCount() {
-    return (candidate.submissions || []).reduce(
+    const perJob = (candidate.submissions || []).reduce(
       (sum: number, sub: any) => sum + (sub.comments?.length || 0),
       0
     );
+    const candidateLevel = (candidate.comments || []).filter(
+      (c: any) => !c.submissionId
+    ).length;
+    return perJob + candidateLevel;
   }
 
   async function deleteCandidate() {
     if (!confirm("Delete this candidate? This cannot be undone.")) return;
     await fetch(`/api/candidates/${params.id}`, { method: "DELETE" });
     router.push("/candidates");
+  }
+
+  // Inline stage change from the Jobs tab. We mirror the heavy guards
+  // from /jobs/[id] moveSubmission for transitions that have side
+  // effects:
+  //   - Leaving "Placed" deletes the linked placement (server-side
+  //     enforces it; we just confirm here so salary/fee data doesn't
+  //     disappear silently).
+  //   - Moving to "Submitted" without having shared the candidate
+  //     yet opens the same share dialog the board uses, so the act
+  //     of submitting to the client is never accidental.
+  // Placed / Interviewing as constructive transitions still flip
+  // plainly here — creating placements / scheduling interviews lives
+  // on the job page where the recruiter has full context.
+  async function changeSubmissionStage(submission: any, newStageId: string) {
+    if (newStageId === submission.stageId) return;
+    const newStage = submission.job.stages?.find((st: any) => st.id === newStageId);
+    const leavingPlaced =
+      submission.stage?.name === "Placed" && newStage?.name !== "Placed";
+    if (leavingPlaced && submission.placement) {
+      const ok = window.confirm(
+        `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
+      );
+      if (!ok) return;
+    }
+
+    // Gate Submitted on the share confirmation when not yet shared.
+    // The dialog handles the PATCH that flips isSharedWithClient + the
+    // client notification + the share email; the stage move runs in
+    // its onShared callback below.
+    if (newStage?.name === "Submitted" && !submission.isSharedWithClient) {
+      setPendingShareMove({ submission, stageId: newStageId });
+      return;
+    }
+
+    // Placed → open PlacementDialog (congrats mode). The dialog flips
+    // the stage to Placed server-side as part of creating the
+    // placement record, so we don't PATCH the stage here.
+    if (newStage?.name === "Placed" && !submission.placement) {
+      setPendingPlacement({ submission });
+      return;
+    }
+
+    // Interviewing → flip the stage first, then prompt to schedule.
+    // Closing the dialog leaves the candidate at Interviewing with
+    // no event; they can add one later from /calendar.
+    if (newStage?.name === "Interviewing") {
+      await persistStageChange(submission.id, newStageId);
+      setPendingInterview({ submission });
+      return;
+    }
+
+    // Offered → flip the stage first, then prompt for offer details.
+    // Skip leaves the stage on Offered with no note attached.
+    if (newStage?.name === "Offered") {
+      await persistStageChange(submission.id, newStageId);
+      setPendingOffer({ submission });
+      return;
+    }
+
+    await persistStageChange(submission.id, newStageId);
+  }
+
+  async function persistStageChange(submissionId: string, newStageId: string) {
+    try {
+      const res = await fetch(`/api/submissions/${submissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId: newStageId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to change stage");
+        return;
+      }
+      await fetchCandidate();
+    } catch {
+      alert("Failed to change stage");
+    }
+  }
+
+  // Mirror /jobs/[id] page's toggleShare so the candidate's Jobs tab
+  // can flip share state per submission. The share dialog handles the
+  // "moving to Submitted" flow; this handler covers re-sharing or
+  // stop-sharing on an existing submission without changing stages.
+  async function toggleSubmissionShare(submissionId: string, shared: boolean) {
+    await fetch(`/api/submissions/${submissionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isSharedWithClient: shared }),
+    });
+    await fetchCandidate();
+  }
+
+  async function removeSubmissionFromJob(submissionId: string) {
+    if (!confirm("Remove this candidate from the pipeline?")) return;
+    await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
+    await fetchCandidate();
   }
 
   async function uploadDocument(file: File) {
@@ -125,11 +275,7 @@ export default function CandidateDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/candidates">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back
-            </Button>
-          </Link>
+          <BackButton fallback="/candidates" />
           <div>
             <h1 className="text-2xl font-bold">
               {candidate.firstName} {candidate.lastName}
@@ -166,7 +312,7 @@ export default function CandidateDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="submissions">
@@ -177,6 +323,9 @@ export default function CandidateDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="notes">
             Notes & Feedback ({getTotalCommentCount()})
+          </TabsTrigger>
+          <TabsTrigger value="interviews">
+            Interviews ({candidate.interviews?.length || 0})
           </TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -313,28 +462,127 @@ export default function CandidateDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            candidate.submissions?.map((sub: any) => (
-              <Link key={sub.id} href={`/jobs/${sub.job.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">{sub.job.title}</h3>
+            candidate.submissions?.map((sub: any) => {
+              const isShared = !!sub.isSharedWithClient;
+              const commentCount = sub._count?.comments || 0;
+              const ratingCount = sub._count?.ratings || 0;
+              return (
+                <Card key={sub.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap">
+                    {/* Job title + submitted date — keep the link to the
+                        job page so the recruiter can still drill in for
+                        the full pipeline / placement / interview UX. */}
+                    <Link
+                      href={`/jobs/${sub.job.id}`}
+                      className="flex-1 min-w-0 group"
+                    >
+                      <h3 className="font-medium group-hover:text-indigo-600 group-hover:underline truncate">
+                        {sub.job.title}
+                      </h3>
+                      {sub.job.client?.name && (
+                        <p className="text-xs text-gray-400">{sub.job.client.name}</p>
+                      )}
                       <p className="text-sm text-gray-500">
                         Submitted {formatDate(sub.createdAt)}
                       </p>
+                    </Link>
+
+                    {/* Per-row controls: mirror the columns of the job
+                        page's List view so the recruiter doesn't have
+                        to jump to the job to see share/activity state. */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {/* Activity counters — only render when non-zero
+                          so the row stays clean for fresh submissions. */}
+                      {commentCount > 0 && (
+                        <div className="flex items-center gap-2.5 text-xs text-gray-400">
+                          <span className="flex items-center gap-0.5" title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}>
+                            <MessageSquare className="h-3 w-3" />
+                            {commentCount}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Share state. "Shared" is a green chip with the
+                          client's stage (when present); "Share" is a
+                          neutral button that flips the flag. The full
+                          share dialog still triggers when the recruiter
+                          *moves* the candidate to Submitted via the
+                          stage selector — this control just toggles an
+                          already-existing submission's visibility. */}
+                      {isShared ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSubmissionShare(sub.id, false)}
+                          className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors"
+                          title={
+                            (sub.sharedAt ? `Shared on ${new Date(sub.sharedAt).toLocaleString()}` : "Shared with client") +
+                            (sub.clientStage ? ` · Client sees: ${sub.clientStage.name}` : "") +
+                            "\nClick to stop sharing"
+                          }
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Shared
+                          {sub.clientStage && (
+                            <span
+                              className="ml-1 text-[10px] font-semibold"
+                              style={{ color: sub.clientStage.color }}
+                            >
+                              · {sub.clientStage.name}
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => toggleSubmissionShare(sub.id, true)}
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                          title="Share with client"
+                        >
+                          <Share2 className="h-3 w-3" />
+                          Share
+                        </button>
+                      )}
+
+                      {/* Inline stage selector. Coloured to match the
+                          active stage so it reads like a badge at a
+                          glance, but stays a real <select> so the
+                          keyboard / a11y story is the same as the
+                          list view. */}
+                      <select
+                        value={sub.stageId}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          void changeSubmissionStage(sub, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
+                        aria-label={`Stage for ${sub.job.title}`}
+                      >
+                        {(sub.job.stages || []).map((st: any) => (
+                          <option key={st.id} value={st.id}>
+                            {st.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Remove from this job. Symmetric with the list
+                          view's trash icon — deletes the submission
+                          (and any placement attached via the API's
+                          existing guard) without leaving the page. */}
+                      <button
+                        type="button"
+                        onClick={() => removeSubmissionFromJob(sub.id)}
+                        className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Remove from this job"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <Badge
-                      style={{
-                        backgroundColor: sub.stage.color + "20",
-                        color: sub.stage.color,
-                      }}
-                    >
-                      {sub.stage.name}
-                    </Badge>
                   </CardContent>
                 </Card>
-              </Link>
-            ))
+              );
+            })
           )}
         </TabsContent>
 
@@ -421,15 +669,46 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="notes">
+        <TabsContent value="notes" className="space-y-6">
+          {/* Candidate-level notes — general info that applies across
+              all jobs the candidate is in (preferences, allergies to
+              remote, etc.). Stored on Comment.candidateId with
+              submissionId=null. */}
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">Candidate notes</h3>
+              <span className="text-xs text-gray-400">General · applies to every job</span>
+            </div>
+            <ChatNotes
+              comments={(candidate.comments || [])
+                .filter((c: any) => !c.submissionId)
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                )}
+              candidateId={candidate.id}
+              onCommentAdded={fetchCandidate}
+              heightClass="h-[260px]"
+            />
+          </div>
+
+          {/* Per-job notes — the legacy/main chat: tabs for Internal
+              + Client-visible, with a job picker when the candidate
+              sits on more than one. */}
           {candidate.submissions?.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-gray-500">
-                Assign this candidate to a job to start adding notes.
+                Assign this candidate to a job to start adding per-job notes.
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">Per-job notes</h3>
+                <span className="text-xs text-gray-400">
+                  Tied to a specific submission · Internal + Client-visible tabs
+                </span>
+              </div>
               {/* Job selector */}
               {candidate.submissions.length > 1 && (
                 <div className="flex gap-2 flex-wrap">
@@ -498,6 +777,66 @@ export default function CandidateDetailPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="interviews" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-500">
+                {candidate.interviews?.length || 0} total interview{candidate.interviews?.length === 1 ? "" : "s"}
+              </p>
+              <div className="inline-flex bg-gray-100 rounded-md p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setInterviewsView("list")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded ${
+                    interviewsView === "list"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInterviewsView("calendar")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded ${
+                    interviewsView === "calendar"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Calendar
+                </button>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setShowCreateInterview(true)}
+              disabled={!candidate.submissions?.length}
+              title={
+                !candidate.submissions?.length
+                  ? "Submit the candidate to a job first."
+                  : undefined
+              }
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Schedule interview
+            </Button>
+          </div>
+          {interviewsView === "list" ? (
+            <InterviewsList
+              interviews={candidate.interviews || []}
+              attendeeKind="job"
+              onRowClick={setEditingInterview}
+            />
+          ) : (
+            <InterviewsCalendar
+              interviews={candidate.interviews || []}
+              attendeeKind="job"
+              onRowClick={setEditingInterview}
+            />
+          )}
+        </TabsContent>
+
         <TabsContent value="activity" className="space-y-2">
           {candidate.activities?.map((a: any) => (
             <div key={a.id} className="flex items-start gap-3 text-sm py-2">
@@ -520,6 +859,150 @@ export default function CandidateDetailPage() {
         onClose={() => setShowAssignDialog(false)}
         onAssigned={fetchCandidate}
       />
+
+      {pendingShareMove && (
+        <ShareCandidateDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingShareMove(null);
+          }}
+          submission={{
+            id: pendingShareMove.submission.id,
+            candidate: {
+              firstName: candidate.firstName,
+              lastName: candidate.lastName,
+              currentTitle: candidate.currentTitle,
+            },
+            job: {
+              title: pendingShareMove.submission.job.title,
+              client: pendingShareMove.submission.job.client
+                ? { name: pendingShareMove.submission.job.client.name }
+                : null,
+            },
+          }}
+          onShared={async () => {
+            const move = pendingShareMove;
+            setPendingShareMove(null);
+            if (move) await persistStageChange(move.submission.id, move.stageId);
+          }}
+        />
+      )}
+
+      {pendingPlacement && (
+        <PlacementDialog
+          mode="congrats"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingPlacement(null);
+          }}
+          submissionId={pendingPlacement.submission.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          jobTitle={pendingPlacement.submission.job.title}
+          clientName={pendingPlacement.submission.job.client?.name}
+          defaults={{
+            agreedSalary: candidate.desiredSalary
+              ? String(candidate.desiredSalary)
+              : undefined,
+            feeAmount: pendingPlacement.submission.job.feeAmount
+              ? String(pendingPlacement.submission.job.feeAmount)
+              : undefined,
+            feeType:
+              (pendingPlacement.submission.job.feeType as "PERCENTAGE" | "FLAT") ||
+              undefined,
+            paymentTerms:
+              pendingPlacement.submission.job.paymentTerms ??
+              pendingPlacement.submission.job.client?.defaultPaymentTerms ??
+              undefined,
+            guaranteePeriod:
+              pendingPlacement.submission.job.guaranteePeriod ??
+              pendingPlacement.submission.job.client?.defaultGuaranteePeriod ??
+              undefined,
+            currency:
+              pendingPlacement.submission.job.currency ??
+              pendingPlacement.submission.job.client?.defaultCurrency ??
+              "USD",
+          }}
+          onSuccess={() => {
+            setPendingPlacement(null);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {pendingInterview && (
+        <QuickInterviewDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setPendingInterview(null);
+          }}
+          submission={{
+            id: pendingInterview.submission.id,
+            candidateId: candidate.id,
+            candidate: {
+              firstName: candidate.firstName,
+              lastName: candidate.lastName,
+            },
+            job: {
+              id: pendingInterview.submission.job.id,
+              title: pendingInterview.submission.job.title,
+            },
+          }}
+          onScheduled={() => {
+            setPendingInterview(null);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {pendingOffer && (
+        <OfferNotesPrompt
+          submissionId={pendingOffer.submission.id}
+          candidateName={`${candidate.firstName} ${candidate.lastName}`}
+          jobTitle={pendingOffer.submission.job.title}
+          onClose={() => setPendingOffer(null)}
+          onSaved={fetchCandidate}
+        />
+      )}
+
+      {showCreateInterview && (
+        <InterviewDialog
+          mode="create"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setShowCreateInterview(false);
+          }}
+          headerSubtitle={`${candidate.firstName} ${candidate.lastName}`}
+          defaultTitle={`Interview — ${candidate.firstName} ${candidate.lastName}`}
+          pickerLabel="Job"
+          pickerEmptyHint="Submit this candidate to a job first."
+          pickerOptions={(candidate.submissions || []).map((s: any) => ({
+            submissionId: s.id,
+            candidateId: candidate.id,
+            jobId: s.job.id,
+            label: s.job.title,
+          }))}
+          onSaved={() => {
+            setShowCreateInterview(false);
+            fetchCandidate();
+          }}
+        />
+      )}
+
+      {editingInterview && (
+        <InterviewDialog
+          mode="edit"
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setEditingInterview(null);
+          }}
+          headerSubtitle={`${candidate.firstName} ${candidate.lastName} · ${editingInterview.job?.title || ""}`}
+          interview={editingInterview}
+          onSaved={() => {
+            setEditingInterview(null);
+            fetchCandidate();
+          }}
+        />
+      )}
     </div>
   );
 }

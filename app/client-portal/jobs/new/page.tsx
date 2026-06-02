@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,32 @@ export default function PostJobPage() {
   const [location, setLocation] = useState("");
   const [workMode, setWorkMode] = useState("ON_SITE");
   const descRef = useRef<HTMLTextAreaElement>(null);
+
+  // Per-JO access: which teammates can see this job. Defaults to
+  // "everyone on the team" (empty selection sentinel) — flipping to
+  // explicit picking lets the user restrict visibility.
+  type TeamMember = { id: string; name: string; email: string; title: string | null; role: "ADMIN" | "USER" };
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [restrictAccess, setRestrictAccess] = useState(false);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/client-portal/team")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: any) => {
+        // Endpoint may return either { members: [...] } or a raw array
+        // depending on the caller — accept both for forward compat.
+        const list: TeamMember[] = Array.isArray(data) ? data : data.members || [];
+        setTeam(list);
+      })
+      .catch(() => setTeam([]));
+  }, []);
+
+  function toggleMember(id: string) {
+    setMemberIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
+  }
 
   async function handleFileUpload(file: File) {
     setJdFile(file);
@@ -92,6 +118,10 @@ export default function PostJobPage() {
           salaryCurrency,
           jobType: fd.get("jobType"),
           workMode,
+          // When the user opted to restrict access, pass the explicit
+          // selection. Otherwise omit so the server's default ("all
+          // team members") kicks in.
+          memberIds: restrictAccess ? memberIds : undefined,
         }),
       });
 
@@ -147,7 +177,7 @@ export default function PostJobPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
         {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
 
         <Card>
@@ -307,6 +337,75 @@ export default function PostJobPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Per-JO access. Default: everyone on the team sees this job.
+            Restricting access lets a hiring manager keep, say, a
+            confidential VP search visible only to the people running
+            it. The creator is always included server-side so they
+            can't lock themselves out by mistake. */}
+        {team.length > 1 && (
+          <Card>
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Team access</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    By default everyone on your team can see this job. Restrict it if you want only specific people involved.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs text-gray-700 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={restrictAccess}
+                    onChange={(e) => setRestrictAccess(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  Restrict access
+                </label>
+              </div>
+
+              {restrictAccess && (
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                  {team.map((m) => {
+                    const checked = memberIds.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMember(m.id)}
+                          className="rounded border-gray-300"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {m.name}
+                            {m.role === "ADMIN" && (
+                              <span className="ml-1.5 text-[10px] uppercase tracking-wider text-emerald-600 font-semibold">
+                                admin
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {m.title ? `${m.title} · ` : ""}
+                            {m.email}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {restrictAccess && (
+                <p className="text-[11px] text-gray-500">
+                  You&apos;ll always have access — we add the creator automatically. Anyone not picked here won&apos;t see this job, even other admins.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex items-center justify-between pt-2">
           <p className="text-xs text-gray-400">You can invite recruiting firms after posting</p>

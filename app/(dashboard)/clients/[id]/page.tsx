@@ -5,6 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
+import { MoneyInput } from "@/components/ui/money-input";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +21,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle } from "lucide-react";
+import { Mail, Phone, Globe, Plus, Pencil, Trash2, UserCircle, KeyRound } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
@@ -179,6 +183,37 @@ export default function ClientDetailPage() {
     }
   }
 
+  // Sends the contact a "you've been invited to the client portal"
+  // email (set-password link). Server is idempotent — re-inviting a
+  // pending contact just re-fires the email; an active contact is a
+  // no-op (the Invite button is hidden in that case anyway).
+  const [invitingContactId, setInvitingContactId] = useState<string | null>(null);
+  async function inviteContact(contactId: string) {
+    setInvitingContactId(contactId);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/invite-portal`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setContactError(body.error || "Failed to send invite");
+        return;
+      }
+      // Optimistic: flip portalStatus to "pending" so the button
+      // turns into "Pending" without a full refetch. Server-side the
+      // ClientUser row was created or refreshed.
+      setContacts((arr) =>
+        arr.map((c) =>
+          c.id === contactId ? { ...c, portalStatus: "pending" } : c,
+        ),
+      );
+    } catch {
+      setContactError("Failed to send invite");
+    } finally {
+      setInvitingContactId(null);
+    }
+  }
+
   async function createContact() {
     if (!newContact.firstName || !newContact.lastName) {
       setContactError("First and last name are required");
@@ -225,9 +260,7 @@ export default function ClientDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/clients">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
-          </Link>
+          <BackButton fallback="/clients" />
           <div>
             <h1 className="text-2xl font-bold">{client.name}</h1>
             {client.industry && <p className="text-gray-500">{client.industry}</p>}
@@ -306,10 +339,10 @@ export default function ClientDetailPage() {
                     ) : <p className="text-sm text-gray-900">—</p>}
                   </div>
                 </div>
-                {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency) && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Default Fee Terms</p>
-                    <div className="flex items-center gap-3 text-sm">
+                {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency || client.defaultPaymentTerms != null || client.defaultGuaranteePeriod != null) && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Default Fee Terms</p>
+                    <div className="flex items-center gap-3 text-sm flex-wrap">
                       <span className="font-medium">
                         {client.defaultFeeType === "FLAT" ? "Flat Fee" : "Percentage"}
                         {client.defaultFeeAmount ? `: ${Number(client.defaultFeeAmount)}${client.defaultFeeType === "PERCENTAGE" ? "%" : ""}` : ""}
@@ -317,6 +350,25 @@ export default function ClientDetailPage() {
                       <span className="text-gray-400">·</span>
                       <span>{client.defaultCurrency || "USD"}</span>
                     </div>
+                    {(client.defaultPaymentTerms != null || client.defaultGuaranteePeriod != null) && (
+                      <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
+                        {client.defaultPaymentTerms != null && (
+                          <span>
+                            <span className="text-gray-400">Payment terms:</span>{" "}
+                            <span className="font-medium">{client.defaultPaymentTerms} days</span>
+                          </span>
+                        )}
+                        {client.defaultPaymentTerms != null && client.defaultGuaranteePeriod != null && (
+                          <span className="text-gray-300">·</span>
+                        )}
+                        {client.defaultGuaranteePeriod != null && (
+                          <span>
+                            <span className="text-gray-400">Guarantee:</span>{" "}
+                            <span className="font-medium">{client.defaultGuaranteePeriod} days</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 {client.notes && (
@@ -339,7 +391,12 @@ export default function ClientDetailPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Industry</Label>
-                    <Input value={clientForm.industry} onChange={(e) => setClientForm({ ...clientForm, industry: e.target.value })} placeholder="Technology, Finance..." />
+                    <Combobox
+                      value={clientForm.industry}
+                      onChange={(v) => setClientForm({ ...clientForm, industry: v })}
+                      options={INDUSTRY_OPTIONS}
+                      placeholder="Technology, Finance..."
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Website</Label>
@@ -387,19 +444,13 @@ export default function ClientDetailPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Fee Amount</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
-                            {clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
-                          </span>
-                          <Input
-                            className="h-9 pl-7"
-                            type="number"
-                            step="0.01"
-                            placeholder="e.g. 15"
-                            value={clientForm.defaultFeeAmount}
-                            onChange={(e) => setClientForm({ ...clientForm, defaultFeeAmount: e.target.value })}
-                          />
-                        </div>
+                        <MoneyInput
+                          className="h-9"
+                          prefix={clientForm.defaultFeeType === "FLAT" ? "$" : "%"}
+                          placeholder="e.g. 15"
+                          value={String(clientForm.defaultFeeAmount ?? "")}
+                          onChange={(v) => setClientForm({ ...clientForm, defaultFeeAmount: v })}
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mt-2">
@@ -506,7 +557,7 @@ export default function ClientDetailPage() {
                 </div>
               ) : contacts.length === 0 && !addingContact ? (
                 <div className="text-center py-8">
-                  <UserCircle className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <UserCircle className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-400">No contacts yet for this client.</p>
                 </div>
               ) : (
@@ -518,6 +569,7 @@ export default function ClientDetailPage() {
                       <TableHead>Email</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead>Primary</TableHead>
+                      <TableHead>Portal access</TableHead>
                       <TableHead className="w-[80px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -571,6 +623,7 @@ export default function ClientDetailPage() {
                             className="h-4 w-4 rounded border-gray-300 text-indigo-600"
                           />
                         </TableCell>
+                        <TableCell />
                         <TableCell>
                           <div className="flex gap-1">
                             <Button size="sm" variant="ghost" onClick={createContact} disabled={savingContact}>
@@ -629,6 +682,7 @@ export default function ClientDetailPage() {
                               className="h-4 w-4 rounded border-gray-300 text-indigo-600"
                             />
                           </TableCell>
+                          <TableCell />
                           <TableCell>
                             <div className="flex gap-1">
                               <Button size="sm" variant="ghost" onClick={() => saveContact(contact.id)} disabled={savingContact}>
@@ -663,6 +717,34 @@ export default function ClientDetailPage() {
                           <TableCell>
                             {contact.isPrimary && (
                               <Badge className="bg-indigo-100 text-indigo-800">Primary</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {contact.portalStatus === "active" ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                                <KeyRound className="h-3 w-3" />
+                                In portal
+                              </span>
+                            ) : contact.portalStatus === "pending" ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                                Pending
+                              </span>
+                            ) : contact.email ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1"
+                                disabled={invitingContactId === contact.id}
+                                onClick={() => inviteContact(contact.id)}
+                                title="Send portal invite"
+                              >
+                                <Mail className="h-3 w-3" />
+                                {invitingContactId === contact.id ? "Inviting…" : "Invite"}
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-gray-400 italic">
+                                Add an email to invite
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
