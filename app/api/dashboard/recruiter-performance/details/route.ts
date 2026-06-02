@@ -156,7 +156,22 @@ export async function GET(request: NextRequest) {
           };
         }),
       );
-      return NextResponse.json({ metric, recruiter, items });
+      // Dedup same as the aggregate count: one row per submission.
+      // A candidate bounced in/out of Offered on the same job shows
+      // once, with the most recent transition kept (rows are
+      // already sorted desc by createdAt). The synthetic key for
+      // legacy rows combines candidate + job title so two distinct
+      // jobs for the same candidate still both appear.
+      const seen = new Set<string>();
+      const deduped = items.filter((it) => {
+        const key = it.submissionId
+          ? `s:${it.submissionId}`
+          : `c:${it.candidate?.id || ""}|j:${it.jobTitle || ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return NextResponse.json({ metric, recruiter, items: deduped });
     }
 
     if (metric === "placements") {
