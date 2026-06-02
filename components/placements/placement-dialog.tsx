@@ -555,19 +555,16 @@ export function PlacementDialog(props: Props) {
     }
   }, [props.open, props.mode]);
 
-  // Default the recruiter override to whoever owns the chosen
-  // candidate, but only if the user hasn't manually picked someone
-  // else first. Fetches the full candidate to get `ownerId` (search
-  // results don't carry it). Edit mode preloads recruiterId from
-  // props.initial below and marks the field touched so this effect
-  // doesn't overwrite it.
+  // Hydrate selectedCandidate.ownerId so the Recruiter picker can
+  // label the "default" option with the owner's actual name (search
+  // results don't carry ownerId). We deliberately don't push the
+  // value into `recruiterId` — leaving it empty signals "use the
+  // candidate owner" to the API, and the picker renders the owner's
+  // name on the empty sentinel option so the UI looks the same.
+  // Edit mode preloads recruiterId from props.initial below.
   useEffect(() => {
     if (!selectedCandidate) return;
-    if (recruiterTouchedRef.current) return;
-    if (selectedCandidate.ownerId) {
-      setRecruiterId(selectedCandidate.ownerId);
-      return;
-    }
+    if (selectedCandidate.ownerId) return;
     let cancelled = false;
     fetch(`/api/candidates/${selectedCandidate.id}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -578,7 +575,6 @@ export function PlacementDialog(props: Props) {
             ? { ...curr, ownerId: full.ownerId }
             : curr,
         );
-        if (!recruiterTouchedRef.current) setRecruiterId(full.ownerId);
       })
       .catch(() => {});
     return () => {
@@ -1384,36 +1380,51 @@ export function PlacementDialog(props: Props) {
                 owner — the most common case (sourcer = closer). The
                 picker only matters when a placement gets handed off
                 between teammates so the reporting tile credits the
-                right person. */}
-            <div className="space-y-1.5">
-              <Label className="text-xs" htmlFor="placement-recruiter">Recruiter</Label>
-              <select
-                id="placement-recruiter"
-                value={recruiterId}
-                onChange={(e) => {
-                  recruiterTouchedRef.current = true;
-                  setRecruiterId(e.target.value);
-                }}
-                className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-              >
-                <option value="">
-                  {selectedCandidate?.ownerId
-                    ? "Default · candidate owner"
-                    : "Default · candidate owner (auto)"}
-                </option>
-                {teamMembers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              {recruiterId && selectedCandidate?.ownerId && recruiterId !== selectedCandidate.ownerId && (
-                <p className="text-[10px] text-amber-600">
-                  Overriding the candidate&apos;s owner — reporting will credit
-                  the picked recruiter instead.
-                </p>
-              )}
-            </div>
+                right person. The empty-value option is labelled with
+                the owner's actual name (no cryptic "default" text)
+                and the owner is filtered out of the teammates list
+                so they don't appear twice. */}
+            {(() => {
+              const ownerMember = teamMembers.find(
+                (u) => u.id === selectedCandidate?.ownerId,
+              );
+              const ownerLabel =
+                ownerMember?.name || ownerMember?.email || "Candidate owner";
+              const otherMembers = teamMembers.filter(
+                (u) => u.id !== selectedCandidate?.ownerId,
+              );
+              return (
+                <div className="space-y-1.5">
+                  <Label className="text-xs" htmlFor="placement-recruiter">Recruiter</Label>
+                  <select
+                    id="placement-recruiter"
+                    value={recruiterId}
+                    onChange={(e) => {
+                      recruiterTouchedRef.current = true;
+                      setRecruiterId(e.target.value);
+                    }}
+                    className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
+                    <option value="">
+                      {selectedCandidate?.ownerId
+                        ? ownerLabel
+                        : "Select recruiter"}
+                    </option>
+                    {otherMembers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                  {recruiterId && selectedCandidate?.ownerId && recruiterId !== selectedCandidate.ownerId && (
+                    <p className="text-[10px] text-amber-600">
+                      Overriding the candidate&apos;s owner — reporting will credit
+                      the picked recruiter instead.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="space-y-1.5">
               <Label className="text-xs" htmlFor="placement-notes">Notes (optional)</Label>
