@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { getValidAccessToken, createGoogleCalendarEvent } from "@/lib/google-calendar";
 import {
   getValidAccessToken as getMsAccessToken,
@@ -68,6 +69,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const body = await request.json();
 

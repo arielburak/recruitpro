@@ -4,12 +4,16 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendCandidateSharedEmail } from "@/lib/email";
 import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const { id } = await params;
     const body = await request.json();

@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendTeamInviteEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
 
     // Only admins can invite

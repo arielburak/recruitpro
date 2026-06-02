@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { sendClientSetPasswordEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 // Turn "jane@acme-corp.com" → "Acme Corp". The hiring manager will
 // overwrite this on first login, so we just want something readable
@@ -40,6 +41,9 @@ function deriveCompanyNameFromEmail(email: string): string {
 //      engagement, send the set-password invite.
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const body = await request.json();
     const rawEmail =

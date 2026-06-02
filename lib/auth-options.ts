@@ -73,15 +73,13 @@ export const authOptions: NextAuthOptions = {
         );
         if (!isValid) return null;
 
-        // Hard block on unverified emails. The previous behavior was a
-        // soft check (login + dashboard banner), which let typo'd
-        // addresses and bots end up with a working session. We refuse
-        // to issue one until the verification email is clicked. UI
-        // catches the throw and offers a resend.
-        if (!user.emailVerifiedAt) {
-          throw new Error("EMAIL_NOT_VERIFIED");
-        }
-
+        // We used to hard-block unverified users here. That created
+        // a friction trap on signup: register → see "Account
+        // created!" → try to log in → "Verify your email first".
+        // Now we let them in and gate the dangerous actions on the
+        // backend instead (see lib/require-verified-email.ts). The
+        // verified flag rides the JWT so the gate is one cheap
+        // check, no per-request DB hit.
         return {
           id: user.id,
           email: user.email,
@@ -90,6 +88,7 @@ export const authOptions: NextAuthOptions = {
           organizationId: user.organizationId,
           organizationName: user.organization.name,
           needsOnboarding: user.organization.needsOnboarding,
+          emailVerified: !!user.emailVerifiedAt,
         };
       },
     }),
@@ -119,13 +118,10 @@ export const authOptions: NextAuthOptions = {
         );
         if (!isValid) return null;
 
-        // Same hard block as the agency side: don't issue a session
-        // until the email-verification token has been clicked. The UI
-        // catches this and offers a resend.
-        if (!clientUser.emailVerifiedAt) {
-          throw new Error("EMAIL_NOT_VERIFIED");
-        }
-
+        // Same soft-block change as the staffing side: let the
+        // ClientUser in but stamp the verification state on the
+        // JWT so dangerous actions (comments that notify staffing,
+        // approvals, etc.) can refuse server-side.
         return {
           id: clientUser.id,
           email: clientUser.email,
@@ -133,6 +129,7 @@ export const authOptions: NextAuthOptions = {
           clientId: clientUser.clientId,
           clientName: clientUser.client.name,
           isClientUser: true,
+          emailVerified: !!clientUser.emailVerifiedAt,
         };
       },
     }),
@@ -253,6 +250,9 @@ export const authOptions: NextAuthOptions = {
         if (typeof session.needsOnboarding === "boolean") {
           token.needsOnboarding = session.needsOnboarding;
         }
+        if (typeof session.emailVerified === "boolean") {
+          token.emailVerified = session.emailVerified;
+        }
         return token;
       }
 
@@ -263,6 +263,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.name = user.name;
         token.isClientUser = isClient;
+        token.emailVerified = !!(user as any).emailVerified;
         if (isClient) {
           token.clientId = (user as any).clientId;
           token.clientName = (user as any).clientName;
@@ -309,6 +310,9 @@ export const authOptions: NextAuthOptions = {
             token.isClientUser = true;
             token.clientId = dbClient.clientId;
             token.clientName = dbClient.client.name;
+            // OAuth = Google already proved the address, and we
+            // just backfilled emailVerifiedAt above if it was null.
+            token.emailVerified = true;
             // Clear staffing fields
             token.role = undefined;
             token.organizationId = undefined;
@@ -327,6 +331,11 @@ export const authOptions: NextAuthOptions = {
             token.organizationName = dbUser.organization.name;
             token.needsOnboarding = dbUser.organization.needsOnboarding;
             token.isClientUser = false;
+            // OAuth Google sign-up backfills emailVerifiedAt in
+            // the signIn callback above (auto-create branch), so
+            // existing rows can be either; trust whatever the DB
+            // currently says.
+            token.emailVerified = !!dbUser.emailVerifiedAt;
             // Clear any client fields
             token.clientId = undefined;
             token.clientName = undefined;
@@ -345,6 +354,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).clientId = token.clientId;
         (session.user as any).clientName = token.clientName;
         (session.user as any).isClientUser = token.isClientUser;
+        (session.user as any).emailVerified = !!token.emailVerified;
       }
       return session;
     },

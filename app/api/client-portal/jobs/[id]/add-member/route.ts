@@ -8,6 +8,7 @@ import {
   sendClientTeamInviteEmail,
   sendClientJobAccessGrantedEmail,
 } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 // Add a member to a specific ClientJob from the "Your Team" panel on
 // the job page. Three intent paths, all returned as one call:
@@ -33,6 +34,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getClientContext();
     const { id } = await params;
     const body = await request.json();

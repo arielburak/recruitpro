@@ -4,9 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { sendClientPortalShareEmail, sendClientSetPasswordEmail } from "@/lib/email";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import crypto from "crypto";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const body = await request.json();
     const { clientId, jobId, inviteEmail: rawInviteEmail, inviteName } = body;

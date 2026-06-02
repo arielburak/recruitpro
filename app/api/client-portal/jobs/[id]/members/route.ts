@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
 import { sendClientJobAccessGrantedEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 // Manage which ClientUsers can see a given ClientJob.
 //
@@ -62,6 +63,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getClientContext();
     const { id } = await params;
 

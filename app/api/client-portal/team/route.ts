@@ -4,6 +4,7 @@ import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
 import { sendClientTeamInviteEmail } from "@/lib/email";
 import { roleForNewClientUser } from "@/lib/client-portal-roles";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 // List all team members for this client
 export async function GET() {
@@ -47,6 +48,9 @@ export async function GET() {
 //      USER regardless of what they send in the body.
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getClientContext();
 
     const body = await request.json();

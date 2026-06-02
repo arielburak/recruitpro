@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { validateClientPortalToken } from "@/lib/tokens";
 import { sendCandidateFeedbackEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 export async function POST(request: Request) {
   try {
@@ -14,6 +15,12 @@ export async function POST(request: Request) {
     // Try authenticated client user first
     try {
       const ctx = await getClientContext();
+      // Logged-in ClientUser → must have verified the email
+      // before notifying the agency. The token-public path
+      // below is exempt: that flow runs off a one-shot share
+      // link, no account state involved.
+      const guard = await requireVerifiedEmail();
+      if (guard) return guard;
       clientUserId = ctx.clientUserId;
     } catch {
       // Token-based access — validate the token

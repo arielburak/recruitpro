@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { sendClientSetPasswordEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
 import { roleForNewClientUser } from "@/lib/client-portal-roles";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
 
 // Invite a Contact to the client portal, or resend the invite if they
 // were already invited but never redeemed the token. State machine:
@@ -24,6 +25,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const { id } = await params;
 
