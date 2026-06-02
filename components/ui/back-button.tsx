@@ -22,11 +22,20 @@ export function BackButton({ fallback = "/dashboard", label = "Back", className 
   const router = useRouter();
 
   function handleBack() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push(fallback);
-    }
+    // Always try the browser back first — that's the only way to land
+    // exactly where the user came from (a Job, a filtered list, …)
+    // instead of a generic index. If the page was opened directly
+    // (no SPA entry to pop), the URL won't change after a beat and
+    // we navigate to the page-specific fallback so the click isn't
+    // a no-op. history.length isn't reliable enough on its own —
+    // some browsers carry entries from other tabs.
+    if (typeof window === "undefined") return;
+    const before = window.location.pathname + window.location.search;
+    router.back();
+    setTimeout(() => {
+      const after = window.location.pathname + window.location.search;
+      if (after === before) router.push(fallback);
+    }, 150);
   }
 
   return (
