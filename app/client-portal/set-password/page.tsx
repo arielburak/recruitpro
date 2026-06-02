@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { Briefcase, Lock } from "lucide-react";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 
 function SetPasswordForm() {
   const router = useRouter();
@@ -162,12 +164,12 @@ function SetPasswordForm() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="industry">Industry</Label>
-                  <Input
+                  <Combobox
                     id="industry"
-                    name="industry"
-                    placeholder="e.g. Technology"
                     value={stubIndustry}
-                    onChange={(e) => setStubIndustry(e.target.value)}
+                    onChange={setStubIndustry}
+                    options={INDUSTRY_OPTIONS}
+                    placeholder="Select or type…"
                   />
                 </div>
               </>

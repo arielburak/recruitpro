@@ -6,6 +6,7 @@ import { signOut, useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { Briefcase, LogOut } from "lucide-react";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
@@ -14,6 +15,9 @@ export default function OnboardingPage() {
   const { data: session, update } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Controlled Industry so users can pick a standard bucket or
+  // type their own — matches the rest of the app's industry inputs.
+  const [industry, setIndustry] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,7 +26,7 @@ export default function OnboardingPage() {
 
     const formData = new FormData(e.currentTarget);
     const orgName = (formData.get("orgName") as string)?.trim();
-    const industry = (formData.get("industry") as string)?.trim();
+    const trimmedIndustry = industry.trim();
     const companySize = (formData.get("companySize") as string)?.trim();
 
     if (!orgName || orgName.length < 2) {
@@ -31,7 +35,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    if (!industry || !companySize) {
+    if (!trimmedIndustry || !companySize) {
       setError("Please pick your industry and team size.");
       setLoading(false);
       return;
@@ -41,7 +45,7 @@ export default function OnboardingPage() {
       const res = await fetch("/api/auth/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgName, industry, companySize }),
+        body: JSON.stringify({ orgName, industry: trimmedIndustry, companySize }),
       });
 
       if (!res.ok) {
@@ -114,18 +118,13 @@ export default function OnboardingPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="industry">Industry</Label>
-                <select
+                <Combobox
                   id="industry"
-                  name="industry"
-                  required
-                  defaultValue=""
-                  className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  <option value="" disabled>Select…</option>
-                  {INDUSTRY_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
+                  value={industry}
+                  onChange={setIndustry}
+                  options={INDUSTRY_OPTIONS}
+                  placeholder="Select or type…"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="companySize">Team Size</Label>

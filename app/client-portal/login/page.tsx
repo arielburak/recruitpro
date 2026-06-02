@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import {
   Briefcase,
   CheckCircle2,
@@ -129,6 +131,11 @@ function ClientPortalLoginInner() {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string>("");
   const [resendingVerification, setResendingVerification] = useState(false);
   const [verificationResent, setVerificationResent] = useState(false);
+  // Controlled Industry field on the sign-up form. The Combobox lets
+  // the user pick a standard bucket from INDUSTRY_OPTIONS or type
+  // their own — both produce the same string value submitted to
+  // /api/client-portal/register.
+  const [industry, setIndustry] = useState("");
 
   async function resendVerification() {
     if (!unverifiedEmail || resendingVerification) return;
@@ -252,7 +259,7 @@ function ClientPortalLoginInner() {
           title: fd.get("title") as string,
           email,
           password,
-          industry: fd.get("industry") as string,
+          industry,
         }),
       });
 
@@ -528,7 +535,13 @@ function ClientPortalLoginInner() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="industry">Industry</Label>
-                      <Input id="industry" name="industry" placeholder="Technology" />
+                      <Combobox
+                        id="industry"
+                        value={industry}
+                        onChange={setIndustry}
+                        options={INDUSTRY_OPTIONS}
+                        placeholder="Technology"
+                      />
                     </div>
                   </>
                 )}
