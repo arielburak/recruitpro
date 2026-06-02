@@ -12,10 +12,12 @@ import { getOrgContext } from "@/lib/tenant";
 //                             tease it as a sublabel.
 //   * guaranteesExpiring    — placements with guaranteeExpiry in the
 //                             next 30 days (and not already past).
-//   * startingNext30Days    — HH placements with startDate in the
-//                             next 30 days that are still in DRAFT
-//                             invoice status. Lets the user batch-
-//                             generate invoices proactively.
+//   * startingNext30Days    — Any placement (HH or OS) whose
+//                             startDate or estimatedStartDate lands
+//                             in the next 30 days. Surface for
+//                             "who's coming in and when" — applies
+//                             to both kinds: HH for proactive
+//                             invoicing, OS for resource handoff.
 //   * mrrAtRisk             — OS placements that ENDED in the last
 //                             30 days. Sublabel carries the lost
 //                             MRR sum (monthlyFee total).
@@ -60,9 +62,20 @@ export async function GET() {
       prisma.placement.count({
         where: {
           organizationId: orgId,
-          kind: "HH",
-          startDate: { gte: now, lte: startWindowEnd },
-          invoiceStatus: "DRAFT",
+          // Match either anchor date — startDate is the firm one,
+          // estimatedStartDate is what recruiters set first when
+          // the actual day isn't nailed down. We want both so a
+          // freshly-closed placement without a firm start still
+          // shows up.
+          OR: [
+            { startDate: { gte: now, lte: startWindowEnd } },
+            {
+              AND: [
+                { startDate: null },
+                { estimatedStartDate: { gte: now, lte: startWindowEnd } },
+              ],
+            },
+          ],
         },
       }),
       prisma.placement.findMany({

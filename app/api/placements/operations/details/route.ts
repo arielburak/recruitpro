@@ -76,15 +76,28 @@ export async function GET(request: NextRequest) {
 
     if (tile === "startingNext30Days") {
       const windowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      // Any placement (HH or OS) whose firm OR estimated start lands
+      // in the next 30 days. Sort goes through both fields in the
+      // post-fetch pass since Prisma can't ORDER BY a COALESCE.
       const items = await prisma.placement.findMany({
         where: {
           organizationId: orgId,
-          kind: "HH",
-          startDate: { gte: now, lte: windowEnd },
-          invoiceStatus: "DRAFT",
+          OR: [
+            { startDate: { gte: now, lte: windowEnd } },
+            {
+              AND: [
+                { startDate: null },
+                { estimatedStartDate: { gte: now, lte: windowEnd } },
+              ],
+            },
+          ],
         },
         select: baseSelect,
-        orderBy: { startDate: "asc" },
+      });
+      items.sort((a, b) => {
+        const ad = (a.startDate ?? a.estimatedStartDate)?.getTime() ?? 0;
+        const bd = (b.startDate ?? b.estimatedStartDate)?.getTime() ?? 0;
+        return ad - bd;
       });
       return NextResponse.json({ tile, items });
     }
