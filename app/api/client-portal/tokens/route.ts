@@ -281,6 +281,31 @@ export async function POST(request: Request) {
           data: { jobId, status: "ACCEPTED", respondedAt: new Date() },
         });
       }
+
+      // Make sure the invited ClientUser is on the member list of
+      // the ClientJob. Was a bug: the initial mirror seeded the
+      // FIRST recipient but every subsequent agency-side invite
+      // re-used the existing mirror and never added the new user
+      // — so a second hiring manager invited from the same Job by
+      // a recruiter got portal access but couldn't open the Job.
+      // Upsert keeps it idempotent.
+      try {
+        await prisma.clientJobMember.upsert({
+          where: {
+            clientJobId_clientUserId: {
+              clientJobId: mirroredClientJobId,
+              clientUserId: clientUser.id,
+            },
+          },
+          update: {},
+          create: {
+            clientJobId: mirroredClientJobId,
+            clientUserId: clientUser.id,
+          },
+        });
+      } catch (e) {
+        console.error("[tokens] upsert ClientJobMember failed:", e);
+      }
     }
 
     const hasPassword = !!clientUser.passwordHash;
