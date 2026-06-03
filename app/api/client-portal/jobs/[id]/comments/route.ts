@@ -63,18 +63,59 @@ export async function POST(
     }
     const mentions = scope.mentions;
 
-    // For CLIENT_VISIBLE we also stamp the agency-side jobId so the
-    // row appears on /jobs/[id] Notes for recruiters without a
-    // separate mirror table. Lookup via ACCEPTED FirmEngagement. If
-    // there's no engagement yet the row stays client-side only
-    // (the agency can't read it anyway).
+    // For CLIENT_VISIBLE we stamp the agency-side jobId on the row
+    // so the recruiters of that specific firm — and ONLY them —
+    // see it on /jobs/[id] Notes. When the JO has multiple
+    // accepted engagements (the client is working with 2+ firms),
+    // the caller MUST pass `targetAgencyJobId` so we know which
+    // firm the message is for. One-engagement case keeps the old
+    // implicit resolution for backwards compatibility.
     let agencyJobId: string | null = null;
     if (requestedType === "CLIENT_VISIBLE") {
-      const eng = await prisma.firmEngagement.findFirst({
-        where: { clientJobId: id, status: "ACCEPTED", jobId: { not: null } },
-        select: { jobId: true },
-      });
-      agencyJobId = eng?.jobId ?? null;
+      const targetAgencyJobId =
+        typeof body.targetAgencyJobId === "string" && body.targetAgencyJobId
+          ? body.targetAgencyJobId
+          : null;
+
+      if (targetAgencyJobId) {
+        // Verify the supplied jobId is actually one of THIS ClientJob's
+        // accepted engagements — prevents a tampered payload from
+        // routing a comment to an unrelated agency Job.
+        const eng = await prisma.firmEngagement.findFirst({
+          where: {
+            clientJobId: id,
+            status: "ACCEPTED",
+            jobId: targetAgencyJobId,
+          },
+          select: { jobId: true },
+        });
+        agencyJobId = eng?.jobId ?? null;
+        if (!agencyJobId) {
+          return NextResponse.json(
+            { error: "Selected firm isn't engaged on this job" },
+            { status: 400 },
+          );
+        }
+      } else {
+        // Implicit resolution: only works with a single engagement.
+        const engagements = await prisma.firmEngagement.findMany({
+          where: { clientJobId: id, status: "ACCEPTED", jobId: { not: null } },
+          select: { jobId: true },
+        });
+        if (engagements.length === 1) {
+          agencyJobId = engagements[0].jobId;
+        } else if (engagements.length > 1) {
+          return NextResponse.json(
+            {
+              error:
+                "Multiple firms engaged — specify targetAgencyJobId to pick which one this message is for.",
+            },
+            { status: 400 },
+          );
+        }
+        // 0 engagements → leave agencyJobId null; the row is still
+        // saved as CLIENT_VISIBLE but no firm sees it yet.
+      }
     }
 
     const comment = await prisma.comment.create({

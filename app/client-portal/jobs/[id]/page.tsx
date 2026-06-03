@@ -786,6 +786,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   comments={job?.comments || []}
                   onCommentAdded={fetchJob}
                   currentClientUserId={currentClientUserId}
+                  agencyTabs={(job?.engagements || [])
+                    .filter(
+                      (e: any) => e.status === "ACCEPTED" && e.jobId,
+                    )
+                    .map((e: any) => ({
+                      agencyJobId: e.jobId as string,
+                      organizationId: e.organization?.id || e.organizationId,
+                      organizationName: e.organization?.name || "the agency",
+                    }))}
                 />
               </TabsContent>
 

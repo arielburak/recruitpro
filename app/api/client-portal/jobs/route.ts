@@ -58,6 +58,11 @@ export async function GET() {
             clientUser: { select: { id: true, name: true, title: true } },
             userId: true,
             user: { select: { id: true, name: true } },
+            // jobId points at the agency-side Job for CLIENT_VISIBLE
+            // rows (CLIENT_INTERNAL is null). The client portal uses
+            // it to group "Shared with [agency]" threads by engagement
+            // — one tab per accepted firm.
+            jobId: true,
           },
         },
       },
