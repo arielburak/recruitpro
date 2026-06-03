@@ -27,7 +27,13 @@ export async function GET(request: Request) {
     // (deleted job, wrong org), we don't 4xx — we just fall back to
     // the org-wide path. Caller doesn't lose autocomplete.
     let scopedJob:
-      | { id: string; clientId: string | null; assigneeIds: string[]; invitedUserIds: string[] }
+      | {
+          id: string;
+          clientId: string | null;
+          assigneeIds: string[];
+          invitedUserIds: string[];
+          clientJobIds: string[];
+        }
       | null = null;
     let jobId = jobIdParam;
     if (!jobId && submissionIdParam) {
@@ -51,6 +57,16 @@ export async function GET(request: Request) {
         },
       });
       if (job) {
+        // ClientJobs linked to this Job via accepted engagements.
+        // Needed so the @-mention picker can restrict client
+        // contacts to those who are actually members of the ClientJob
+        // (WhatsApp-group rule: you can only @ someone who's in the
+        // room). One Job can have multiple linked ClientJobs in
+        // legacy flows; we collect them all.
+        const engagements = await prisma.firmEngagement.findMany({
+          where: { jobId: job.id, status: "ACCEPTED" },
+          select: { clientJobId: true },
+        });
         scopedJob = {
           id: job.id,
           clientId: job.clientId,
@@ -58,6 +74,7 @@ export async function GET(request: Request) {
           invitedUserIds: job.firmEngagements
             .map((e) => e.invitedUserId)
             .filter((v): v is string => !!v),
+          clientJobIds: engagements.map((e) => e.clientJobId),
         };
       }
     }
@@ -99,17 +116,35 @@ export async function GET(request: Request) {
     };
     let clients: ClientUserHit[] = [];
     if (includeClients) {
-      // Scoped path: only ClientUsers belonging to the job's client.
-      // Mentioning a hiring manager from a different client (even
-      // when they're engaged with our org) would leak the existence
-      // of one client's search to another, so we hard-narrow when
-      // we have job context.
+      // Scoped path: only ClientUsers who are MEMBERS of the
+      // ClientJob backing this Job. WhatsApp-group rule: you can
+      // only @-mention someone who's been invited to the room.
+      // A client admin / CEO who never got added to this specific
+      // search does NOT appear in the picker.
+      //
+      // When no job context is provided we fall back to the
+      // engaged-clients pool — used by callers like the placement
+      // dialog that need an org-wide pick.
       const clientWhere: Prisma.ClientUserWhereInput = {
         name: { contains: q, mode: "insensitive" },
         isActive: true,
       };
-      if (scopedJob?.clientId) {
-        clientWhere.clientId = scopedJob.clientId;
+      if (scopedJob) {
+        if (scopedJob.clientJobIds.length === 0) {
+          // Job has no accepted engagements / linked ClientJob yet,
+          // so there's no member list to source from. Return no
+          // clients rather than leak the full roster.
+          clients = [];
+        } else {
+          clientWhere.jobMemberships = {
+            some: { clientJobId: { in: scopedJob.clientJobIds } },
+          };
+          clients = await prisma.clientUser.findMany({
+            where: clientWhere,
+            select: { id: true, name: true, email: true, client: { select: { name: true } } },
+            take: 10,
+          });
+        }
       } else {
         // Org-wide fallback (no job context). Keep the original
         // engagement filter so we don't return clients we never
@@ -117,12 +152,12 @@ export async function GET(request: Request) {
         clientWhere.client = {
           engagedOrganizations: { some: { organizationId: ctx.organizationId } },
         };
+        clients = await prisma.clientUser.findMany({
+          where: clientWhere,
+          select: { id: true, name: true, email: true, client: { select: { name: true } } },
+          take: 10,
+        });
       }
-      clients = await prisma.clientUser.findMany({
-        where: clientWhere,
-        select: { id: true, name: true, email: true, client: { select: { name: true } } },
-        take: 10,
-      });
     }
 
     return NextResponse.json({

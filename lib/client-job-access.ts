@@ -32,23 +32,10 @@ export type ClientCtx = {
 // Where-clause fragment for Prisma queries that need to filter
 // ClientJobs by visibility. Combine with other conditions via
 // spread / AND as needed.
-//
-// Two paths grant visibility:
-//   1. Explicit membership (ClientJobMember row). Default.
-//   2. @-mention in any Comment on this ClientJob. If a teammate
-//      arrobed you on the thread you should be able to open it,
-//      even if you weren't on the member list yet. Going forward
-//      the mention notifier auto-creates the membership too (see
-//      lib/chat-notifications.ts → notifyOnNewClientJobComment),
-//      but this OR keeps existing notifications working for
-//      ClientUsers who were mentioned before that auto-add landed.
 export function clientJobAccessWhere(ctx: ClientCtx): Prisma.ClientJobWhereInput {
   return {
     clientId: ctx.clientId,
-    OR: [
-      { members: { some: { clientUserId: ctx.clientUserId } } },
-      { comments: { some: { mentions: { has: ctx.clientUserId } } } },
-    ],
+    members: { some: { clientUserId: ctx.clientUserId } },
   };
 }
 
