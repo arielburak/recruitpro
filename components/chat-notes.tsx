@@ -189,15 +189,27 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
 
   // ── Mention search ───────────────────────────────────────────────────
 
+  // Mention picker is gated by the currently-active tab:
+  //   · INTERNAL → only Users with access to this Job. No clients.
+  //     Mentioning a hiring manager from an internal note would
+  //     leak private context to them via the notification mail.
+  //   · CLIENT_VISIBLE → Users with access to the Job PLUS hiring
+  //     contacts of that Job's client only (not every engaged
+  //     client). The backend (/api/users/search) does the actual
+  //     scoping when we pass jobId/submissionId.
   const searchUsers = useCallback(async (query: string) => {
     try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}&includeClients=true`);
+      const includeClients = activeTab === "CLIENT_VISIBLE";
+      const params = new URLSearchParams({ q: query, includeClients: String(includeClients) });
+      if (jobId) params.set("jobId", jobId);
+      else if (submissionId) params.set("submissionId", submissionId);
+      const res = await fetch(`/api/users/search?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setMentionResults([...data.users, ...data.clients]);
+        setMentionResults([...data.users, ...(includeClients ? data.clients : [])]);
       }
     } catch {}
-  }, []);
+  }, [activeTab, jobId, submissionId]);
 
   useEffect(() => {
     if (!showMentions) return;
@@ -207,6 +219,20 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
     };
   }, [mentionQuery, showMentions, searchUsers]);
+
+  // Flipping back from CLIENT_VISIBLE to INTERNAL must also drop
+  // any ClientUsers the user had already picked while the comment
+  // was client-visible. Without this the submit payload still
+  // carries client IDs in `mentions` and the server-side notifier
+  // mails them about an internal-only thread. Guarded so it doesn't
+  // re-render at mount when mentions is already empty.
+  useEffect(() => {
+    if (activeTab !== "INTERNAL") return;
+    setMentions((prev) => {
+      const next = prev.filter((m) => m.type !== "client");
+      return next.length === prev.length ? prev : next;
+    });
+  }, [activeTab]);
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value;
