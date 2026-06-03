@@ -153,12 +153,37 @@ export async function PUT(
     const newEmail = data.email?.toLowerCase().trim() || "";
     const emailChanged = !!newEmail && newEmail !== oldEmail;
 
+    // Resolve owner the same way the POST does: only honor an
+    // ownerId that belongs to this org. A stale dropdown value or
+    // a tampered request body can't shove the candidate into a
+    // foreign tenant. If the supplied id doesn't match, we keep
+    // the existing owner instead of silently downgrading to the
+    // current actor.
+    //
+    // Changing the owner is purely forward-looking: past Placement
+    // rows keep their own recruiterId (separate field), so reporting
+    // by-recruiter on historical placements stays accurate.
+    let resolvedOwnerId: string | undefined = undefined;
+    if (data.ownerId) {
+      const owner = await prisma.user.findFirst({
+        where: { id: data.ownerId, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (owner) resolvedOwnerId = owner.id;
+    }
+    // Strip ownerId before spreading — we handle it explicitly
+    // through resolvedOwnerId below so a foreign-org id can't slip
+    // into the update via the rest payload.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ownerId: _ignored, ...updateData } = data;
+
     const candidate = await prisma.candidate.updateMany({
       where: { id, organizationId: ctx.organizationId },
       data: {
-        ...data,
+        ...updateData,
         currentSalary: data.currentSalary ?? null,
         desiredSalary: data.desiredSalary ?? null,
+        ...(resolvedOwnerId ? { ownerId: resolvedOwnerId } : {}),
       },
     });
 

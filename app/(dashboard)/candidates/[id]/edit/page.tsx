@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,11 +12,16 @@ import { X } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker, getCurrency } from "@/components/ui/currency-picker";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import Link from "next/link";
+
+type TeamMember = { id: string; name: string; email: string };
 
 export default function EditCandidatePage() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
@@ -24,6 +30,12 @@ export default function EditCandidatePage() {
   const [candidate, setCandidate] = useState<any>(null);
   const [phone, setPhone] = useState("");
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
+  // Owner state is its own thing — we hydrate from the candidate
+  // once it loads, then let the user re-assign freely. Changing the
+  // owner is forward-looking: existing placements keep their
+  // recruiterId, so this won't rewrite historical credit.
+  const [ownerId, setOwnerId] = useState<string>("");
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
   useEffect(() => {
     fetch(`/api/candidates/${params.id}`)
@@ -33,9 +45,18 @@ export default function EditCandidatePage() {
         setSkills(data.skills || []);
         setPhone(data.phone || "");
         setSalaryCurrency(data.salaryCurrency || "USD");
+        setOwnerId(data.ownerId || "");
         setFetching(false);
       });
   }, [params.id]);
+
+  // Load team members for the Owner picker.
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
 
   function addSkill() {
     const s = skillInput.trim();
@@ -70,6 +91,7 @@ export default function EditCandidatePage() {
       source: fd.get("source") as string,
       summary: fd.get("summary") as string,
       skills,
+      ownerId: ownerId || undefined,
     };
 
     const res = await fetch(`/api/candidates/${params.id}`, {
@@ -162,6 +184,32 @@ export default function EditCandidatePage() {
                 <Label>Desired Salary ({getCurrency(salaryCurrency).symbol})</Label>
                 <Input name="desiredSalary" type="number" defaultValue={candidate.desiredSalary || ""} />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ownerId">Owner</Label>
+              <SearchableSelect
+                value={ownerId}
+                onChange={setOwnerId}
+                includeAll={false}
+                placeholder={
+                  teamMembers.length === 0 ? "Loading team…" : "Select an owner"
+                }
+                searchPlaceholder="Search teammates…"
+                minWidth={0}
+                className="w-full"
+                options={teamMembers.map<SearchableSelectOption>((m) => ({
+                  value: m.id,
+                  label:
+                    (m.name || m.email) +
+                    (m.id === currentUserId ? " (you)" : ""),
+                  meta: m.name && m.email ? m.email : undefined,
+                }))}
+              />
+              <p className="text-[10.5px] text-gray-400">
+                Recruiter that owns this candidate going forward. Past
+                placements keep their own recruiter, so reporting on
+                historical deals stays accurate.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Source</Label>

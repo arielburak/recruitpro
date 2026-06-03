@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   MessageSquare,
   Star,
+  UserCircle,
 } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -375,6 +376,41 @@ export default function CandidateDetailPage() {
                     </a>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Owner — surfaces the agency-side recruiter who owns
+                this candidate. Editable from the candidate's Edit
+                page; changes are forward-looking only (past
+                placements keep their own recruiterId). */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Owner
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm min-w-0">
+                    <UserCircle className="h-4 w-4 text-gray-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-gray-900 truncate">
+                        {candidate.owner?.name || candidate.owner?.email || "Unassigned"}
+                      </p>
+                      {candidate.owner?.name && candidate.owner?.email && (
+                        <p className="text-xs text-gray-400 truncate">
+                          {candidate.owner.email}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/candidates/${candidate.id}/edit`}
+                    className="text-xs text-indigo-600 hover:underline shrink-0"
+                  >
+                    Change
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 
