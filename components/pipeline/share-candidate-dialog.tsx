@@ -123,7 +123,7 @@ export function ShareCandidateDialog({ open, onOpenChange, submission, onShared 
             <div>
               <p className="text-sm text-gray-900">Send email notification</p>
               <p className="text-[11px] text-gray-500">
-                Notifies the hiring manager and admin users of the client portal. They&apos;ll get a link to review.
+                Notifies the client contacts on this job. They&apos;ll get a link to review.
               </p>
             </div>
           </label>

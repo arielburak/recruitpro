@@ -345,40 +345,45 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      // Liveness check — a JWT outlives the row it points to in
-      // two real scenarios:
+      // Liveness + freshness check — a JWT outlives both the row
+      // it points to and its own state:
       //
       //   1. Tenant wipe during QA / staging resets: User row is
       //      gone but the browser still holds a cookie signed
-      //      with the same NEXTAUTH_SECRET, so NextAuth would
-      //      otherwise treat it as authenticated and every page
-      //      load 500s on the first DB lookup.
-      //   2. A user being deactivated / deleted (account
-      //      lifecycle work that's still ahead of us) — same
-      //      problem in production.
-      //
-      // Cheap mitigation: one keyed lookup per session call on
-      // the side (staffing vs client) the token claims. If the
-      // row is gone, return null so NextAuth signs the user out
-      // on this very request — no manual cookie clearing
-      // required by anyone.
+      //      with the same NEXTAUTH_SECRET. Return null → sign
+      //      out on this very request.
+      //   2. Deactivation lifecycle (still ahead of us in prod).
+      //      Same problem.
+      //   3. Verification drift: cookie was issued before
+      //      `emailVerified` existed on the token (legacy session),
+      //      OR the user verified after login but their JWT didn't
+      //      get the update push for whatever reason. Without
+      //      reading the DB here, the gate on /api/admin/invites
+      //      etc. keeps refusing a user whose emailVerifiedAt is
+      //      already set. So we pull the live flag along with the
+      //      liveness check and stamp it on the session — at the
+      //      cost of one extra column on the same indexed lookup
+      //      we were already doing.
+      let liveEmailVerified: boolean | undefined = undefined;
       if (token?.id) {
         if (token.isClientUser) {
-          const exists = await prisma.clientUser.findUnique({
+          const row = await prisma.clientUser.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true },
           });
-          if (!exists || !exists.isActive) {
+          if (!row || !row.isActive) {
             return null as any;
           }
+          liveEmailVerified = !!row.emailVerifiedAt;
         } else {
-          const exists = await prisma.user.findUnique({
+          const row = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true },
           });
-          if (!exists || !exists.isActive) {
+          if (!row || !row.isActive) {
             return null as any;
           }
+          liveEmailVerified = !!row.emailVerifiedAt;
         }
       }
 
@@ -391,7 +396,10 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).clientId = token.clientId;
         (session.user as any).clientName = token.clientName;
         (session.user as any).isClientUser = token.isClientUser;
-        (session.user as any).emailVerified = !!token.emailVerified;
+        // Live DB flag wins over the cached token value so a user
+        // who just verified doesn't need to log out and back in.
+        (session.user as any).emailVerified =
+          liveEmailVerified ?? !!token.emailVerified;
       }
       return session;
     },

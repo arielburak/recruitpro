@@ -168,6 +168,44 @@ export async function PATCH(
       const shareNote = typeof body.shareNote === "string" ? body.shareNote.trim() : "";
       const notifyViaEmail = body.notifyViaEmail !== false; // default true
 
+      // Audience for this share. Rule: only ClientUsers who are
+      // members of THIS specific Job, not every contact at the
+      // client. A hiring manager on a different search at the same
+      // company shouldn't get a heads-up about a candidate they
+      // weren't invited to evaluate.
+      //
+      // The link runs Job → accepted FirmEngagement → ClientJob →
+      // ClientJobMember[]. If the Job has no associated ClientJob
+      // (recruiter-created without a person-level invite flow),
+      // fall back to the full client roster — that's the older
+      // direct-create flow and we don't want shares to silently
+      // notify nobody.
+      const clientJob = await prisma.clientJob.findFirst({
+        where: {
+          engagements: {
+            some: { jobId: submission.jobId, status: "ACCEPTED" },
+          },
+        },
+        select: { id: true },
+      });
+
+      const audience: { id: string; email: string | null }[] = clientJob
+        ? (
+            await prisma.clientJobMember.findMany({
+              where: {
+                clientJobId: clientJob.id,
+                clientUser: { isActive: true },
+              },
+              select: {
+                clientUser: { select: { id: true, email: true } },
+              },
+            })
+          ).map((m) => ({ id: m.clientUser.id, email: m.clientUser.email }))
+        : await prisma.clientUser.findMany({
+            where: { clientId: submission.job.clientId, isActive: true },
+            select: { id: true, email: true },
+          });
+
       // Save note as a CLIENT_VISIBLE comment
       if (shareNote) {
         await prisma.comment.create({
@@ -180,42 +218,34 @@ export async function PATCH(
         });
       }
 
-      // In-app notification: one per active client user (personal inbox)
+      // In-app notification: one per audience member's inbox.
       try {
-        const activeClientUsers = await prisma.clientUser.findMany({
-          where: { clientId: submission.job.clientId, isActive: true },
-          select: { id: true },
-        });
-        await prisma.clientNotification.createMany({
-          data: activeClientUsers.map((cu) => ({
-            clientId: submission.job.clientId!,
-            clientUserId: cu.id,
-            type: "candidate_shared",
-            title: `New candidate for ${submission.job.title}`,
-            body: `${candidateName} was shared by ${ctx.userName}${shareNote ? ". Note attached." : ""}`,
-            link: `/client-portal/candidates/${id}`,
-            submissionId: id,
-          })),
-        });
+        if (audience.length > 0) {
+          await prisma.clientNotification.createMany({
+            data: audience.map((cu) => ({
+              clientId: submission.job.clientId!,
+              clientUserId: cu.id,
+              type: "candidate_shared",
+              title: `New candidate for ${submission.job.title}`,
+              body: `${candidateName} was shared by ${ctx.userName}${shareNote ? ". Note attached." : ""}`,
+              link: `/client-portal/candidates/${id}`,
+              submissionId: id,
+            })),
+          });
+        }
       } catch (err) {
         console.error("[share] failed to create ClientNotifications:", err);
       }
 
-      // Email notifications (fire-and-forget; don't fail request)
+      // Email notifications (fire-and-forget; don't fail request).
+      // Same audience as in-app — no extra fan-out to client
+      // admins or contactEmail.
       if (notifyViaEmail) {
         try {
-          const [client, clientAdmins, org] = await Promise.all([
+          const [client, org] = await Promise.all([
             prisma.client.findUnique({
               where: { id: submission.job.clientId },
-              select: { name: true, contactEmail: true },
-            }),
-            prisma.clientUser.findMany({
-              where: {
-                clientId: submission.job.clientId,
-                isActive: true,
-                role: "ADMIN",
-              },
-              select: { email: true },
+              select: { name: true },
             }),
             prisma.organization.findUnique({
               where: { id: ctx.organizationId },
@@ -224,9 +254,8 @@ export async function PATCH(
           ]);
 
           const recipients = new Set<string>();
-          if (client?.contactEmail) recipients.add(client.contactEmail.toLowerCase());
-          for (const a of clientAdmins) {
-            if (a.email) recipients.add(a.email.toLowerCase());
+          for (const cu of audience) {
+            if (cu.email) recipients.add(cu.email.toLowerCase());
           }
 
           const portalBase = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
