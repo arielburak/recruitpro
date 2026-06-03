@@ -151,16 +151,41 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   if (commentType === "CLIENT_VISIBLE") {
     try {
       if (authorKind === "staffing") {
-        // Staffing → Client: per-user ClientNotification for all active client users + emails
+        // Staffing → Client. WhatsApp-group rule: notify only
+        // ClientUsers who are members of the ClientJob backing this
+        // submission's Job. A hiring contact who wasn't invited to
+        // this search shouldn't get a ping (and clicking the notif
+        // would 404 them anyway — the portal gates by membership).
         if (submission.job.clientId) {
-          const activeClientUsers = await prisma.clientUser.findMany({
-            where: { clientId: submission.job.clientId, isActive: true },
-            select: { id: true, email: true, role: true },
+          const engagement = await prisma.firmEngagement.findFirst({
+            where: { jobId: submission.job.id, status: "ACCEPTED" },
+            select: { clientJobId: true },
           });
+
+          // Audience: members of the ClientJob if we have one,
+          // otherwise the full active client roster (legacy Jobs
+          // created directly without a ClientJob mirror — keeps
+          // notifications working in those flows).
+          const audience = engagement
+            ? (
+                await prisma.clientJobMember.findMany({
+                  where: {
+                    clientJobId: engagement.clientJobId,
+                    clientUser: { isActive: true, clientId: submission.job.clientId },
+                  },
+                  select: {
+                    clientUser: { select: { id: true, email: true, role: true } },
+                  },
+                })
+              ).map((m) => m.clientUser)
+            : await prisma.clientUser.findMany({
+                where: { clientId: submission.job.clientId, isActive: true },
+                select: { id: true, email: true, role: true },
+              });
 
           const mentionSet = new Set(mentions); // Skip users already notified via mention
 
-          for (const cu of activeClientUsers) {
+          for (const cu of audience) {
             if (mentionSet.has(cu.id)) continue; // already got mention notification
             try {
               await prisma.clientNotification.create({
@@ -179,15 +204,13 @@ export async function notifyOnNewComment(args: NotifyArgs) {
             }
           }
 
-          // Emails: hiring manager + admins (not regular users to avoid noise)
-          const client = await prisma.client.findUnique({
-            where: { id: submission.job.clientId },
-            select: { contactEmail: true },
-          });
+          // Emails go to the same audience. We used to extend this
+          // to contactEmail + every admin of the client, but that
+          // leaked discussion of one search to people outside the
+          // job. Audience is the source of truth.
           const recipients = new Set<string>();
-          if (client?.contactEmail) recipients.add(client.contactEmail.toLowerCase());
-          for (const cu of activeClientUsers) {
-            if (cu.role === "ADMIN") recipients.add(cu.email.toLowerCase());
+          for (const cu of audience) {
+            if (cu.email) recipients.add(cu.email.toLowerCase());
           }
           for (const to of recipients) {
             try {

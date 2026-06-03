@@ -350,7 +350,14 @@ export async function POST(request: Request) {
           type: "candidate_shared",
           title: notifTitle,
           body: notifBody,
-          link: jobId ? `/client-portal/jobs/${jobId}` : "/client-portal/dashboard",
+          // The client portal navigates by ClientJob.id, not the
+          // agency-side Job.id. Using `jobId` here gave a 404
+          // ("Job not found.") on every click. Fall back to the
+          // dashboard if the mirror wasn't created (no jobId in
+          // the invite payload at all).
+          link: mirroredClientJobId
+            ? `/client-portal/jobs/${mirroredClientJobId}`
+            : "/client-portal/dashboard",
         },
       });
     } catch (e) {

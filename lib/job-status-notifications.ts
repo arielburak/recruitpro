@@ -35,11 +35,30 @@ export async function notifyClientOfJobStatusChange({
   });
   if (!job?.clientId) return;
 
-  const clientUsers = await prisma.clientUser.findMany({
-    where: { clientId: job.clientId, isActive: true },
-    select: { id: true },
+  // Resolve the ClientJob mirror for this agency Job. We need its
+  // id to (a) limit the audience to people actually on the search
+  // (WhatsApp-group rule — non-members shouldn't be notified about
+  // a job they can't open), and (b) build a link that lands on
+  // /client-portal/jobs/{clientJobId} directly instead of bouncing
+  // through /go and risking a "Job not found".
+  const engagement = await prisma.firmEngagement.findFirst({
+    where: { jobId, status: "ACCEPTED" },
+    select: { clientJobId: true },
   });
-  if (clientUsers.length === 0) return;
+  if (!engagement) return;
+  const clientJobId = engagement.clientJobId;
+
+  // Audience: only ClientUsers who are members of this ClientJob.
+  // A hiring manager on a different search at the same company
+  // shouldn't get pinged about a role they were never invited to.
+  const members = await prisma.clientJobMember.findMany({
+    where: {
+      clientJobId,
+      clientUser: { isActive: true, clientId: job.clientId },
+    },
+    select: { clientUserId: true },
+  });
+  if (members.length === 0) return;
 
   const firmName = job.organization?.name || "Your recruiting firm";
   const title =
@@ -52,13 +71,13 @@ export async function notifyClientOfJobStatusChange({
       : `Congrats — ${firmName} placed a candidate in this role.`;
 
   await prisma.clientNotification.createMany({
-    data: clientUsers.map((cu) => ({
+    data: members.map((m) => ({
       clientId: job.clientId!,
-      clientUserId: cu.id,
+      clientUserId: m.clientUserId,
       type: newStatus === "ON_HOLD" ? "job_on_hold" : "job_filled",
       title,
       body,
-      link: `/client-portal/go?clientId=${job.clientId}&jobId=${jobId}`,
+      link: `/client-portal/jobs/${clientJobId}`,
     })),
   });
 }
