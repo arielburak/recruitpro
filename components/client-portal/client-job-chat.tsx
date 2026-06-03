@@ -298,6 +298,7 @@ export function ClientJobChat({
             <button
               key={tab.agencyJobId}
               type="button"
+              title={`Shared with ${tab.organizationName}`}
               onClick={() =>
                 setActiveTab({ kind: "shared", agencyJobId: tab.agencyJobId })
               }
@@ -308,8 +309,13 @@ export function ClientJobChat({
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100",
               )}
             >
-              <Globe className="h-3.5 w-3.5" />
-              <span className="truncate max-w-[140px]">
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              {/* The active tab shows the full firm name; inactive
+                  tabs truncate at ~180px so the strip doesn't blow
+                  out horizontally when there are 3+ firms. Both
+                  carry a `title` attribute on the button above so
+                  hover always reveals the full label. */}
+              <span className={cn(isActive ? "whitespace-nowrap" : "truncate max-w-[180px]")}>
                 Shared with {tab.organizationName}
               </span>
               {count > 0 && (
