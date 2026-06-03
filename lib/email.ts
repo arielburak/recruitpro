@@ -129,6 +129,42 @@ export async function sendPasswordResetEmail({
   });
 }
 
+export async function sendJobAssignedEmail({
+  to,
+  recipientName,
+  assignerName,
+  jobTitle,
+  clientName,
+  role,
+  jobUrl,
+}: {
+  to: string;
+  recipientName: string;
+  assignerName: string;
+  jobTitle: string;
+  clientName: string | null;
+  role: string | null;
+  jobUrl: string;
+}) {
+  // Sent when a recruiter is added to a Job via JobAssignment. The
+  // line we surface to the user mirrors the in-app notification:
+  // role + client so the recruiter can place the search in their
+  // head before opening the link.
+  const subject = `${assignerName} added you to ${jobTitle}`;
+  const context = [role, clientName].filter(Boolean).join(" · ");
+  const html = wrapTemplate(
+    `You're now collaborating on ${jobTitle}`,
+    `<p>Hi ${recipientName || "there"},</p>
+     <p>${assignerName} just added you to the search for <strong>${jobTitle}</strong>${
+       context ? ` (${context})` : ""
+     }. Open the job to see the pipeline and start sourcing.</p>`,
+    jobUrl,
+    "Open the job",
+  );
+
+  return sendEmail({ to, subject, html });
+}
+
 export async function sendTeamInviteEmail({
   to,
   inviteUrl,

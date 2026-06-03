@@ -204,29 +204,12 @@ export async function notifyOnNewComment(args: NotifyArgs) {
             }
           }
 
-          // Emails go to the same audience. We used to extend this
-          // to contactEmail + every admin of the client, but that
-          // leaked discussion of one search to people outside the
-          // job. Audience is the source of truth.
-          const recipients = new Set<string>();
-          for (const cu of audience) {
-            if (cu.email) recipients.add(cu.email.toLowerCase());
-          }
-          for (const to of recipients) {
-            try {
-              await sendNewMessageEmail({
-                to,
-                fromName: authorName,
-                fromRole: "recruiter",
-                candidateName,
-                jobTitle,
-                preview,
-                portalUrl: clientUrl,
-              });
-            } catch (e) {
-              console.error("[chat-notify] CLIENT_VISIBLE staffing->client email failed:", e);
-            }
-          }
+          // No emails on the audience path — only mentions trigger
+          // a mail (handled above). The user feedback was clear:
+          // "que me avise por mail únicamente cuando alguien me
+          // arroba (no cuando responden el chat)". The bell on the
+          // portal still gets a notification, which is enough for
+          // catch-up.
         }
       } else {
         // Client → Staffing: UserNotification for each assigned recruiter + emails
@@ -255,22 +238,13 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           }
         }
 
-        // Emails
-        for (const to of recipients) {
-          try {
-            await sendNewMessageEmail({
-              to,
-              fromName: authorName,
-              fromRole: "client",
-              candidateName,
-              jobTitle,
-              preview,
-              portalUrl: staffingUrl,
-            });
-          } catch (e) {
-            console.error("[chat-notify] CLIENT_VISIBLE client->staffing email failed:", e);
-          }
-        }
+        // No emails on the audience path — mentions are the only
+        // mail trigger (see staffing→client side above for the
+        // same rule). recipients is kept built only to drive the
+        // in-app loop; if a future feature wants opt-in mail for
+        // replies, hang it off a per-user preference instead of
+        // blasting the whole audience.
+        void recipients;
       }
     } catch (e) {
       console.error("[chat-notify] CLIENT_VISIBLE audience notifications failed:", e);

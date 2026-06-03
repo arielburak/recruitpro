@@ -29,6 +29,13 @@ interface ChatNotesProps {
   // Distinct from submissionId: those are tied to a candidate-on-job;
   // jobId covers standing notes about the search itself.
   jobId?: string;
+  // True when the submission hasn't been shared with the client yet.
+  // We still let the user read CLIENT_VISIBLE comments (there might
+  // be history from a prior share) but hide the composer and the
+  // tab visibility-toggle, with a hint that explains the rule:
+  // "Share this candidate to start the conversation". Only applies
+  // to the per-submission chat; ignored at job and candidate scope.
+  clientChatLocked?: boolean;
   onCommentAdded: () => void;
   // Visual override — candidate-level notes usually live above the
   // per-job chat and don't need the full chat height.
@@ -155,7 +162,7 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommentAdded, heightClass }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, jobId, clientChatLocked, onCommentAdded, heightClass }: ChatNotesProps) {
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
   // Candidate-level scope means there's no client to share with, so
@@ -527,7 +534,21 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input area. The client chat is gated behind "has this
+          candidate been shared with the client yet?" — until then
+          the composer is replaced by a hint that points the user
+          at the share button. Internal stays open at all times. */}
+      {clientChatLocked && activeTab === "CLIENT_VISIBLE" ? (
+        <div className="border-t border-gray-200 p-4 bg-gray-50 shrink-0 text-center">
+          <p className="text-xs text-gray-600">
+            <Globe className="h-3.5 w-3.5 inline-block mr-1 align-text-bottom text-gray-400" />
+            Share this candidate to start the conversation with the client.
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Use the <span className="font-medium">Share with Client</span> button on the candidate to unlock this chat.
+          </p>
+        </div>
+      ) : (
       <div className="border-t border-gray-200 p-3 bg-gray-50 shrink-0 relative">
         {/* Mention dropdown (positioned above input) */}
         {showMentions && mentionResults.length > 0 && (
@@ -604,6 +625,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
           <span className="text-[11px] text-gray-400">Enter to send · Shift+Enter for newline</span>
         </div>
       </div>
+      )}
     </div>
   );
 }

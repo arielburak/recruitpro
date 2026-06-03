@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { sendJobAssignedEmail } from "@/lib/email";
 
 export async function GET(
   _request: Request,
@@ -44,17 +45,22 @@ export async function POST(
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
 
-    // Verify job belongs to org
+    // Verify job belongs to org. We pull title + client info up
+    // front because we use them for the notification + email below.
     const job = await prisma.job.findFirst({
       where: { id, organizationId: ctx.organizationId },
-      select: { id: true },
+      select: {
+        id: true,
+        title: true,
+        client: { select: { name: true } },
+      },
     });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
     // Verify user belongs to same org
     const user = await prisma.user.findFirst({
       where: { id: userId, organizationId: ctx.organizationId },
-      select: { id: true },
+      select: { id: true, name: true, email: true, title: true },
     });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
@@ -62,6 +68,51 @@ export async function POST(
       data: { jobId: id, userId },
       include: { user: { select: { id: true, name: true, email: true, role: true } } },
     });
+
+    // Notify the newly-assigned recruiter (don't notify self-
+    // assigns — opening your own job and clicking "assign me" is
+    // already its own confirmation). Both in-app and mail per the
+    // user's rule: "Notificación + mail al agregarme a un job".
+    // Fire-and-forget so a flaky Resend doesn't fail the assign.
+    if (userId !== ctx.userId) {
+      const baseUrl =
+        process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+      const jobUrl = `${baseUrl}/jobs/${id}`;
+      const contextLine = [user.title, job.client?.name]
+        .filter(Boolean)
+        .join(" · ");
+
+      void (async () => {
+        try {
+          await prisma.userNotification.create({
+            data: {
+              userId,
+              type: "job_assigned",
+              title: `${ctx.userName || "A teammate"} added you to ${job.title}`,
+              body: contextLine || null,
+              link: `/jobs/${id}`,
+            },
+          });
+        } catch (e) {
+          console.error("[assignments POST] in-app notification failed:", e);
+        }
+        if (user.email) {
+          try {
+            await sendJobAssignedEmail({
+              to: user.email,
+              recipientName: user.name || "",
+              assignerName: ctx.userName || "A teammate",
+              jobTitle: job.title,
+              clientName: job.client?.name || null,
+              role: user.title || null,
+              jobUrl,
+            });
+          } catch (e) {
+            console.error("[assignments POST] email failed:", e);
+          }
+        }
+      })();
+    }
 
     return NextResponse.json(assignment, { status: 201 });
   } catch (error: any) {

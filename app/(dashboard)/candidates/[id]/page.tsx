@@ -802,13 +802,26 @@ export default function CandidateDetailPage() {
                 );
               })()}
 
-              {/* Chat */}
-              <ChatNotes
-                key={selectedSubmissionId || candidate.submissions[0]?.id}
-                comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
-                submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
-                onCommentAdded={fetchCandidate}
-              />
+              {/* Chat. We lock CLIENT_VISIBLE until the candidate
+                  has been shared — sending a client-visible note
+                  before the client can see the candidate is
+                  confusing and the notif would land on a 404. */}
+              {(() => {
+                const activeSub = candidate.submissions.find(
+                  (s: any) =>
+                    s.id ===
+                    (selectedSubmissionId || candidate.submissions[0]?.id),
+                );
+                return (
+                  <ChatNotes
+                    key={selectedSubmissionId || candidate.submissions[0]?.id}
+                    comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
+                    submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
+                    clientChatLocked={!activeSub?.isSharedWithClient}
+                    onCommentAdded={fetchCandidate}
+                  />
+                );
+              })()}
             </div>
           )}
         </TabsContent>
