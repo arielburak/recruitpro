@@ -437,6 +437,31 @@ export async function notifyOnNewClientJobComment(args: {
 
   for (const u of mentioned) {
     if (u.id === authorId) continue;
+
+    // Auto-add the mentioned ClientUser as a member of this job.
+    // Without this the notification we're about to send lands on a
+    // "Job not found" screen — the client portal filters
+    // /client-portal/jobs strictly by ClientJobMember (see
+    // lib/client-job-access.ts), so a user who was never explicitly
+    // added can't open the job even when they're invited to the
+    // thread via @-mention. Mention = explicit invite, so we treat
+    // it as one. Upsert keeps it idempotent: if they were already
+    // a member nothing changes.
+    try {
+      await prisma.clientJobMember.upsert({
+        where: {
+          clientJobId_clientUserId: {
+            clientJobId: job.id,
+            clientUserId: u.id,
+          },
+        },
+        update: {},
+        create: { clientJobId: job.id, clientUserId: u.id },
+      });
+    } catch (e) {
+      console.error("[chat-notify] auto-add ClientJobMember on mention failed:", e);
+    }
+
     try {
       await prisma.clientNotification.create({
         data: {
