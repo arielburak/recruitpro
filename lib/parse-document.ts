@@ -9,6 +9,52 @@ const METADATA_LINE = /^(ubicaci[oó]n|location|modalidad|horario|área|area|rep
 // Bullet line detection
 const BULLET_CHARS = /^[-–—●○■□▪▸►◆*•]\s*/;
 
+// Does the document look like the PDF extractor swallowed spaces?
+// We sample word lengths and flag the doc when an unusually high share
+// of "words" are 12+ characters long. Recruiter-friendly JDs and CVs
+// rarely have more than ~10% of their tokens that long; values above
+// 25% are a near-certain sign of glued output.
+function looksGlued(text: string): boolean {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 20) return false;
+  const longWords = words.filter((w) => w.length >= 12).length;
+  return longWords / words.length > 0.25;
+}
+
+// Insert spaces inside a single token of glued words. We stick to
+// regex-driven boundaries that are unambiguous:
+//   · lowercase → Uppercase ("TitanBank" → "Titan Bank")
+//   · UPPERCASE → TitleCase ("BSAAnalyst" → "BSA Analyst")
+//   · letter ↔ digit
+//   · "?", ".", "!" → next capital
+//
+// We deliberately do NOT try to split lowercase-only blobs like
+// "thecompanyisbasedindallas" via a dictionary. A previous attempt
+// at greedy matching shredded real words ("monitoring" → "m on it
+// or in g") because every short glue word matched mid-syllable.
+// Better to leave a glued lowercase chunk intact than to corrupt
+// a correctly-extracted word.
+function splitToken(token: string): string {
+  let t = token;
+  t = t.replace(/([a-zà-ÿ])([A-ZÀ-Ú][a-zà-ÿ])/gu, "$1 $2");
+  t = t.replace(/([A-ZÀ-Ú]{2,})([A-ZÀ-Ú][a-zà-ÿ])/gu, "$1 $2");
+  t = t.replace(/([a-zA-ZÀ-ÿ])(\d)/gu, "$1 $2");
+  t = t.replace(/(\d)([a-zA-ZÀ-ÿ])/gu, "$1 $2");
+  t = t.replace(/([.!?])([A-ZÀ-Ú])/g, "$1 $2");
+  return t;
+}
+
+function splitGluedWords(text: string): string {
+  if (!looksGlued(text)) return text;
+  // Process token by token so we don't move spaces across paragraph
+  // breaks. Joining a long doc with replace-on-whole-text would also
+  // work but the per-token path is clearer.
+  return text
+    .split(/(\s+)/) // preserve original whitespace runs
+    .map((piece) => (/\s/.test(piece) ? piece : splitToken(piece)))
+    .join("");
+}
+
 /**
  * Clean up raw extracted text from PDFs/DOCX into a well-formatted JD.
  *
@@ -23,6 +69,12 @@ export function formatExtractedText(raw: string): string {
   // Normalize line endings and remove control characters
   let text = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+  // Some PDFs encode spaces as kerning and pdf-parse drops them,
+  // producing tokens like "TitanBankisaDallasbased". Detect that
+  // pattern and re-insert spaces before the rest of the pipeline
+  // tries to classify lines.
+  text = splitGluedWords(text);
 
   const rawLines = text.split("\n").map((l) => l.trimEnd());
 
