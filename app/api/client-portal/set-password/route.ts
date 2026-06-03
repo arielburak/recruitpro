@@ -29,10 +29,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "This link has expired" }, { status: 400 });
     }
 
+    // Pre-fill name + title on the form when we already have something
+    // from the invite — the recruiter usually types in the contact's
+    // full name (and sometimes title) when sending the invite, so the
+    // hiring contact only has to confirm. Falls back to a blank input
+    // when only the email was provided.
+    const clientUser = await prisma.clientUser.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        clientId: tokenRecord.clientId,
+        isActive: true,
+      },
+      select: { name: true, title: true },
+    });
+
     return NextResponse.json({
       isStub: tokenRecord.client.isStub,
       currentName: tokenRecord.client.name,
       currentIndustry: tokenRecord.client.industry || "",
+      currentUserName: clientUser?.name || "",
+      currentUserTitle: clientUser?.title || "",
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -41,11 +57,28 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { token, email: rawEmail, password, companyName, industry } = await request.json();
+    const {
+      token,
+      email: rawEmail,
+      password,
+      companyName,
+      industry,
+      userName: rawUserName,
+      userTitle: rawUserTitle,
+    } = await request.json();
     const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+    const userName = typeof rawUserName === "string" ? rawUserName.trim() : "";
+    const userTitle = typeof rawUserTitle === "string" ? rawUserTitle.trim() : "";
 
     if (!token || !email || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    if (!userName) {
+      return NextResponse.json({ error: "Your full name is required" }, { status: 400 });
+    }
+    if (!userTitle) {
+      return NextResponse.json({ error: "Your role is required" }, { status: 400 });
     }
 
     if (password.length < 8) {
@@ -96,6 +129,12 @@ export async function POST(request: Request) {
         where: { id: clientUser.id },
         data: {
           passwordHash,
+          // Stamp name + title from the form. These are required by
+          // the POST validator above, so we always have a real value
+          // here — the page may pre-fill from the invite payload but
+          // the hiring contact can correct anything before submit.
+          name: userName,
+          title: userTitle,
           // Possession of the email-delivered token is proof of mailbox
           // ownership, so stamp the verified-at here. The login flow's
           // hard-block on unverified accounts would otherwise lock the

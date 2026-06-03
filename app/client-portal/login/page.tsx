@@ -551,8 +551,8 @@ function ClientPortalLoginInner() {
                     <Input id="name" name="name" placeholder="Jane Smith" required />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="title">Job Title</Label>
-                    <Input id="title" name="title" placeholder="e.g. Hiring Manager" />
+                    <Label htmlFor="title">Your Role *</Label>
+                    <Input id="title" name="title" placeholder="e.g. Hiring Manager, Head of Engineering" required />
                   </div>
                 </div>
                 <div className="space-y-2">

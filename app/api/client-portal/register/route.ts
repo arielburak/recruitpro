@@ -14,6 +14,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 });
     }
 
+    // Title (role at the hiring company) is required at signup —
+    // recruiters need it to route comments / mentions correctly,
+    // and asking for it later via a banner has been ignored. The
+    // set-password (invite) flow enforces the same rule.
+    const trimmedTitle = typeof title === "string" ? title.trim() : "";
+    if (!trimmedTitle) {
+      return NextResponse.json({ error: "Your role is required" }, { status: 400 });
+    }
+
     if (password.length < 8) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
@@ -43,7 +52,7 @@ export async function POST(request: Request) {
         data: {
           passwordHash,
           name,
-          ...(title ? { title } : {}),
+          title: trimmedTitle,
           emailVerificationToken: verificationToken,
           emailVerificationExpiresAt: verificationExpiresAt,
         },
@@ -104,7 +113,7 @@ export async function POST(request: Request) {
         data: {
           email,
           name,
-          title: title || null,
+          title: trimmedTitle,
           passwordHash,
           clientId: client.id,
           role: isFirstUser ? "ADMIN" : "USER",
