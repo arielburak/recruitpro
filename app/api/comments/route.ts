@@ -28,6 +28,26 @@ export async function POST(request: Request) {
 
     const mentions: string[] = Array.isArray(body.mentions) ? body.mentions.filter((m: unknown) => typeof m === "string") : [];
 
+    // When the agency posts a CLIENT_VISIBLE Job note, mirror the
+    // row onto the ClientJob it backs (via accepted FirmEngagement)
+    // so the comment shows up on the client portal Notes tab as
+    // "Shared with Agency". Without this stamp the client side
+    // queries clientJob.comments and never sees agency-posted
+    // visible notes. Internal comments don't get clientJobId — the
+    // client never reads INTERNAL.
+    let clientJobIdForRow: string | null = null;
+    if (body.jobId && requestedType === "CLIENT_VISIBLE") {
+      const eng = await prisma.firmEngagement.findFirst({
+        where: {
+          jobId: body.jobId,
+          status: "ACCEPTED",
+          organizationId: ctx.organizationId,
+        },
+        select: { clientJobId: true },
+      });
+      clientJobIdForRow = eng?.clientJobId ?? null;
+    }
+
     const comment = await prisma.comment.create({
       data: {
         content,
@@ -39,6 +59,7 @@ export async function POST(request: Request) {
         // "this client cobra X bajo la mesa" without it being tied
         // to a specific candidate.
         jobId: body.jobId || null,
+        clientJobId: clientJobIdForRow,
         userId: ctx.userId,
         mentions,
       },

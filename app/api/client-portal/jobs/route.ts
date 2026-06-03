@@ -34,11 +34,17 @@ export async function GET() {
             clientUser: { select: { id: true, name: true, email: true, role: true } },
           },
         },
-        // Chat-style notes thread for the client team (replaces the
-        // legacy `notes` string). CLIENT_INTERNAL by definition — the
-        // agency side never sees these rows.
+        // Chat-style notes thread for the ClientJob. Two tabs in the
+        // UI:
+        //   · CLIENT_INTERNAL → only the client team sees the row;
+        //     the agency is never notified.
+        //   · CLIENT_VISIBLE  → shared with the agency, who can
+        //     read and reply from /jobs/[id] Notes on their side.
+        // Author info comes via clientUser (when the client posted)
+        // OR user (when staffing did) so the chat can render the
+        // right name and avatar.
         comments: {
-          where: { type: "CLIENT_INTERNAL" },
+          where: { type: { in: ["CLIENT_INTERNAL", "CLIENT_VISIBLE"] } },
           orderBy: { createdAt: "asc" },
           select: {
             id: true,
@@ -48,6 +54,8 @@ export async function GET() {
             createdAt: true,
             clientUserId: true,
             clientUser: { select: { id: true, name: true, title: true } },
+            userId: true,
+            user: { select: { id: true, name: true } },
           },
         },
       },
