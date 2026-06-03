@@ -188,22 +188,32 @@ export default function PlacementsPage() {
     osRevenueInPeriod += m * (Number(p.monthlyFee) || 0);
   }
 
-  // Active MRR = sum of monthlyFee for OS placements whose endDate
-  // is null (or in the future). Matches the "Active" badge in the OS
-  // table below — a signed engagement counts as active even if
-  // billing hasn't started yet ("committed MRR"). Conflating it with
-  // a stricter started-and-not-ended predicate was the bug that made
-  // Karen's $6.5k/mo show as $0 the day before her start date.
+  // Active MRR + engagement count, respecting the selected period.
+  // The "as-of" date is the period end clamped to today: viewing a
+  // past quarter shows what was active at the end of that quarter,
+  // viewing the current quarter shows the live state, viewing a
+  // future quarter shows what's projected to be active by then.
+  //
+  // Active = started by the as-of date AND not ended by it. A row
+  // with no start anchor doesn't count under any period (same rule
+  // as the table below; it was the bug where a Q2-start placement
+  // showed up under Q1 via createdAt fallback).
   const todayMs = today.getTime();
+  const asOfMs = Math.min(periodEnd.getTime(), todayMs);
   let activeMrr = 0;
   let activeOsCount = 0;
   for (const p of osPlacements) {
-    const ended = p.endDate ? new Date(p.endDate).getTime() < todayMs : false;
-    if (!ended) {
-      activeMrr += Number(p.monthlyFee) || 0;
-      activeOsCount += 1;
-    }
+    const startD = placementDate(p);
+    if (!startD || startD.getTime() > asOfMs) continue;
+    const ended = p.endDate ? new Date(p.endDate).getTime() < asOfMs : false;
+    if (ended) continue;
+    activeMrr += Number(p.monthlyFee) || 0;
+    activeOsCount += 1;
   }
+  // Flag for the tile labels — "as of today" vs "as of end of Q?"
+  // are very different stories and we want the recruiter to know
+  // which one they're looking at.
+  const asOfIsToday = asOfMs >= todayMs;
 
   // OS engagements that intersect the selected period. An engagement
   // [engStart, engEnd-or-today] overlaps [periodStart, periodEnd] when
@@ -432,7 +442,11 @@ export default function PlacementsPage() {
                 <p className="text-2xl font-semibold text-emerald-600 mt-1">
                   {formatCurrency(activeMrr, "USD")}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">today</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {asOfIsToday
+                    ? "today"
+                    : `end of ${selectedYear}${selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}`}
+                </p>
               </div>
               <div className="px-4">
                 <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -441,7 +455,11 @@ export default function PlacementsPage() {
                 <p className="text-2xl font-semibold text-gray-900 mt-1">
                   {activeOsCount}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">active now</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {asOfIsToday
+                    ? "active now"
+                    : `active at end of Q${selectedQuarter === "ALL" ? "4" : selectedQuarter}`}
+                </p>
               </div>
               <div className="pl-4">
                 <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
