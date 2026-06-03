@@ -15,7 +15,7 @@ export default function ClientPortalLayout({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates)[a-z0-9]+$/.test(pathname);
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates|engagements|my-team)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
 
   return (
