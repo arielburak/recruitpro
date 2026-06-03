@@ -314,6 +314,9 @@ export async function notifyOnNewCandidateComment(args: {
     } catch (e) {
       console.error("[chat-notify] candidate notification in-app failed:", e);
     }
+    // Email solo cuando hay @-mention. Los owners se enteran por el
+    // bell — la regla de producto es: mail unicamente al ser arroba.
+    if (!isMention) continue;
     try {
       await sendMentionEmail({
         to: u.email,
@@ -388,6 +391,10 @@ export async function notifyOnNewJobComment(args: {
     } catch (e) {
       console.error("[chat-notify] job notification in-app failed:", e);
     }
+    // Email solo cuando hay @-mention. Los asignados al job se
+    // enteran por el bell — la regla de producto es: mail unicamente
+    // al ser arroba.
+    if (!isMention) continue;
     try {
       await sendMentionEmail({
         to: u.email,
