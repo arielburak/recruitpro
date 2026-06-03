@@ -70,6 +70,12 @@ export default function PlacementsPage() {
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
   const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
+  // Period anchor: "start" uses the actual startDate (falling back to
+  // estimatedStartDate if not started yet); "etd" pins on the
+  // estimated start. Lets the recruiter ask either "what did we
+  // actually book this quarter?" or "what are we projected to start
+  // this quarter?" without inventing two filters.
+  const [dateAnchor, setDateAnchor] = useState<"start" | "etd">("start");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -122,10 +128,24 @@ export default function PlacementsPage() {
   // expects when they edit a placement's date — the row should move to
   // the right Q immediately, not stay pinned to whenever they happened
   // to click "New placement".
-  function placementDate(p: any): Date {
-    if (p.startDate) return new Date(p.startDate);
-    if (p.estimatedStartDate) return new Date(p.estimatedStartDate);
-    return new Date(p.createdAt);
+  // Returns the date the placement should anchor on for the period
+  // filter, or null if there isn't enough info. We deliberately do
+  // NOT fall back to createdAt anymore — the user flagged that a
+  // placement loaded in Q2 (no startDate / ETD) was showing up under
+  // the Q1 createdAt of the row, which is misleading. A row with no
+  // start dates is incomplete and gets excluded from period views
+  // until the recruiter fills one in.
+  function placementDate(p: any): Date | null {
+    const start = p.startDate ? new Date(p.startDate) : null;
+    const etd = p.estimatedStartDate ? new Date(p.estimatedStartDate) : null;
+    if (dateAnchor === "etd") {
+      // ETD-first: prefer estimated; if missing, fall back to the
+      // actual start so a closed deal still shows up.
+      return etd ?? start;
+    }
+    // Actual-first (default): use the real startDate, fall back to
+    // ETD for placements that haven't started yet.
+    return start ?? etd;
   }
 
   // Split the book by kind. HH (headhunting / contingent) is a flat
@@ -137,10 +157,11 @@ export default function PlacementsPage() {
   const hhPlacements = placements.filter((p) => (p.kind || "HH") === "HH");
   const osPlacements = placements.filter((p) => p.kind === "OS");
 
-  // HH placements that booked in the selected period (anchor on
-  // startDate / estimatedStartDate / createdAt, same as before).
+  // HH placements that booked in the selected period (anchored
+  // on whatever the user picked: actual start or ETD).
   const hhInPeriod = hhPlacements.filter((p) => {
     const d = placementDate(p);
+    if (!d) return false;
     return d >= periodStart && d <= periodEnd;
   });
 
@@ -148,6 +169,7 @@ export default function PlacementsPage() {
   // "Placements" count tile so the recruiter sees overall activity.
   const placementsInPeriod = placements.filter((p) => {
     const d = placementDate(p);
+    if (!d) return false;
     return d >= periodStart && d <= periodEnd;
   });
 
@@ -203,11 +225,11 @@ export default function PlacementsPage() {
   // which surfaced a Q2 engagement on a Q1 view — the user flagged
   // that as wrong.
   const osInPeriod = osPlacements.filter((p) => {
-    const start = p.startDate
-      ? new Date(p.startDate)
-      : p.estimatedStartDate
-        ? new Date(p.estimatedStartDate)
-        : new Date(p.createdAt);
+    const start = placementDate(p);
+    // No anchor → no period membership. Used to fall back to
+    // createdAt which produced the "Q2 deal shows up in Q1" bug
+    // when the row was loaded one quarter before it starts.
+    if (!start) return false;
     if (start > periodEnd) return false;
     if (p.endDate) {
       const end = new Date(p.endDate);
@@ -232,7 +254,10 @@ export default function PlacementsPage() {
   // happens to be empty) so the user can navigate to them and
   // confirm "yes, this year was empty" rather than wondering why
   // the dropdown skipped a gap.
-  const placementYearValues = placements.map((p) => placementDate(p).getFullYear());
+  const placementYearValues = placements
+    .map((p) => placementDate(p))
+    .filter((d): d is Date => d != null)
+    .map((d) => d.getFullYear());
   const currentYear = today.getFullYear();
   const earliestYear = placementYearValues.length > 0
     ? Math.min(...placementYearValues, currentYear)
@@ -335,7 +360,17 @@ export default function PlacementsPage() {
           accrued revenue below. Lives on its own row so the two
           revenue cards underneath can each stand on their own. */}
       <div className="flex items-center justify-end gap-1.5">
-        <span className="text-[11px] text-gray-400 mr-1">Period</span>
+        <span className="text-[11px] text-gray-400 mr-1">By</span>
+        <select
+          value={dateAnchor}
+          onChange={(e) => setDateAnchor(e.target.value as "start" | "etd")}
+          className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          aria-label="Date anchor"
+        >
+          <option value="start">Actual start</option>
+          <option value="etd">Estimated start</option>
+        </select>
+        <span className="text-[11px] text-gray-400 mx-1">·</span>
         <select
           value={selectedYear}
           onChange={(e) => setSelectedYear(Number(e.target.value))}
@@ -638,7 +673,9 @@ export default function PlacementsPage() {
                         const aActive = !a.endDate || new Date(a.endDate).getTime() >= todayMs;
                         const bActive = !b.endDate || new Date(b.endDate).getTime() >= todayMs;
                         if (aActive !== bActive) return aActive ? -1 : 1;
-                        return placementDate(b).getTime() - placementDate(a).getTime();
+                        const aD = placementDate(a);
+                        const bD = placementDate(b);
+                        return (bD?.getTime() ?? 0) - (aD?.getTime() ?? 0);
                       })
                       .map((p) => {
                         const candidateName = p.submission?.candidate

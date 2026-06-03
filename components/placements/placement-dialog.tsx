@@ -225,6 +225,14 @@ export function PlacementDialog(props: Props) {
   // monthly bill. Defaults to HH; pre-picked from the job's
   // Client.engagementType when the form opens.
   const [kind, setKind] = useState<"HH" | "OS">("HH");
+  // OS engagements are monthly by contract — pin salaryPeriod
+  // to MONTHLY whenever the kind flips to OS so the submit
+  // payload + fee math match the visible UI. Doesn't fire on
+  // mount (the kind-dependent default-load already covers
+  // hydration); only on user-driven kind changes after that.
+  useEffect(() => {
+    if (kind === "OS") setSalaryPeriod("MONTHLY");
+  }, [kind]);
   const [monthlyFee, setMonthlyFee] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -1165,28 +1173,47 @@ export function PlacementDialog(props: Props) {
                   value={agreedSalary}
                   onChange={setAgreedSalary}
                 />
-                <div className="flex items-center justify-between gap-2">
-                  <div className="inline-flex rounded-md border bg-white p-0.5">
-                    {(["MONTHLY", "ANNUAL"] as const).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setSalaryPeriod(p)}
-                        className={`px-2 py-1 text-[11px] font-medium rounded ${
-                          salaryPeriod === p
-                            ? "bg-indigo-600 text-white"
-                            : "text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {p === "MONTHLY" ? "/mo" : "/yr"}
-                      </button>
-                    ))}
+                {kind === "OS" ? (
+                  // OS engagements are recurring monthly fees by
+                  // definition — exposing a /yr toggle here
+                  // confused recruiters into thinking they could
+                  // bill annually. We pin to MONTHLY internally
+                  // via the kind-change effect above and only show
+                  // the gross/net switch when the currency cares.
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-gray-400">
+                      Salary and fee are monthly while the engagement is active.
+                    </p>
+                    {salaryKind === "NETO" && (
+                      <p className="text-[10px] text-gray-400 text-right">
+                        Grossed up for the fee math
+                      </p>
+                    )}
                   </div>
-                  <p className="text-[10px] text-gray-400 text-right">
-                    Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
-                    {salaryKind === "NETO" ? " · grossed up" : ""}
-                  </p>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="inline-flex rounded-md border bg-white p-0.5">
+                      {(["MONTHLY", "ANNUAL"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setSalaryPeriod(p)}
+                          className={`px-2 py-1 text-[11px] font-medium rounded ${
+                            salaryPeriod === p
+                              ? "bg-indigo-600 text-white"
+                              : "text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {p === "MONTHLY" ? "/mo" : "/yr"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-right">
+                      Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
+                      {salaryKind === "NETO" ? " · grossed up" : ""}
+                    </p>
+                  </div>
+                )}
                 {SALARY_KIND_CURRENCIES.has(currency) && (
                   <div className="flex items-center gap-2">
                     <div className="inline-flex rounded-md border bg-white p-0.5">
