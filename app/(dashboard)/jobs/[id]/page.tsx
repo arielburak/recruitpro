@@ -1522,6 +1522,7 @@ export default function JobDetailPage() {
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             )}
             jobId={params.id as string}
+            clientName={job.client?.name}
             onCommentAdded={fetchJob}
           />
         </TabsContent>

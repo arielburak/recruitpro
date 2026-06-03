@@ -905,6 +905,7 @@ export default function CandidateDetailPage() {
                     comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
                     submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
                     clientChatLocked={!activeSub?.isSharedWithClient}
+                    clientName={activeSub?.job?.client?.name}
                     onCommentAdded={fetchCandidate}
                   />
                 );
