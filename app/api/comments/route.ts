@@ -7,6 +7,7 @@ import {
   notifyOnNewJobComment,
 } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
+import { validateCommentScope } from "@/lib/comment-access";
 
 export async function POST(request: Request) {
   try {
@@ -26,7 +27,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
 
-    const mentions: string[] = Array.isArray(body.mentions) ? body.mentions.filter((m: unknown) => typeof m === "string") : [];
+    const rawMentions: string[] = Array.isArray(body.mentions)
+      ? body.mentions.filter((m: unknown) => typeof m === "string")
+      : [];
+
+    // Server-side scope guard. Enforces: (a) CLIENT_VISIBLE only on
+    // shared submissions, (b) mentions filtered to people with real
+    // access to the destination. Everything else falls back to the
+    // existing handler logic.
+    const scope = await validateCommentScope(
+      prisma,
+      { kind: "agency", userId: ctx.userId, organizationId: ctx.organizationId, role: ctx.role },
+      {
+        type: requestedType,
+        submissionId: body.submissionId || null,
+        candidateId: body.candidateId || null,
+        jobId: body.jobId || null,
+        mentions: rawMentions,
+      },
+    );
+    if (!scope.allowed) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status });
+    }
+    const mentions = scope.mentions;
 
     // When the agency posts a CLIENT_VISIBLE Job note, mirror the
     // row onto the ClientJob it backs (via accepted FirmEngagement)

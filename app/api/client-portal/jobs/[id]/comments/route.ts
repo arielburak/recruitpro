@@ -6,6 +6,7 @@ import {
   notifyOnNewClientJobComment,
   notifyOnNewJobComment,
 } from "@/lib/chat-notifications";
+import { validateCommentScope } from "@/lib/comment-access";
 
 // Chat-style notes thread on the client-portal job page. Accepts two
 // scopes mirroring the agency side:
@@ -42,11 +43,25 @@ export async function POST(
     if (!content) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
-    const mentions: string[] = Array.isArray(body.mentions)
+    const rawMentions: string[] = Array.isArray(body.mentions)
       ? body.mentions.filter((m: unknown) => typeof m === "string")
       : [];
     const requestedType =
       body.type === "CLIENT_VISIBLE" ? "CLIENT_VISIBLE" : "CLIENT_INTERNAL";
+
+    // Server-side scope guard. Filters mentions to people who can
+    // actually see this ClientJob (client members + agency assignees
+    // when the scope is CLIENT_VISIBLE). Mirrors the agency-side
+    // /api/comments check so both surfaces share one rule set.
+    const scope = await validateCommentScope(
+      prisma,
+      { kind: "client", clientUserId: ctx.clientUserId, clientId: ctx.clientId },
+      { type: requestedType, clientJobId: id, mentions: rawMentions },
+    );
+    if (!scope.allowed) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status });
+    }
+    const mentions = scope.mentions;
 
     // For CLIENT_VISIBLE we also stamp the agency-side jobId so the
     // row appears on /jobs/[id] Notes for recruiters without a
