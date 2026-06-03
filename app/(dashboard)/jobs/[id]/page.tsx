@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -202,6 +202,13 @@ export default function JobDetailPage() {
   };
   const [shareSuggestions, setShareSuggestions] = useState<ContactSuggestion[]>([]);
   const [shareSuggestOpen, setShareSuggestOpen] = useState(false);
+  // Flag that the next change to shareEmail came from picking a
+  // suggestion, not the user typing. Without it the debounce effect
+  // below would re-fetch and re-open the dropdown right after the
+  // pick, eating the click — the user reported needing two clicks
+  // because the first one closed the dropdown and the effect
+  // immediately reopened it with the same suggestion.
+  const sharePickedRef = useRef(false);
   const [shareSuggestLoading, setShareSuggestLoading] = useState(false);
 
   // Assign recruiters dialog state
@@ -569,9 +576,14 @@ export default function JobDetailPage() {
 
   // Debounced contact lookup while the recruiter types in the share
   // dialog. Skipped when the input doesn't look like a search yet
-  // (< 2 chars) or when the dialog is closed.
+  // (< 2 chars), when the dialog is closed, or when the email just
+  // changed because the user picked a suggestion (sharePickedRef).
   useEffect(() => {
     if (!showShareDialog) return;
+    if (sharePickedRef.current) {
+      sharePickedRef.current = false;
+      return;
+    }
     const q = shareEmail.trim();
     if (q.length < 2) {
       setShareSuggestions([]);
@@ -597,8 +609,10 @@ export default function JobDetailPage() {
 
   function pickShareSuggestion(s: ContactSuggestion) {
     if (!s.available) return; // see ContactSuggestion.available
+    sharePickedRef.current = true;
     setShareEmail(s.email);
     setShareName(s.name || "");
+    setShareSuggestions([]);
     setShareSuggestOpen(false);
     setShareError("");
   }

@@ -318,9 +318,14 @@ export async function POST(request: Request) {
     });
     const firmName = org?.name || "Your recruiting firm";
 
+    // Mail sends are fire-and-forget. The user reported a 1–2s wait
+    // on the "Send Invite" button — Resend round-trips were happening
+    // in series with await, blocking the response. The DB state is
+    // already committed by this point; if the mail itself fails the
+    // user can re-send via the resend endpoint, and the in-app
+    // notification we create below is the dependable surface anyway.
     if (hasPassword) {
-      // Existing user with password — send share notification with login link
-      await sendClientPortalShareEmail({
+      sendClientPortalShareEmail({
         to: inviteEmail,
         portalUrl,
         recruiterName: ctx.userName,
@@ -328,9 +333,14 @@ export async function POST(request: Request) {
         jobTitle,
         clientName: recipientName,
         candidateCount,
-      });
+      }).catch((err) =>
+        console.error("[tokens] share mail failed:", err),
+      );
     } else {
-      // New user or user without password — send set-password invite
+      // New user or user without password — mint a set-password token
+      // then fire the mail. Token creation stays awaited (the token
+      // has to exist before any retry path can resend), but the mail
+      // dispatch itself doesn't block the response.
       const setPasswordToken = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -343,18 +353,18 @@ export async function POST(request: Request) {
         },
       });
 
-      // Forward the same deep-link target so a fresh user who sets a
-      // password from the email lands on the shared Job, not dashboard.
       const setPasswordUrl =
         `${baseUrl}/client-portal/set-password?token=${setPasswordToken}` +
         `&email=${encodeURIComponent(inviteEmail)}` +
         (jobId ? `&callbackUrl=${encodeURIComponent(deepLinkPath)}` : "");
 
-      await sendClientSetPasswordEmail({
+      sendClientSetPasswordEmail({
         to: inviteEmail,
         setPasswordUrl,
         clientName: recipientName,
-      });
+      }).catch((err) =>
+        console.error("[tokens] set-password mail failed:", err),
+      );
     }
 
     // In-app notification for the invited ClientUser. Email is best-effort
