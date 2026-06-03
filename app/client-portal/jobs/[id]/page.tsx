@@ -1280,6 +1280,113 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
             </CardContent>
           </Card>
 
+          {/* Collaborate-on-this-search panel — replaces the old "Your
+              Team" panel we removed earlier. Same backend endpoint as
+              the now-deleted dialog (POST /jobs/[id]/add-member),
+              same fields, same outcomes — but scoped to this Job by
+              construction so the invitee shows up as a member of THIS
+              search the moment they accept. */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <UserPlus className="h-4 w-4 text-emerald-600" />
+                Invite a teammate to this search
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-xs"
+                onClick={() => {
+                  setShowAddMember(!showAddMember);
+                  setMemberResult(null);
+                }}
+              >
+                <Plus className="h-3 w-3" />
+                {showAddMember ? "Cancel" : "Invite"}
+              </Button>
+            </CardHeader>
+            {showAddMember && (
+              <CardContent>
+                <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Name *</Label>
+                    <Input
+                      value={memberName}
+                      onChange={(e) => setMemberName(e.target.value)}
+                      placeholder="Jane Smith"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Role</Label>
+                    <Input
+                      value={memberTitle}
+                      onChange={(e) => setMemberTitle(e.target.value)}
+                      placeholder="e.g. Hiring Manager"
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email *</Label>
+                    <Input
+                      type="email"
+                      value={memberEmail}
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      placeholder="jane@company.com"
+                      className="text-sm h-8"
+                      required
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
+                    disabled={addingMember}
+                  >
+                    <Mail className="h-3 w-3" />
+                    {addingMember ? "Adding..." : "Send Invite"}
+                  </Button>
+                  {memberResult && (
+                    <div
+                      className={`text-xs p-2 rounded ${
+                        memberResult.type === "success"
+                          ? "bg-green-50 text-green-700"
+                          : "bg-red-50 text-red-600"
+                      }`}
+                    >
+                      <p>{memberResult.message}</p>
+                      {memberResult.link && (
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <input
+                            readOnly
+                            value={memberResult.link}
+                            className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(memberResult.link!);
+                              setCopiedLink(true);
+                              setTimeout(() => setCopiedLink(false), 2000);
+                            }}
+                            className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                          >
+                            {copiedLink ? (
+                              <Check className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <Copy className="h-3 w-3 text-gray-400" />
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </form>
+              </CardContent>
+            )}
+          </Card>
+
           {/* Invite Dialog */}
           {showInvite && (
             <Card className="border-emerald-200">
