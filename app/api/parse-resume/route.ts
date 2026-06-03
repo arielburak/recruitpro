@@ -53,7 +53,17 @@ const HAS_DATE = /\b\d{4}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|e
 // Tech/tool words that should never be in a name
 const TECH_WORDS = /\b(vmware|nutanix|windows|server|linux|docker|kubernetes|azure|cisco|fortinet|active\s*directory|office|admin|firewall|switch|router|backup|terraform|python|java|react|angular|node|sql|html|css|excel|powerpoint|scrum|agile|servicenow|jira|git|github|senior|junior|semi-senior|medium|basic|advanced|intermediate|avanzado|intermedio|b[12]|c[12]|a[12]|native|nativo)\b/i;
 
-function parseResumeText(text: string, fileName?: string): Record<string, any> {
+// Job-title words that the candidate is more likely to put on the
+// SECOND line of their header ("John Smith\nSoftware Engineer") than
+// as their actual name. We don't strip them as TECH_WORDS does — a
+// line like "John Engineer" might still be a person's last name — but
+// we use the match below as a tiebreaker so the name candidate from
+// line 1 wins over the headline on line 2.
+const JOB_TITLE_WORDS = /\b(engineer|developer|architect|manager|director|analyst|consultant|designer|scientist|lead|attorney|partner|associate|specialist|coordinator|officer|president|founder|recruiter|salesperson|representative|writer|editor|producer|artist|teacher|professor|nurse|doctor|physician|surgeon|paralegal)\b/i;
+
+// Exported only so the helpers can be smoke-tested from a script
+// without spinning up the HTTP layer. Not part of the public API.
+export function parseResumeText(text: string, fileName?: string): Record<string, any> {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   const result: Record<string, any> = {
@@ -223,38 +233,153 @@ function parseResumeText(text: string, fileName?: string): Record<string, any> {
   return result;
 }
 
+// Decorators that show up next to the candidate's name on modern US
+// resumes — strip them out before pattern-matching so the name parts
+// aren't broken by stray punctuation or extra tokens. Examples:
+//
+//   "John Smith (he/him)"            → "John Smith"
+//   "John Smith, PhD"                → "John Smith"
+//   "Mary O'Brien, MBA, CFA"         → "Mary O'Brien"
+//   "Sr. Engineer | John Smith"      → "John Smith"
+function stripNameLineNoise(line: string): string {
+  let s = line;
+  // Pronouns in parentheses (he/him, she/her, they/them + ES variants)
+  s = s.replace(
+    /\s*\((?:he|she|they|him|her|them|[ée]l|ella|ellos|ellas)\s*\/\s*(?:he|she|they|him|her|them|[ée]l|ella|ellos|ellas)\)\s*/gi,
+    " ",
+  );
+  // Trailing credentials after a comma: "John Smith, PhD, MBA, CFA"
+  s = s.replace(
+    /,\s*(?:Ph\.?\s*D\.?|MBA|J\.?\s*D\.?|M\.?\s*D\.?|CFA|CPA|Esq\.?|RN|P\.?\s*E\.?|PMP|CISSP|CCNA|CCNP|CISA|CRISC|CIA|FRM|CMA|CFP|CISM|AICP|RA|LEED(?:\s*AP)?|MSc?|BSc?|MA|BA|BS|MS|MEng|BEng|FACS|FAAP|FACEP)\b.*$/i,
+    "",
+  );
+  // Title-on-the-left split by pipe: "Sr. Engineer | John Smith".
+  // Only when there's exactly one pipe — multi-pipe headers are
+  // typically location/contact strips and not names.
+  if (s.split("|").length === 2) {
+    const right = s.split("|")[1].trim();
+    if (right) s = right;
+  }
+  return s.trim();
+}
+
+// Detect if a line of words looks like a name. Two valid shapes:
+//   · Title Case: "John Smith", "Mary O'Brien"
+//   · ALL CAPS:   "JOHN SMITH", "MARY O'BRIEN"
+// Returns the parts already normalized to Title Case if matched, else
+// null. Middle initials ("A.") count as a single part.
+function asNameParts(line: string): string[] | null {
+  const parts = line.split(/\s+/).filter((p) => p.length >= 1);
+  if (parts.length < 2 || parts.length > 5) return null;
+
+  const titleCase = /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*\.?$/u;
+  const allCaps = /^[A-ZÀ-Ú][A-ZÀ-Ú.''-]*\.?$/u;
+  // Middle initial like "A." or "J."
+  const initial = /^[A-ZÀ-Ú]\.?$/u;
+
+  const matches = (p: string) =>
+    titleCase.test(p) || allCaps.test(p) || initial.test(p);
+
+  if (!parts.every(matches)) return null;
+
+  // If any part is ALL CAPS (not an initial), normalize the whole
+  // thing to Title Case. We don't keep "JOHN" — recruiters expect
+  // "John" in the field.
+  const anyCaps = parts.some((p) => p.length >= 3 && p === p.toUpperCase());
+  if (anyCaps) {
+    return parts.map((p) => {
+      if (p.length <= 1) return p.toUpperCase();
+      if (initial.test(p)) return p.toUpperCase();
+      return p[0].toUpperCase() + p.slice(1).toLowerCase();
+    });
+  }
+  return parts;
+}
+
 /**
  * Multi-strategy name extraction:
- * 1. Try filename (e.g. "CV - Gabriel Fernandez Saiz.pdf")
+ * 1. Try filename (e.g. "CV - Gabriel Fernandez Saiz.pdf", "John_Smith_Resume.pdf")
  * 2. Try LinkedIn slug (e.g. "gabriel-fernandez-saiz")
  * 3. Scan ALL lines for name-like patterns, with strict filtering
  * 4. Use email as validation hint
  */
 function extractName(lines: string[], result: Record<string, any>, fileName?: string, linkedInSlug?: string) {
-  // Helper: validate a name candidate against email if available
+  // Helper: validate a name candidate against email if available.
+  // Three positive signals:
+  //   · first name slice (≥3 chars) appears in the email local part
+  //   · last name slice (≥4 chars) appears
+  //   · email starts with the first initial AND contains any
+  //     individual last-name token (covers LATAM "gfsaiz" =
+  //     g + f + saiz → Gabriel Fernandez Saiz)
+  // First two are case-insensitive substring checks; punctuation
+  // in the email is stripped so "first.last@..." also matches.
   const email = result.email?.toLowerCase() || "";
   function nameMatchesEmail(first: string, last: string): boolean {
-    if (!email) return true; // No email to validate against
+    if (!email) return true;
     const f = first.toLowerCase();
-    const l = last.toLowerCase().replace(/\s+/g, "");
-    // Check if email contains parts of the name
+    const lastTokens = last.toLowerCase().split(/\s+/).filter(Boolean);
+    const l = lastTokens.join("");
     const emailLocal = email.split("@")[0].replace(/[._-]/g, "");
-    return emailLocal.includes(f.slice(0, 3)) || emailLocal.includes(l.slice(0, 4));
+    if (emailLocal.includes(f.slice(0, 3))) return true;
+    if (l && emailLocal.includes(l.slice(0, 4))) return true;
+    if (
+      f.length > 0 &&
+      emailLocal.startsWith(f[0]) &&
+      lastTokens.some((t) => t.length >= 3 && emailLocal.includes(t.slice(0, 4)))
+    ) {
+      return true;
+    }
+    return false;
   }
 
-  // Strategy 1: Extract from filename
-  // Patterns: "CV - Name.pdf", "Resume Name.pdf", "CV_Name_Lastname.pdf"
+  // Strategy 1: Extract from filename. Tries several patterns common
+  // across US/LATAM recruiters:
+  //
+  //   · "CV - John Smith.pdf"  / "Resume_John_Smith.pdf"  / "Curriculum John Smith.pdf"
+  //   · "John Smith Resume.pdf"
+  //   · "John_Smith_2024.pdf"  / "John-Smith-Engineer.pdf"
+  //   · "JohnSmith.pdf"        (single-token camelCase — handled separately)
+  //
+  // Each pattern produces a list of candidate name parts that goes
+  // through asNameParts(); the first one that yields a valid name and
+  // matches the email wins.
   if (fileName) {
-    const baseName = fileName.replace(/\.[^.]+$/, ""); // remove extension
-    // Try "CV - Gabriel Fernandez Saiz" or "Resume - John Doe"
-    const cvMatch = baseName.match(/(?:cv|resume|curriculum)\s*[-–—_]\s*(.+)/i);
-    if (cvMatch) {
-      const namePart = cvMatch[1].trim().replace(/[_-]/g, " ");
-      const parts = namePart.split(/\s+/).filter((p) => p.length > 1);
-      if (parts.length >= 2 && parts.every((p) => /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*$/u.test(p))) {
-        result.firstName = parts[0];
-        result.lastName = parts.slice(1).join(" ");
-        if (nameMatchesEmail(result.firstName, result.lastName)) return;
+    const baseName = fileName
+      .replace(/\.[^.]+$/, "") // drop extension
+      .replace(/[_]+/g, " ") // underscores → spaces
+      .trim();
+
+    const filenameCandidates: string[] = [];
+
+    // Pattern A: "CV - <name>" / "Resume - <name>" / leading marker
+    const leadMarker = baseName.match(
+      /^(?:cv|resume|curriculum|c\.?v\.?)\s*[-–—:]?\s*(.+)$/i,
+    );
+    if (leadMarker) filenameCandidates.push(leadMarker[1]);
+
+    // Pattern B: "<name> - Resume" / "<name> Resume"
+    const trailMarker = baseName.match(
+      /^(.+?)\s*[-–—]?\s*(?:cv|resume|curriculum|c\.?v\.?)\s*.*$/i,
+    );
+    if (trailMarker) filenameCandidates.push(trailMarker[1]);
+
+    // Pattern C: drop a trailing year ("John Smith 2024")
+    const yearStripped = baseName.replace(/\s+\d{4}\s*$/, "").trim();
+    if (yearStripped && yearStripped !== baseName) filenameCandidates.push(yearStripped);
+
+    // Pattern D: the raw filename itself
+    filenameCandidates.push(baseName);
+
+    for (const cand of filenameCandidates) {
+      const cleaned = stripNameLineNoise(cand.replace(/[-]+/g, " "));
+      const parts = asNameParts(cleaned);
+      if (!parts) continue;
+      const firstName = parts[0];
+      const lastName = parts.slice(1).join(" ");
+      if (nameMatchesEmail(firstName, lastName)) {
+        result.firstName = firstName;
+        result.lastName = lastName;
+        return;
       }
     }
   }
@@ -282,7 +407,7 @@ function extractName(lines: string[], result: Record<string, any>, fileName?: st
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Skip lines that are clearly not names
+    // Hard skips — these lines can't be names regardless of cleanup.
     if (line.includes("@")) continue;
     if (/\d{3}.*\d{3}/.test(line)) continue; // phone numbers
     if (/https?:\/\/|www\.|linkedin\.com/i.test(line)) continue;
@@ -290,55 +415,66 @@ function extractName(lines: string[], result: Record<string, any>, fileName?: st
     if (HAS_DATE.test(line)) continue;
     if (TECH_WORDS.test(line)) continue;
     if (NOT_A_NAME.test(line.replace(/\s+/g, " "))) continue;
-    // Skip lines that are all uppercase abbreviations (e.g. "CABA UTN")
-    if (/^[A-Z]{2,}\s+[A-Z]{2,}/.test(line) && line.length < 15) continue;
+    // Skip ALL CAPS lines that are too short to be a name (e.g.
+    // "CABA UTN" → 8 chars). The threshold used to be 15 which
+    // also killed "JOHN SMITH" (10 chars). 8 keeps the abbreviation
+    // guardrail without rejecting short legitimate US names.
+    if (/^[A-Z]{2,}\s+[A-Z]{2,}\s*$/.test(line) && line.length < 8) continue;
     // Skip lines with numbers (dates, addresses, etc.)
     if (/\d/.test(line)) continue;
-    // Skip lines with special characters that aren't in names
-    if (/[°#@&%$!?;:(){}[\]\/\\|<>=+*~^]/.test(line)) continue;
 
-    // Clean the line
-    const cleaned = line.replace(/['']\d{2}\b/g, "").replace(/[,|•·\-–—]+$/, "").trim();
+    // Soft-clean the line BEFORE rejecting on special characters —
+    // pronouns "(he/him)", credentials ", PhD", and a single
+    // title|name pipe split would otherwise kill an otherwise valid
+    // first-line name.
+    const denoised = stripNameLineNoise(line);
+
+    // Now drop the line if special characters still remain.
+    if (/[°#@&%$!?;:(){}[\]\/\\|<>=+*~^]/.test(denoised)) continue;
+
+    // Trim trailing punctuation that isn't part of a name.
+    const cleaned = denoised
+      .replace(/['']\d{2}\b/g, "")
+      .replace(/[,|•·\-–—]+$/, "")
+      .trim();
     if (!cleaned || cleaned.length < 3) continue;
 
-    const nameParts = cleaned.split(/\s+/);
-    if (nameParts.length < 1 || nameParts.length > 5) continue;
+    const parts = asNameParts(cleaned);
+    if (!parts) continue;
 
-    // Each part must look like a proper name word (starts uppercase, mixed case, allows accents)
-    const allNameLike = nameParts.every((p) =>
-      /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*\.?$/u.test(p) && p.length >= 2
-    );
-    if (!allNameLike) continue;
-
-    // Build candidate
-    let firstName: string, lastName: string;
-    if (nameParts.length === 1) continue; // Single word is not enough
-
-    firstName = nameParts[0];
-    lastName = nameParts.slice(1).join(" ");
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(" ");
 
     // Score the candidate
     let score = 0;
-    // Bonus: matches email
     if (nameMatchesEmail(firstName, lastName)) score += 10;
-    // Bonus: 2-3 word names are more likely
-    if (nameParts.length >= 2 && nameParts.length <= 3) score += 3;
-    // Bonus: appears early in the document
-    if (i < 15) score += 2;
-    // Bonus: not all uppercase (ALL CAPS lines are usually headings)
+    if (parts.length >= 2 && parts.length <= 3) score += 3;
+    if (i === 0) score += 3; // very first line is the strongest signal
+    else if (i < 15) score += 2;
+    // The mixed-case bonus stays — Title Case is the most natural
+    // shape for a name, even if ALL CAPS is now accepted. ALL CAPS
+    // pays the opportunity cost of being more often a heading, so
+    // it should win only when nothing else does.
     if (cleaned !== cleaned.toUpperCase()) score += 2;
-    // Bonus: words are 3+ chars each (short abbreviations less likely to be names)
-    if (nameParts.every((p) => p.length >= 3)) score += 2;
-    // Penalty: line is suspiciously short and ALL CAPS
+    if (parts.every((p) => p.length >= 3)) score += 2;
+    // Penalty for very short ALL CAPS lines (likely abbreviations
+    // or section labels).
     if (cleaned === cleaned.toUpperCase() && cleaned.length < 10) score -= 5;
+    // Heavy penalty for job-title-looking lines that don't match
+    // the email at all. "Software Engineer" would otherwise win
+    // over a real ALL CAPS name above it just on length / mixed-
+    // case alone.
+    if (JOB_TITLE_WORDS.test(cleaned) && !nameMatchesEmail(firstName, lastName)) {
+      score -= 8;
+    }
 
     candidates.push({ firstName, lastName, score, line: cleaned });
   }
 
   // Also check for two consecutive single-name lines (e.g. "Fernandez Saiz" then "Gabriel Alejandro")
   for (let i = 0; i < lines.length - 1; i++) {
-    const line1 = lines[i].trim();
-    const line2 = lines[i + 1].trim();
+    const line1 = stripNameLineNoise(lines[i].trim());
+    const line2 = stripNameLineNoise(lines[i + 1].trim());
 
     // Both should be name-like, no numbers, no headings
     if (HAS_DATE.test(line1) || HAS_DATE.test(line2)) continue;
@@ -351,25 +487,38 @@ function extractName(lines: string[], result: Record<string, any>, fileName?: st
     const parts2 = line2.split(/\s+/);
     if (parts1.length < 1 || parts1.length > 3 || parts2.length < 1 || parts2.length > 3) continue;
 
-    const allParts = [...parts1, ...parts2];
-    const allNameLike = allParts.every((p) =>
-      /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*$/u.test(p) && p.length >= 2
-    );
-    if (!allNameLike) continue;
+    // Validate each line as a half-name independently (accepts ALL
+    // CAPS too via asNameParts when there's >=2 parts; for single-
+    // part lines we fall back to the original strict pattern).
+    const halfNameRe = /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*$/u;
+    const halfCapsRe = /^[A-ZÀ-Ú][A-ZÀ-Ú.''-]*$/u;
+    const partOK = (p: string) =>
+      p.length >= 2 && (halfNameRe.test(p) || halfCapsRe.test(p));
+    if (!parts1.every(partOK) || !parts2.every(partOK)) continue;
 
-    // Determine which is first name vs last name
-    // Common pattern: "LastName" on line 1, "FirstName" on line 2
-    // Or "FirstName" on line 1, "LastName" on line 2
-    // Use email to figure out which order
-    let firstName = parts2[0]; // Assume line2 = first name (common in LatAm CVs)
-    let lastName = parts1.join(" ");
+    // Normalize ALL CAPS halves to Title Case so the candidate is
+    // clean before we score it.
+    const toTitle = (p: string) =>
+      p === p.toUpperCase() && p.length >= 3
+        ? p[0] + p.slice(1).toLowerCase()
+        : p;
+    const norm1 = parts1.map(toTitle);
+    const norm2 = parts2.map(toTitle);
+    const allParts = [...norm1, ...norm2];
+
+    // Determine which is first name vs last name. Common LatAm
+    // pattern: line2 carries the first name, line1 the last name.
+    // We probe both orders against the email and keep the one that
+    // matches.
+    let firstName = norm2[0];
+    let lastName = norm1.join(" ");
 
     let score = 5; // Two-line name pattern gets a base bonus
     if (nameMatchesEmail(firstName, lastName)) score += 10;
     // Try the other order
     if (!nameMatchesEmail(firstName, lastName)) {
-      firstName = parts1[0];
-      lastName = parts2.join(" ");
+      firstName = norm1[0];
+      lastName = norm2.join(" ");
       if (nameMatchesEmail(firstName, lastName)) score += 10;
     }
     if (allParts.every((p) => p.length >= 3)) score += 2;
