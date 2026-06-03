@@ -932,6 +932,7 @@ export default function CandidateDetailPage() {
             if (!open) setPendingPlacement(null);
           }}
           submissionId={pendingPlacement.submission.id}
+          candidateId={candidate.id}
           candidateName={`${candidate.firstName} ${candidate.lastName}`}
           jobTitle={pendingPlacement.submission.job.title}
           clientName={pendingPlacement.submission.job.client?.name}

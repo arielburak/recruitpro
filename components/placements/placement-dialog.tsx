@@ -52,6 +52,12 @@ type CongratsProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   submissionId: string;
+  // Optional — when present, we pre-select the candidate's owner
+  // as the placement Recruiter (handoffs between sourcer/closer
+  // are still allowed via the dropdown). Without it the form
+  // opens with no recruiter selected, which is fine for legacy
+  // call sites and edge cases where the owner is genuinely unknown.
+  candidateId?: string;
   candidateName: string;
   jobTitle: string;
   clientName?: string;
@@ -592,6 +598,37 @@ export function PlacementDialog(props: Props) {
     if (!selectedCandidate?.ownerId) return;
     setRecruiterId(selectedCandidate.ownerId);
   }, [selectedCandidate?.ownerId, isEdit]);
+
+  // Congrats mode never builds a selectedCandidate — it gets the
+  // candidate as a plain `candidateName` string plus a submissionId.
+  // The effect above only fires for manual mode, so without this
+  // fetch the Recruiter dropdown stayed on "Select recruiter"
+  // whenever you flipped a candidate to Placed and the modal
+  // opened on the placement form. Source of truth for the owner
+  // is /api/candidates/[id]; the caller provides candidateId.
+  // Edit mode is skipped (recruiterId hydrates from props.initial
+  // above) and the manual-override flag keeps user picks intact.
+  useEffect(() => {
+    if (!isCongrats) return;
+    if (!props.open) return;
+    if (recruiterTouchedRef.current) return;
+    const candidateId = (props as { candidateId?: string }).candidateId;
+    if (!candidateId) return;
+    let cancelled = false;
+    fetch(`/api/candidates/${candidateId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((full) => {
+        if (cancelled) return;
+        const ownerId = full?.ownerId;
+        if (ownerId && !recruiterTouchedRef.current) {
+          setRecruiterId(ownerId);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isCongrats, props]);
 
   // Live preview of when the guarantee expires. Read-only — server
   // computes the persisted value on save with the same logic.
