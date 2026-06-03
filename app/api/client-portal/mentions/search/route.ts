@@ -76,22 +76,62 @@ export async function GET(request: NextRequest) {
       if (results.length >= 8) break;
     }
 
-    if (scope === "shared" && submissionId) {
-      // Verify submission belongs to this client and is shared
-      const sub = await prisma.candidateSubmission.findFirst({
-        where: {
-          id: submissionId,
-          isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
-        },
-        select: { job: { select: { organizationId: true } } },
-      });
+    if (scope === "shared") {
+      // The "Shared with agency" chat needs to surface recruiters
+      // working on this search alongside the client team. Two
+      // resolution paths depending on what context the caller has:
+      //
+      //   · submissionId → from a candidate/submission chat: read
+      //     the submission's job to know which agency org owns it.
+      //   · clientJobId  → from a ClientJob notes chat: walk the
+      //     accepted FirmEngagement to find the agency org + Job,
+      //     and prefer the assignees on that Job so the picker
+      //     doesn't list every recruiter at the firm.
+      //
+      // No-context shared scope returns no staffing users.
+      let staffingOrgId: string | null = null;
+      let staffingUserIdScope: string[] | null = null;
+      if (submissionId) {
+        const sub = await prisma.candidateSubmission.findFirst({
+          where: {
+            id: submissionId,
+            isSharedWithClient: true,
+            job: { clientId: ctx.clientId },
+          },
+          select: { job: { select: { organizationId: true } } },
+        });
+        if (sub) staffingOrgId = sub.job.organizationId;
+      } else if (clientJobId) {
+        const engagement = await prisma.firmEngagement.findFirst({
+          where: {
+            clientJobId,
+            status: "ACCEPTED",
+            jobId: { not: null },
+          },
+          select: {
+            organizationId: true,
+            job: {
+              select: {
+                assignments: { select: { userId: true } },
+              },
+            },
+          },
+        });
+        if (engagement) {
+          staffingOrgId = engagement.organizationId;
+          const assignees = engagement.job?.assignments ?? [];
+          if (assignees.length > 0) {
+            staffingUserIdScope = assignees.map((a) => a.userId);
+          }
+        }
+      }
 
-      if (sub) {
+      if (staffingOrgId) {
         const staffingUsers = await prisma.user.findMany({
           where: {
-            organizationId: sub.job.organizationId,
+            organizationId: staffingOrgId,
             isActive: true,
+            ...(staffingUserIdScope ? { id: { in: staffingUserIdScope } } : {}),
             ...(q
               ? {
                   OR: [
