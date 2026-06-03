@@ -8,34 +8,13 @@ export async function GET() {
     const ctx = await getClientContext();
 
     const jobs = await prisma.clientJob.findMany({
-      // Visibility scope: admins see all, non-admins see jobs they're
-      // a member of (plus legacy jobs with no member list). Centralized
-      // in clientJobAccessWhere so every list endpoint applies the
-      // same rule.
-      //
-      // Plus the "shared candidates required" rule: an agency-created
-      // mirror ClientJob doesn't appear until at least one candidate
-      // is shared. Client-posted jobs (createdByAgency=false) bypass
-      // this filter — they belong to the client and show from day one.
-      where: {
-        AND: [
-          clientJobAccessWhere(ctx),
-          {
-            OR: [
-              { createdByAgency: false },
-              {
-                engagements: {
-                  some: {
-                    job: {
-                      submissions: { some: { isSharedWithClient: true } },
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        ],
-      },
+      // Visibility scope: a ClientUser sees the JO only when they
+      // were explicitly invited to it (ClientJobMember row). No
+      // admin bypass, no "shared candidates" relaxation — the
+      // agency can create hundreds of jobs tagged to this client
+      // and none of them surface here until the recruiter actively
+      // invites this contact's email to a specific search.
+      where: clientJobAccessWhere(ctx),
       include: {
         postedBy: { select: { name: true } },
         engagements: {

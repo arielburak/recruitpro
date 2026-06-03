@@ -15,38 +15,13 @@ export async function GET() {
         select: { name: true, industry: true, isStub: true },
       }),
       prisma.clientJob.findMany({
-        // Per-JO visibility: admins see everything; non-admins see
-        // jobs they're a member of (or legacy jobs with no member list).
-        //
-        // Plus the "shared candidates required" rule: an agency-created
-        // mirror ClientJob doesn't appear in the portal until at least
-        // one candidate has been shared with this client. The mirror
-        // gets minted when the agency first sets up the link, but if
-        // no one has been pushed yet there's nothing for the client
-        // team to look at — and we don't want the dashboard to look
-        // populated when it's empty. Jobs the client posted themselves
-        // (createdByAgency=false) bypass this filter — those exist
-        // precisely because the client created them and should show
-        // up from day one.
-        where: {
-          AND: [
-            clientJobAccessWhere(ctx),
-            {
-              OR: [
-                { createdByAgency: false },
-                {
-                  engagements: {
-                    some: {
-                      job: {
-                        submissions: { some: { isSharedWithClient: true } },
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
+        // Per-JO visibility: a ClientUser sees the JO only when
+        // they're an explicit member (ClientJobMember row). No
+        // admin bypass, no "any candidates shared" relaxation —
+        // the user flagged that a Job they were assigned to as a
+        // recruiter but had not invited any contact for was still
+        // showing up. WhatsApp-group rule: invited or nothing.
+        where: clientJobAccessWhere(ctx),
         include: {
           _count: { select: { engagements: true } },
           engagements: {
@@ -57,15 +32,24 @@ export async function GET() {
         },
         orderBy: { createdAt: "desc" },
       }),
-      // Agency-created Jobs running under this same Client. Same rule:
-      // only surface them once at least one candidate has been shared.
-      // Without the filter, every Job the recruiter creates under
-      // Client X appears immediately in their portal even when nothing
-      // is ready to review — the user flagged that as misleading.
+      // Agency-created Jobs running under this same Client. They
+      // only surface here when the ClientUser is a member of the
+      // ClientJob mirror (gated through the FirmEngagement → mirror
+      // → members chain). Without this filter every Job whose
+      // clientId matched leaked into the portal regardless of
+      // whether the ClientUser had been invited to it — exactly
+      // the bug the user flagged.
       prisma.job.findMany({
         where: {
           clientId: ctx.clientId,
-          submissions: { some: { isSharedWithClient: true } },
+          firmEngagements: {
+            some: {
+              status: "ACCEPTED",
+              clientJob: {
+                members: { some: { clientUserId: ctx.clientUserId } },
+              },
+            },
+          },
         },
         select: {
           id: true,
