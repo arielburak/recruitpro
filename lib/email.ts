@@ -590,6 +590,38 @@ export async function sendCandidateSharedEmail({
   });
 }
 
+export async function sendClientPortalWelcomeEmail({
+  to,
+  recipientName,
+  clientName,
+  portalUrl,
+}: {
+  to: string;
+  recipientName: string;
+  clientName: string | null;
+  portalUrl: string;
+}) {
+  // Confirmation mail sent after the hiring contact completes
+  // set-password. The invite mail told them "click here to set a
+  // password" — this one closes the loop with "your account is
+  // live, here's how to come back next time". Without it, users
+  // who came through the invite flow never see anything labeled
+  // 'verification', which surfaced as "no me llegó el mail de
+  // verificación" feedback.
+  const company = clientName ? ` for ${clientName}` : "";
+  const subject = `Your ${appName} client portal account is ready`;
+  const html = wrapTemplate(
+    `Welcome to ${appName}`,
+    `<p>Hi ${recipientName || "there"},</p>
+     <p>Your client portal account${company} is now active. Your email has been confirmed and you can sign in any time at the link below.</p>
+     <p>Use the portal to review candidates shared by your recruiter, leave feedback, and track the searches you're hiring on.</p>`,
+    portalUrl,
+    "Open the portal",
+  );
+
+  return sendEmail({ to, subject, html });
+}
+
 export async function sendClientSetPasswordEmail({
   to,
   setPasswordUrl,

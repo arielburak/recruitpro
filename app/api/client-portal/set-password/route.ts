@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { sendClientPortalWelcomeEmail } from "@/lib/email";
 
 // GET — used by the set-password page to know whether to show the
 // "complete your company info" fields. When the underlying Client was
@@ -164,6 +165,31 @@ export async function POST(request: Request) {
     }
 
     await prisma.$transaction(ops);
+
+    // Confirmation mail: the invite mail asked them to click; now
+    // we tell them "your account is live, here's how to come back".
+    // Fire-and-forget — a Resend hiccup shouldn't fail a flow the
+    // user just succeeded at. Skipped silently if anything's missing.
+    try {
+      const origin =
+        request.headers.get("origin") ||
+        process.env.NEXTAUTH_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      const client = await prisma.client.findUnique({
+        where: { id: tokenRecord.clientId },
+        select: { name: true },
+      });
+      sendClientPortalWelcomeEmail({
+        to: email,
+        recipientName: userName,
+        clientName: client?.name ?? null,
+        portalUrl: `${origin}/client-portal/login`,
+      }).catch((err) =>
+        console.error("[set-password] welcome mail failed:", err),
+      );
+    } catch (err) {
+      console.error("[set-password] welcome mail dispatch failed:", err);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
