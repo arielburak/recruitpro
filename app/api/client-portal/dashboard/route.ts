@@ -17,7 +17,36 @@ export async function GET() {
       prisma.clientJob.findMany({
         // Per-JO visibility: admins see everything; non-admins see
         // jobs they're a member of (or legacy jobs with no member list).
-        where: clientJobAccessWhere(ctx),
+        //
+        // Plus the "shared candidates required" rule: an agency-created
+        // mirror ClientJob doesn't appear in the portal until at least
+        // one candidate has been shared with this client. The mirror
+        // gets minted when the agency first sets up the link, but if
+        // no one has been pushed yet there's nothing for the client
+        // team to look at — and we don't want the dashboard to look
+        // populated when it's empty. Jobs the client posted themselves
+        // (createdByAgency=false) bypass this filter — those exist
+        // precisely because the client created them and should show
+        // up from day one.
+        where: {
+          AND: [
+            clientJobAccessWhere(ctx),
+            {
+              OR: [
+                { createdByAgency: false },
+                {
+                  engagements: {
+                    some: {
+                      job: {
+                        submissions: { some: { isSharedWithClient: true } },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
         include: {
           _count: { select: { engagements: true } },
           engagements: {
@@ -28,16 +57,16 @@ export async function GET() {
         },
         orderBy: { createdAt: "desc" },
       }),
-      // Agency-created Jobs running under this same Client. These never
-      // landed in the portal before because the dashboard only listed
-      // ClientJob (jobs the hiring company posted themselves). When a
-      // recruiter creates a Job in /jobs/new under Client X, the
-      // ClientUsers of Client X had no surface to see it on — only the
-      // candidates that came out of it via /client-portal/candidates.
-      // Surface them as "Active Searches" so the hiring manager knows
-      // their recruiter is working on something.
+      // Agency-created Jobs running under this same Client. Same rule:
+      // only surface them once at least one candidate has been shared.
+      // Without the filter, every Job the recruiter creates under
+      // Client X appears immediately in their portal even when nothing
+      // is ready to review — the user flagged that as misleading.
       prisma.job.findMany({
-        where: { clientId: ctx.clientId },
+        where: {
+          clientId: ctx.clientId,
+          submissions: { some: { isSharedWithClient: true } },
+        },
         select: {
           id: true,
           title: true,

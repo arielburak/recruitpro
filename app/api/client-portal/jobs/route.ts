@@ -12,7 +12,30 @@ export async function GET() {
       // a member of (plus legacy jobs with no member list). Centralized
       // in clientJobAccessWhere so every list endpoint applies the
       // same rule.
-      where: clientJobAccessWhere(ctx),
+      //
+      // Plus the "shared candidates required" rule: an agency-created
+      // mirror ClientJob doesn't appear until at least one candidate
+      // is shared. Client-posted jobs (createdByAgency=false) bypass
+      // this filter — they belong to the client and show from day one.
+      where: {
+        AND: [
+          clientJobAccessWhere(ctx),
+          {
+            OR: [
+              { createdByAgency: false },
+              {
+                engagements: {
+                  some: {
+                    job: {
+                      submissions: { some: { isSharedWithClient: true } },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
       include: {
         postedBy: { select: { name: true } },
         engagements: {
