@@ -70,12 +70,6 @@ export default function PlacementsPage() {
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
   const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
-  // Period anchor: "start" uses the actual startDate (falling back to
-  // estimatedStartDate if not started yet); "etd" pins on the
-  // estimated start. Lets the recruiter ask either "what did we
-  // actually book this quarter?" or "what are we projected to start
-  // this quarter?" without inventing two filters.
-  const [dateAnchor, setDateAnchor] = useState<"start" | "etd">("start");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -128,24 +122,17 @@ export default function PlacementsPage() {
   // expects when they edit a placement's date — the row should move to
   // the right Q immediately, not stay pinned to whenever they happened
   // to click "New placement".
-  // Returns the date the placement should anchor on for the period
-  // filter, or null if there isn't enough info. We deliberately do
-  // NOT fall back to createdAt anymore — the user flagged that a
-  // placement loaded in Q2 (no startDate / ETD) was showing up under
-  // the Q1 createdAt of the row, which is misleading. A row with no
-  // start dates is incomplete and gets excluded from period views
-  // until the recruiter fills one in.
+  // Returns the date the placement anchors on for the period filter,
+  // or null when there isn't enough info. Rule: prefer the actual
+  // startDate; fall back to the estimated start when the deal hasn't
+  // begun yet; never fall back to createdAt (a row loaded in Q2 for
+  // a Q3 start was incorrectly bucketed under Q2's createdAt). A row
+  // with neither date stays excluded from period views until the
+  // recruiter fills one in.
   function placementDate(p: any): Date | null {
-    const start = p.startDate ? new Date(p.startDate) : null;
-    const etd = p.estimatedStartDate ? new Date(p.estimatedStartDate) : null;
-    if (dateAnchor === "etd") {
-      // ETD-first: prefer estimated; if missing, fall back to the
-      // actual start so a closed deal still shows up.
-      return etd ?? start;
-    }
-    // Actual-first (default): use the real startDate, fall back to
-    // ETD for placements that haven't started yet.
-    return start ?? etd;
+    if (p.startDate) return new Date(p.startDate);
+    if (p.estimatedStartDate) return new Date(p.estimatedStartDate);
+    return null;
   }
 
   // Split the book by kind. HH (headhunting / contingent) is a flat
@@ -360,17 +347,7 @@ export default function PlacementsPage() {
           accrued revenue below. Lives on its own row so the two
           revenue cards underneath can each stand on their own. */}
       <div className="flex items-center justify-end gap-1.5">
-        <span className="text-[11px] text-gray-400 mr-1">By</span>
-        <select
-          value={dateAnchor}
-          onChange={(e) => setDateAnchor(e.target.value as "start" | "etd")}
-          className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-          aria-label="Date anchor"
-        >
-          <option value="start">Actual start</option>
-          <option value="etd">Estimated start</option>
-        </select>
-        <span className="text-[11px] text-gray-400 mx-1">·</span>
+        <span className="text-[11px] text-gray-400 mr-1">Period</span>
         <select
           value={selectedYear}
           onChange={(e) => setSelectedYear(Number(e.target.value))}
