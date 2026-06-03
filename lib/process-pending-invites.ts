@@ -14,6 +14,11 @@ export async function processPendingInvites(email: string, organizationId: strin
   const normalized = email.trim().toLowerCase();
   const pending = await prisma.pendingFirmInvite.findMany({
     where: { email: normalized },
+    include: {
+      clientJob: {
+        select: { title: true, client: { select: { name: true } } },
+      },
+    },
   });
 
   if (pending.length === 0) return 0;
@@ -44,6 +49,24 @@ export async function processPendingInvites(email: string, organizationId: strin
         },
       });
       created++;
+
+      // Mirror the in-app notification that path (a) of invite-firm
+      // already sends. Without this, users who signed up via the
+      // invite link land in an empty app and have to guess that
+      // pending engagements live under /engagements.
+      try {
+        await prisma.userNotification.create({
+          data: {
+            userId,
+            type: "engagement_invited",
+            title: `${invite.clientJob.client.name} invited you to work on ${invite.clientJob.title}`,
+            body: invite.message,
+            link: "/engagements",
+          },
+        });
+      } catch (e) {
+        console.error("[process-pending-invites] notification failed:", e);
+      }
     }
 
     // Delete the pending invite regardless (it's been processed)
