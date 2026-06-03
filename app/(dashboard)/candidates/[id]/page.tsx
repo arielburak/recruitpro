@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatNotes } from "@/components/chat-notes";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import {
   Edit,
   Mail,
@@ -47,6 +48,60 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  // Inline Owner picker on the Owner card. Loads the workspace
+  // roster once on mount so the dropdown is instant when the user
+  // clicks "Change".
+  type TeamMember = { id: string; name: string; email: string };
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [editingOwner, setEditingOwner] = useState(false);
+  const [savingOwner, setSavingOwner] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Save handler: PUTs the whole candidate row with the new ownerId
+  // (the schema requires firstName + lastName so we can't PATCH a
+  // partial). The endpoint validates ownerId against the org before
+  // writing — see /api/candidates/[id]/route.ts.
+  async function changeOwner(newOwnerId: string) {
+    if (!candidate || !newOwnerId || newOwnerId === candidate.ownerId) {
+      setEditingOwner(false);
+      return;
+    }
+    setSavingOwner(true);
+    try {
+      const payload = {
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email || "",
+        phone: candidate.phone || "",
+        linkedIn: candidate.linkedIn || "",
+        location: candidate.location || "",
+        currentTitle: candidate.currentTitle || "",
+        currentCompany: candidate.currentCompany || "",
+        currentSalary: candidate.currentSalary,
+        desiredSalary: candidate.desiredSalary,
+        salaryCurrency: candidate.salaryCurrency || "USD",
+        skills: candidate.skills || [],
+        summary: candidate.summary || "",
+        source: candidate.source || "",
+        ownerId: newOwnerId,
+      };
+      const res = await fetch(`/api/candidates/${candidate.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) await fetchCandidate();
+    } finally {
+      setSavingOwner(false);
+      setEditingOwner(false);
+    }
+  }
   // Deep-link support: ?tab=notes&sub={submissionId} jumps straight
   // into the Notes tab with that submission's per-job chat selected.
   // Used by the message-icon shortcuts on /jobs/[id] kanban cards
@@ -390,27 +445,59 @@ export default function CandidateDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm min-w-0">
-                    <UserCircle className="h-4 w-4 text-gray-400 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-gray-900 truncate">
-                        {candidate.owner?.name || candidate.owner?.email || "Unassigned"}
-                      </p>
-                      {candidate.owner?.name && candidate.owner?.email && (
-                        <p className="text-xs text-gray-400 truncate">
-                          {candidate.owner.email}
-                        </p>
-                      )}
+                {editingOwner ? (
+                  <div className="space-y-2">
+                    <SearchableSelect
+                      value={candidate.ownerId || ""}
+                      onChange={(v) => changeOwner(v)}
+                      includeAll={false}
+                      placeholder={
+                        teamMembers.length === 0 ? "Loading…" : "Select an owner"
+                      }
+                      searchPlaceholder="Search teammates…"
+                      minWidth={0}
+                      className="w-full"
+                      options={teamMembers.map<SearchableSelectOption>((m) => ({
+                        value: m.id,
+                        label: m.name || m.email,
+                        meta: m.name && m.email ? m.email : undefined,
+                      }))}
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setEditingOwner(false)}
+                        disabled={savingOwner}
+                        className="text-xs text-gray-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
-                  <Link
-                    href={`/candidates/${candidate.id}/edit`}
-                    className="text-xs text-indigo-600 hover:underline shrink-0"
-                  >
-                    Change
-                  </Link>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm min-w-0">
+                      <UserCircle className="h-4 w-4 text-gray-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-gray-900 truncate">
+                          {candidate.owner?.name || candidate.owner?.email || "Unassigned"}
+                        </p>
+                        {candidate.owner?.name && candidate.owner?.email && (
+                          <p className="text-xs text-gray-400 truncate">
+                            {candidate.owner.email}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditingOwner(true)}
+                      className="text-xs text-indigo-600 hover:underline shrink-0"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
