@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use, useRef } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClientJobChat } from "@/components/client-portal/client-job-chat";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ type InviteLookup = {
 
 export default function ClientJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { data: session } = useSession();
   const currentClientUserId = (session?.user as any)?.id || "";
   const [job, setJob] = useState<any>(null);
@@ -350,7 +352,30 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       if (res.ok) {
         const jobs = await res.json();
         const found = jobs.find((j: any) => j.id === id);
-        setJob(found || null);
+        if (found) {
+          setJob(found);
+          setLoading(false);
+          return;
+        }
+
+        // Fallback: the id in the URL might actually be an agency
+        // Job.id (stale notification link from before we fixed the
+        // notif builders to use ClientJob.id). Ask /go to resolve
+        // it via sourceJobId or accepted FirmEngagement and bounce
+        // to the right URL. If /go also can't resolve, we fall
+        // through to the "Job not found" state below.
+        try {
+          const goRes = await fetch(`/api/client-portal/go?jobId=${id}`);
+          if (goRes.ok) {
+            const { path } = await goRes.json();
+            if (path && path !== "/client-portal/dashboard") {
+              router.replace(path);
+              return;
+            }
+          }
+        } catch {}
+
+        setJob(null);
       }
     } catch {}
     setLoading(false);
