@@ -777,7 +777,24 @@ function NewJobContent() {
               />
             </div>
             <div className="flex justify-end gap-2 pt-4">
-              <Link href="/jobs"><Button type="button" variant="outline">Cancel</Button></Link>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  // Hitting Cancel == "I'm done with this draft". The
+                  // user reported that without clearing here, the
+                  // next open of /jobs/new restored the abandoned
+                  // form ("se guarda toda la info del anterior que
+                  // borraste"). The draft hook persists on every
+                  // keystroke, so the explicit signal we get is the
+                  // Cancel click — that's where the draft dies.
+                  clearJobDraft();
+                  void clearJdFile();
+                  router.push("/jobs");
+                }}
+              >
+                Cancel
+              </Button>
               <Button type="submit" disabled={loading || parsing}>
                 {loading ? "Creating..." : "Create Job"}
               </Button>
