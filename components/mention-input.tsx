@@ -35,13 +35,24 @@ export function MentionInput({ onSubmit, placeholder = "Add a note... Use @ to m
 
   const searchUsers = useCallback(async (query: string) => {
     try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}&includeClients=${allowClients}`);
+      // Internal notes must never expose ClientUsers in the picker —
+      // arrobing a hiring manager from a private comment is a scope
+      // leak (they'd get a mail referencing internal context they
+      // shouldn't see). Only forward `includeClients` when both the
+      // surface allows it (allowClients) AND the comment is in the
+      // client-visible mode. Toggling the lock icon back to
+      // "Internal only" should hide them again instantly, which is
+      // why `isPublic` is in this hook's dependency list.
+      const includeClients = allowClients && isPublic;
+      const res = await fetch(
+        `/api/users/search?q=${encodeURIComponent(query)}&includeClients=${includeClients}`,
+      );
       if (res.ok) {
         const data = await res.json();
-        setMentionResults([...data.users, ...data.clients]);
+        setMentionResults([...data.users, ...(includeClients ? data.clients : [])]);
       }
     } catch {}
-  }, [allowClients]);
+  }, [allowClients, isPublic]);
 
   useEffect(() => {
     if (!showMentions) return;
@@ -176,7 +187,19 @@ export function MentionInput({ onSubmit, placeholder = "Add a note... Use @ to m
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={() => setIsPublic(!isPublic)}
+          onClick={() => {
+            const nextPublic = !isPublic;
+            setIsPublic(nextPublic);
+            // Flipping back to "Internal only" must also drop any
+            // ClientUsers the user had already picked while the
+            // comment was client-visible. Without this, the submit
+            // payload still carries client IDs in `mentions` and
+            // the server-side notifier mails them about an
+            // internal-only thread.
+            if (!nextPublic) {
+              setMentions((prev) => prev.filter((m) => m.type !== "client"));
+            }
+          }}
           className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md transition ${
             isPublic
               ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"

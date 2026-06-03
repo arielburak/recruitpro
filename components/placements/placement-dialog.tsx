@@ -555,13 +555,9 @@ export function PlacementDialog(props: Props) {
     }
   }, [props.open, props.mode]);
 
-  // Hydrate selectedCandidate.ownerId so the Recruiter picker can
-  // label the "default" option with the owner's actual name (search
-  // results don't carry ownerId). We deliberately don't push the
-  // value into `recruiterId` — leaving it empty signals "use the
-  // candidate owner" to the API, and the picker renders the owner's
-  // name on the empty sentinel option so the UI looks the same.
-  // Edit mode preloads recruiterId from props.initial below.
+  // Hydrate selectedCandidate.ownerId when the search result didn't
+  // carry it. Used by the next effect to pre-select the owner as
+  // the Recruiter.
   useEffect(() => {
     if (!selectedCandidate) return;
     if (selectedCandidate.ownerId) return;
@@ -581,6 +577,21 @@ export function PlacementDialog(props: Props) {
       cancelled = true;
     };
   }, [selectedCandidate]);
+
+  // Pre-select the candidate owner as the Recruiter. Previously the
+  // dropdown stayed on the empty sentinel option and rendered the
+  // owner's name there, which looked unselected ("Select recruiter")
+  // to most users — one extra click to confirm what was already
+  // implied. Now the owner is the actual value, and the user can
+  // re-assign mid-form for handoffs. Edit mode is skipped (it
+  // hydrates from props.initial). Manual override is preserved via
+  // recruiterTouchedRef.
+  useEffect(() => {
+    if (isEdit) return;
+    if (recruiterTouchedRef.current) return;
+    if (!selectedCandidate?.ownerId) return;
+    setRecruiterId(selectedCandidate.ownerId);
+  }, [selectedCandidate?.ownerId, isEdit]);
 
   // Live preview of when the guarantee expires. Read-only — server
   // computes the persisted value on save with the same logic.
@@ -1385,14 +1396,12 @@ export function PlacementDialog(props: Props) {
                 and the owner is filtered out of the teammates list
                 so they don't appear twice. */}
             {(() => {
-              const ownerMember = teamMembers.find(
-                (u) => u.id === selectedCandidate?.ownerId,
-              );
-              const ownerLabel =
-                ownerMember?.name || ownerMember?.email || "Candidate owner";
-              const otherMembers = teamMembers.filter(
-                (u) => u.id !== selectedCandidate?.ownerId,
-              );
+              // Owner is pre-selected by the effect above. Render the
+              // full team list (no filtering of the owner) so the
+              // selection looks like a normal dropdown — what the
+              // candidate's owner is named is what shows in the box.
+              // Only fall back to the "Select recruiter" sentinel
+              // when no candidate has been picked yet.
               return (
                 <div className="space-y-1.5">
                   <Label className="text-xs" htmlFor="placement-recruiter">Recruiter</Label>
@@ -1405,12 +1414,10 @@ export function PlacementDialog(props: Props) {
                     }}
                     className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
-                    <option value="">
-                      {selectedCandidate?.ownerId
-                        ? ownerLabel
-                        : "Select recruiter"}
-                    </option>
-                    {otherMembers.map((u) => (
+                    {!recruiterId && (
+                      <option value="">Select recruiter</option>
+                    )}
+                    {teamMembers.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name}
                       </option>

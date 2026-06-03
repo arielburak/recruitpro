@@ -120,6 +120,13 @@ export async function POST(
           passwordHash,
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
+          // Accepting the invite from the inbox already proves the
+          // address. Mirrors the client-portal /set-password flow
+          // which also marks emailVerifiedAt on completion. Without
+          // this, invited members landed on /login and bounced off
+          // the EMAIL_NOT_VERIFIED hard-block (now a soft-block,
+          // but the in-app banner is still noise they don't need).
+          emailVerifiedAt: new Date(),
         },
       }),
       prisma.userInvite.update({

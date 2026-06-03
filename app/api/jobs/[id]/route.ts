@@ -133,9 +133,45 @@ export async function GET(
 
     const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
     const isPrivate = job.firmEngagements.length > 0;
+
+    // Fallback access paths for when the cheap gates above would
+    // 404. Both consulted only on the deny path so the happy path
+    // stays one query.
+    //
+    //   1. Mention-based: if the recruiter was arrobado in any
+    //      comment on this job, let them read it. Otherwise the
+    //      "X mentioned you in Y" notification lands on a 404 and
+    //      the click — which is the whole point of the notification
+    //      — does nothing.
+    //
+    //   2. Engagement-based: a recruiter who accepted a person-
+    //      level invite via /engagements should always be able to
+    //      open the job from that page, even on rare cases where
+    //      the JobAssignment row wasn't created (e.g. legacy
+    //      engagements predating the upsert in
+    //      /api/engagements/[id]). Without this the link from
+    //      /engagements/[clientId] dead-ends in 404.
+    let mentioned = false;
+    let engaged = false;
+    if (!isAssigned && (isPrivate || ctx.role !== "ADMIN")) {
+      const [m, e] = await Promise.all([
+        prisma.comment.findFirst({
+          where: { jobId: id, mentions: { has: ctx.userId } },
+          select: { id: true },
+        }),
+        prisma.firmEngagement.findFirst({
+          where: { jobId: id, invitedUserId: ctx.userId, status: "ACCEPTED" },
+          select: { id: true },
+        }),
+      ]);
+      mentioned = !!m;
+      engaged = !!e;
+    }
+
+    const hasAccess = isAssigned || mentioned || engaged;
     if (isPrivate) {
-      if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    } else if (ctx.role !== "ADMIN" && !isAssigned) {
+      if (!hasAccess) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    } else if (ctx.role !== "ADMIN" && !hasAccess) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
