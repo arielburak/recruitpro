@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,10 +28,16 @@ import { InterviewsCalendar } from "@/components/interviews/interviews-calendar"
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { ChatNotes } from "@/components/chat-notes";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+
+type TeamMember = { id: string; name: string; email: string };
 
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
@@ -51,10 +58,31 @@ export default function JobDetailPage() {
     linkedIn: "",
     currentTitle: "",
     currentCompany: "",
+    ownerId: "",
   };
   const [newCandidate, setNewCandidate] = useState(emptyNewCandidate);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  // Team picker for the Owner field on the inline "Create new" tab.
+  // Hits the same endpoint /candidates/new uses, with no jobId scope
+  // so the picker shows every workspace member (a candidate's owner
+  // is org-level, not job-level). Loaded once on mount.
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Default Owner = whoever is logged in. We only set it once and
+  // only when empty so a re-open of the modal doesn't blow away a
+  // value the user picked manually before closing.
+  useEffect(() => {
+    if (!newCandidate.ownerId && currentUserId) {
+      setNewCandidate((prev) => ({ ...prev, ownerId: currentUserId }));
+    }
+  }, [currentUserId, newCandidate.ownerId]);
 
   // Duplicate detection for the inline "Create new" tab — mirrors the
   // /candidates/new page so recruiters get the same heads-up in both
@@ -1224,6 +1252,28 @@ export default function JobDetailPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="newCandidateOwner">Owner</Label>
+                    <SearchableSelect
+                      value={newCandidate.ownerId}
+                      onChange={(v) => setNewCandidate({ ...newCandidate, ownerId: v })}
+                      includeAll={false}
+                      placeholder={
+                        teamMembers.length === 0 ? "Loading team…" : "Select an owner"
+                      }
+                      searchPlaceholder="Search teammates…"
+                      minWidth={0}
+                      className="w-full"
+                      options={teamMembers.map<SearchableSelectOption>((m) => ({
+                        value: m.id,
+                        label:
+                          (m.name || m.email) +
+                          (m.id === currentUserId ? " (you)" : ""),
+                        meta: m.name && m.email ? m.email : undefined,
+                      }))}
+                    />
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
