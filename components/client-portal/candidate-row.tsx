@@ -34,6 +34,13 @@ type Props = {
   row: CandidateRow;
   showJob?: boolean;
   showFirm?: boolean;
+  // When true, the row is a secondary submission of the same
+  // candidate as the row above (the candidate's avatar + name
+  // already appear there). We dim the row and replace the
+  // candidate cell with a tree-style indent so the table reads
+  // "1 candidate, 3 searches" instead of "3 candidates with the
+  // same name".
+  asSecondary?: boolean;
   // Kept on the API surface so callers don't break — the prop is now
   // a no-op since rating is removed from the row.
   onRated?: () => void;
@@ -49,32 +56,51 @@ function formatDateShort(iso: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function CandidateTableRow({ row, showJob = true, showFirm = true }: Props) {
+export function CandidateTableRow({ row, showJob = true, showFirm = true, asSecondary = false }: Props) {
   const fullName = `${row.candidate.firstName} ${row.candidate.lastName}`.trim();
   const initials = (row.candidate.firstName[0] || "") + (row.candidate.lastName[0] || "");
 
   return (
-    <TableRow className="hover:bg-gray-50">
+    <TableRow className={asSecondary ? "hover:bg-gray-50 bg-gray-50/40" : "hover:bg-gray-50"}>
       <TableCell>
-        <Link
-          href={`/client-portal/candidates/${row.submissionId}`}
-          className="flex items-center gap-2.5 min-w-0 group"
-        >
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
-            {initials.toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
-              {fullName}
-            </p>
-            {row.candidate.currentTitle && (
-              <p className="text-[11px] text-gray-500 truncate">
-                {row.candidate.currentTitle}
-                {row.candidate.currentCompany ? ` · ${row.candidate.currentCompany}` : ""}
+        {asSecondary ? (
+          // Tree-style indent. No avatar, no name — the parent row
+          // above carries the candidate's identity; this cell just
+          // signals "another search by the same person". The vertical
+          // line connects visually to the row above so the
+          // relationship is unambiguous.
+          <Link
+            href={`/client-portal/candidates/${row.submissionId}`}
+            className="flex items-center gap-2 pl-4 text-xs text-gray-500 hover:text-emerald-600 group"
+            aria-label={`Open this search for ${fullName}`}
+          >
+            <span
+              aria-hidden="true"
+              className="inline-block w-4 h-4 border-l-2 border-b-2 border-gray-300 rounded-bl shrink-0"
+            />
+            <span className="italic group-hover:underline">Same candidate · another search</span>
+          </Link>
+        ) : (
+          <Link
+            href={`/client-portal/candidates/${row.submissionId}`}
+            className="flex items-center gap-2.5 min-w-0 group"
+          >
+            <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+              {initials.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
+                {fullName}
               </p>
-            )}
-          </div>
-        </Link>
+              {row.candidate.currentTitle && (
+                <p className="text-[11px] text-gray-500 truncate">
+                  {row.candidate.currentTitle}
+                  {row.candidate.currentCompany ? ` · ${row.candidate.currentCompany}` : ""}
+                </p>
+              )}
+            </div>
+          </Link>
+        )}
       </TableCell>
 
       {showJob && (

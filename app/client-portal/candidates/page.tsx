@@ -304,8 +304,8 @@ function ClientCandidatesPageInner() {
                       />
                       {rest.length > 0 && (
                         <>
-                          <TableRow className="bg-gray-50/60 hover:bg-gray-50">
-                            <TableCell colSpan={6} className="py-1.5 pl-16">
+                          <TableRow className="hover:bg-gray-50/40">
+                            <TableCell colSpan={6} className="py-1 pl-16 border-b-0">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -324,8 +324,8 @@ function ClientCandidatesPageInner() {
                                   <ChevronRight className="h-3 w-3" />
                                 )}
                                 {isExpanded
-                                  ? "Hide other searches"
-                                  : `+${rest.length} more search${rest.length === 1 ? "" : "es"} with this candidate`}
+                                  ? `Hide ${rest.length} other search${rest.length === 1 ? "" : "es"}`
+                                  : `Also shared on ${rest.length} other search${rest.length === 1 ? "" : "es"}`}
                               </button>
                             </TableCell>
                           </TableRow>
@@ -335,6 +335,7 @@ function ClientCandidatesPageInner() {
                                 key={r.submissionId}
                                 row={r}
                                 onRated={refetch}
+                                asSecondary
                               />
                             ))}
                         </>
