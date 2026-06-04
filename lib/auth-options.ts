@@ -30,6 +30,62 @@ async function getOAuthPortal(): Promise<"client" | "staffing"> {
   }
 }
 
+// Gmail treats "first.last@gmail.com", "firstlast@gmail.com" and
+// "firstlast+tag@gmail.com" as the same mailbox — dots and +suffixes
+// are ignored. Our DB stores whatever address the inviter typed, but
+// Google OAuth always returns the dotless canonical form. Without this
+// normalization, a team member invited as "first.last@gmail.com" gets
+// a brand-new empty org spun up on their first Google sign-in because
+// the email lookup misses. Returns the canonical form for gmail.com /
+// googlemail.com addresses, otherwise lowercases and returns as-is.
+function canonicalizeGmail(email: string): string {
+  const lower = email.trim().toLowerCase();
+  const [local, domain] = lower.split("@");
+  if (!local || !domain) return lower;
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return lower;
+  const cleaned = local.split("+")[0].replace(/\./g, "");
+  return `${cleaned}@gmail.com`;
+}
+
+// Find a staffing User by email, tolerant of Gmail dot/+tag aliases.
+// Exact match wins; the canonical-form scan is only used as a fallback
+// so a row stored as "first.last@gmail.com" still matches when Google
+// hands us "firstlast@gmail.com". Bounded to gmail.com / googlemail.com
+// rows so the scan stays cheap.
+async function findStaffingUserByOAuthEmail(email: string) {
+  const exact = await prisma.user.findUnique({ where: { email } });
+  if (exact) return exact;
+  const canonical = canonicalizeGmail(email);
+  if (canonical === email.toLowerCase()) return null;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "User"
+    WHERE LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '\.', '', 'g')) || '@gmail.com' = ${canonical}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return prisma.user.findUnique({ where: { id: rows[0].id } });
+}
+
+// Mirror of findStaffingUserByOAuthEmail for ClientUser.
+async function findClientUserByOAuthEmail(email: string) {
+  const exact = await prisma.clientUser.findFirst({
+    where: { email, isActive: true },
+  });
+  if (exact) return exact;
+  const canonical = canonicalizeGmail(email);
+  if (canonical === email.toLowerCase()) return null;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "ClientUser"
+    WHERE "isActive" = true
+      AND LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '\.', '', 'g')) || '@gmail.com' = ${canonical}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return prisma.clientUser.findUnique({ where: { id: rows[0].id } });
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
@@ -152,9 +208,7 @@ export const authOptions: NextAuthOptions = {
       // The stub flag stays true until they fill in real company info
       // via the onboarding banner on /client-portal/dashboard.
       if (portal === "client") {
-        const existing = await prisma.clientUser.findFirst({
-          where: { email: user.email, isActive: true },
-        });
+        const existing = await findClientUserByOAuthEmail(user.email);
         if (existing) return true;
 
         const derivedName = deriveCompanyNameFromEmail(user.email);
@@ -222,9 +276,7 @@ export const authOptions: NextAuthOptions = {
       }
 
       // === Staffing portal OAuth flow (default) ===
-      const existingUser = await prisma.user.findUnique({
-        where: { email: user.email },
-      });
+      const existingUser = await findStaffingUserByOAuthEmail(user.email);
 
       if (existingUser) return true;
 
@@ -328,10 +380,15 @@ export const authOptions: NextAuthOptions = {
         const portal = await getOAuthPortal();
 
         if (portal === "client") {
-          const dbClient = await prisma.clientUser.findFirst({
-            where: { email: user.email!, isActive: true },
-            include: { client: true },
-          });
+          // Use the canonicalized lookup so dotted-Gmail invitees match
+          // their existing row, then re-fetch with the `client` relation.
+          const matched = await findClientUserByOAuthEmail(user.email!);
+          const dbClient = matched
+            ? await prisma.clientUser.findUnique({
+                where: { id: matched.id },
+                include: { client: true },
+              })
+            : null;
           if (dbClient) {
             // Google has already verified the address on its side, so
             // backfill emailVerifiedAt on first OAuth sign-in if it
@@ -362,10 +419,15 @@ export const authOptions: NextAuthOptions = {
             token.needsOnboarding = undefined;
           }
         } else {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: user.email! },
-            include: { organization: true },
-          });
+          // Canonicalized lookup so dotted-Gmail invitees match the
+          // existing row, then re-fetch with the `organization` relation.
+          const matched = await findStaffingUserByOAuthEmail(user.email!);
+          const dbUser = matched
+            ? await prisma.user.findUnique({
+                where: { id: matched.id },
+                include: { organization: true },
+              })
+            : null;
           if (dbUser) {
             token.id = dbUser.id;
             token.role = dbUser.role;
