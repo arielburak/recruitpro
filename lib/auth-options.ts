@@ -205,77 +205,19 @@ export const authOptions: NextAuthOptions = {
       const portal = await getOAuthPortal();
 
       // === Client portal OAuth flow ===
-      // Existing ClientUsers sign in directly. Brand-new emails get a
-      // stub Client + ClientUser auto-created so OAuth isn't a
-      // dead-end for hiring companies that never received an invite.
-      // The stub flag stays true until they fill in real company info
-      // via the onboarding banner on /client-portal/dashboard.
+      // Invite-only. The portal exists for hiring companies that an
+      // agency has explicitly added — they're the end user, not the
+      // paying customer, so self-signup would dilute the funnel and
+      // create orphan companies with no agency context. Reject Google
+      // sign-ins from emails that don't already have an active
+      // ClientUser row (which means: an agency invited them, an admin
+      // promoted them, or they activated via set-password).
       if (portal === "client") {
         const existing = await findClientUserByOAuthEmail(user.email);
         if (existing) return true;
-
-        const derivedName = deriveCompanyNameFromEmail(user.email);
-        try {
-          await prisma.$transaction(async (tx) => {
-            const client = await tx.client.create({
-              data: {
-                name: derivedName,
-                isStub: true,
-                // No agency owns this — it's a client-portal-self
-                // signup. organizationId stays null; engagements come
-                // later when a recruiter invites them to a job.
-                organizationId: null,
-                contactEmail: user.email!,
-                contactName: user.name || null,
-              },
-            });
-            await tx.clientPipelineStage.createMany({
-              data: (await import("./constants")).DEFAULT_STAGES.map((s, i) => ({
-                name: s.name,
-                order: i,
-                color: s.color,
-                isTerminal: s.isTerminal,
-                kind: s.kind,
-                clientId: client.id,
-              })),
-            });
-            await tx.clientUser.create({
-              data: {
-                email: user.email!,
-                name: user.name || derivedName,
-                clientId: client.id,
-                role: "ADMIN",
-                // Google's already verified the address — no need to
-                // send a separate verify-email mail.
-                emailVerifiedAt: new Date(),
-              },
-            });
-          });
-          // Welcome mail — symmetric with the agency OAuth + the
-          // verify-email + the set-password flows. Every account
-          // activation path emits the same "your account is ready"
-          // confirmation.
-          try {
-            const baseUrl =
-              process.env.NEXTAUTH_URL ||
-              (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-            const { sendClientPortalWelcomeEmail } = await import("./email");
-            sendClientPortalWelcomeEmail({
-              to: user.email!,
-              recipientName: user.name || derivedName,
-              clientName: derivedName,
-              portalUrl: `${baseUrl}/client-portal/login`,
-            }).catch((err) =>
-              console.error("[client OAuth] welcome mail failed:", err),
-            );
-          } catch (err) {
-            console.error("[client OAuth] welcome mail dispatch failed:", err);
-          }
-          return true;
-        } catch (e) {
-          console.error("[signIn] client portal OAuth auto-create failed:", e);
-          return "/client-portal/login?error=signup-failed";
-        }
+        // No invite on file → bounce back to the login screen with a
+        // clear "you need to be invited" message.
+        return "/client-portal/login?error=not-invited";
       }
 
       // === Staffing portal OAuth flow (default) ===
