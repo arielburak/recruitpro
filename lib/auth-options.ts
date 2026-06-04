@@ -48,15 +48,17 @@ function canonicalizeGmail(email: string): string {
 }
 
 // Find a staffing User by email, tolerant of Gmail dot/+tag aliases.
-// Exact match wins; the canonical-form scan is only used as a fallback
-// so a row stored as "first.last@gmail.com" still matches when Google
-// hands us "firstlast@gmail.com". Bounded to gmail.com / googlemail.com
-// rows so the scan stays cheap.
+// Exact match wins; the canonical-form scan is the fallback so a row
+// stored as "first.last@gmail.com" still matches when Google hands us
+// "firstlast@gmail.com". Skipped entirely for non-Gmail domains since
+// only Gmail aliases dots and +tags — for other providers the exact
+// lookup is authoritative.
 async function findStaffingUserByOAuthEmail(email: string) {
   const exact = await prisma.user.findUnique({ where: { email } });
   if (exact) return exact;
+  const domain = email.toLowerCase().split("@")[1] || "";
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return null;
   const canonical = canonicalizeGmail(email);
-  if (canonical === email.toLowerCase()) return null;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM "User"
     WHERE LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
@@ -73,8 +75,9 @@ async function findClientUserByOAuthEmail(email: string) {
     where: { email, isActive: true },
   });
   if (exact) return exact;
+  const domain = email.toLowerCase().split("@")[1] || "";
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return null;
   const canonical = canonicalizeGmail(email);
-  if (canonical === email.toLowerCase()) return null;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM "ClientUser"
     WHERE "isActive" = true
