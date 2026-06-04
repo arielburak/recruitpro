@@ -301,6 +301,7 @@ function ClientCandidatesPageInner() {
                         key={primary.submissionId}
                         row={primary}
                         onRated={refetch}
+                        totalSearches={group.rows.length}
                       />
                       {rest.length > 0 && (
                         <>
