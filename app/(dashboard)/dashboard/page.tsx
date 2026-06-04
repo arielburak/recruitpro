@@ -44,7 +44,6 @@ export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.organizationId;
   const userId = session?.user?.id as string | undefined;
-  const role = (session?.user?.role || "USER") as "ADMIN" | "USER";
 
   if (!orgId) return null;
 
@@ -52,22 +51,11 @@ export default async function DashboardPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-  // RBAC filter for jobs the current user can see. Mirrors /api/jobs:
-  //   - Non-admins: only jobs they're explicitly assigned to.
-  //   - Admins: every job in the org EXCEPT private jobs born from a
-  //     person-level client-portal invite they weren't invited to.
-  // Without this, the "Active Searches" stat counted org-wide jobs
-  // even for users with zero job access — surfacing work they can't
-  // actually open.
-  const jobAccessFilter: any =
-    role !== "ADMIN"
-      ? { assignments: { some: { userId } } }
-      : {
-          OR: [
-            { firmEngagements: { none: { invitedUserId: { not: null } } } },
-            { assignments: { some: { userId } } },
-          ],
-        };
+  // Strict assignment-based visibility — admins included. Mirrors the
+  // rule in /api/jobs and lib/.../canAccessJob: if the user isn't on
+  // the job's assignment list, the job doesn't count here. Stops the
+  // "Active Searches" tile from surfacing work the user can't open.
+  const jobAccessFilter = { assignments: { some: { userId } } };
 
   // Org age drives the first-week migration banner (see MigrateBanner).
   // We fetch this outside the Promise.all so the banner can render
