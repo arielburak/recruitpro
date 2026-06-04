@@ -172,8 +172,9 @@ export default function PlacementsPage() {
   const hhPlacements = placements.filter((p) => (p.kind || "HH") === "HH");
   const osPlacements = placements.filter((p) => p.kind === "OS");
 
-  // HH placements that booked in the selected period (anchored
-  // on whatever the user picked: actual start or ETD).
+  // HH placements that booked in the selected period (anchored on
+  // startDate, falling back to estimatedStartDate when the firm date
+  // isn't set yet).
   const hhInPeriod = hhPlacements.filter((p) => {
     const d = placementDate(p);
     if (!d) return false;
