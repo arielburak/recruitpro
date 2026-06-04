@@ -120,11 +120,26 @@ export function PlacementsOperationsStrip() {
                 )}
               </div>
               <p className="text-2xl font-semibold text-gray-900 leading-none">
-                {loading ? <span className="text-gray-300">—</span> : value}
+                {loading ? (
+                  <span className="text-gray-300">—</span>
+                ) : t.key === "mrrAtRisk" && data && data.mrrAtRiskAmount > 0 ? (
+                  // For MRR at risk, the $/mo number is the headline
+                  // — the recruiter doesn't care that "1 engagement is
+                  // ending", they care that "$10,000/mo is about to
+                  // walk out". Count moves down as a secondary tag.
+                  <span className="inline-flex items-baseline gap-1.5">
+                    <span>{formatCurrency(data.mrrAtRiskAmount, "USD")}</span>
+                    <span className="text-sm font-medium text-gray-500">/mo</span>
+                  </span>
+                ) : (
+                  value
+                )}
               </p>
               <p className="text-xs font-medium text-gray-700 mt-2">{t.label}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                {t.sublabel(data)}
+                {t.key === "mrrAtRisk" && data && data.mrrAtRiskAmount > 0
+                  ? `${value} engagement${value === 1 ? "" : "s"} · next 30 days`
+                  : t.sublabel(data)}
               </p>
             </Card>
           );
@@ -180,6 +195,18 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
             </p>
             <p className="text-[11px] text-gray-500 mt-0.5">
               {items.length} item{items.length === 1 ? "" : "s"}
+              {tile === "mrrAtRisk" && items.length > 0
+                ? (() => {
+                    const total = items.reduce(
+                      (s: number, p: any) =>
+                        s + (p.monthlyFee ? Number(p.monthlyFee) : 0),
+                      0,
+                    );
+                    return total > 0
+                      ? ` · ${formatCurrency(total, "USD")}/mo at stake`
+                      : "";
+                  })()
+                : ""}
             </p>
           </div>
           <button
@@ -213,6 +240,14 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                 const href = cand ? `/candidates/${cand.id}` : "/placements";
                 const subtitle = `${p.job?.title || "—"} · ${p.client?.name || "—"}`;
                 const meta = buildMeta(tile, p);
+                // For mrrAtRisk we surface the monthly fee as a
+                // prominent pill on the right side of the row so the
+                // recruiter sees the dollar amount at a glance instead
+                // of buried in the uppercase meta strip below.
+                const amountBadge =
+                  tile === "mrrAtRisk" && p.monthlyFee
+                    ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`
+                    : null;
                 return (
                   <ActionRow
                     key={p.id}
@@ -220,6 +255,7 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                     title={title}
                     subtitle={subtitle}
                     meta={meta}
+                    amountBadge={amountBadge}
                   />
                 );
               })}
@@ -260,13 +296,10 @@ function buildMeta(tile: TileKey, p: any): string[] {
     }
     return meta;
   }
-  // mrrAtRisk — engagement is about to end, not already ended.
-  return [
-    `Ends ${fmtDate(p.endDate)}`,
-    p.monthlyFee
-      ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo at risk`
-      : "—",
-  ];
+  // mrrAtRisk — engagement is about to end, not already ended. The
+  // monthly fee is surfaced as the amountBadge on the right of the
+  // row instead of inline here, so it reads at a glance.
+  return [`Ends ${fmtDate(p.endDate)}`];
 }
 
 function ActionRow({
@@ -274,11 +307,15 @@ function ActionRow({
   title,
   subtitle,
   meta,
+  amountBadge,
 }: {
   href: string;
   title: string;
   subtitle: string;
   meta: string[];
+  // Headline-style number we want to show on the right of the row.
+  // Used by mrrAtRisk to surface $/mo at risk; null hides it.
+  amountBadge?: string | null;
 }) {
   return (
     <Link
@@ -302,7 +339,14 @@ function ActionRow({
             ))}
           </div>
         </div>
-        <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-500 shrink-0 mt-1" />
+        <div className="flex items-center gap-2 shrink-0">
+          {amountBadge && (
+            <span className="text-sm font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-md whitespace-nowrap">
+              {amountBadge}
+            </span>
+          )}
+          <ExternalLink className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-500 mt-1" />
+        </div>
       </div>
     </Link>
   );
