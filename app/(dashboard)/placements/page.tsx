@@ -70,6 +70,14 @@ export default function PlacementsPage() {
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
   const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
+  // Anchor that decides which date a placement belongs to:
+  //   "start" — actual startDate (the deal happened), fallback to ETD
+  //             for placements not yet started. Default — "what did we
+  //             actually book this period?"
+  //   "etd"   — estimated start. Fallback to actual startDate when the
+  //             ETD is missing. Lets the recruiter ask "what's
+  //             projected to land in Q3?"
+  const [dateAnchor, setDateAnchor] = useState<"start" | "etd">("start");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -130,9 +138,19 @@ export default function PlacementsPage() {
   // with neither date stays excluded from period views until the
   // recruiter fills one in.
   function placementDate(p: any): Date | null {
-    if (p.startDate) return new Date(p.startDate);
-    if (p.estimatedStartDate) return new Date(p.estimatedStartDate);
-    return null;
+    const start = p.startDate ? new Date(p.startDate) : null;
+    const etd = p.estimatedStartDate ? new Date(p.estimatedStartDate) : null;
+    if (dateAnchor === "etd") {
+      // ETD-first: when present, use the estimate. Fall back to the
+      // actual start so closed deals still show up under the ETD
+      // view (lets you contrast "what we expected to land" vs "what
+      // actually landed" by toggling the selector).
+      return etd ?? start;
+    }
+    // Default: actual start, falling back to ETD when the deal
+    // hasn't begun yet. Never falls back to createdAt — that produced
+    // a Q2-loaded placement showing up in the Q1 view.
+    return start ?? etd;
   }
 
   // Split the book by kind. HH (headhunting / contingent) is a flat
@@ -382,6 +400,17 @@ export default function PlacementsPage() {
           <option value={2}>Q2</option>
           <option value={3}>Q3</option>
           <option value={4}>Q4</option>
+        </select>
+        <span className="text-[11px] text-gray-300 mx-0.5">·</span>
+        <select
+          value={dateAnchor}
+          onChange={(e) => setDateAnchor(e.target.value as "start" | "etd")}
+          className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          aria-label="Period anchor"
+          title="Which date to bucket placements by"
+        >
+          <option value="start">By start date</option>
+          <option value="etd">By estimated start</option>
         </select>
       </div>
 
