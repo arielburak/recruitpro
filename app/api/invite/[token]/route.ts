@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
 
 // GET - validate invite and return info
 export async function GET(
@@ -143,6 +144,33 @@ export async function POST(
       });
     } catch {
       // Subscription may not exist yet — non-fatal
+    }
+
+    // Welcome mail — symmetric to the client-portal set-password
+    // flow. The invite mail asked the member to click and pick a
+    // password; this one closes the loop with "your account is
+    // live". Without it the member is auto-verified but never sees
+    // an explicit "verified" confirmation in their inbox. Fire-and-
+    // forget so a Resend hiccup doesn't fail the accept.
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: invite.organizationId },
+        select: { name: true },
+      });
+      const origin =
+        request.headers.get("origin") ||
+        process.env.NEXTAUTH_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      sendStaffingMemberWelcomeEmail({
+        to: invite.email,
+        recipientName: name,
+        organizationName: org?.name || "your workspace",
+        appUrl: `${origin}/login`,
+      }).catch((err) =>
+        console.error("[invite accept] welcome mail failed:", err),
+      );
+    } catch (err) {
+      console.error("[invite accept] welcome mail dispatch failed:", err);
     }
 
     return NextResponse.json(

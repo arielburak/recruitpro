@@ -590,6 +590,37 @@ export async function sendCandidateSharedEmail({
   });
 }
 
+export async function sendStaffingMemberWelcomeEmail({
+  to,
+  recipientName,
+  organizationName,
+  appUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  appUrl: string;
+}) {
+  // Sent after a teammate accepts an invite via /api/invite/[token].
+  // The invite mail asked them to set a password; this one closes
+  // the loop with "your account is live, here's the entry point"
+  // — symmetric to sendClientPortalWelcomeEmail. Without it the
+  // invited member never sees anything saying "you're verified",
+  // which surfaced as the "no se le manda nada para verificar?"
+  // doubt.
+  const subject = `Your ${appName} account is ready — ${organizationName}`;
+  const html = wrapTemplate(
+    `Welcome to ${organizationName} on ${appName}`,
+    `<p>Hi ${recipientName || "there"},</p>
+     <p>Your ${appName} account at <strong>${organizationName}</strong> is now active and your email has been confirmed. You can sign in any time at the link below.</p>
+     <p>From the dashboard you'll see the searches you're assigned to, candidates in flight, and your team's recent activity.</p>`,
+    appUrl,
+    "Open the dashboard",
+  );
+
+  return sendEmail({ to, subject, html });
+}
+
 export async function sendClientPortalWelcomeEmail({
   to,
   recipientName,
