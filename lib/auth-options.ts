@@ -472,25 +472,33 @@ export const authOptions: NextAuthOptions = {
       //      cost of one extra column on the same indexed lookup
       //      we were already doing.
       let liveEmailVerified: boolean | undefined = undefined;
+      // OAuth signup leaves `title` blank — Google profile doesn't
+      // carry a job title. We surface a flag on the session so the
+      // layouts can park the user on /complete-profile until they fill
+      // it in. Email/password signup and invite-accept both require
+      // title up-front, so the flag stays false for those paths.
+      let needsProfileCompletion = false;
       if (token?.id) {
         if (token.isClientUser) {
           const row = await prisma.clientUser.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true, emailVerifiedAt: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true, title: true, name: true },
           });
           if (!row || !row.isActive) {
             return null as any;
           }
           liveEmailVerified = !!row.emailVerifiedAt;
+          needsProfileCompletion = !row.title?.trim() || !row.name?.trim();
         } else {
           const row = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true, emailVerifiedAt: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true, title: true, name: true },
           });
           if (!row || !row.isActive) {
             return null as any;
           }
           liveEmailVerified = !!row.emailVerifiedAt;
+          needsProfileCompletion = !row.title?.trim() || !row.name?.trim();
         }
       }
 
@@ -503,6 +511,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).clientId = token.clientId;
         (session.user as any).clientName = token.clientName;
         (session.user as any).isClientUser = token.isClientUser;
+        (session.user as any).needsProfileCompletion = needsProfileCompletion;
         // Live DB flag wins over the cached token value so a user
         // who just verified doesn't need to log out and back in.
         (session.user as any).emailVerified =

@@ -1,12 +1,13 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Users2, Building2, Home } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
 
-const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password"];
+const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password", "/client-portal/complete-profile"];
 
 export default function ClientPortalLayout({
   children,
@@ -14,9 +15,25 @@ export default function ClientPortalLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
-  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates|engagements|my-team)[a-z0-9]+$/.test(pathname);
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || /^\/client-portal\/(?!dashboard|jobs|settings|candidates|engagements|my-team|complete-profile)[a-z0-9]+$/.test(pathname);
   const showNav = !isPublicPage;
+
+  // OAuth-only welcome step: when the signed-in user is missing
+  // name/title, push them to /client-portal/complete-profile before
+  // anything else loads. Manual signup + invite-accept fill these
+  // in-flow so this only fires for Google sign-ups (or anyone whose
+  // row got cleared). Not a hard block — they just land here first,
+  // submit once, normal access from then on.
+  useEffect(() => {
+    if (!session?.user) return;
+    const needs = (session.user as any).needsProfileCompletion;
+    if (!needs) return;
+    if (pathname === "/client-portal/complete-profile") return;
+    if (pathname === "/client-portal/login") return;
+    router.replace("/client-portal/complete-profile");
+  }, [session, pathname, router]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
