@@ -284,17 +284,14 @@ export default function PlacementsPage() {
     .filter((d): d is Date => d != null)
     .map((d) => d.getFullYear());
   const currentYear = today.getFullYear();
-  // Always offer a generous window backwards even when there's no
-  // data yet (fresh workspaces) or all the data is recent. Agencies
-  // that import historical placements need to be able to drill into
-  // last year, two years ago, etc. without the dropdown collapsing
-  // to a single option. Cap at 5 years back as the default floor.
-  const HISTORICAL_FLOOR = 5;
-  const earliestFromData =
-    placementYearValues.length > 0
-      ? Math.min(...placementYearValues)
-      : currentYear;
-  const earliestYear = Math.min(earliestFromData, currentYear - HISTORICAL_FLOOR);
+  // Year range derives from the data we actually have, plus the
+  // current year (so even an empty workspace has a usable option).
+  // No artificial floor: if every placement is from 2026, the only
+  // option is 2026. Agencies that import historical data expand
+  // the range backwards automatically.
+  const earliestYear = placementYearValues.length > 0
+    ? Math.min(...placementYearValues, currentYear)
+    : currentYear;
   const yearOptions: number[] = [];
   for (let y = currentYear; y >= earliestYear; y--) yearOptions.push(y);
 
