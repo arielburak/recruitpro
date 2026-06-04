@@ -60,7 +60,7 @@ async function findStaffingUserByOAuthEmail(email: string) {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM "User"
     WHERE LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
-      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '\.', '', 'g')) || '@gmail.com' = ${canonical}
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '[.]', '', 'g')) || '@gmail.com' = ${canonical}
     LIMIT 1
   `;
   if (rows.length === 0) return null;
@@ -79,7 +79,7 @@ async function findClientUserByOAuthEmail(email: string) {
     SELECT id FROM "ClientUser"
     WHERE "isActive" = true
       AND LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
-      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '\.', '', 'g')) || '@gmail.com' = ${canonical}
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '[.]', '', 'g')) || '@gmail.com' = ${canonical}
     LIMIT 1
   `;
   if (rows.length === 0) return null;
