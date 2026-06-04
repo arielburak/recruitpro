@@ -101,7 +101,7 @@ export function CandidateTableRow({ row, showJob = true, showFirm = true, asSeco
                   {fullName}
                 </p>
                 {showSearchPill && (
-                  <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-full shrink-0">
+                  <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">
                     in {totalSearches} searches
                   </span>
                 )}

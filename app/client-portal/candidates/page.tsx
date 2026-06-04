@@ -317,7 +317,7 @@ function ClientCandidatesPageInner() {
                                     return next;
                                   });
                                 }}
-                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                                className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
                               >
                                 {isExpanded ? (
                                   <ChevronDown className="h-3 w-3" />
