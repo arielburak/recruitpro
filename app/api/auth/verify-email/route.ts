@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
 
 // Marks the user as verified when the token from the verification
 // email is presented. Public endpoint — the only auth required is
@@ -19,8 +20,11 @@ export async function POST(request: Request) {
       where: { emailVerificationToken: token },
       select: {
         id: true,
+        name: true,
+        email: true,
         emailVerifiedAt: true,
         emailVerificationExpiresAt: true,
+        organization: { select: { name: true } },
       },
     });
 
@@ -58,6 +62,29 @@ export async function POST(request: Request) {
         emailVerificationExpiresAt: null,
       },
     });
+
+    // Welcome mail — sent on the FIRST successful verification only
+    // (the alreadyVerified branch above short-circuits before this
+    // update runs, so double-clicks don't double-send). Symmetric
+    // with the invite/set-password and OAuth flows so every account-
+    // activation path produces the same "your account is ready"
+    // confirmation in the inbox.
+    try {
+      const origin =
+        request.headers.get("origin") ||
+        process.env.NEXTAUTH_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      sendStaffingMemberWelcomeEmail({
+        to: user.email,
+        recipientName: user.name || "",
+        organizationName: user.organization?.name || "your workspace",
+        appUrl: `${origin}/login`,
+      }).catch((err) =>
+        console.error("[verify-email] welcome mail failed:", err),
+      );
+    } catch (err) {
+      console.error("[verify-email] welcome mail dispatch failed:", err);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

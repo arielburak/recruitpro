@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sendClientPortalWelcomeEmail } from "@/lib/email";
 
 // Marks a ClientUser as verified when the token from the verification
 // email is presented. Mirror of /api/auth/verify-email on the agency
@@ -19,8 +20,11 @@ export async function POST(request: Request) {
       where: { emailVerificationToken: token },
       select: {
         id: true,
+        name: true,
+        email: true,
         emailVerifiedAt: true,
         emailVerificationExpiresAt: true,
+        client: { select: { name: true } },
       },
     });
 
@@ -53,6 +57,28 @@ export async function POST(request: Request) {
         emailVerificationExpiresAt: null,
       },
     });
+
+    // Welcome mail. Same rule as the agency side: dispatch on the
+    // FIRST successful verification only (alreadyVerified branch
+    // returns above, so double-clicks don't double-send). Keeps
+    // the welcome experience consistent across signup-manual,
+    // invite/set-password, and OAuth.
+    try {
+      const origin =
+        request.headers.get("origin") ||
+        process.env.NEXTAUTH_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      sendClientPortalWelcomeEmail({
+        to: user.email,
+        recipientName: user.name || "",
+        clientName: user.client?.name || null,
+        portalUrl: `${origin}/client-portal/login`,
+      }).catch((err) =>
+        console.error("[client verify-email] welcome mail failed:", err),
+      );
+    } catch (err) {
+      console.error("[client verify-email] welcome mail dispatch failed:", err);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

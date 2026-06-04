@@ -194,6 +194,26 @@ export const authOptions: NextAuthOptions = {
               },
             });
           });
+          // Welcome mail — symmetric with the agency OAuth + the
+          // verify-email + the set-password flows. Every account
+          // activation path emits the same "your account is ready"
+          // confirmation.
+          try {
+            const baseUrl =
+              process.env.NEXTAUTH_URL ||
+              (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+            const { sendClientPortalWelcomeEmail } = await import("./email");
+            sendClientPortalWelcomeEmail({
+              to: user.email!,
+              recipientName: user.name || derivedName,
+              clientName: derivedName,
+              portalUrl: `${baseUrl}/client-portal/login`,
+            }).catch((err) =>
+              console.error("[client OAuth] welcome mail failed:", err),
+            );
+          } catch (err) {
+            console.error("[client OAuth] welcome mail dispatch failed:", err);
+          }
           return true;
         } catch (e) {
           console.error("[signIn] client portal OAuth auto-create failed:", e);
@@ -230,6 +250,28 @@ export const authOptions: NextAuthOptions = {
           },
         },
       });
+
+      // Welcome mail — sent on first OAuth sign-up so the user gets
+      // the same "your account is ready" experience as the manual
+      // signup (post-verify) and invite (post-accept) flows. The
+      // org name is still empty at this point because /onboarding
+      // captures it later; fall back to a friendly placeholder.
+      try {
+        const baseUrl =
+          process.env.NEXTAUTH_URL ||
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+        const { sendStaffingMemberWelcomeEmail } = await import("./email");
+        sendStaffingMemberWelcomeEmail({
+          to: user.email,
+          recipientName: user.name || "",
+          organizationName: "your workspace",
+          appUrl: `${baseUrl}/dashboard`,
+        }).catch((err) =>
+          console.error("[oauth signup] welcome mail failed:", err),
+        );
+      } catch (err) {
+        console.error("[oauth signup] welcome mail dispatch failed:", err);
+      }
 
       return true;
     },
