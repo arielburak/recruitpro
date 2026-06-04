@@ -46,32 +46,6 @@ export default function OrganizationSettingsPage() {
         helperText="Optional. Shown next to your firm's name in the sidebar. PNG, JPG, WEBP or SVG, max 2 MB."
         accentColor="indigo"
       />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Default Pipeline Stages</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-500">
-            Default stages applied to new jobs: Sourced, Internal Review,
-            Submitted, Interviewing, Offered, Placed, Lost, Rejected.
-            Each job can customize its own stages.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Client Portal</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-gray-500">
-            Generate shareable links for clients from any job&apos;s detail page.
-            Client users can also be invited with login credentials from the
-            client detail page.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 }
