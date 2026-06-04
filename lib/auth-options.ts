@@ -30,6 +30,65 @@ async function getOAuthPortal(): Promise<"client" | "staffing"> {
   }
 }
 
+// Gmail treats "first.last@gmail.com", "firstlast@gmail.com" and
+// "firstlast+tag@gmail.com" as the same mailbox — dots and +suffixes
+// are ignored. Our DB stores whatever address the inviter typed, but
+// Google OAuth always returns the dotless canonical form. Without this
+// normalization, a team member invited as "first.last@gmail.com" gets
+// a brand-new empty org spun up on their first Google sign-in because
+// the email lookup misses. Returns the canonical form for gmail.com /
+// googlemail.com addresses, otherwise lowercases and returns as-is.
+function canonicalizeGmail(email: string): string {
+  const lower = email.trim().toLowerCase();
+  const [local, domain] = lower.split("@");
+  if (!local || !domain) return lower;
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return lower;
+  const cleaned = local.split("+")[0].replace(/\./g, "");
+  return `${cleaned}@gmail.com`;
+}
+
+// Find a staffing User by email, tolerant of Gmail dot/+tag aliases.
+// Exact match wins; the canonical-form scan is the fallback so a row
+// stored as "first.last@gmail.com" still matches when Google hands us
+// "firstlast@gmail.com". Skipped entirely for non-Gmail domains since
+// only Gmail aliases dots and +tags — for other providers the exact
+// lookup is authoritative.
+async function findStaffingUserByOAuthEmail(email: string) {
+  const exact = await prisma.user.findUnique({ where: { email } });
+  if (exact) return exact;
+  const domain = email.toLowerCase().split("@")[1] || "";
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return null;
+  const canonical = canonicalizeGmail(email);
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "User"
+    WHERE LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '[.]', '', 'g')) || '@gmail.com' = ${canonical}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return prisma.user.findUnique({ where: { id: rows[0].id } });
+}
+
+// Mirror of findStaffingUserByOAuthEmail for ClientUser.
+async function findClientUserByOAuthEmail(email: string) {
+  const exact = await prisma.clientUser.findFirst({
+    where: { email, isActive: true },
+  });
+  if (exact) return exact;
+  const domain = email.toLowerCase().split("@")[1] || "";
+  if (domain !== "gmail.com" && domain !== "googlemail.com") return null;
+  const canonical = canonicalizeGmail(email);
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "ClientUser"
+    WHERE "isActive" = true
+      AND LOWER(SPLIT_PART(email, '@', 2)) IN ('gmail.com', 'googlemail.com')
+      AND LOWER(REGEXP_REPLACE(SPLIT_PART(SPLIT_PART(email, '@', 1), '+', 1), '[.]', '', 'g')) || '@gmail.com' = ${canonical}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return prisma.clientUser.findUnique({ where: { id: rows[0].id } });
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
@@ -146,65 +205,23 @@ export const authOptions: NextAuthOptions = {
       const portal = await getOAuthPortal();
 
       // === Client portal OAuth flow ===
-      // Existing ClientUsers sign in directly. Brand-new emails get a
-      // stub Client + ClientUser auto-created so OAuth isn't a
-      // dead-end for hiring companies that never received an invite.
-      // The stub flag stays true until they fill in real company info
-      // via the onboarding banner on /client-portal/dashboard.
+      // Invite-only. The portal exists for hiring companies that an
+      // agency has explicitly added — they're the end user, not the
+      // paying customer, so self-signup would dilute the funnel and
+      // create orphan companies with no agency context. Reject Google
+      // sign-ins from emails that don't already have an active
+      // ClientUser row (which means: an agency invited them, an admin
+      // promoted them, or they activated via set-password).
       if (portal === "client") {
-        const existing = await prisma.clientUser.findFirst({
-          where: { email: user.email, isActive: true },
-        });
+        const existing = await findClientUserByOAuthEmail(user.email);
         if (existing) return true;
-
-        const derivedName = deriveCompanyNameFromEmail(user.email);
-        try {
-          await prisma.$transaction(async (tx) => {
-            const client = await tx.client.create({
-              data: {
-                name: derivedName,
-                isStub: true,
-                // No agency owns this — it's a client-portal-self
-                // signup. organizationId stays null; engagements come
-                // later when a recruiter invites them to a job.
-                organizationId: null,
-                contactEmail: user.email!,
-                contactName: user.name || null,
-              },
-            });
-            await tx.clientPipelineStage.createMany({
-              data: (await import("./constants")).DEFAULT_STAGES.map((s, i) => ({
-                name: s.name,
-                order: i,
-                color: s.color,
-                isTerminal: s.isTerminal,
-                kind: s.kind,
-                clientId: client.id,
-              })),
-            });
-            await tx.clientUser.create({
-              data: {
-                email: user.email!,
-                name: user.name || derivedName,
-                clientId: client.id,
-                role: "ADMIN",
-                // Google's already verified the address — no need to
-                // send a separate verify-email mail.
-                emailVerifiedAt: new Date(),
-              },
-            });
-          });
-          return true;
-        } catch (e) {
-          console.error("[signIn] client portal OAuth auto-create failed:", e);
-          return "/client-portal/login?error=signup-failed";
-        }
+        // No invite on file → bounce back to the login screen with a
+        // clear "you need to be invited" message.
+        return "/client-portal/login?error=not-invited";
       }
 
       // === Staffing portal OAuth flow (default) ===
-      const existingUser = await prisma.user.findUnique({
-        where: { email: user.email },
-      });
+      const existingUser = await findStaffingUserByOAuthEmail(user.email);
 
       if (existingUser) return true;
 
@@ -230,6 +247,28 @@ export const authOptions: NextAuthOptions = {
           },
         },
       });
+
+      // Welcome mail — sent on first OAuth sign-up so the user gets
+      // the same "your account is ready" experience as the manual
+      // signup (post-verify) and invite (post-accept) flows. The
+      // org name is still empty at this point because /onboarding
+      // captures it later; fall back to a friendly placeholder.
+      try {
+        const baseUrl =
+          process.env.NEXTAUTH_URL ||
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+        const { sendStaffingMemberWelcomeEmail } = await import("./email");
+        sendStaffingMemberWelcomeEmail({
+          to: user.email,
+          recipientName: user.name || "",
+          organizationName: "your workspace",
+          appUrl: `${baseUrl}/dashboard`,
+        }).catch((err) =>
+          console.error("[oauth signup] welcome mail failed:", err),
+        );
+      } catch (err) {
+        console.error("[oauth signup] welcome mail dispatch failed:", err);
+      }
 
       return true;
     },
@@ -286,10 +325,15 @@ export const authOptions: NextAuthOptions = {
         const portal = await getOAuthPortal();
 
         if (portal === "client") {
-          const dbClient = await prisma.clientUser.findFirst({
-            where: { email: user.email!, isActive: true },
-            include: { client: true },
-          });
+          // Use the canonicalized lookup so dotted-Gmail invitees match
+          // their existing row, then re-fetch with the `client` relation.
+          const matched = await findClientUserByOAuthEmail(user.email!);
+          const dbClient = matched
+            ? await prisma.clientUser.findUnique({
+                where: { id: matched.id },
+                include: { client: true },
+              })
+            : null;
           if (dbClient) {
             // Google has already verified the address on its side, so
             // backfill emailVerifiedAt on first OAuth sign-in if it
@@ -320,10 +364,15 @@ export const authOptions: NextAuthOptions = {
             token.needsOnboarding = undefined;
           }
         } else {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: user.email! },
-            include: { organization: true },
-          });
+          // Canonicalized lookup so dotted-Gmail invitees match the
+          // existing row, then re-fetch with the `organization` relation.
+          const matched = await findStaffingUserByOAuthEmail(user.email!);
+          const dbUser = matched
+            ? await prisma.user.findUnique({
+                where: { id: matched.id },
+                include: { organization: true },
+              })
+            : null;
           if (dbUser) {
             token.id = dbUser.id;
             token.role = dbUser.role;
@@ -365,25 +414,33 @@ export const authOptions: NextAuthOptions = {
       //      cost of one extra column on the same indexed lookup
       //      we were already doing.
       let liveEmailVerified: boolean | undefined = undefined;
+      // OAuth signup leaves `title` blank — Google profile doesn't
+      // carry a job title. We surface a flag on the session so the
+      // layouts can park the user on /complete-profile until they fill
+      // it in. Email/password signup and invite-accept both require
+      // title up-front, so the flag stays false for those paths.
+      let needsProfileCompletion = false;
       if (token?.id) {
         if (token.isClientUser) {
           const row = await prisma.clientUser.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true, emailVerifiedAt: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true, title: true, name: true },
           });
           if (!row || !row.isActive) {
             return null as any;
           }
           liveEmailVerified = !!row.emailVerifiedAt;
+          needsProfileCompletion = !row.title?.trim() || !row.name?.trim();
         } else {
           const row = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { id: true, isActive: true, emailVerifiedAt: true },
+            select: { id: true, isActive: true, emailVerifiedAt: true, title: true, name: true },
           });
           if (!row || !row.isActive) {
             return null as any;
           }
           liveEmailVerified = !!row.emailVerifiedAt;
+          needsProfileCompletion = !row.title?.trim() || !row.name?.trim();
         }
       }
 
@@ -396,6 +453,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).clientId = token.clientId;
         (session.user as any).clientName = token.clientName;
         (session.user as any).isClientUser = token.isClientUser;
+        (session.user as any).needsProfileCompletion = needsProfileCompletion;
         // Live DB flag wins over the cached token value so a user
         // who just verified doesn't need to log out and back in.
         (session.user as any).emailVerified =

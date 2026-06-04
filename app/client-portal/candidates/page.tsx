@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Users, Search, Briefcase, Filter } from "lucide-react";
 import {
+  CandidateMultiSearchRow,
   CandidateTableRow,
   type CandidateRow,
 } from "@/components/client-portal/candidate-row";
@@ -125,6 +126,26 @@ function ClientCandidatesPageInner() {
     (firmFilter !== "all" ? 1 : 0) +
     (clientJobIdFilter ? 1 : 0);
 
+  // Group submissions by candidate. The same candidate shared into N
+  // jobs used to render as N rows in the table (e.g. "Bob — Backend",
+  // "Bob — SWE 2.0", "Bob — Associate"); the header count also
+  // double-counted. We now keep the server-side flat list (the table
+  // logic stays simple) but collapse it into one row per candidate at
+  // render time. Additional submissions live behind an expand
+  // toggle so the recruiter can drill in when needed without us
+  // shouting "3 candidates" when it's really 1.
+  type Grouped = { candidateId: string; rows: CandidateRow[] };
+  const groupedRows = useMemo<Grouped[]>(() => {
+    const map = new Map<string, Grouped>();
+    for (const r of rows) {
+      const id = r.candidate.id;
+      const g = map.get(id);
+      if (g) g.rows.push(r);
+      else map.set(id, { candidateId: id, rows: [r] });
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
   function clearFilters() {
     setJobFilter("all");
     setStageFilter("all");
@@ -160,7 +181,9 @@ function ClientCandidatesPageInner() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Candidates</h1>
             <p className="text-gray-500 text-sm">
-              {loading ? "Loading..." : `${rows.length} candidate${rows.length === 1 ? "" : "s"} shared with you`}
+              {loading
+                ? "Loading..."
+                : `${groupedRows.length} candidate${groupedRows.length === 1 ? "" : "s"} shared with you`}
             </p>
           </div>
         </div>
@@ -265,13 +288,28 @@ function ClientCandidatesPageInner() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <CandidateTableRow
-                    key={row.submissionId}
-                    row={row}
-                    onRated={refetch}
-                  />
-                ))}
+                {groupedRows.map((group) => {
+                  // Single-submission candidate → normal row. Multi-
+                  // submission candidate → super-row that shows the
+                  // identity once and stacks the N searches as
+                  // mini-rows in the right cell, picked by the user
+                  // over the previous expand-on-click variant.
+                  if (group.rows.length === 1) {
+                    return (
+                      <CandidateTableRow
+                        key={group.rows[0].submissionId}
+                        row={group.rows[0]}
+                        onRated={refetch}
+                      />
+                    );
+                  }
+                  return (
+                    <CandidateMultiSearchRow
+                      key={group.candidateId}
+                      rows={group.rows}
+                    />
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

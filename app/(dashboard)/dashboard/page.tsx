@@ -43,12 +43,19 @@ export const revalidate = 0;
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.organizationId;
+  const userId = session?.user?.id as string | undefined;
 
   if (!orgId) return null;
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  // Strict assignment-based visibility — admins included. Mirrors the
+  // rule in /api/jobs and lib/.../canAccessJob: if the user isn't on
+  // the job's assignment list, the job doesn't count here. Stops the
+  // "Active Searches" tile from surfacing work the user can't open.
+  const jobAccessFilter = { assignments: { some: { userId } } };
 
   // Org age drives the first-week migration banner (see MigrateBanner).
   // We fetch this outside the Promise.all so the banner can render
@@ -81,7 +88,11 @@ export default async function DashboardPage() {
     recentSubmissions,
   ] = await Promise.all([
     prisma.job.count({
-      where: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } },
+      where: {
+        organizationId: orgId,
+        status: { in: ["OPEN", "ACTIVE"] },
+        ...jobAccessFilter,
+      },
     }),
     prisma.candidate.count({ where: { organizationId: orgId } }),
     prisma.candidateSubmission.count({

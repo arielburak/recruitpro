@@ -125,6 +125,15 @@ export function parseResumeText(text: string, fileName?: string): Record<string,
     const dialFromCountry = inferDialCodeFromText(signalText);
     let inferred: string | null = dialFromCountry;
     if (!inferred && AR_HINTS.test(signalText)) inferred = "+54";
+    // Spelled-out US state names anywhere in the signal text are
+    // unambiguous (vs the 2-letter codes which collide with random
+    // tokens). Covers "California SBN", "Texas Bar #...", "Admitted
+    // in New York" etc., common in US legal/medical resumes.
+    if (!inferred && US_STATE_NAMES.test(signalText)) inferred = "+1";
+    // Major US cities are also a confident signal — used to recover
+    // +1 from CVs whose contact line says "Los Angeles" without ever
+    // spelling out the state.
+    if (!inferred && US_CITY_HINTS.test(signalText)) inferred = "+1";
     if (!inferred && US_HINTS.test(result.location || "")) inferred = "+1";
     if (inferred) {
       result.phone = `${inferred} ${result.phone}`;
@@ -139,7 +148,15 @@ export function parseResumeText(text: string, fileName?: string): Record<string,
   );
   if (expSectionIndex >= 0) {
     const afterExp = lines.slice(expSectionIndex + 1);
-    extractCurrentRole(afterExp, result);
+    // US-traditional format wins when present — "Company, LLP – City
+    // Mon YYYY – Present" on one line, "Title, Full-Time" on the next.
+    // This is the dominant US resume shape (legal, consulting, banking,
+    // most "old-school" templates). When it doesn't match we fall back
+    // to the LinkedIn-style extractor that handles company/title/date
+    // each on their own line.
+    if (!extractTraditionalUSRole(afterExp, result)) {
+      extractCurrentRole(afterExp, result);
+    }
   }
 
   // Headline fallback — many CVs put "<Title> at <Company>" in the header
@@ -241,6 +258,8 @@ export function parseResumeText(text: string, fileName?: string): Record<string,
 //   "John Smith, PhD"                → "John Smith"
 //   "Mary O'Brien, MBA, CFA"         → "Mary O'Brien"
 //   "Sr. Engineer | John Smith"      → "John Smith"
+//   "Dr. John Smith"                 → "John Smith"
+//   "Smith, John"                    → "John Smith"  (academic order)
 function stripNameLineNoise(line: string): string {
   let s = line;
   // Pronouns in parentheses (he/him, she/her, they/them + ES variants)
@@ -248,9 +267,19 @@ function stripNameLineNoise(line: string): string {
     /\s*\((?:he|she|they|him|her|them|[ée]l|ella|ellos|ellas)\s*\/\s*(?:he|she|they|him|her|them|[ée]l|ella|ellos|ellas)\)\s*/gi,
     " ",
   );
-  // Trailing credentials after a comma: "John Smith, PhD, MBA, CFA"
+  // Trailing credentials after a comma: "John Smith, PhD, MBA, CFA".
+  // Multiple credentials chain together so the regex eats everything
+  // from the first credential to the end of line.
   s = s.replace(
     /,\s*(?:Ph\.?\s*D\.?|MBA|J\.?\s*D\.?|M\.?\s*D\.?|CFA|CPA|Esq\.?|RN|P\.?\s*E\.?|PMP|CISSP|CCNA|CCNP|CISA|CRISC|CIA|FRM|CMA|CFP|CISM|AICP|RA|LEED(?:\s*AP)?|MSc?|BSc?|MA|BA|BS|MS|MEng|BEng|FACS|FAAP|FACEP)\b.*$/i,
+    "",
+  );
+  // Leading honorifics: "Dr. John Smith" / "Prof. John Smith" /
+  // "Mr. John Smith" / "Sr. Juan Pérez". Conservative list — only
+  // strip ones that are unambiguous prefixes (not "Sir" which is rare
+  // and ambiguous).
+  s = s.replace(
+    /^(?:Dr|Mr|Mrs|Ms|Mx|Prof|Rev|Hon|Ing|Lic|Arq|Sr|Sra|Srta)\.?\s+/i,
     "",
   );
   // Title-on-the-left split by pipe: "Sr. Engineer | John Smith".
@@ -259,6 +288,14 @@ function stripNameLineNoise(line: string): string {
   if (s.split("|").length === 2) {
     const right = s.split("|")[1].trim();
     if (right) s = right;
+  }
+  // Academic / "phonebook" order: "Smith, John" → "John Smith".
+  // Only flip when both halves look like name parts (1–2 words each,
+  // every word title-cased) so we don't accidentally swallow "Smith,
+  // Counsel at Lewis & Co" or "Software Engineer, Senior".
+  const commaFlip = s.match(/^([A-ZÀ-Ú][\p{L}.'\-]+(?:\s+[A-ZÀ-Ú][\p{L}.'\-]+)?)\s*,\s*([A-ZÀ-Ú][\p{L}.'\-]+(?:\s+[A-ZÀ-Ú][\p{L}.'\-]+)?)$/u);
+  if (commaFlip) {
+    s = `${commaFlip[2]} ${commaFlip[1]}`;
   }
   return s.trim();
 }
@@ -272,10 +309,12 @@ function asNameParts(line: string): string[] | null {
   const parts = line.split(/\s+/).filter((p) => p.length >= 1);
   if (parts.length < 2 || parts.length > 5) return null;
 
-  const titleCase = /^[A-ZÀ-Ú][a-zA-ZÀ-ÿ.''-]*\.?$/u;
-  const allCaps = /^[A-ZÀ-Ú][A-ZÀ-Ú.''-]*\.?$/u;
-  // Middle initial like "A." or "J."
-  const initial = /^[A-ZÀ-Ú]\.?$/u;
+  // Allow Unicode letters, ASCII + curly apostrophes, periods, hyphens.
+  // \p{Lu} covers uppercase incl. accented (Á, Ñ, É…), \p{L} covers any
+  // letter — using both is robust across LATAM / EU / Asian-Latin names.
+  const titleCase = /^\p{Lu}[\p{L}.''‘’\-]*\.?$/u;
+  const allCaps = /^\p{Lu}[\p{Lu}.''‘’\-]*\.?$/u;
+  const initial = /^\p{Lu}\.?$/u;
 
   const matches = (p: string) =>
     titleCase.test(p) || allCaps.test(p) || initial.test(p);
@@ -588,6 +627,13 @@ function inferDialCodeFromText(text: string): string | null {
 // strong-enough signal even when "Argentina" isn't spelled out.
 const AR_HINTS = /\b(CABA|Capital Federal|Buenos Aires|C\.A\.B\.A|Córdoba|Rosario|Mendoza|Tucumán|Santa Fe|Salta|Mar del Plata|La Plata)\b/i;
 const US_HINTS = US_STATES;
+// Spelled-out US state names only — safe to use against the full
+// document text because they don't collide with random tokens (unlike
+// 2-letter codes "AR", "CA", "MA").
+const US_STATE_NAMES = /\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)\b/;
+// Major US cities — sufficient confidence to imply +1 even without
+// a state mention.
+const US_CITY_HINTS = /\b(New York|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Austin|Jacksonville|San Francisco|Columbus|Indianapolis|Fort Worth|Charlotte|Seattle|Denver|Nashville|Oklahoma City|El Paso|Boston|Portland|Las Vegas|Memphis|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Mesa|Kansas City|Atlanta|Omaha|Colorado Springs|Raleigh|Long Beach|Virginia Beach|Miami|Oakland|Minneapolis|Tampa|Tulsa|Arlington|New Orleans|Brooklyn|Manhattan|Queens|Bronx)\b/;
 
 /**
  * Extract location with multiple strategies, prioritizing the header area.
@@ -603,6 +649,53 @@ function extractLocation(lines: string[], result: Record<string, any>) {
     if (labelMatch) {
       result.location = labelMatch[1].trim().replace(/[|•·,]+$/, "").trim();
       return;
+    }
+  }
+
+  // Strategy 1.5: US-style contact lines pack city/state on the same
+  // line as phone + email ("Los Angeles, CA | (555) 123-4567 |
+  // jane@x.com"). The line-level loops below skip it wholesale because
+  // of "@" — split by pipe / bullet / middot first and scan each
+  // segment for a location signal.
+  for (const line of headerLines) {
+    if (SECTION_HEADINGS.test(line)) break;
+    const segments = line.split(/\s*[|•·]\s*/);
+    if (segments.length < 2) continue;
+    for (const raw of segments) {
+      const seg = raw.trim();
+      if (!seg || seg.length > 60) continue;
+      if (seg.includes("@")) continue;
+      if (/https?:\/\/|www\.|linkedin\.com/i.test(seg)) continue;
+      if (/\d{3}.*\d{3}/.test(seg)) continue; // phone
+      if (TECH_WORDS.test(seg)) continue;
+
+      // "Los Angeles, CA" / "Buenos Aires, Argentina"
+      const cityState = seg.match(/^([A-ZÀ-Ú][a-zA-ZÀ-ÿ.\s]+?),\s*([A-Z]{2}|[A-ZÀ-Ú][a-zA-ZÀ-ÿ]+)$/);
+      if (cityState) {
+        const right = cityState[2];
+        const left = cityState[1];
+        if (
+          US_STATES.test(right) ||
+          AR_PROVINCES.test(right) ||
+          KNOWN_LOCATIONS.test(right) ||
+          KNOWN_LOCATIONS.test(left)
+        ) {
+          result.location = seg;
+          return;
+        }
+      }
+
+      // Standalone known city / state.
+      const known = seg.match(KNOWN_LOCATIONS);
+      if (known && seg.length < 40) {
+        result.location = known[0];
+        return;
+      }
+      const stateName = seg.match(US_STATE_NAMES);
+      if (stateName && seg.length < 40) {
+        result.location = stateName[0];
+        return;
+      }
     }
   }
 
@@ -767,6 +860,102 @@ function extractCurrentRole(lines: string[], result: Record<string, any>) {
       return;
     }
   }
+}
+
+// Traditional US resume "role header" — the canonical legal/banking/
+// consulting layout where each job stacks like:
+//
+//   Lewis Brisbois Bisgaard & Smith, LLP – Los Angeles      Mar 2025 – Present
+//   Associate Attorney, Full-Time
+//   • bullet
+//
+// Date range on the right anchors the parse. Left of it is "<Company>
+// – <Location>" (the dash is a real en-dash in most templates, plain
+// hyphen in others). The line immediately below carries the title,
+// often suffixed with employment type (", Full-Time" / ", Part-Time").
+// We only consume the FIRST matching block so currentTitle / currentCompany
+// reflect the most recent role.
+function extractTraditionalUSRole(
+  expLines: string[],
+  result: Record<string, any>,
+): boolean {
+  const dateRangeRe =
+    /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})\s*[–—\-]\s*(Present|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})\b/i;
+
+  for (let i = 0; i < Math.min(expLines.length, 30); i++) {
+    const line = expLines[i];
+    const m = dateRangeRe.exec(line);
+    if (!m) continue;
+    // Skip bullets — a date range inside a bullet point isn't a job
+    // header (e.g. "• Promoted to Senior in Jan 2024").
+    if (/^[•·\-*]/.test(line.trim())) continue;
+
+    // Slice off the date range; what's left is "<Company>" or
+    // "<Company> – <Location>".
+    const leftSide = line
+      .slice(0, m.index)
+      .replace(/[\s|•·,;:\-–—]+$/, "")
+      .trim();
+    if (!leftSide || leftSide.length < 3) continue;
+
+    // Try splitting "<Company> – <Location>" on the LAST dash separator.
+    // Only treat the right side as a location if it looks like one;
+    // otherwise the dash is part of the company name (rare but real).
+    let company = leftSide;
+    let locationFromHeader = "";
+    const sepMatch = leftSide.match(/^(.+?)\s+[–—\-]\s+([^–—\-]+)$/);
+    if (sepMatch) {
+      const before = sepMatch[1].trim();
+      const after = sepMatch[2].trim();
+      const looksLikeLocation =
+        US_STATES.test(after) ||
+        KNOWN_LOCATIONS.test(after) ||
+        /^Remote$/i.test(after) ||
+        /^[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*(?:\s*&\s*Remote)?$/.test(after);
+      if (before && after && looksLikeLocation) {
+        company = before;
+        locationFromHeader = after.replace(/\s*&\s*Remote$/i, "").trim();
+      }
+    }
+
+    company = cleanCompanyName(company);
+    if (!company || company.length < 3) continue;
+    // Long sentences aren't company names — guard against the regex
+    // accidentally swallowing a multi-line bullet.
+    if (company.split(/\s+/).length > 15) continue;
+
+    // Title sits on the next non-empty, non-bullet line.
+    let title = "";
+    for (let j = i + 1; j < Math.min(expLines.length, i + 5); j++) {
+      const next = expLines[j].trim();
+      if (!next) continue;
+      if (/^[•·\-*]/.test(next)) break;
+      if (SECTION_HEADINGS.test(next)) break;
+      // Strip employment-type suffix ("Associate Attorney, Full-Time")
+      // and any parenthetical qualifiers ("Law Clerk, Part-Time (2L,
+      // 3L)…"). Keep the role itself.
+      const stripped = next
+        .replace(
+          /,\s*(?:Full[-\s]?Time|Part[-\s]?Time|Contract|Contractor|Internship|Intern|Temp(?:orary)?|Permanent|Remote|Freelance|Consultant|Summer)\b.*$/i,
+          "",
+        )
+        .trim();
+      if (HAS_DATE.test(stripped)) continue;
+      if (stripped.length === 0 || stripped.length > 100) continue;
+      title = stripped;
+      break;
+    }
+
+    if (!title) continue;
+
+    result.currentTitle = title;
+    result.currentCompany = company;
+    if (locationFromHeader && !result.location) {
+      result.location = locationFromHeader;
+    }
+    return true;
+  }
+  return false;
 }
 
 /**

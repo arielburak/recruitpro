@@ -319,6 +319,7 @@ export default function CandidateDetailPage({
             submissionId={detail.submissionId}
             comments={detail.comments as any}
             onCommentAdded={fetchDetail}
+            firmName={detail.firm?.name}
           />
         </div>
 

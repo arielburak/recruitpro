@@ -4,34 +4,27 @@ import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 
-// A job is "private" when it was born from a person-level client-portal
-// invite: at least one FirmEngagement row points at it with invitedUserId
-// set. Private jobs are visible only to their assignees, even to firm
-// admins. Legacy or directly-created jobs (no such engagements) keep
-// the old behaviour — admins see everything, non-admins need an
-// assignment.
+// Job visibility is strictly assignment-based: everyone — admins
+// included — needs an explicit JobAssignment row to see / mutate the
+// job. The `role` argument stays in the signature so callers don't
+// have to rewire, but it no longer grants a bypass. Public/private
+// distinction is irrelevant here; the GET handler still loads
+// firmEngagements separately for the legacy mention/engagement
+// fallback grants below.
 async function canAccessJob(
   jobId: string,
   organizationId: string,
   userId: string,
-  role: "ADMIN" | "USER"
+  _role: "ADMIN" | "USER"
 ): Promise<boolean> {
   const job = await prisma.job.findFirst({
     where: { id: jobId, organizationId },
     select: {
       assignments: { where: { userId }, select: { userId: true } },
-      firmEngagements: {
-        where: { invitedUserId: { not: null } },
-        select: { id: true },
-        take: 1,
-      },
     },
   });
   if (!job) return false;
-  const isAssigned = job.assignments.length > 0;
-  const isPrivate = job.firmEngagements.length > 0;
-  if (isPrivate) return isAssigned;
-  return role === "ADMIN" || isAssigned;
+  return job.assignments.length > 0;
 }
 
 export async function GET(
@@ -49,11 +42,6 @@ export async function GET(
         stages: { orderBy: { order: "asc" } },
         assignments: { include: { user: { select: { id: true, name: true } } } },
         documents: { orderBy: { createdAt: "desc" } },
-        firmEngagements: {
-          where: { invitedUserId: { not: null } },
-          select: { id: true },
-          take: 1,
-        },
         submissions: {
           include: {
             candidate: {
@@ -132,11 +120,10 @@ export async function GET(
     }
 
     const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
-    const isPrivate = job.firmEngagements.length > 0;
 
-    // Fallback access paths for when the cheap gates above would
-    // 404. Both consulted only on the deny path so the happy path
-    // stays one query.
+    // Fallback access paths for when assignment alone would 404. Both
+    // consulted only on the deny path so the happy path stays one
+    // query.
     //
     //   1. Mention-based: if the recruiter was arrobado in any
     //      comment on this job, let them read it. Otherwise the
@@ -153,7 +140,7 @@ export async function GET(
     //      /engagements/[clientId] dead-ends in 404.
     let mentioned = false;
     let engaged = false;
-    if (!isAssigned && (isPrivate || ctx.role !== "ADMIN")) {
+    if (!isAssigned) {
       const [m, e] = await Promise.all([
         prisma.comment.findFirst({
           where: { jobId: id, mentions: { has: ctx.userId } },
@@ -169,16 +156,11 @@ export async function GET(
     }
 
     const hasAccess = isAssigned || mentioned || engaged;
-    if (isPrivate) {
-      if (!hasAccess) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    } else if (ctx.role !== "ADMIN" && !hasAccess) {
+    if (!hasAccess) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Strip the privacy marker we only loaded to make the decision — the
-    // client doesn't need that noise.
-    const { firmEngagements: _drop, ...jobForClient } = job as any;
-    return NextResponse.json(jobForClient);
+    return NextResponse.json(job);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }

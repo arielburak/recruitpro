@@ -160,9 +160,32 @@ export async function PUT(
 
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Resolve candidate + job for the activity log. The recent activity
+    // strip surfaces this verbatim, so a raw cuid here ("Updated placement
+    // cmpx39us...") reads as noise. A human label keeps the feed scannable.
+    const placementForLog = await prisma.placement.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: {
+        submission: {
+          select: {
+            candidate: { select: { firstName: true, lastName: true } },
+          },
+        },
+        job: { select: { title: true } },
+      },
+    });
+    const candidateName = placementForLog?.submission?.candidate
+      ? `${placementForLog.submission.candidate.firstName} ${placementForLog.submission.candidate.lastName}`.trim()
+      : "";
+    const jobTitle = placementForLog?.job?.title || "";
+    const label =
+      candidateName && jobTitle
+        ? `${candidateName} · ${jobTitle}`
+        : candidateName || jobTitle || id;
+
     await logActivity({
       action: "PLACEMENT_UPDATED",
-      description: `Updated placement ${id}${invoiceStatus ? ` - invoice status: ${invoiceStatus}` : ""}`,
+      description: `Updated placement for ${label}${invoiceStatus ? ` — invoice status: ${invoiceStatus}` : ""}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
@@ -188,7 +211,17 @@ export async function DELETE(
     // losing one but not the other leaves an inconsistent UI.)
     const placement = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
-      select: { id: true, submissionId: true, jobId: true },
+      select: {
+        id: true,
+        submissionId: true,
+        jobId: true,
+        submission: {
+          select: {
+            candidate: { select: { firstName: true, lastName: true } },
+          },
+        },
+        job: { select: { title: true } },
+      },
     });
 
     if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -231,9 +264,18 @@ export async function DELETE(
 
     await prisma.placement.delete({ where: { id } });
 
+    const candidateName = placement.submission?.candidate
+      ? `${placement.submission.candidate.firstName} ${placement.submission.candidate.lastName}`.trim()
+      : "";
+    const jobTitle = placement.job?.title || "";
+    const label =
+      candidateName && jobTitle
+        ? `${candidateName} · ${jobTitle}`
+        : candidateName || jobTitle || id;
+
     await logActivity({
       action: "PLACEMENT_DELETED",
-      description: `Deleted placement ${id}`,
+      description: `Deleted placement for ${label}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });

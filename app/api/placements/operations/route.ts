@@ -11,16 +11,22 @@ import { getOrgContext } from "@/lib/tenant";
 //                             is on the same payload so the UI can
 //                             tease it as a sublabel.
 //   * guaranteesExpiring    — placements with guaranteeExpiry in the
-//                             next 30 days (and not already past).
+//                             next 60 days (and not already past).
 //   * startingNext30Days    — Any placement (HH or OS) whose
 //                             startDate or estimatedStartDate lands
-//                             in the next 30 days. Surface for
-//                             "who's coming in and when" — applies
-//                             to both kinds: HH for proactive
-//                             invoicing, OS for resource handoff.
-//   * mrrAtRisk             — OS placements that ENDED in the last
-//                             30 days. Sublabel carries the lost
-//                             MRR sum (monthlyFee total).
+//                             in the next 60 days. (Field name kept
+//                             as Next30Days for backwards-compat with
+//                             callers; window itself is 60 now.)
+//                             Surface for "who's coming in and when"
+//                             — applies to both kinds: HH for
+//                             proactive invoicing, OS for resource
+//                             handoff.
+//   * mrrAtRisk             — OS placements whose endDate falls in
+//                             the NEXT 60 days. This is MRR we're
+//                             ABOUT to lose unless the engagement
+//                             is renewed — actionable, not historic.
+//                             Sublabel carries the sum of monthly
+//                             fees at stake.
 //
 // All four predicates also feed /api/placements/operations/details
 // so the click-through lists stay in sync with the headline counts.
@@ -31,9 +37,9 @@ export async function GET() {
     const now = new Date();
     const orgId = ctx.organizationId;
 
-    const guaranteeWindowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const startWindowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const mrrLookbackStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const guaranteeWindowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+    const startWindowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+    const mrrEndingWindowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
     const [
       paymentsOverdueRows,
@@ -82,7 +88,7 @@ export async function GET() {
         where: {
           organizationId: orgId,
           kind: "OS",
-          endDate: { gte: mrrLookbackStart, lte: now },
+          endDate: { gte: now, lte: mrrEndingWindowEnd },
         },
         select: { monthlyFee: true, currency: true },
       }),
@@ -95,7 +101,9 @@ export async function GET() {
       (sum, p) => sum + (p.feeAmount ? Number(p.feeAmount) : 0),
       0,
     );
-    const mrrLost = mrrAtRiskRows.reduce(
+    // Sum of monthly fees that are about to disappear unless the
+    // engagements get renewed. Surfaced as the tile sublabel.
+    const mrrAtRiskAmount = mrrAtRiskRows.reduce(
       (sum, p) => sum + (p.monthlyFee ? Number(p.monthlyFee) : 0),
       0,
     );
@@ -106,10 +114,10 @@ export async function GET() {
       guaranteesExpiring,
       startingNext30Days,
       mrrAtRisk: mrrAtRiskRows.length,
-      mrrLost,
+      mrrAtRiskAmount,
       guaranteeWindowEnd: guaranteeWindowEnd.toISOString(),
       startWindowEnd: startWindowEnd.toISOString(),
-      mrrLookbackStart: mrrLookbackStart.toISOString(),
+      mrrEndingWindowEnd: mrrEndingWindowEnd.toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });

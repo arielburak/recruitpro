@@ -20,6 +20,11 @@ export async function GET(request: NextRequest) {
     const q = (params.get("q") || "").trim();
     const submissionId = params.get("submissionId") || "";
     const clientJobId = params.get("clientJobId") || "";
+    // Optional: when the ClientJob has multiple accepted engagements,
+    // the chat tab the user is on knows which agency-side Job is the
+    // target. Passing it here scopes the staffing-side mentions to
+    // that firm's assignees only.
+    const agencyJobIdParam = params.get("agencyJobId") || "";
 
     const results: Array<{ id: string; name: string; email: string; kind: "client" | "staffing"; title?: string | null }> = [];
 
@@ -102,11 +107,16 @@ export async function GET(request: NextRequest) {
         });
         if (sub) staffingOrgId = sub.job.organizationId;
       } else if (clientJobId) {
+        // If the chat tab knows which firm is targeted, scope the
+        // engagement lookup to that specific Job. Otherwise fall
+        // back to the first accepted engagement (the JO has only
+        // one — the multi-firm case is handled by the caller
+        // passing agencyJobId explicitly).
         const engagement = await prisma.firmEngagement.findFirst({
           where: {
             clientJobId,
             status: "ACCEPTED",
-            jobId: { not: null },
+            jobId: agencyJobIdParam ? agencyJobIdParam : { not: null },
           },
           select: {
             organizationId: true,

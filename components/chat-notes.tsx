@@ -36,6 +36,12 @@ interface ChatNotesProps {
   // "Share this candidate to start the conversation". Only applies
   // to the per-submission chat; ignored at job and candidate scope.
   clientChatLocked?: boolean;
+  // Name of the client that the CLIENT_VISIBLE tab talks to. Used to
+  // render "Shared with AlphaBridge" instead of the generic "Shared
+  // with Client" — mirrors the client side, where the tab says
+  // "Shared with Morabits" (the firm name). Optional: when missing
+  // we fall back to "the client".
+  clientName?: string | null;
   onCommentAdded: () => void;
   // Visual override — candidate-level notes usually live above the
   // per-job chat and don't need the full chat height.
@@ -162,7 +168,8 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, jobId, clientChatLocked, onCommentAdded, heightClass }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, jobId, clientChatLocked, clientName, onCommentAdded, heightClass }: ChatNotesProps) {
+  const clientLabel = clientName?.trim() || "Client";
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
   // Candidate-level scope means there's no client to share with, so
@@ -389,8 +396,10 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                 : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Globe className="h-3.5 w-3.5" />
-            Shared with Client
+            <Globe className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-[200px]" title={`Shared with ${clientLabel}`}>
+              Shared with {clientLabel}
+            </span>
             {clientCount > 0 && (
               <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
@@ -542,7 +551,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
         <div className="border-t border-gray-200 p-4 bg-gray-50 shrink-0 text-center">
           <p className="text-xs text-gray-600">
             <Globe className="h-3.5 w-3.5 inline-block mr-1 align-text-bottom text-gray-400" />
-            Share this candidate to start the conversation with the client.
+            Share this candidate to start the conversation with {clientLabel}.
           </p>
           <p className="text-[11px] text-gray-400 mt-1">
             Use the <span className="font-medium">Share with Client</span> button on the candidate to unlock this chat.
@@ -589,7 +598,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
             placeholder={
               activeTab === "INTERNAL"
                 ? "Internal note... @ to mention"
-                : "Client-visible note... @ to mention"
+                : `Note to ${clientLabel}... @ to mention`
             }
             rows={1}
             className="flex-1 resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 max-h-24 overflow-y-auto"
@@ -620,7 +629,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
               : "bg-gray-200 text-gray-500"
           }`}>
             {activeTab === "CLIENT_VISIBLE" ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-            {activeTab === "CLIENT_VISIBLE" ? "Visible to client" : "Internal only"}
+            {activeTab === "CLIENT_VISIBLE" ? `Visible to ${clientLabel}` : "Internal only"}
           </span>
           <span className="text-[11px] text-gray-400">Enter to send · Shift+Enter for newline</span>
         </div>

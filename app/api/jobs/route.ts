@@ -17,23 +17,12 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Non-admins see only their assigned jobs.
-    //
-    // Admins see every job in the org EXCEPT jobs born from a person-
-    // level client-portal invite they weren't invited to. Those jobs
-    // stay private to the invited recruiter (and anyone that recruiter
-    // chose to assign) — that's the whole point of person-level
-    // invites. A job becomes "private" when it has at least one
-    // FirmEngagement row with invitedUserId set; legacy jobs without
-    // such engagements keep the old org-wide admin visibility.
-    if (ctx.role !== "ADMIN") {
-      where.assignments = { some: { userId: ctx.userId } };
-    } else {
-      where.OR = [
-        { firmEngagements: { none: { invitedUserId: { not: null } } } },
-        { assignments: { some: { userId: ctx.userId } } },
-      ];
-    }
+    // Everyone — admin or not — sees only the jobs they're explicitly
+    // assigned to. Admins no longer get an org-wide bypass: if a search
+    // matters to an admin they have to be added to it. Job creators
+    // are auto-assigned at POST time so they keep access to anything
+    // they spin up themselves.
+    where.assignments = { some: { userId: ctx.userId } };
 
     if (status) where.status = status;
     if (search) {

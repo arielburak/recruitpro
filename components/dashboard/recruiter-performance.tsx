@@ -415,11 +415,11 @@ export function RecruiterPerformance() {
                     tooltip="Placements created in the period. Placement's Recruiter override wins; otherwise attributed to the candidate's owner."
                   />
                   <SortableHeader
-                    label="Conv %"
+                    label="Placement %"
                     active={sortBy === "conversionPct"}
                     dir={sortDir}
                     onClick={() => toggleSort("conversionPct")}
-                    tooltip="Conversion rate: Placements ÷ Submissions × 100. How often a candidate this recruiter put forward ends up placed."
+                    tooltip="Placements ÷ Submissions × 100. Of every 100 candidates this recruiter sent to a client, how many ended up placed."
                   />
                 </tr>
               </thead>

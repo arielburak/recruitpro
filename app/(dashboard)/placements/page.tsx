@@ -69,7 +69,13 @@ export default function PlacementsPage() {
   // and drills down to a specific Q only when asked.
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
-  const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
+  // "ALL" = full calendar year, 1-4 = specific quarter, "YTD" = Jan 1
+  // through today (clamps the period end to today even when the
+  // selected year is the current one). YTD is the common business
+  // reporting view — "how much did we book this year so far".
+  const [selectedQuarter, setSelectedQuarter] = useState<
+    "ALL" | "YTD" | 1 | 2 | 3 | 4
+  >("ALL");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -105,15 +111,37 @@ export default function PlacementsPage() {
   // the recruiter sees one headline number across a mixed-currency
   // book. Per-currency amounts surface below as a sanity check so the
   // conversion is auditable at a glance.
-  // Date range resolves Year + Quarter; "ALL" means the full year.
+  // Date range resolves Year + Quarter.
+  //   · "ALL" → the full calendar year of selectedYear.
+  //   · "YTD" → Jan 1 of selectedYear through today (or Dec 31 if
+  //     the year is in the past — YTD on a closed year collapses
+  //     to the whole year, no future portion to clamp).
+  //   · 1-4  → the specific quarter.
   const periodStart =
-    selectedQuarter === "ALL"
+    selectedQuarter === "ALL" || selectedQuarter === "YTD"
       ? new Date(selectedYear, 0, 1)
       : new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
-  const periodEnd =
+  const periodEnd = (() => {
+    if (selectedQuarter === "ALL") {
+      return new Date(selectedYear, 12, 0, 23, 59, 59);
+    }
+    if (selectedQuarter === "YTD") {
+      const yearEnd = new Date(selectedYear, 12, 0, 23, 59, 59);
+      // For the current (or any future) year, YTD clamps to today.
+      // For a past year, today is way after Dec 31 so the min is
+      // Dec 31 — i.e. the full closed year.
+      return today < yearEnd ? today : yearEnd;
+    }
+    return new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+  })();
+  // Short label used in the tile sub-headers and copy. Mirrors the
+  // value of selectedQuarter so YTD prints as "YTD" and Q1/2/3/4
+  // print as "Q1" etc.
+  const periodSuffix =
     selectedQuarter === "ALL"
-      ? new Date(selectedYear, 12, 0, 23, 59, 59)
-      : new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+      ? ""
+      : ` · ${selectedQuarter === "YTD" ? "YTD" : `Q${selectedQuarter}`}`;
+  const periodLabel = `${selectedYear}${periodSuffix}`;
 
   // The date a placement "belongs to" for revenue reporting. We anchor
   // on the actual start date when the candidate has already started,
@@ -144,8 +172,9 @@ export default function PlacementsPage() {
   const hhPlacements = placements.filter((p) => (p.kind || "HH") === "HH");
   const osPlacements = placements.filter((p) => p.kind === "OS");
 
-  // HH placements that booked in the selected period (anchored
-  // on whatever the user picked: actual start or ETD).
+  // HH placements that booked in the selected period (anchored on
+  // startDate, falling back to estimatedStartDate when the firm date
+  // isn't set yet).
   const hhInPeriod = hhPlacements.filter((p) => {
     const d = placementDate(p);
     if (!d) return false;
@@ -256,6 +285,11 @@ export default function PlacementsPage() {
     .filter((d): d is Date => d != null)
     .map((d) => d.getFullYear());
   const currentYear = today.getFullYear();
+  // Year range derives from the data we actually have, plus the
+  // current year (so even an empty workspace has a usable option).
+  // No artificial floor: if every placement is from 2026, the only
+  // option is 2026. Agencies that import historical data expand
+  // the range backwards automatically.
   const earliestYear = placementYearValues.length > 0
     ? Math.min(...placementYearValues, currentYear)
     : currentYear;
@@ -372,12 +406,17 @@ export default function PlacementsPage() {
           value={selectedQuarter}
           onChange={(e) => {
             const v = e.target.value;
-            setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
+            if (v === "ALL" || v === "YTD") {
+              setSelectedQuarter(v);
+            } else {
+              setSelectedQuarter(Number(v) as 1 | 2 | 3 | 4);
+            }
           }}
           className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
           aria-label="Quarter"
         >
           <option value="ALL">All quarters</option>
+          <option value="YTD">YTD</option>
           <option value={1}>Q1</option>
           <option value={2}>Q2</option>
           <option value={3}>Q3</option>
@@ -398,7 +437,7 @@ export default function PlacementsPage() {
             </div>
             <p className="text-xs font-semibold text-indigo-900">Headhunting (HH)</p>
             <span className="text-[11px] text-indigo-700/70 ml-auto">
-              {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+              {periodLabel}
             </span>
           </div>
           <CardContent className="p-4">
@@ -445,7 +484,7 @@ export default function PlacementsPage() {
                 <p className="text-[10px] text-gray-400 mt-0.5">
                   {asOfIsToday
                     ? "today"
-                    : `end of ${selectedYear}${selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}`}
+                    : `end of ${periodLabel}`}
                 </p>
               </div>
               <div className="px-4">
@@ -458,7 +497,7 @@ export default function PlacementsPage() {
                 <p className="text-[10px] text-gray-400 mt-0.5">
                   {asOfIsToday
                     ? "active now"
-                    : `active at end of Q${selectedQuarter === "ALL" ? "4" : selectedQuarter}`}
+                    : `active at end of ${periodLabel}`}
                 </p>
               </div>
               <div className="pl-4">
@@ -469,7 +508,7 @@ export default function PlacementsPage() {
                   {formatCurrency(osRevenueInPeriod, "USD")}
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {periodLabel}
                 </p>
               </div>
             </div>
@@ -495,7 +534,7 @@ export default function PlacementsPage() {
               <div>
                 <p className="text-xs font-semibold text-gray-700">HH Placements</p>
                 <p className="text-[11px] text-gray-400">
-                  {hhInPeriod.length} in {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {hhInPeriod.length} in {periodLabel}
                 </p>
               </div>
             </div>
@@ -634,7 +673,7 @@ export default function PlacementsPage() {
                 <p className="text-xs font-semibold text-gray-700">OS Engagements</p>
                 <p className="text-[11px] text-gray-400">
                   {activeOsInPeriod} active · {osInPeriod.length} in{" "}
-                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {periodLabel}
                 </p>
               </div>
             </div>
@@ -645,7 +684,7 @@ export default function PlacementsPage() {
                   <p className="text-sm text-gray-500">
                     {osPlacements.length === 0
                       ? "No staff-aug engagements yet."
-                      : `No staff-aug engagements active in ${selectedYear}${selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}.`}
+                      : `No staff-aug engagements active in ${periodLabel}.`}
                   </p>
                 </div>
               ) : (

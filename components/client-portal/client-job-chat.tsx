@@ -27,6 +27,18 @@ type Comment = {
   // person's name + a "Recruiter" tag.
   userId?: string | null;
   user?: { id: string; name: string } | null;
+  // For CLIENT_VISIBLE rows: which agency-side Job the message is
+  // attached to. The client portal groups the "Shared with [firm]"
+  // tabs by this. Null on CLIENT_INTERNAL.
+  jobId?: string | null;
+};
+
+// One per accepted FirmEngagement on this ClientJob. Drives the
+// "Shared with [firm]" tabs.
+export type SharedAgencyTab = {
+  agencyJobId: string;
+  organizationId: string;
+  organizationName: string;
 };
 
 type Props = {
@@ -34,6 +46,11 @@ type Props = {
   comments: Comment[];
   onCommentAdded: () => void;
   currentClientUserId: string;
+  // One per accepted FirmEngagement. Empty array → no agency yet,
+  // we hide the Shared tabs entirely. One entry → single "Shared
+  // with X" tab. Many → one tab per firm so the client can address
+  // each agency separately (each firm only sees its own thread).
+  agencyTabs?: SharedAgencyTab[];
 };
 
 // ── Helpers (same vocabulary as ChatNotes / CandidateChat) ────────────
@@ -97,10 +114,29 @@ type MentionUser = {
   kind: "client";
 };
 
-export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUserId }: Props) {
-  const [activeTab, setActiveTab] = useState<"CLIENT_INTERNAL" | "CLIENT_VISIBLE">(
-    "CLIENT_INTERNAL",
-  );
+export function ClientJobChat({
+  jobId,
+  comments,
+  onCommentAdded,
+  currentClientUserId,
+  agencyTabs = [],
+}: Props) {
+  // Active tab can be:
+  //   "INTERNAL"                       — Internal team chat
+  //   { agencyJobId: string }          — one of the "Shared with [firm]" threads
+  // Single state covers both cases. Default starts on Internal so the
+  // client never lands on a Shared tab they didn't choose.
+  type ActiveTab =
+    | { kind: "internal" }
+    | { kind: "shared"; agencyJobId: string };
+  const [activeTab, setActiveTab] = useState<ActiveTab>({ kind: "internal" });
+  const isInternal = activeTab.kind === "internal";
+  const activeAgencyJobId =
+    activeTab.kind === "shared" ? activeTab.agencyJobId : null;
+  const activeAgencyName = activeAgencyJobId
+    ? agencyTabs.find((t) => t.agencyJobId === activeAgencyJobId)?.organizationName ??
+      "the agency"
+    : null;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -116,14 +152,27 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
   const [pickedMentions, setPickedMentions] = useState<Record<string, MentionUser>>({});
 
   const internalComments = comments.filter((c) => c.type === "CLIENT_INTERNAL");
-  const sharedComments = comments.filter((c) => c.type === "CLIENT_VISIBLE");
-  const sorted = [...(activeTab === "CLIENT_INTERNAL" ? internalComments : sharedComments)].sort(
+  // CLIENT_VISIBLE rows grouped by agency-side jobId. One bucket per
+  // engagement — the "Shared with [firm]" tabs each render their own
+  // bucket so the client sees a separate thread per firm.
+  const sharedByAgency = new Map<string, Comment[]>();
+  for (const c of comments) {
+    if (c.type !== "CLIENT_VISIBLE") continue;
+    const key = c.jobId || "__unscoped__";
+    const bucket = sharedByAgency.get(key);
+    if (bucket) bucket.push(c);
+    else sharedByAgency.set(key, [c]);
+  }
+  const activeBucket = isInternal
+    ? internalComments
+    : (activeAgencyJobId && sharedByAgency.get(activeAgencyJobId)) || [];
+  const sorted = [...activeBucket].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [sorted.length, activeTab]);
+  }, [sorted.length, activeAgencyJobId, isInternal]);
 
   // Debounced mention search — fires whenever the user is typing into
   // an @query at the tail of the input.
@@ -132,10 +181,19 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
       setMentionResults([]);
       return;
     }
-    const scope = activeTab === "CLIENT_VISIBLE" ? "shared" : "internal";
-    const url = `/api/client-portal/mentions/search?scope=${scope}&clientJobId=${encodeURIComponent(
-      jobId,
-    )}&q=${encodeURIComponent(mentionQuery)}`;
+    const scope = isInternal ? "internal" : "shared";
+    const qs = new URLSearchParams({
+      scope,
+      clientJobId: jobId,
+      q: mentionQuery,
+    });
+    // When the Shared tab is anchored on a specific firm (the common
+    // case once we render per-engagement tabs), pass agencyJobId so
+    // the staffing-side users come scoped to that firm's assignees.
+    if (!isInternal && activeAgencyJobId) {
+      qs.set("agencyJobId", activeAgencyJobId);
+    }
+    const url = `/api/client-portal/mentions/search?${qs.toString()}`;
     const t = setTimeout(async () => {
       try {
         const res = await fetch(url);
@@ -143,7 +201,7 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
       } catch {}
     }, 120);
     return () => clearTimeout(t);
-  }, [mentionQuery, jobId, activeTab]);
+  }, [mentionQuery, jobId, isInternal, activeAgencyJobId]);
 
   function handleTextChange(value: string) {
     setText(value);
@@ -174,7 +232,15 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
       const res = await fetch(`/api/client-portal/jobs/${jobId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, mentions: mentionIds, type: activeTab }),
+        body: JSON.stringify({
+          content,
+          mentions: mentionIds,
+          type: isInternal ? "CLIENT_INTERNAL" : "CLIENT_VISIBLE",
+          // Route the message to the firm whose tab is active. The
+          // server validates that this jobId really is one of the
+          // ClientJob's accepted engagements before stamping.
+          ...(activeAgencyJobId ? { targetAgencyJobId: activeAgencyJobId } : {}),
+        }),
       });
       if (res.ok) {
         setText("");
@@ -195,16 +261,19 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
 
   return (
     <div className="flex flex-col h-[400px] border border-gray-200 rounded-xl bg-white overflow-hidden">
-      {/* Tab strip — same shape as the agency side ChatNotes so the
-          mental model is identical: lock icon = private, globe = both
-          parties read it. */}
-      <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
+      {/* Tab strip. "Internal team" always shown; one "Shared with
+          [firm]" tab per accepted engagement. With 2+ firms each
+          tab is its own private thread — what the client posts on
+          "Shared with Morabits" is invisible to "Shared with
+          ConsultRecruit" and vice versa. Scroll horizontally if the
+          strip overflows (rare; typical JO has 1–2 firms). */}
+      <div className="flex border-b border-gray-200 bg-gray-50 shrink-0 overflow-x-auto">
         <button
           type="button"
-          onClick={() => setActiveTab("CLIENT_INTERNAL")}
+          onClick={() => setActiveTab({ kind: "internal" })}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2",
-            activeTab === "CLIENT_INTERNAL"
+            "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 shrink-0",
+            isInternal
               ? "border-emerald-600 text-emerald-700 bg-white"
               : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100",
           )}
@@ -215,40 +284,55 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
             <span
               className={cn(
                 "ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium",
-                activeTab === "CLIENT_INTERNAL"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-gray-200 text-gray-600",
+                isInternal ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600",
               )}
             >
               {internalComments.length}
             </span>
           )}
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("CLIENT_VISIBLE")}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2",
-            activeTab === "CLIENT_VISIBLE"
-              ? "border-indigo-600 text-indigo-700 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100",
-          )}
-        >
-          <Globe className="h-3.5 w-3.5" />
-          Shared with agency
-          {sharedComments.length > 0 && (
-            <span
+        {agencyTabs.map((tab) => {
+          const isActive = activeAgencyJobId === tab.agencyJobId;
+          const count = sharedByAgency.get(tab.agencyJobId)?.length ?? 0;
+          return (
+            <button
+              key={tab.agencyJobId}
+              type="button"
+              title={`Shared with ${tab.organizationName}`}
+              onClick={() =>
+                setActiveTab({ kind: "shared", agencyJobId: tab.agencyJobId })
+              }
               className={cn(
-                "ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium",
-                activeTab === "CLIENT_VISIBLE"
-                  ? "bg-indigo-100 text-indigo-700"
-                  : "bg-gray-200 text-gray-600",
+                "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition border-b-2 shrink-0",
+                isActive
+                  ? "border-indigo-600 text-indigo-700 bg-white"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100",
               )}
             >
-              {sharedComments.length}
-            </span>
-          )}
-        </button>
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              {/* The active tab shows the full firm name; inactive
+                  tabs truncate at ~180px so the strip doesn't blow
+                  out horizontally when there are 3+ firms. Both
+                  carry a `title` attribute on the button above so
+                  hover always reveals the full label. */}
+              <span className={cn(isActive ? "whitespace-nowrap" : "truncate max-w-[180px]")}>
+                Shared with {tab.organizationName}
+              </span>
+              {count > 0 && (
+                <span
+                  className={cn(
+                    "ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium",
+                    isActive
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-gray-200 text-gray-600",
+                  )}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Messages */}
@@ -414,9 +498,9 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
             onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              activeTab === "CLIENT_INTERNAL"
+              isInternal
                 ? "Note for your team — type @ to mention someone with access to this job"
-                : "Message to the agency — type @ to mention a teammate or recruiter"
+                : `Message to ${activeAgencyName} — type @ to mention a teammate or recruiter`
             }
             rows={1}
             className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent min-h-[36px] max-h-32"
@@ -427,7 +511,7 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
             size="sm"
             className={cn(
               "text-white shrink-0",
-              activeTab === "CLIENT_INTERNAL"
+              isInternal
                 ? "bg-emerald-600 hover:bg-emerald-700"
                 : "bg-indigo-600 hover:bg-indigo-700",
             )}
@@ -439,13 +523,11 @@ export function ClientJobChat({ jobId, comments, onCommentAdded, currentClientUs
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded",
-              activeTab === "CLIENT_VISIBLE"
-                ? "bg-indigo-100 text-indigo-700"
-                : "bg-gray-200 text-gray-500",
+              isInternal ? "bg-gray-200 text-gray-500" : "bg-indigo-100 text-indigo-700",
             )}
           >
-            {activeTab === "CLIENT_VISIBLE" ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-            {activeTab === "CLIENT_VISIBLE" ? "Visible to agency" : "Internal only"}
+            {isInternal ? <Lock className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+            {isInternal ? "Internal only" : `Visible to ${activeAgencyName}`}
           </span>
           <span className="text-[11px] text-gray-400">Enter to send · Shift+Enter for newline</span>
         </div>

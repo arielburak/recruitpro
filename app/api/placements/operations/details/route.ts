@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (tile === "guaranteesExpiring") {
-      const windowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const windowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
       const items = await prisma.placement.findMany({
         where: {
           organizationId: orgId,
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (tile === "startingNext30Days") {
-      const windowEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const windowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
       // Any placement (HH or OS) whose firm OR estimated start lands
       // in the next 30 days. Sort goes through both fields in the
       // post-fetch pass since Prisma can't ORDER BY a COALESCE.
@@ -103,17 +103,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (tile === "mrrAtRisk") {
-      const lookbackStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      // OS engagements ending in the next 30 days — MRR at risk.
+      // Soonest-ending first so the recruiter chases renewals in
+      // order of urgency.
+      const windowEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
       const items = await prisma.placement.findMany({
         where: {
           organizationId: orgId,
           kind: "OS",
-          endDate: { gte: lookbackStart, lte: now },
+          endDate: { gte: now, lte: windowEnd },
         },
         select: baseSelect,
-        // Most recent loss first — easier to chase a recent leak than
-        // an old one where the client has already moved on.
-        orderBy: { endDate: "desc" },
+        orderBy: { endDate: "asc" },
       });
       return NextResponse.json({ tile, items });
     }
