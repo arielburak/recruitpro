@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,11 +11,11 @@ import {
   TableBody,
   TableHead,
   TableHeader,
-  TableCell,
   TableRow,
 } from "@/components/ui/table";
-import { Users, Search, Briefcase, Filter, ChevronDown, ChevronRight } from "lucide-react";
+import { Users, Search, Briefcase, Filter } from "lucide-react";
 import {
+  CandidateMultiSearchRow,
   CandidateTableRow,
   type CandidateRow,
 } from "@/components/client-portal/candidate-row";
@@ -59,10 +59,6 @@ function ClientCandidatesPageInner() {
   const initialJobId = searchParams.get("jobId") || "";
 
   const [rows, setRows] = useState<CandidateRow[]>([]);
-  // Set of candidate IDs whose secondary submissions are currently
-  // expanded in the table. The first submission per candidate always
-  // renders; expanded keys reveal the rest underneath.
-  const [expandedCandidateIds, setExpandedCandidateIds] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
   const [loading, setLoading] = useState(true);
 
@@ -293,55 +289,25 @@ function ClientCandidatesPageInner() {
               </TableHeader>
               <TableBody>
                 {groupedRows.map((group) => {
-                  const [primary, ...rest] = group.rows;
-                  const isExpanded = expandedCandidateIds.has(group.candidateId);
-                  return (
-                    <Fragment key={group.candidateId}>
+                  // Single-submission candidate → normal row. Multi-
+                  // submission candidate → super-row that shows the
+                  // identity once and stacks the N searches as
+                  // mini-rows in the right cell, picked by the user
+                  // over the previous expand-on-click variant.
+                  if (group.rows.length === 1) {
+                    return (
                       <CandidateTableRow
-                        key={primary.submissionId}
-                        row={primary}
+                        key={group.rows[0].submissionId}
+                        row={group.rows[0]}
                         onRated={refetch}
-                        totalSearches={group.rows.length}
                       />
-                      {rest.length > 0 && (
-                        <>
-                          <TableRow className="hover:bg-gray-50/40">
-                            <TableCell colSpan={6} className="py-1 pl-16 border-b-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedCandidateIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (isExpanded) next.delete(group.candidateId);
-                                    else next.add(group.candidateId);
-                                    return next;
-                                  });
-                                }}
-                                className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-3 w-3" />
-                                ) : (
-                                  <ChevronRight className="h-3 w-3" />
-                                )}
-                                {isExpanded
-                                  ? `Hide ${rest.length} other search${rest.length === 1 ? "" : "es"}`
-                                  : `Also shared on ${rest.length} other search${rest.length === 1 ? "" : "es"}`}
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                          {isExpanded &&
-                            rest.map((r) => (
-                              <CandidateTableRow
-                                key={r.submissionId}
-                                row={r}
-                                onRated={refetch}
-                                asSecondary
-                              />
-                            ))}
-                        </>
-                      )}
-                    </Fragment>
+                    );
+                  }
+                  return (
+                    <CandidateMultiSearchRow
+                      key={group.candidateId}
+                      rows={group.rows}
+                    />
                   );
                 })}
               </TableBody>
