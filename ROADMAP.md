@@ -18,7 +18,30 @@ Aplicarse a cualquier feature nueva o existente:
 - Si dice "(parcial)" arriba del bullet, está empezado pero le falta algo concreto
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-06-01
+**Última actualización**: 2026-06-04
+
+---
+
+## 🎯 Round 3 — Limpieza Notion + Final stretch (sesión 4 jun)
+
+Items rescatados del board de Notion ("No hace falta ya" + "Final final") con triage propio: lo que ya cayó esta sesión queda `[~]`, lo que falta agarrar va `[ ]`.
+
+- [~] **Barra de nav rota al entrar a Engagements** (client portal) — la regex que detectaba magic-link tokens en `app/client-portal/layout.tsx` no listaba `engagements`, así que se ocultaba la barra. Fix en PR #277.
+- [~] **Notificación al recruiter al claim invitación vía signup** — `processPendingInvites` ahora emite la `UserNotification "engagement_invited"` igual que el path de usuarios ya registrados; antes el bell quedaba vacío y había que adivinar que vivía en `/engagements`. PR #275.
+- [~] **Chat: mail solo en @-mention** — `notifyOnNewJobComment` y `notifyOnNewCandidateComment` mandaban `sendMentionEmail` a todos los assignees/owner aunque no estuvieran arrobados. Ahora el mail sale solo con mention real; el bell sigue avisando al resto. PR #276.
+- [ ] **Owner por default 'selected' en un placement** — el form de placement (congrats desde board + manual desde `/placements`) tiene que pre-seleccionar el Owner del job/submission en vez de quedar vacío.
+- [ ] **Reemplazar "Engagements" por "Recruiting Firms"** — rename a nivel UI en el client portal (menú, heading, copy). Mantener `Engagement` en el modelo de DB.
+- [ ] **Unificar diseño del chat en ambos portales** — el chat de la agencia y el del client portal divergieron visualmente; mismo componente, mismo spacing, mismo header.
+- [ ] **Cancelar un job → crear otro hereda info del cancelado** — "Duplicate from cancelled" como opción al crear: arranca con título, salary, location, JD, terms del job cancelado pre-llenos y editables. Hoy se pierde todo.
+- [ ] **Colapsar contactos de una empresa con un click** — en el detalle del cliente la lista de contactos debería tener un toggle expand/collapse de un solo click, no scroll infinito.
+- [ ] **Sacar el texto debajo del logo en Organization settings** — cleanup visual del header (el subtítulo redundante debajo del logo).
+- [ ] **Industry visible aunque el cliente no tenga portal users** — hoy Industry se muestra condicionado al portal; debería verse siempre desde la firma.
+- [ ] **Orden Start/End date + MRR de pérdida en placement** — re-ordenar los fields del placement form (Start date antes que End date) y mostrar el MRR que se pierde al cerrar un OS placement (delta proyectado vs realizado).
+
+### Final final (pre-launch)
+
+- [ ] **Landing: free trial del cliente + revisar textos/backs** — ver `🟤 Landing` para el detalle. Foco: el CTA de free trial del cliente debe funcionar end-to-end y los textos no pueden mentir (testimonios inventados, métricas en cero, copy de "Free forever" residual).
+- [ ] **Billing** — Stripe checkout end-to-end ($15 Solo / $19 Team) + customer portal + webhooks + dunning. Listado en `🔭 Futuro` — se promueve a final stretch pre-launch.
 
 ---
 
