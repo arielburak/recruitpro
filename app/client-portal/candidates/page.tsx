@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,9 +11,10 @@ import {
   TableBody,
   TableHead,
   TableHeader,
+  TableCell,
   TableRow,
 } from "@/components/ui/table";
-import { Users, Search, Briefcase, Filter } from "lucide-react";
+import { Users, Search, Briefcase, Filter, ChevronDown, ChevronRight } from "lucide-react";
 import {
   CandidateTableRow,
   type CandidateRow,
@@ -58,6 +59,10 @@ function ClientCandidatesPageInner() {
   const initialJobId = searchParams.get("jobId") || "";
 
   const [rows, setRows] = useState<CandidateRow[]>([]);
+  // Set of candidate IDs whose secondary submissions are currently
+  // expanded in the table. The first submission per candidate always
+  // renders; expanded keys reveal the rest underneath.
+  const [expandedCandidateIds, setExpandedCandidateIds] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<Filters>({ jobs: [], firms: [], stages: [] });
   const [loading, setLoading] = useState(true);
 
@@ -125,6 +130,26 @@ function ClientCandidatesPageInner() {
     (firmFilter !== "all" ? 1 : 0) +
     (clientJobIdFilter ? 1 : 0);
 
+  // Group submissions by candidate. The same candidate shared into N
+  // jobs used to render as N rows in the table (e.g. "Bob — Backend",
+  // "Bob — SWE 2.0", "Bob — Associate"); the header count also
+  // double-counted. We now keep the server-side flat list (the table
+  // logic stays simple) but collapse it into one row per candidate at
+  // render time. Additional submissions live behind an expand
+  // toggle so the recruiter can drill in when needed without us
+  // shouting "3 candidates" when it's really 1.
+  type Grouped = { candidateId: string; rows: CandidateRow[] };
+  const groupedRows = useMemo<Grouped[]>(() => {
+    const map = new Map<string, Grouped>();
+    for (const r of rows) {
+      const id = r.candidate.id;
+      const g = map.get(id);
+      if (g) g.rows.push(r);
+      else map.set(id, { candidateId: id, rows: [r] });
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
   function clearFilters() {
     setJobFilter("all");
     setStageFilter("all");
@@ -160,7 +185,9 @@ function ClientCandidatesPageInner() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Candidates</h1>
             <p className="text-gray-500 text-sm">
-              {loading ? "Loading..." : `${rows.length} candidate${rows.length === 1 ? "" : "s"} shared with you`}
+              {loading
+                ? "Loading..."
+                : `${groupedRows.length} candidate${groupedRows.length === 1 ? "" : "s"} shared with you`}
             </p>
           </div>
         </div>
@@ -265,13 +292,56 @@ function ClientCandidatesPageInner() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <CandidateTableRow
-                    key={row.submissionId}
-                    row={row}
-                    onRated={refetch}
-                  />
-                ))}
+                {groupedRows.map((group) => {
+                  const [primary, ...rest] = group.rows;
+                  const isExpanded = expandedCandidateIds.has(group.candidateId);
+                  return (
+                    <Fragment key={group.candidateId}>
+                      <CandidateTableRow
+                        key={primary.submissionId}
+                        row={primary}
+                        onRated={refetch}
+                      />
+                      {rest.length > 0 && (
+                        <>
+                          <TableRow className="bg-gray-50/60 hover:bg-gray-50">
+                            <TableCell colSpan={6} className="py-1.5 pl-16">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedCandidateIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (isExpanded) next.delete(group.candidateId);
+                                    else next.add(group.candidateId);
+                                    return next;
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-3 w-3" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" />
+                                )}
+                                {isExpanded
+                                  ? "Hide other searches"
+                                  : `+${rest.length} more search${rest.length === 1 ? "" : "es"} with this candidate`}
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded &&
+                            rest.map((r) => (
+                              <CandidateTableRow
+                                key={r.submissionId}
+                                row={r}
+                                onRated={refetch}
+                              />
+                            ))}
+                        </>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

@@ -29,6 +29,11 @@ type CandidateChatProps = {
   submissionId: string;
   comments: Comment[];
   onCommentAdded: () => void;
+  // Name of the firm that shared this candidate. Drives the "Shared
+  // with [firm]" tab + composer labels, same way the client-portal
+  // Job chat names its agency-side tabs. Falls back to "the
+  // recruiter" when missing.
+  firmName?: string | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -120,7 +125,8 @@ function renderMentions(text: string) {
   });
 }
 
-export function CandidateChat({ submissionId, comments, onCommentAdded }: CandidateChatProps) {
+export function CandidateChat({ submissionId, comments, onCommentAdded, firmName }: CandidateChatProps) {
+  const firmLabel = firmName?.trim() || "the recruiter";
   const [activeTab, setActiveTab] = useState<"CLIENT_INTERNAL" | "CLIENT_VISIBLE">("CLIENT_VISIBLE");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -252,8 +258,10 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
               : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
           )}
         >
-          <Globe className="h-3.5 w-3.5" />
-          Shared with Recruiter
+          <Globe className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate" title={`Shared with ${firmLabel}`}>
+            Shared with {firmLabel}
+          </span>
           {sharedCount > 0 && (
             <span
               className={cn(
@@ -286,7 +294,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
         ) : (
           <>
             <Globe className="h-3 w-3" />
-            Visible to both your team and the recruiting firm.
+            Visible to your team and {firmLabel}.
           </>
         )}
       </div>
@@ -427,7 +435,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
             placeholder={
               activeTab === "CLIENT_INTERNAL"
                 ? "Internal note for your team... use @ to mention"
-                : "Message the recruiter... use @ to mention"
+                : `Message ${firmLabel}... use @ to mention`
             }
             rows={1}
             className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px] max-h-32"
