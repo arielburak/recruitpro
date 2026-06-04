@@ -26,7 +26,7 @@ type OperationsResponse = {
   guaranteesExpiring: number;
   startingNext30Days: number;
   mrrAtRisk: number;
-  mrrLost: number;
+  mrrAtRiskAmount: number;
 };
 
 type TileKey =
@@ -72,9 +72,9 @@ const TILES: TileDef[] = [
     key: "mrrAtRisk",
     label: "MRR at risk",
     sublabel: (d) =>
-      d && d.mrrLost > 0
-        ? `${formatCurrency(d.mrrLost, "USD")}/mo lost in last 30d`
-        : "OS endings · last 30 days",
+      d && d.mrrAtRiskAmount > 0
+        ? `${formatCurrency(d.mrrAtRiskAmount, "USD")}/mo at stake`
+        : "OS endings · next 30 days",
     icon: TrendingDown,
     accent: "bg-amber-50 text-amber-600",
   },
@@ -260,11 +260,11 @@ function buildMeta(tile: TileKey, p: any): string[] {
     }
     return meta;
   }
-  // mrrAtRisk
+  // mrrAtRisk — engagement is about to end, not already ended.
   return [
-    `Ended ${fmtDate(p.endDate)}`,
+    `Ends ${fmtDate(p.endDate)}`,
     p.monthlyFee
-      ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`
+      ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo at risk`
       : "—",
   ];
 }
