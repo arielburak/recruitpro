@@ -57,13 +57,13 @@ const TILES: TileDef[] = [
   {
     key: "guaranteesExpiring",
     label: "Guarantees expiring",
-    sublabel: () => "Within 30 days",
+    sublabel: () => "Within 60 days",
     icon: ShieldAlert,
     accent: "bg-purple-50 text-purple-600",
   },
   {
     key: "startingNext30Days",
-    label: "Starting in 30 days",
+    label: "Starting in 60 days",
     sublabel: () => "First days · HH + OS",
     icon: CalendarClock,
     accent: "bg-blue-50 text-blue-600",
@@ -74,7 +74,7 @@ const TILES: TileDef[] = [
     sublabel: (d) =>
       d && d.mrrAtRiskAmount > 0
         ? `${formatCurrency(d.mrrAtRiskAmount, "USD")}/mo at stake`
-        : "OS endings · next 30 days",
+        : "OS endings · next 60 days",
     icon: TrendingDown,
     accent: "bg-amber-50 text-amber-600",
   },
@@ -131,6 +131,11 @@ export function PlacementsOperationsStrip() {
                     <span>{formatCurrency(data.mrrAtRiskAmount, "USD")}</span>
                     <span className="text-sm font-medium text-gray-500">/mo</span>
                   </span>
+                ) : t.key === "paymentsOverdue" && data && data.receivablesTotal > 0 ? (
+                  // Same rationale as mrrAtRisk: the dollar amount is
+                  // what the recruiter chases, not the number of
+                  // invoices. Count drops to the sublabel below.
+                  <span>{formatCurrency(data.receivablesTotal, "USD")}</span>
                 ) : (
                   value
                 )}
@@ -138,8 +143,10 @@ export function PlacementsOperationsStrip() {
               <p className="text-xs font-medium text-gray-700 mt-2">{t.label}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">
                 {t.key === "mrrAtRisk" && data && data.mrrAtRiskAmount > 0
-                  ? `${value} engagement${value === 1 ? "" : "s"} · next 30 days`
-                  : t.sublabel(data)}
+                  ? `${value} engagement${value === 1 ? "" : "s"} · next 60 days`
+                  : t.key === "paymentsOverdue" && data && data.receivablesTotal > 0
+                    ? `${value} invoice${value === 1 ? "" : "s"} past due`
+                    : t.sublabel(data)}
               </p>
             </Card>
           );
@@ -207,6 +214,18 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                       : "";
                   })()
                 : ""}
+              {tile === "paymentsOverdue" && items.length > 0
+                ? (() => {
+                    const total = items.reduce(
+                      (s: number, p: any) =>
+                        s + (p.feeAmount ? Number(p.feeAmount) : 0),
+                      0,
+                    );
+                    return total > 0
+                      ? ` · ${formatCurrency(total, "USD")} outstanding`
+                      : "";
+                  })()
+                : ""}
             </p>
           </div>
           <button
@@ -240,14 +259,20 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                 const href = cand ? `/candidates/${cand.id}` : "/placements";
                 const subtitle = `${p.job?.title || "—"} · ${p.client?.name || "—"}`;
                 const meta = buildMeta(tile, p);
-                // For mrrAtRisk we surface the monthly fee as a
-                // prominent pill on the right side of the row so the
-                // recruiter sees the dollar amount at a glance instead
-                // of buried in the uppercase meta strip below.
-                const amountBadge =
-                  tile === "mrrAtRisk" && p.monthlyFee
-                    ? `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`
-                    : null;
+                // Surface the dollar amount as a prominent pill on
+                // the right of the row for the two money-shaped tiles
+                // (mrrAtRisk in amber, paymentsOverdue in rose). The
+                // recruiter reads the number at a glance instead of
+                // chasing it through the meta strip below.
+                let amountBadge: string | null = null;
+                let amountBadgeAccent: "amber" | "rose" | null = null;
+                if (tile === "mrrAtRisk" && p.monthlyFee) {
+                  amountBadge = `${formatCurrency(Number(p.monthlyFee), p.currency || "USD")}/mo`;
+                  amountBadgeAccent = "amber";
+                } else if (tile === "paymentsOverdue" && p.feeAmount) {
+                  amountBadge = formatCurrency(Number(p.feeAmount), p.currency || "USD");
+                  amountBadgeAccent = "rose";
+                }
                 return (
                   <ActionRow
                     key={p.id}
@@ -256,6 +281,7 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
                     subtitle={subtitle}
                     meta={meta}
                     amountBadge={amountBadge}
+                    amountBadgeAccent={amountBadgeAccent}
                   />
                 );
               })}
@@ -269,11 +295,10 @@ function DrillDrawer({ tile, onClose }: { tile: TileKey; onClose: () => void }) 
 
 function buildMeta(tile: TileKey, p: any): string[] {
   if (tile === "paymentsOverdue") {
+    // feeAmount surfaces in the amountBadge pill (rose) on the
+    // right of the row — no need to repeat it in the meta strip.
     return [
       `Due ${fmtDate(p.paymentDueDate)}`,
-      p.feeAmount
-        ? formatCurrency(Number(p.feeAmount), p.currency || "USD")
-        : "—",
       p.invoiceStatus,
     ];
   }
@@ -308,15 +333,22 @@ function ActionRow({
   subtitle,
   meta,
   amountBadge,
+  amountBadgeAccent,
 }: {
   href: string;
   title: string;
   subtitle: string;
   meta: string[];
-  // Headline-style number we want to show on the right of the row.
-  // Used by mrrAtRisk to surface $/mo at risk; null hides it.
+  // Headline-style number on the right of the row. Used by
+  // mrrAtRisk to surface $/mo at risk and by paymentsOverdue to
+  // surface $ outstanding. Null hides it.
   amountBadge?: string | null;
+  amountBadgeAccent?: "amber" | "rose" | null;
 }) {
+  const badgeClasses =
+    amountBadgeAccent === "rose"
+      ? "text-rose-700 bg-rose-50"
+      : "text-amber-700 bg-amber-50";
   return (
     <Link
       href={href}
@@ -341,7 +373,7 @@ function ActionRow({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {amountBadge && (
-            <span className="text-sm font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-md whitespace-nowrap">
+            <span className={`text-sm font-semibold px-2 py-1 rounded-md whitespace-nowrap ${badgeClasses}`}>
               {amountBadge}
             </span>
           )}

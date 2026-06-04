@@ -1390,48 +1390,52 @@ export function PlacementDialog(props: Props) {
               </div>
             )}
 
-            {kind === "HH" && (
+            {/* Starting date goes ABOVE Payment due because Payment
+                due is anchored on it (actual start + terms, or
+                estimated start as fallback). Reading order matches
+                the dependency: input first, derived value next. */}
+            {isEdit && (
               <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
+                <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
                 <Input
-                  id="placement-due"
+                  id="placement-actual-start"
                   type="date"
-                  value={paymentDueDate}
+                  value={startDate}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setPaymentDueDate(v);
-                    // Clearing the field reverts to auto-mode so the next
-                    // edit to start / terms recomputes it. Only mark
-                    // "touched" when the user actually picked a date.
-                    setPaymentDueDateTouched(v !== "");
+                    setStartDate(v);
+                    setPaymentDueDateTouched(false);
+                    setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
                   }}
                 />
                 <p className="text-[10px] text-gray-400">
-                  Auto: actual start (if set) or estimated start + payment terms. Editable.
+                  Fill once the candidate starts. Anchors the guarantee.
                 </p>
               </div>
             )}
 
-            {isEdit && (
-              <div className={kind === "HH" ? "grid grid-cols-2 gap-3" : ""}>
+            {kind === "HH" && (
+              <div className={isEdit ? "grid grid-cols-2 gap-3" : ""}>
                 <div className="space-y-1.5">
-                  <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
+                  <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
                   <Input
-                    id="placement-actual-start"
+                    id="placement-due"
                     type="date"
-                    value={startDate}
+                    value={paymentDueDate}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setStartDate(v);
-                      setPaymentDueDateTouched(false);
-                      setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
+                      setPaymentDueDate(v);
+                      // Clearing the field reverts to auto-mode so the next
+                      // edit to start / terms recomputes it. Only mark
+                      // "touched" when the user actually picked a date.
+                      setPaymentDueDateTouched(v !== "");
                     }}
                   />
                   <p className="text-[10px] text-gray-400">
-                    Fill once the candidate starts. Anchors the guarantee.
+                    Auto: actual start (if set) or estimated start + payment terms. Editable.
                   </p>
                 </div>
-                {kind === "HH" && (
+                {isEdit && (
                   <div className="space-y-1.5">
                     <Label className="text-xs" htmlFor="placement-invoice-status">Invoice status</Label>
                     <select
