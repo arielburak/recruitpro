@@ -29,6 +29,7 @@ export type JobDraft = {
   termsAutoFilled: boolean;
   parseStatus: string;
   jdFileName?: string | null;
+  salary?: string;
 };
 
 // ── Form-fields draft (localStorage) ─────────────────────────────────

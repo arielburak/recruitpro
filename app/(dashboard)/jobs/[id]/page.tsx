@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
+import { Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone, Copy } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
@@ -812,6 +812,18 @@ export default function JobDetailPage() {
             <Button variant="outline" onClick={startEditing}>
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
+          )}
+          {/* Duplicate solo cuando el job esta cerrado (cancelado o
+              filled cerrado): el caso es "tuvimos que cancelar y
+              arrancar de cero" o "mismo cliente vuelve a buscar lo
+              mismo". Lleva al form de create con ?fromJobId que
+              pre-llena title/desc/location/workMode/currency/salary/fee. */}
+          {(job.status === "CANCELLED" || job.status === "CLOSED") && (
+            <Link href={`/jobs/new?fromJobId=${job.id}`}>
+              <Button variant="outline">
+                <Copy className="mr-2 h-4 w-4" /> Duplicate
+              </Button>
+            </Link>
           )}
           <Button
             variant="outline"
