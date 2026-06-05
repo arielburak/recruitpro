@@ -70,9 +70,11 @@ export async function POST(request: Request) {
     // activation path produces the same "your account is ready"
     // confirmation in the inbox.
     try {
+      // NEXTAUTH_URL primero (canonical). Ver comentario en
+      // /api/auth/register.
       const origin =
-        request.headers.get("origin") ||
         process.env.NEXTAUTH_URL ||
+        request.headers.get("origin") ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
       sendStaffingMemberWelcomeEmail({
         to: user.email,

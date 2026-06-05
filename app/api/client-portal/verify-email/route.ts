@@ -64,9 +64,11 @@ export async function POST(request: Request) {
     // the welcome experience consistent across signup-manual,
     // invite/set-password, and OAuth.
     try {
+      // NEXTAUTH_URL primero (canonical). Ver comentario en
+      // /api/auth/register.
       const origin =
-        request.headers.get("origin") ||
         process.env.NEXTAUTH_URL ||
+        request.headers.get("origin") ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
       sendClientPortalWelcomeEmail({
         to: user.email,

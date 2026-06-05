@@ -157,9 +157,11 @@ export async function POST(
         where: { id: invite.organizationId },
         select: { name: true },
       });
+      // NEXTAUTH_URL primero (canonical). Ver comentario en
+      // /api/auth/register.
       const origin =
-        request.headers.get("origin") ||
         process.env.NEXTAUTH_URL ||
+        request.headers.get("origin") ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
       sendStaffingMemberWelcomeEmail({
         to: invite.email,

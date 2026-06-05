@@ -37,7 +37,9 @@ export async function POST(request: Request) {
       },
     });
 
-    const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+    // NEXTAUTH_URL primero (canonical). Ver comentario en
+    // /api/auth/register.
+    const origin = process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
     sendEmailVerificationEmail({
       to: user.email,
       recipientName: user.name,

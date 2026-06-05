@@ -80,8 +80,10 @@ export async function POST(request: Request) {
           });
           if (!submission?.candidate?.owner?.email) return;
 
+          // NEXTAUTH_URL primero (canonical). Ver comentario en
+          // /api/auth/register.
           const origin =
-            request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+            process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
 
           await sendCandidateFeedbackEmail({
             to: submission.candidate.owner.email,

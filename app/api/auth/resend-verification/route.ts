@@ -62,7 +62,9 @@ export async function POST(request: Request) {
       },
     });
 
-    const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+    // NEXTAUTH_URL primero (canonical, seteado en deploy). Ver
+    // comentario equivalente en /api/auth/register.
+    const origin = process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
     await sendEmailVerificationEmail({
       to: user.email,
       recipientName: user.name,
