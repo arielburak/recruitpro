@@ -1196,6 +1196,13 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     const personLabel =
                       eng.invitedUser?.name || eng.invitedEmail || null;
                     const withdrawLabel = personLabel || eng.organization.name;
+                    // Email del recruiter de la agencia (siempre que se
+                    // tenga). Lo exponemos en el sub-line para que el
+                    // cliente pueda escribirle directamente, incluso
+                    // cuando el nombre del recruiter ya se conoce y
+                    // queda como label principal.
+                    const recruiterEmail =
+                      eng.invitedUser?.email || eng.invitedEmail || null;
                     return (
                       <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -1208,6 +1215,10 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                 {personLabel || eng.organization.name}
                               </p>
                               <p className="text-[10px] text-gray-400 truncate">
+                                {/* email solo si todavia no aparece arriba como personLabel */}
+                                {recruiterEmail && recruiterEmail !== personLabel ? (
+                                  <>{recruiterEmail} · </>
+                                ) : null}
                                 {personLabel && eng.organization.name ? (
                                   <>{eng.organization.name} · </>
                                 ) : null}

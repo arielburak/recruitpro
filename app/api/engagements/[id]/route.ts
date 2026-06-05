@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireActiveSubscription, SubscriptionError } from "@/lib/subscription-guard";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { sendEngagementAcceptedEmail } from "@/lib/email";
 
 export async function PUT(
   request: Request,
@@ -18,8 +19,15 @@ export async function PUT(
       where: { id, organizationId: ctx.organizationId },
       include: {
         clientJob: {
-          include: { client: { select: { id: true, name: true } } },
+          include: {
+            client: { select: { id: true, name: true } },
+            // postedBy = ClientUser que invito a la firma. Lo usamos
+            // para notificar de vuelta cuando aceptamos: in-app
+            // notification al bell + mail directo al inviter.
+            postedBy: { select: { id: true, name: true, email: true, isActive: true } },
+          },
         },
+        organization: { select: { name: true } },
       },
     });
 
@@ -145,6 +153,56 @@ export async function PUT(
         userId: ctx.userId,
         organizationId: ctx.organizationId,
       });
+
+      // Avisarle al cliente que invito (in-app bell + mail). El
+      // postedBy es el ClientUser que disparo la invitacion original;
+      // si esta activo, le mandamos ambas. Falla silencioso para no
+      // bloquear el accept si el mail/notif tiran.
+      try {
+        const inviter = engagement.clientJob.postedBy;
+        const firmName = engagement.organization?.name || "A recruiting firm";
+        const link = `/client-portal/jobs/${engagement.clientJobId}`;
+        const title = `${firmName} accepted ${engagement.clientJob.title}`;
+        if (inviter?.isActive) {
+          await prisma.clientNotification.create({
+            data: {
+              clientId: engagement.clientJob.client.id,
+              clientUserId: inviter.id,
+              type: "engagement_accepted",
+              title,
+              body: `They can start sharing candidates now.`,
+              link,
+            },
+          });
+        } else {
+          // Sin postedBy activo (legacy / removed), notif al espacio
+          // del cliente (sin scope a un user puntual) asi alguien del
+          // team lo ve.
+          await prisma.clientNotification.create({
+            data: {
+              clientId: engagement.clientJob.client.id,
+              type: "engagement_accepted",
+              title,
+              body: `They can start sharing candidates now.`,
+              link,
+            },
+          });
+        }
+        if (inviter?.email && inviter.isActive) {
+          const origin = process.env.NEXTAUTH_URL || "";
+          sendEngagementAcceptedEmail({
+            to: inviter.email,
+            inviterName: inviter.name || "",
+            firmName,
+            jobTitle: engagement.clientJob.title,
+            jobUrl: `${origin}${link}`,
+          }).catch((e) =>
+            console.error("[engagement.accept] inviter email failed:", e),
+          );
+        }
+      } catch (e) {
+        console.error("[engagement.accept] notify-inviter failed:", e);
+      }
 
       return NextResponse.json({ success: true, jobId });
     } else if (action === "decline") {

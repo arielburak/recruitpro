@@ -394,14 +394,10 @@ function ClientPortalLoginInner() {
           </>
           )}
 
-          <div className="mt-8 text-center">
-            <p className="text-xs text-gray-400">
-              Are you a recruiting firm?{" "}
-              <Link href="/register" className="text-indigo-600 font-medium hover:underline">
-                Sign up here
-              </Link>
-            </p>
-          </div>
+          {/* CTA de sign-up removida intencionalmente: el portal del
+              cliente es invite-only. Cualquier landing organica al
+              /client-portal/login deberia salir por "Get in touch with
+              your recruiting partner", no por un signup. */}
         </div>
       </div>
     </div>

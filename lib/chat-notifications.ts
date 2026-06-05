@@ -355,6 +355,11 @@ export async function notifyOnNewJobComment(args: {
       id: true,
       title: true,
       assignments: { select: { userId: true } },
+      // Cliente para identificar la busqueda en la notificacion:
+      // "Mentioned you in Senior FE Engineer @ Acme" es mas util que
+      // "Mentioned you in Senior FE Engineer" suelto cuando hay 5
+      // jobs con el mismo titulo en distintos clientes.
+      client: { select: { name: true } },
     },
   });
   if (!job) return;
@@ -362,6 +367,7 @@ export async function notifyOnNewJobComment(args: {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
   const url = `${baseUrl}/jobs/${job.id}`;
   const preview = stripMarkup(content);
+  const jobLabel = job.client?.name ? `${job.title} @ ${job.client.name}` : job.title;
 
   const recipientIds = new Set<string>(mentions);
   for (const a of job.assignments) recipientIds.add(a.userId);
@@ -382,8 +388,8 @@ export async function notifyOnNewJobComment(args: {
           userId: u.id,
           type: isMention ? "mention" : "comment_posted",
           title: isMention
-            ? `${authorName} mentioned you in ${job.title}`
-            : `${authorName} commented on ${job.title}`,
+            ? `${authorName} mentioned you in ${jobLabel}`
+            : `${authorName} commented on ${jobLabel}`,
           body: truncate(preview, 140),
           link: `/jobs/${job.id}`,
         },

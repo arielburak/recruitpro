@@ -33,6 +33,15 @@ export default function RegisterPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const passwordConfirm = formData.get("passwordConfirm") as string;
+    // Validacion client-side antes de tocar la API. Coincide con el
+    // patron que ya usa /client-portal/set-password (confirm password
+    // explicito en signup) para que sea consistente en ambos lados.
+    if (password !== passwordConfirm) {
+      setError("Passwords don't match");
+      setLoading(false);
+      return;
+    }
     const data = {
       orgName: formData.get("orgName") as string,
       name: formData.get("name") as string,
@@ -367,6 +376,18 @@ export default function RegisterPage() {
                 id="password"
                 name="password"
                 placeholder="Min. 8 characters"
+                className="focus-visible:ring-indigo-500"
+                minLength={8}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="passwordConfirm">Confirm password</Label>
+              <PasswordInput
+                id="passwordConfirm"
+                name="passwordConfirm"
+                placeholder="Re-enter the same password"
                 className="focus-visible:ring-indigo-500"
                 minLength={8}
                 required
