@@ -1189,20 +1189,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 <div className="space-y-2">
                   {job.engagements?.map((eng: any) => {
                     const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
-                    // Prefer the registered user's name when we have it
-                    // (most engagements post-person-level invites). Fall
-                    // back to the invited email, then — for legacy org-
-                    // level rows — just the firm name.
-                    const personLabel =
-                      eng.invitedUser?.name || eng.invitedEmail || null;
-                    const withdrawLabel = personLabel || eng.organization.name;
-                    // Email del recruiter de la agencia (siempre que se
-                    // tenga). Lo exponemos en el sub-line para que el
-                    // cliente pueda escribirle directamente, incluso
-                    // cuando el nombre del recruiter ya se conoce y
-                    // queda como label principal.
-                    const recruiterEmail =
-                      eng.invitedUser?.email || eng.invitedEmail || null;
+                    // Firma como label principal (lo que al cliente le
+                    // importa). Si tenemos el nombre del recruiter
+                    // (por invitedUser registrado), lo agregamos al
+                    // sub-line. NUNCA mostramos el email: el domain
+                    // del email del recruiter puede no matchear el
+                    // de la firma (signup con dominio personal, etc),
+                    // y eso lee confuso ("este mail no es de Morabits,
+                    // estara mal?"). El cliente puede contactar al
+                    // recruiter via el chat del job, no hace falta el
+                    // mail crudo aca.
+                    const recruiterName = eng.invitedUser?.name || null;
+                    const withdrawLabel = recruiterName || eng.organization.name;
                     return (
                       <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
                         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -1212,16 +1210,10 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium truncate">
-                                {personLabel || eng.organization.name}
+                                {eng.organization.name}
                               </p>
                               <p className="text-[10px] text-gray-400 truncate">
-                                {/* email solo si todavia no aparece arriba como personLabel */}
-                                {recruiterEmail && recruiterEmail !== personLabel ? (
-                                  <>{recruiterEmail} · </>
-                                ) : null}
-                                {personLabel && eng.organization.name ? (
-                                  <>{eng.organization.name} · </>
-                                ) : null}
+                                {recruiterName ? <>{recruiterName} · </> : null}
                                 Invited {formatDate(eng.invitedAt)}
                               </p>
                             </div>
