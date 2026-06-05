@@ -171,9 +171,11 @@ export async function POST(request: Request) {
     // Fire-and-forget — a Resend hiccup shouldn't fail a flow the
     // user just succeeded at. Skipped silently if anything's missing.
     try {
+      // NEXTAUTH_URL primero (canonical). Ver comentario en
+      // /api/auth/register.
       const origin =
-        request.headers.get("origin") ||
         process.env.NEXTAUTH_URL ||
+        request.headers.get("origin") ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
       const client = await prisma.client.findUnique({
         where: { id: tokenRecord.clientId },

@@ -90,7 +90,12 @@ export async function POST(request: Request) {
     // failure (bad address, transient Resend outage) shouldn't block
     // account creation — the user can request a resend from the
     // dashboard banner once they're logged in.
-    const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+    // NEXTAUTH_URL primero (canonical, seteado en deploy). El header
+    // `origin` viene del browser que firma la request — puede ser
+    // localhost, una preview de Vercel, un mirror. Ese host termina
+    // en el link del mail y cuando el recipiente clickea cae a nada.
+    // Origin queda como ultimo fallback para dev local sin env var.
+    const origin = process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
     sendWelcomeEmail({
       to: data.email,
       recipientName: data.name,
