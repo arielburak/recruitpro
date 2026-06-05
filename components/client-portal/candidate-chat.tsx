@@ -412,10 +412,13 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
                           </div>
                         )}
 
-                        {/* Bubble + clock time. Mirror del lado
-                            agencia: indigo-600 (agencia) y
-                            emerald-600 (cliente), ambos con texto
-                            blanco. */}
+                        {/* Bubble: lo MIO destaca con color saturado,
+                            lo recibido va en gris callado. Mirror del
+                            criterio en chat-notes.tsx (agency side):
+                            ahi el cliente se ve en gris; aca la
+                            agencia se ve en gris. Mismo patron en
+                            ambos portales: tu voz dominante, la del
+                            otro como info secundaria. */}
                         {c.content && (
                           <div className={cn("flex items-end gap-1.5", isMyOrg && "flex-row-reverse")}>
                             <div
@@ -423,7 +426,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
                                 "inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap",
                                 isMyOrg
                                   ? "bg-emerald-600 text-white rounded-tr-md"
-                                  : "bg-indigo-600 text-white rounded-tl-md"
+                                  : "bg-gray-100 text-gray-800 rounded-tl-md"
                               )}
                             >
                               {isMyOrg ? c.content : renderMentions(c.content)}
