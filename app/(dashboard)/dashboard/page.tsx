@@ -241,8 +241,6 @@ export default async function DashboardPage() {
   const candidateTrend = meaningfulTrend(candidatesThisMonth, candidatesLastMonth);
   const placementTrend = meaningfulTrend(placementsThisMonth, placementsLastMonth);
 
-  const totalInPipeline = pipelineChartData.reduce((sum, d) => sum + d.count, 0);
-
   const stats = [
     {
       label: "Active Searches",
@@ -264,15 +262,11 @@ export default async function DashboardPage() {
       trendLabel: "vs last 30d",
       href: "/candidates",
     },
-    {
-      label: "In Pipeline",
-      value: totalInPipeline,
-      icon: Target,
-      gradient: "from-violet-500 to-purple-600",
-      lightBg: "bg-violet-50",
-      lightColor: "text-violet-600",
-      href: "/jobs",
-    },
+    // "In Pipeline" removido del strip de stats: duplicaba info que
+    // ya esta granular en Total Candidates + per-job kanban, y como
+    // total agregado no movia decisiones. Si vuelve mas adelante,
+    // tiene que justificarse por accion (ej. linkar a una vista
+    // filtrada de candidatos en pipeline, no a /jobs generico).
     {
       label: "Placements",
       value: placements,

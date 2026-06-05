@@ -440,6 +440,37 @@ export async function sendClientTeamInviteEmail({
 
 // Sent when an existing teammate gets added to a specific Job on
 // the client portal. Different from the team-invite path (no
+// Sent to the client contact who invited an agency to a search,
+// when that agency accepts the engagement. Heads-up that the firm
+// is now active on the search and can start sharing candidates.
+export async function sendEngagementAcceptedEmail({
+  to,
+  inviterName,
+  firmName,
+  jobTitle,
+  jobUrl,
+}: {
+  to: string;
+  inviterName: string;
+  firmName: string;
+  jobTitle: string;
+  jobUrl: string;
+}) {
+  const firstName = inviterName?.split(" ")[0] || inviterName;
+  const html = wrapTemplate(
+    `${firmName} accepted ${jobTitle}`,
+    `<p>Hi ${firstName},</p>
+     <p><strong>${firmName}</strong> just accepted your invitation to work on <strong>${jobTitle}</strong>. They can now start sharing candidates and chatting with your team.</p>`,
+    jobUrl,
+    "Open the search"
+  );
+  return sendEmail({
+    to,
+    subject: `${firmName} accepted ${jobTitle}`,
+    html,
+  });
+}
+
 // set-password — they already have a portal account); this just
 // tells them "you can now see this search" and links straight to it.
 export async function sendClientJobAccessGrantedEmail({
