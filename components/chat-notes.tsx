@@ -133,8 +133,11 @@ function renderMentions(text: string) {
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
+      // Sin background — el bubble que la contiene puede ser oscuro
+      // (cliente: emerald-600 con texto blanco) o claro, asi que bold +
+      // underline sutil funciona bien en ambos.
       return (
-        <span key={i} className="text-indigo-600 font-medium bg-indigo-50 px-0.5 rounded">
+        <span key={i} className="font-semibold underline underline-offset-2">
           {part}
         </span>
       );
@@ -456,7 +459,10 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                   className={`flex ${isMyOrg ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
                 >
                   <div className={`flex gap-2 max-w-[80%] ${isMyOrg ? "flex-row-reverse" : ""}`}>
-                    {/* Avatar */}
+                    {/* Avatar — solido para "vos" y para el cliente
+                        (matchea el color del bubble). Teammates de la
+                        agencia van con la version clara, asi te
+                        distinguis del resto del equipo igual. */}
                     {showHeader ? (
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
@@ -464,7 +470,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                             ? isCurrentUser
                               ? "bg-indigo-600 text-white"
                               : "bg-indigo-100 text-indigo-700"
-                            : "bg-emerald-100 text-emerald-700"
+                            : "bg-emerald-600 text-white"
                         }`}
                       >
                         {initials(authorName)}
@@ -501,14 +507,17 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                       {/* Bubble + always-visible clock time. Time sits on
                           the opposite side of the bubble (after for
                           incoming, before for outgoing) so it never
-                          interferes with the message text. */}
+                          interferes with the message text. Bubbles
+                          mirror saturation entre ambos lados: indigo-600
+                          (mi equipo) y emerald-600 (cliente), ambos con
+                          texto blanco. */}
                       {displayContent && (
                         <div className={`flex items-end gap-1.5 ${isMyOrg ? "flex-row-reverse" : ""}`}>
                           <div
                             className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
                               isMyOrg
                                 ? "bg-indigo-600 text-white rounded-tr-md"
-                                : "bg-emerald-100 text-emerald-900 rounded-tl-md"
+                                : "bg-emerald-600 text-white rounded-tl-md"
                             }`}
                           >
                             {isMyOrg ? displayContent : renderMentions(displayContent)}
