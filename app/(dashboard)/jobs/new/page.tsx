@@ -45,6 +45,11 @@ function NewJobContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedClientId = searchParams.get("clientId") || "";
+  // ?fromJobId=<uuid> triggers "Duplicate this job": fetch the source
+  // job and pre-fill the form. Source label sticks around in a
+  // dismissible banner so the recruiter knows where the data came from.
+  const fromJobId = searchParams.get("fromJobId") || "";
+  const [sourceJob, setSourceJob] = useState<{ id: string; title: string; status: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [clients, setClients] = useState<any[]>([]);
@@ -65,6 +70,7 @@ function NewJobContent() {
   // typing without us snapping it back to 1 mid-keystroke. Submit
   // coerces empty → 1 below.
   const [openings, setOpenings] = useState<number | "">(1);
+  const [salary, setSalary] = useState("");
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Fee terms state (auto-filled from client defaults)
@@ -251,11 +257,33 @@ function NewJobContent() {
     }
   }
 
-  // Persistent draft: restore form fields from localStorage and the JD
-  // File from IndexedDB on mount. Lets the recruiter close the tab,
-  // come back later, navigate away mid-flow, etc., without losing
-  // anything they typed or uploaded. Cleared on successful submit.
+  // On mount: either pre-fill from a source job (?fromJobId, Duplicate
+  // flow) or restore from the persistent draft. Skipping the draft when
+  // duplicating avoids the surprise of an old half-edit overwriting
+  // the source data the recruiter just chose to clone.
   useEffect(() => {
+    if (fromJobId) {
+      fetch(`/api/jobs/${fromJobId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((source) => {
+          if (!source) return;
+          setSourceJob({ id: source.id, title: source.title, status: source.status });
+          if (source.title) setTitle(source.title);
+          if (source.description) setDescription(source.description);
+          if (source.location) setLocation(source.location);
+          if (source.workMode) setWorkMode(source.workMode);
+          if (source.currency) setCurrency(source.currency);
+          if (source.feeType) setFeeType(source.feeType);
+          if (source.feeAmount !== null && source.feeAmount !== undefined) {
+            setFeeAmount(String(Number(source.feeAmount)));
+            setTermsAutoFilled(true);
+          }
+          if (source.salary) setSalary(source.salary);
+          if (source.clientId) setSelectedClientId(source.clientId);
+        })
+        .catch(() => {});
+      return;
+    }
     const draft = loadJobDraft();
     if (draft) {
       if (draft.title) setTitle(draft.title);
@@ -269,6 +297,7 @@ function NewJobContent() {
       if (draft.feeAmount) setFeeAmount(draft.feeAmount);
       if (draft.termsAutoFilled) setTermsAutoFilled(draft.termsAutoFilled);
       if (draft.parseStatus) setParseStatus(draft.parseStatus);
+      if (draft.salary) setSalary(draft.salary);
     }
     // JD File lives in IndexedDB — it's binary, can't share storage
     // with the JSON draft. Best-effort: if there's no saved file we
@@ -276,7 +305,7 @@ function NewJobContent() {
     loadJdFile().then((file) => {
       if (file) setJdFile(file);
     });
-  }, []);
+  }, [fromJobId]);
 
   // Auto-save the field draft on every change. localStorage writes are
   // cheap so debouncing isn't worth the complexity.
@@ -294,6 +323,7 @@ function NewJobContent() {
       termsAutoFilled,
       parseStatus,
       jdFileName: jdFile?.name || null,
+      salary,
     });
   }, [
     title,
@@ -308,6 +338,7 @@ function NewJobContent() {
     termsAutoFilled,
     parseStatus,
     jdFile,
+    salary,
   ]);
 
   useEffect(() => {
@@ -403,7 +434,7 @@ function NewJobContent() {
         status,
         openings: openings === "" ? 1 : openings,
         currency,
-        salary: fd.get("salary"),
+        salary,
         feeType,
         feeAmount: feeAmount ? Number(feeAmount) : null,
       }),
@@ -465,6 +496,36 @@ function NewJobContent() {
         <BackButton fallback="/jobs" />
         <h1 className="text-2xl font-bold">Create Job</h1>
       </div>
+
+      {sourceJob && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <div className="text-sm text-indigo-900 min-w-0">
+            <span className="font-medium">Cloning from</span>{" "}
+            <Link
+              href={`/jobs/${sourceJob.id}`}
+              className="underline hover:no-underline truncate inline-block max-w-xs align-bottom"
+            >
+              {sourceJob.title}
+            </Link>{" "}
+            <span className="text-indigo-700">({JOB_STATUS_LABELS[sourceJob.status] || sourceJob.status})</span>
+            <span className="block text-xs text-indigo-700 mt-0.5">
+              All fields pre-filled — edit anything before creating.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSourceJob(null);
+              router.replace("/jobs/new");
+            }}
+            className="text-indigo-700 hover:text-indigo-900 shrink-0"
+            aria-label="Clear source job"
+            title="Start fresh"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <form onSubmit={onSubmit} autoComplete="off">
         <Card>
@@ -713,7 +774,13 @@ function NewJobContent() {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">
                     $
                   </span>
-                  <Input name="salary" placeholder="150K - 180K" className="pl-7" />
+                  <Input
+                    name="salary"
+                    placeholder="150K - 180K"
+                    className="pl-7"
+                    value={salary}
+                    onChange={(e) => setSalary(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="space-y-2">
