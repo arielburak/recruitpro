@@ -94,7 +94,7 @@ export default function ClientPortalLayout({
                 <NavLink
                   href="/client-portal/engagements"
                   current={pathname.startsWith("/client-portal/engagements")}
-                  label="Engagements"
+                  label="Recruiting Firms"
                 >
                   <Building2 className="h-4 w-4" />
                 </NavLink>

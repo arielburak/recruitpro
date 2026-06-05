@@ -306,7 +306,7 @@ export default function ClientDashboardPage() {
               <p className="font-semibold text-amber-900 text-sm">
                 {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
               </p>
-              <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
+              <p className="text-xs text-amber-700">Check your job postings to see firm status</p>
             </div>
             <ArrowRight className="h-5 w-5 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>

@@ -1353,6 +1353,24 @@ export function PlacementDialog(props: Props) {
               </div>
             )}
 
+            {/* OS edit: Starting date goes ABOVE the end-date block so
+                the reading order matches the contract timeline (start
+                → end), not the form's historical "end-first" layout. */}
+            {isEdit && kind === "OS" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs" htmlFor="placement-actual-start-os">Starting date</Label>
+                <Input
+                  id="placement-actual-start-os"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-400">
+                  Fill once the engagement actually started.
+                </p>
+              </div>
+            )}
+
             {kind === "OS" && (
               <div className="space-y-1.5">
                 <label className="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -1384,17 +1402,28 @@ export function PlacementDialog(props: Props) {
                     onChange={(e) => setEndDate(e.target.value)}
                   />
                 )}
-                <p className="text-[10px] text-gray-400">
-                  Off = engagement is ongoing — that&apos;s what counts as Active MRR.
-                </p>
+                {endDate !== "" && monthlyFee !== "" && Number(monthlyFee) > 0 ? (
+                  <p className="text-[10px] text-amber-600">
+                    Losing {formatCurrencyValue(Number(monthlyFee), currency)}/mo of recurring revenue once this ends.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-gray-400">
+                    Off = engagement is ongoing — that&apos;s what counts as Active MRR.
+                  </p>
+                )}
               </div>
             )}
 
             {/* Starting date goes ABOVE Payment due because Payment
                 due is anchored on it (actual start + terms, or
                 estimated start as fallback). Reading order matches
-                the dependency: input first, derived value next. */}
-            {isEdit && (
+                the dependency: input first, derived value next.
+                For OS, Starting date is rendered ABOVE the end-date
+                block (handled below as a separate isEdit guard) so
+                start → end stays left-to-right.
+                For HH, Starting date renders here, before Payment
+                due. */}
+            {isEdit && kind === "HH" && (
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
                 <Input

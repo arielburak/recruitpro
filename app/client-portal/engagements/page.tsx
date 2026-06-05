@@ -130,7 +130,7 @@ export default function ClientEngagementsPage() {
           <Building2 className="h-5 w-5 text-emerald-600" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Engagements</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Recruiting Firms</h1>
           <p className="text-sm text-gray-500">
             {isEmpty
               ? "No recruiting firms engaged yet."
@@ -217,7 +217,7 @@ export default function ClientEngagementsPage() {
       {firms.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-            Active engagements ({firms.length} firm{firms.length === 1 ? "" : "s"})
+            Active firms ({firms.length})
           </h2>
           {firms.map((firm) => (
             <Link
@@ -313,7 +313,7 @@ export default function ClientEngagementsPage() {
           <CardContent className="p-12 text-center">
             <Building2 className="h-10 w-10 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-600 font-medium mb-1">
-              No engagements yet
+              No recruiting firms yet
             </p>
             <p className="text-xs text-gray-400 max-w-sm mx-auto">
               Invite a recruiting firm from any of your Jobs to start collaborating.

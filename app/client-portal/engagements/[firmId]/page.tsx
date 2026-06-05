@@ -100,7 +100,7 @@ export default function ClientFirmEngagementPage() {
         <Link href="/client-portal/engagements">
           <Button variant="outline" size="sm" className="mt-3 gap-1.5">
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Engagements
+            Back to Recruiting Firms
           </Button>
         </Link>
       </div>
@@ -115,7 +115,7 @@ export default function ClientFirmEngagementPage() {
         className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-emerald-600"
       >
         <ArrowLeft className="h-3 w-3" />
-        Back to Engagements
+        Back to Recruiting Firms
       </Link>
 
       {/* Header */}
