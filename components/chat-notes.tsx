@@ -425,13 +425,21 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
         ) : (
           filtered.map((c: any, idx: number) => {
             const { isClient, authorName, displayContent, rating, authorId } = parseComment(c);
-            const isCurrentUser = authorId === currentUserId;
+            // Lado del mensaje por TEAM, no por usuario. Todos los de
+            // la agencia (incluido vos) van a la derecha con bubble
+            // indigo; los del cliente a la izquierda con emerald.
+            // Mismo criterio mirror-ed en el client portal: ahi el
+            // lado "mio" pasa a ser el del cliente. Asi el chat lee
+            // siempre como "mi equipo a la derecha, los otros a la
+            // izquierda" desde cualquiera de los dos portales.
+            const isMyOrg = !isClient;
             const showHeader = shouldShowHeader(idx);
             // Day separator: render a centered "Today"/"Yesterday"/date
             // chip the first time we land on a new calendar day, so
             // long-running threads read like a chat-history timeline.
             const prev = idx > 0 ? filtered[idx - 1] : null;
             const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
+            const isCurrentUser = authorId === currentUserId;
 
             return (
               <Fragment key={c.id}>
@@ -445,18 +453,18 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                   </div>
                 )}
                 <div
-                  className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
+                  className={`flex ${isMyOrg ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
                 >
-                  <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                  <div className={`flex gap-2 max-w-[80%] ${isMyOrg ? "flex-row-reverse" : ""}`}>
                     {/* Avatar */}
                     {showHeader ? (
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                          isClient
-                            ? "bg-emerald-100 text-emerald-700"
-                            : isCurrentUser
-                            ? "bg-indigo-600 text-white"
-                            : "bg-gray-200 text-gray-600"
+                          isMyOrg
+                            ? isCurrentUser
+                              ? "bg-indigo-600 text-white"
+                              : "bg-indigo-100 text-indigo-700"
+                            : "bg-emerald-100 text-emerald-700"
                         }`}
                       >
                         {initials(authorName)}
@@ -466,9 +474,9 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                     )}
 
                     {/* Message body */}
-                    <div className={isCurrentUser ? "text-right" : ""}>
+                    <div className={isMyOrg ? "text-right" : ""}>
                       {showHeader && (
-                        <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                        <div className={`flex items-center gap-2 mb-0.5 ${isMyOrg ? "justify-end" : ""}`}>
                           <span className="text-xs font-semibold text-gray-700">{authorName}</span>
                           {isClient && (
                             <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
@@ -480,7 +488,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                       )}
 
                       {rating && (
-                        <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                        <div className={`flex gap-0.5 mb-0.5 ${isMyOrg ? "justify-end" : ""}`}>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <Star
                               key={n}
@@ -495,15 +503,15 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                           incoming, before for outgoing) so it never
                           interferes with the message text. */}
                       {displayContent && (
-                        <div className={`flex items-end gap-1.5 ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                        <div className={`flex items-end gap-1.5 ${isMyOrg ? "flex-row-reverse" : ""}`}>
                           <div
                             className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
-                              isCurrentUser
+                              isMyOrg
                                 ? "bg-indigo-600 text-white rounded-tr-md"
-                                : "bg-gray-100 text-gray-800 rounded-tl-md"
+                                : "bg-emerald-100 text-emerald-900 rounded-tl-md"
                             }`}
                           >
-                            {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                            {isMyOrg ? displayContent : renderMentions(displayContent)}
                           </div>
                           <span
                             className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
