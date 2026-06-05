@@ -504,20 +504,21 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                         </div>
                       )}
 
-                      {/* Bubble + always-visible clock time. Time sits on
-                          the opposite side of the bubble (after for
-                          incoming, before for outgoing) so it never
-                          interferes with the message text. Bubbles
-                          mirror saturation entre ambos lados: indigo-600
-                          (mi equipo) y emerald-600 (cliente), ambos con
-                          texto blanco. */}
+                      {/* Bubble: lo MIO destaca con color saturado,
+                          lo recibido va en gris callado. Es el patron
+                          tipo WhatsApp / iMessage donde tu propia voz
+                          se distingue, y lo que llega del otro queda
+                          como info secundaria. Avatar + "Client" badge
+                          ya marcan que el mensaje es del cliente; el
+                          color saturado de ese lado generaba mucha
+                          competencia visual. */}
                       {displayContent && (
                         <div className={`flex items-end gap-1.5 ${isMyOrg ? "flex-row-reverse" : ""}`}>
                           <div
                             className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
                               isMyOrg
                                 ? "bg-indigo-600 text-white rounded-tr-md"
-                                : "bg-emerald-600 text-white rounded-tl-md"
+                                : "bg-gray-100 text-gray-800 rounded-tl-md"
                             }`}
                           >
                             {isMyOrg ? displayContent : renderMentions(displayContent)}
