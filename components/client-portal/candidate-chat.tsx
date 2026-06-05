@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Lock, Globe, Send, AtSign, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -112,11 +113,16 @@ function renderMentions(text: string) {
   // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
+  //
+  // Sin background — el bubble que la contiene es solido (indigo-600
+  // o emerald-600 con texto blanco), asi que bold + underline sutil
+  // funciona en ambos lados sin clashes de color. Mirror exacto del
+  // helper en components/chat-notes.tsx.
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
       return (
-        <span key={i} className="text-emerald-700 font-medium bg-emerald-50 px-0.5 rounded">
+        <span key={i} className="font-semibold underline underline-offset-2">
           {part}
         </span>
       );
@@ -127,6 +133,8 @@ function renderMentions(text: string) {
 
 export function CandidateChat({ submissionId, comments, onCommentAdded, firmName }: CandidateChatProps) {
   const firmLabel = firmName?.trim() || "the recruiter";
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
   const [activeTab, setActiveTab] = useState<"CLIENT_INTERNAL" | "CLIENT_VISIBLE">("CLIENT_VISIBLE");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -302,7 +310,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
       {/* Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[480px] min-h-[200px]"
+        className="flex-1 overflow-y-auto p-4 space-y-1 max-h-[480px] min-h-[200px]"
       >
         {tabComments.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-center">
@@ -325,13 +333,26 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
               const isStaffing = !!c.user?.name && !c.clientUser?.name;
               const authorName = c.user?.name || c.clientUser?.name || "Unknown";
               const authorTitle = c.clientUser?.title;
+              // Mirror exacto de chat-notes.tsx: lados POR EQUIPO, no
+              // por usuario individual. Desde el client portal, mi
+              // equipo (cliente) va a la derecha con bubble emerald;
+              // la agencia a la izquierda con bubble indigo. Colores
+              // por equipo son los mismos que del lado agencia,
+              // sides invertidos.
+              const isMyOrg = !isStaffing;
+              const isCurrentUser = !!currentUserId && c.clientUser?.id === currentUserId;
               // Day separator before the first message of each calendar day.
               const prev = idx > 0 ? sorted[idx - 1] : null;
               const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
+              const prevSameAuthor = prev && (
+                (prev.user?.id && prev.user.id === c.user?.id) ||
+                (prev.clientUser?.id && prev.clientUser.id === c.clientUser?.id)
+              );
+              const showHeader = !prev || !prevSameAuthor || !sameDay(prev.createdAt, c.createdAt);
               return (
                 <Fragment key={c.id}>
                   {showDaySeparator && (
-                    <div className="flex items-center gap-2 my-2" aria-hidden="true">
+                    <div className="flex items-center gap-2 my-3" aria-hidden="true">
                       <div className="flex-1 h-px bg-gray-200" />
                       <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
                         {dayLabel(c.createdAt)}
@@ -339,45 +360,83 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
                       <div className="flex-1 h-px bg-gray-200" />
                     </div>
                   )}
-                  <div className="flex items-start gap-2.5">
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
-                        isStaffing
-                          ? "bg-gradient-to-br from-indigo-500 to-violet-600"
-                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
-                      )}
-                    >
-                      {initials(authorName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-900">{authorName}</p>
-                        <Badge
-                          variant="secondary"
+                  <div
+                    className={cn(
+                      "flex",
+                      isMyOrg ? "justify-end" : "justify-start",
+                      showHeader ? "mt-3" : "mt-0.5"
+                    )}
+                  >
+                    <div className={cn("flex gap-2 max-w-[80%]", isMyOrg && "flex-row-reverse")}>
+                      {/* Avatar — solido para "vos" y para la agencia
+                          (matchea el color del bubble). Teammates del
+                          mismo cliente van con la version clara, asi
+                          te distinguis del resto del equipo igual. */}
+                      {showHeader ? (
+                        <div
                           className={cn(
-                            "text-[9px] h-4 px-1.5",
-                            isStaffing
-                              ? "bg-indigo-50 text-indigo-700"
-                              : "bg-emerald-50 text-emerald-700"
+                            "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0",
+                            isMyOrg
+                              ? isCurrentUser
+                                ? "bg-emerald-600 text-white"
+                                : "bg-emerald-100 text-emerald-700"
+                              : "bg-indigo-600 text-white"
                           )}
                         >
-                          {isStaffing ? "Recruiter" : "Team"}
-                        </Badge>
-                        {authorTitle && !isStaffing && (
-                          <span className="text-[11px] text-gray-500">{authorTitle}</span>
+                          {initials(authorName)}
+                        </div>
+                      ) : (
+                        <div className="w-8 shrink-0" />
+                      )}
+
+                      {/* Message body */}
+                      <div className={isMyOrg ? "text-right" : ""}>
+                        {showHeader && (
+                          <div className={cn("flex items-center gap-2 mb-0.5 flex-wrap", isMyOrg && "justify-end")}>
+                            <span className="text-xs font-semibold text-gray-700">{authorName}</span>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "text-[9px] h-4 px-1.5",
+                                isStaffing
+                                  ? "bg-indigo-50 text-indigo-700"
+                                  : "bg-emerald-50 text-emerald-700"
+                              )}
+                            >
+                              {isStaffing ? "Recruiter" : "Team"}
+                            </Badge>
+                            {authorTitle && !isStaffing && (
+                              <span className="text-[11px] text-gray-500">{authorTitle}</span>
+                            )}
+                            <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                          </div>
                         )}
-                        <span className="text-[10px] text-gray-400">{relativeTime(c.createdAt)}</span>
-                        <span
-                          className="text-[10px] text-gray-400"
-                          title={fullTimestamp(c.createdAt)}
-                        >
-                          · {clockTime(c.createdAt)}
-                        </span>
+
+                        {/* Bubble + clock time. Mirror del lado
+                            agencia: indigo-600 (agencia) y
+                            emerald-600 (cliente), ambos con texto
+                            blanco. */}
+                        {c.content && (
+                          <div className={cn("flex items-end gap-1.5", isMyOrg && "flex-row-reverse")}>
+                            <div
+                              className={cn(
+                                "inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap",
+                                isMyOrg
+                                  ? "bg-emerald-600 text-white rounded-tr-md"
+                                  : "bg-indigo-600 text-white rounded-tl-md"
+                              )}
+                            >
+                              {isMyOrg ? c.content : renderMentions(c.content)}
+                            </div>
+                            <span
+                              className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
+                              title={fullTimestamp(c.createdAt)}
+                            >
+                              {clockTime(c.createdAt)}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap mt-0.5">
-                        {renderMentions(c.content)}
-                      </p>
                     </div>
                   </div>
                 </Fragment>
