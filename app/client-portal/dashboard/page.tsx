@@ -29,6 +29,7 @@ import {
   Copy,
   Check,
   UserX,
+  UserCheck,
   MoreHorizontal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,14 @@ export default function ClientDashboardPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [teamMenuOpen, setTeamMenuOpen] = useState<string | null>(null);
+  // Mirror del lookup que ya viven en my-team y settings: si el email
+  // pegado ya es un Contact del cliente, lo avisamos + pre-llenamos
+  // name/title para que no haya duplicado de contacto al invitar.
+  const [contactMatch, setContactMatch] = useState<{
+    name: string;
+    title: string | null;
+    email: string;
+  } | null>(null);
 
   // Firms Engaged drawer
   const [firmsOpen, setFirmsOpen] = useState(false);
@@ -85,6 +94,32 @@ export default function ClientDashboardPage() {
       .finally(() => setLoading(false));
     fetchTeam();
   }, []);
+
+  // Live contact lookup: si el email tipeado en el invite ya es un
+  // Contact del cliente (subido por la agencia), avisamos + pre-llenamos
+  // name/title para no duplicar. Mismo patron que en my-team/settings.
+  useEffect(() => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@") || !email.includes(".")) {
+      setContactMatch(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/client-portal/contact-lookup?email=${encodeURIComponent(email)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.match) {
+          setContactMatch(null);
+          return;
+        }
+        setContactMatch(data.match);
+        setInviteName((prev) => (prev.trim() ? prev : data.match.name));
+        setInviteTitle((prev) => (prev.trim() ? prev : data.match.title || ""));
+      } catch {}
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [inviteEmail]);
 
   async function fetchTeam() {
     try {
@@ -124,6 +159,7 @@ export default function ClientDashboardPage() {
         setInviteName("");
         setInviteTitle("");
         setInviteEmail("");
+        setContactMatch(null);
         fetchTeam();
       }
     } catch {
@@ -556,6 +592,20 @@ export default function ClientDashboardPage() {
                   <X className="h-4 w-4 text-gray-400" />
                 </button>
               </div>
+              {contactMatch && (
+                <div className="mb-3 flex items-start gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                  <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium">
+                      {contactMatch.name} is already a contact on file
+                      {contactMatch.title ? ` (${contactMatch.title})` : ""}.
+                    </p>
+                    <p className="text-blue-700/80 mt-0.5">
+                      We pre-filled their info. Submitting will give them portal access too.
+                    </p>
+                  </div>
+                </div>
+              )}
               <form onSubmit={inviteMember} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
