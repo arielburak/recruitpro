@@ -408,7 +408,7 @@ export default function ContactsPage() {
           return (
           <Card key={group.clientId}>
             <div
-              className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60 cursor-pointer hover:bg-gray-100 transition-colors"
+              className="flex items-center justify-between px-4 py-1.5 border-b bg-gray-50/60 cursor-pointer hover:bg-gray-100 transition-colors"
               onClick={toggleCollapse}
               role="button"
               tabIndex={0}
@@ -422,11 +422,6 @@ export default function ContactsPage() {
               aria-label={`${isCollapsed ? "Expand" : "Collapse"} contacts for ${group.clientName}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                {isCollapsed ? (
-                  <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
-                )}
                 <Link
                   href={`/clients/${group.clientId}`}
                   onClick={(e) => e.stopPropagation()}
@@ -438,6 +433,13 @@ export default function ContactsPage() {
                   · {group.rows.length} contact{group.rows.length === 1 ? "" : "s"}
                 </span>
               </div>
+              {/* Chevron a la derecha (patron accordion) — balancea el
+                  vacio del lado derecho y aprieta el header arriba. */}
+              {isCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+              )}
             </div>
             {!isCollapsed && (
             <CardContent className="p-0">
