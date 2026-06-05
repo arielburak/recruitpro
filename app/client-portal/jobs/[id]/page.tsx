@@ -790,11 +790,24 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     .filter(
                       (e: any) => e.status === "ACCEPTED" && e.jobId,
                     )
-                    .map((e: any) => ({
-                      agencyJobId: e.jobId as string,
-                      organizationId: e.organization?.id || e.organizationId,
-                      organizationName: e.organization?.name || "the agency",
-                    }))}
+                    .reduce((acc: any[], e: any) => {
+                      // Dedupe por organizationId: si una firma tiene
+                      // 2 engagements ACCEPTED (legacy data o doble
+                      // accept), se mostraba "Shared with Morabits"
+                      // dos veces. Nos quedamos con el primer
+                      // agencyJobId que aparece — el resto de los
+                      // comments del otro engagement quedan
+                      // accesibles via el thread principal (todos
+                      // apuntan a la misma firma).
+                      const orgId = e.organization?.id || e.organizationId;
+                      if (!orgId || acc.some((x) => x.organizationId === orgId)) return acc;
+                      acc.push({
+                        agencyJobId: e.jobId as string,
+                        organizationId: orgId,
+                        organizationName: e.organization?.name || "the agency",
+                      });
+                      return acc;
+                    }, [])}
                 />
               </TabsContent>
 
