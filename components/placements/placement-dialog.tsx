@@ -1135,7 +1135,29 @@ export function PlacementDialog(props: Props) {
               </div>
             </div>
 
+            {/* Dates row: Starting date is the prominent field, the
+                one recruiters care about most ("when does this person
+                actually start"). Estimated start stays as a fallback
+                for forecasting payment due before the actual day is
+                confirmed. Both editable in create + edit. */}
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
+                <Input
+                  id="placement-actual-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setStartDate(v);
+                    setPaymentDueDateTouched(false);
+                    setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
+                  }}
+                />
+                <p className="text-[10px] text-gray-400">
+                  When the candidate actually starts. Anchors guarantee & payment due.
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-est-start">Estimated start</Label>
                 <Input
@@ -1152,15 +1174,19 @@ export function PlacementDialog(props: Props) {
                     setPaymentDueDate(previewFromAnchor(startDate, v, paymentTerms));
                   }}
                 />
+                <p className="text-[10px] text-gray-400">
+                  Fallback used when Starting date is empty.
+                </p>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Currency</Label>
-                <CurrencyPicker
-                  compact
-                  value={currency}
-                  onChange={setCurrency}
-                />
-              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Currency</Label>
+              <CurrencyPicker
+                compact
+                value={currency}
+                onChange={setCurrency}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1353,24 +1379,6 @@ export function PlacementDialog(props: Props) {
               </div>
             )}
 
-            {/* OS edit: Starting date goes ABOVE the end-date block so
-                the reading order matches the contract timeline (start
-                → end), not the form's historical "end-first" layout. */}
-            {isEdit && kind === "OS" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-actual-start-os">Starting date</Label>
-                <Input
-                  id="placement-actual-start-os"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-                <p className="text-[10px] text-gray-400">
-                  Fill once the engagement actually started.
-                </p>
-              </div>
-            )}
-
             {kind === "OS" && (
               <div className="space-y-1.5">
                 <label className="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -1411,35 +1419,6 @@ export function PlacementDialog(props: Props) {
                     Off = engagement is ongoing — that&apos;s what counts as Active MRR.
                   </p>
                 )}
-              </div>
-            )}
-
-            {/* Starting date goes ABOVE Payment due because Payment
-                due is anchored on it (actual start + terms, or
-                estimated start as fallback). Reading order matches
-                the dependency: input first, derived value next.
-                For OS, Starting date is rendered ABOVE the end-date
-                block (handled below as a separate isEdit guard) so
-                start → end stays left-to-right.
-                For HH, Starting date renders here, before Payment
-                due. */}
-            {isEdit && kind === "HH" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
-                <Input
-                  id="placement-actual-start"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setStartDate(v);
-                    setPaymentDueDateTouched(false);
-                    setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
-                  }}
-                />
-                <p className="text-[10px] text-gray-400">
-                  Fill once the candidate starts. Anchors the guarantee.
-                </p>
               </div>
             )}
 
