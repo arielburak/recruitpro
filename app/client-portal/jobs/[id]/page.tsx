@@ -1301,30 +1301,22 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           {isExpanded && (
                             <div className="border-t border-gray-200 divide-y divide-gray-200">
                               {sortedEngagements.map((eng: any) => {
-                                // Misma estructura visual SIEMPRE:
-                                // display name arriba + email full
-                                // abajo. Cuando no hay User registrado
-                                // todavia, derivamos el display name
-                                // del local-part del email
-                                // ("nico.cuello@..." -> "Nico Cuello")
-                                // asi no quedan dos layouts mezclados
-                                // — fila de Nicolas con nombre + fila
-                                // de aburak con email truncado solo.
+                                // Registered → nombre arriba + email
+                                // full abajo. Pending (todavia no
+                                // acepto) → email arriba con
+                                // break-all + chip "pending sign-up"
+                                // para que se entienda que no es un
+                                // "nombre raro" sino un email crudo.
+                                // En cuanto haga signup el form de
+                                // /register le obliga a poner nombre
+                                // (zod min 2) y la fila pasa al primer
+                                // caso sin nuestra intervencion.
                                 const recruiterName = eng.invitedUser?.name || null;
                                 const recruiterEmail =
                                   eng.invitedUser?.email || eng.invitedEmail || null;
-                                const displayName =
-                                  recruiterName ||
-                                  (recruiterEmail
-                                    ? recruiterEmail
-                                        .split("@")[0]
-                                        .split(/[._-]+/)
-                                        .filter(Boolean)
-                                        .map((p: string) => p.charAt(0).toUpperCase() + p.slice(1))
-                                        .join(" ")
-                                    : "Recruiter");
-                                const showEmailBelow = !!recruiterEmail;
-                                const initial = displayName
+                                const isPending = !recruiterName;
+                                const topLabel = recruiterName || recruiterEmail || "Recruiter";
+                                const initial = (recruiterName || recruiterEmail || "?")
                                   .trim()
                                   .split(/\s+/)
                                   .map((w: string) => w[0])
@@ -1341,13 +1333,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                         {initial}
                                       </div>
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-medium text-gray-800 truncate" title={displayName}>
-                                          {displayName}
+                                        <p
+                                          className={`text-xs font-medium text-gray-800 ${isPending ? "break-all" : "truncate"}`}
+                                          title={topLabel}
+                                        >
+                                          {topLabel}
+                                          {isPending && (
+                                            <span className="ml-2 text-[9px] font-normal text-amber-600 align-middle">
+                                              pending sign-up
+                                            </span>
+                                          )}
                                         </p>
-                                        {showEmailBelow && (
+                                        {recruiterName && recruiterEmail && (
                                           <p
                                             className="text-[10px] text-gray-500 break-all"
-                                            title={recruiterEmail!}
+                                            title={recruiterEmail}
                                           >
                                             {recruiterEmail}
                                           </p>
