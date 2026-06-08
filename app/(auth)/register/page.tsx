@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,29 @@ import { Combobox } from "@/components/ui/combobox";
 import { ArrowLeft, Briefcase, Building2, ChevronRight, CheckCircle2, Users, Globe, UserPlus, Sparkles, Mail } from "lucide-react";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
 
-export default function RegisterPage() {
+function RegisterContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Firm-invite deep link: when a client hits "Invite a Recruiter" on
+  // their portal and the recipient doesn't have an account yet, the
+  // email sends them to /register?invite=firm&jobId=...&email=...
+  // Treat that as a hint to skip the portal selector AND prefill the
+  // address they typed. Without this, the recipient lands on the
+  // generic "are you an agency or a hiring company?" screen and the
+  // most common misread is "I'm a hiring company because the client
+  // invited me" — they'd pick Client Portal and dead-end.
+  const inviteKind = searchParams.get("invite");
+  const inviteEmail = searchParams.get("email") || "";
+  const isFirmInvite = inviteKind === "firm";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // The trial sign-up is agency-side only. Client portal access comes
   // from a recruiter's invite — you don't self-register for it. The
   // selector leads with that distinction so hiring companies don't get
   // stuck typing company details they can't use.
-  const [step, setStep] = useState<"select" | "agency" | "client-info">("select");
+  const [step, setStep] = useState<"select" | "agency" | "client-info">(
+    isFirmInvite ? "agency" : "select"
+  );
   // Controlled Industry so the user can either pick a standard
   // bucket from INDUSTRY_OPTIONS or type a custom value.
   const [industry, setIndustry] = useState("");
@@ -251,17 +265,36 @@ export default function RegisterPage() {
 
           {step === "agency" && (
           <>
-          <button
-            type="button"
-            onClick={() => setStep("select")}
-            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-4 -mt-2"
-          >
-            <ArrowLeft className="w-3 h-3" />
-            Back
-          </button>
+          {/* Hide the portal-selector back button when the user arrived
+              from a firm invite — they shouldn't be re-asking themselves
+              "wait, am I a hiring company?". The invite already routed
+              them here on purpose. */}
+          {!isFirmInvite && (
+            <button
+              type="button"
+              onClick={() => setStep("select")}
+              className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-4 -mt-2"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back
+            </button>
+          )}
+
+          {isFirmInvite && (
+            <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-sm">
+              <p className="font-medium text-indigo-900">You&apos;ve been invited as a recruiter</p>
+              <p className="text-indigo-800/90 mt-1 leading-relaxed">
+                Set up your recruiting firm to accept the engagement. The
+                invite will land in your dashboard as soon as you finish
+                signing up.
+              </p>
+            </div>
+          )}
 
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900">Start your free trial</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {isFirmInvite ? "Set up your firm" : "Start your free trial"}
+            </h2>
             <p className="text-gray-500 mt-1">
               5 days free. Credit card required. Cancel anytime before the trial ends.
             </p>
@@ -368,6 +401,7 @@ export default function RegisterPage() {
                 type="email"
                 placeholder="john@acmerecruiting.com"
                 className="focus-visible:ring-indigo-500"
+                defaultValue={inviteEmail}
                 required
               />
             </div>
@@ -427,5 +461,16 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  // useSearchParams() requires a Suspense boundary in App Router so the
+  // page can be statically prerendered even though the inner client
+  // component reads URL state.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 animate-pulse" />}>
+      <RegisterContent />
+    </Suspense>
   );
 }
