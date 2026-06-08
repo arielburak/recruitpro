@@ -1053,10 +1053,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   contexto que es para sumar a alguien del equipo
                   cliente (no para invitar a una firma, que es Assigned
                   Firms al lado). */}
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2 min-w-0">
+              {/* Header con wrap controlado: title siempre completo
+                  (sin truncate), boton baja a la linea siguiente si
+                  no entra a lo ancho. Asi en la columna angosta del
+                  grid de soporte el header se ve "Job access" arriba
+                  + "Invite teammate" debajo, en vez de "Job acc..."
+                  cortado. */}
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 whitespace-nowrap">
                   <Users className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span className="truncate">Job access</span>
+                  Job access
                 </CardTitle>
                 <Button
                   size="sm"
@@ -1224,19 +1230,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   )
                 )}
 
-                {/* Manage link — toggle inline para entrar al checkbox
-                    mode. Antes era un boton en el header pero rompia el
-                    titulo en dos lineas en la columna angosta. Como
-                    link discreto debajo de los chips queda fuera del
-                    flujo principal (invite) pero accesible. */}
+                {/* Manage link — bottom-right del card como ya pidio
+                    el usuario, label simple "Manage" (la frase larga
+                    "Manage who can see this search" se leia rara). El
+                    contexto se entiende porque vive adentro de Job
+                    access. */}
                 {!showAddMember && !showManageAccess && (
-                  <button
-                    type="button"
-                    onClick={openManageAccess}
-                    className="mt-3 text-xs text-emerald-700 hover:text-emerald-900 underline-offset-2 hover:underline inline-flex items-center gap-1"
-                  >
-                    Manage who can see this search
-                  </button>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={openManageAccess}
+                      className="text-xs text-gray-500 hover:text-gray-900 underline-offset-2 hover:underline"
+                    >
+                      Manage
+                    </button>
+                  </div>
                 )}
 
                 {showManageAccess && (
