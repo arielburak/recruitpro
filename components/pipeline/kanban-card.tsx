@@ -30,6 +30,10 @@ export function KanbanCard({
   });
 
   const [showShareDialog, setShowShareDialog] = useState(false);
+  // Diferencia "primer share" (dialog full con note + mail) vs "edit
+  // post-share" (dialog reducido, solo checkboxes de docs). Set true
+  // cuando se entra desde el menu "Manage shared docs".
+  const [editDocsMode, setEditDocsMode] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
   const style = transform
@@ -52,6 +56,7 @@ export function KanbanCard({
       // Already shared — show menu instead of toggling
       setShowMenu((v) => !v);
     } else {
+      setEditDocsMode(false);
       setShowShareDialog(true);
     }
   }
@@ -167,10 +172,22 @@ export function KanbanCard({
                 {showMenu && isShared && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                    <div className="absolute right-0 top-7 z-20 bg-white border rounded-lg shadow-lg py-1 w-40">
+                    <div className="absolute right-0 top-7 z-20 bg-white border rounded-lg shadow-lg py-1 w-48">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowMenu(false);
+                          setEditDocsMode(true);
+                          setShowShareDialog(true);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        Manage shared docs
+                      </button>
                       <button
                         onClick={handleUnshare}
-                        className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                        className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100"
                       >
                         <X className="h-3.5 w-3.5" />
                         Stop sharing
@@ -186,7 +203,13 @@ export function KanbanCard({
 
       <ShareCandidateDialog
         open={showShareDialog}
-        onOpenChange={setShowShareDialog}
+        onOpenChange={(o) => {
+          setShowShareDialog(o);
+          // Reset al cerrar para que el proximo abrir desde "Share
+          // with Client" no quede pegado en edit mode.
+          if (!o) setEditDocsMode(false);
+        }}
+        editDocsOnly={editDocsMode}
         submission={{
           id: submission.id,
           candidate: {

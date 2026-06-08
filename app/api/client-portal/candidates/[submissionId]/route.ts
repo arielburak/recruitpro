@@ -69,19 +69,45 @@ export async function GET(
       return NextResponse.json({ error: "Candidate not found or not shared" }, { status: 404 });
     }
 
-    // Fetch candidate documents (linked to candidate directly)
-    const documents = await prisma.document.findMany({
-      where: { candidateId: submission.candidate.id },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        size: true,
-        category: true,
-        createdAt: true,
+    // Fetch documents que la agencia eligio compartir EN ESTA
+    // submission especifica. Antes devolviamos todos los docs del
+    // candidate sin filtrar — el cliente veia CVs viejos, drafts
+    // internos, etc. Ahora solo los SubmissionDocument explicitos.
+    //
+    // Backwards-compat: si la submission no tiene SubmissionDocument
+    // rows (shares legacy pre-feature), caemos al comportamiento
+    // anterior asi no rompemos historicos. Shares nuevos siempre
+    // crean al menos una row al disparar el share.
+    const submissionDocs = await prisma.submissionDocument.findMany({
+      where: { submissionId: submission.id },
+      include: {
+        document: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            size: true,
+            category: true,
+            createdAt: true,
+          },
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { addedAt: "desc" },
     });
+    const documents = submissionDocs.length > 0
+      ? submissionDocs.map((s) => s.document)
+      : await prisma.document.findMany({
+          where: { candidateId: submission.candidate.id },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            size: true,
+            category: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+        });
 
     // My rating. The Prisma client generic for `candidateRating` has
     // grown deep enough that the inferred awaited type trips
