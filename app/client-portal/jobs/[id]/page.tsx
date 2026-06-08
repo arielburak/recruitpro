@@ -1301,24 +1301,30 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           {isExpanded && (
                             <div className="border-t border-gray-200 divide-y divide-gray-200">
                               {sortedEngagements.map((eng: any) => {
-                                // Layout consistente para cada fila:
-                                // nombre arriba cuando hay User
-                                // registrado, email abajo. Cuando solo
-                                // tenemos email (recruiter todavia no
-                                // se sumo), email arriba y no hay
-                                // segunda linea. Asi no aparece "name"
-                                // crudo en una fila y email truncado
-                                // en la siguiente.
+                                // Misma estructura visual SIEMPRE:
+                                // display name arriba + email full
+                                // abajo. Cuando no hay User registrado
+                                // todavia, derivamos el display name
+                                // del local-part del email
+                                // ("nico.cuello@..." -> "Nico Cuello")
+                                // asi no quedan dos layouts mezclados
+                                // — fila de Nicolas con nombre + fila
+                                // de aburak con email truncado solo.
                                 const recruiterName = eng.invitedUser?.name || null;
                                 const recruiterEmail =
                                   eng.invitedUser?.email || eng.invitedEmail || null;
-                                const mainLabel =
-                                  recruiterName || recruiterEmail || "(unknown recruiter)";
-                                const showEmailBelow =
-                                  !!recruiterName &&
-                                  !!recruiterEmail &&
-                                  recruiterEmail !== recruiterName;
-                                const initial = (recruiterName || recruiterEmail || "?")
+                                const displayName =
+                                  recruiterName ||
+                                  (recruiterEmail
+                                    ? recruiterEmail
+                                        .split("@")[0]
+                                        .split(/[._-]+/)
+                                        .filter(Boolean)
+                                        .map((p: string) => p.charAt(0).toUpperCase() + p.slice(1))
+                                        .join(" ")
+                                    : "Recruiter");
+                                const showEmailBelow = !!recruiterEmail;
+                                const initial = displayName
                                   .trim()
                                   .split(/\s+/)
                                   .map((w: string) => w[0])
@@ -1335,8 +1341,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                         {initial}
                                       </div>
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-medium text-gray-800 truncate" title={mainLabel}>
-                                          {mainLabel}
+                                        <p className="text-xs font-medium text-gray-800 truncate" title={displayName}>
+                                          {displayName}
                                         </p>
                                         {showEmailBelow && (
                                           <p
