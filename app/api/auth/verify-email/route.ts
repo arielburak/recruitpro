@@ -4,9 +4,12 @@ import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
 
 // Marks the user as verified when the token from the verification
 // email is presented. Public endpoint — the only auth required is
-// possession of the token. Idempotent: an already-verified token
-// just returns 200 instead of failing, so a recruiter who clicks
-// the link twice doesn't see an error.
+// possession of the token. Idempotent: the token stays on the row
+// after verification, so a refresh of /verify-email re-finds the
+// user and short-circuits via the alreadyVerified branch instead
+// of failing with "link no longer valid". The token is rotated
+// (and the old one invalidated) only when a resend explicitly
+// requests a new one.
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -28,11 +31,11 @@ export async function POST(request: Request) {
       },
     });
 
-    // No matching token. Could be an already-used link (we clear the
-    // token after success) or a forged one — same generic error so
-    // we don't leak which. `reason` lets the UI distinguish "this
-    // link was already used / regenerated" from "this link timed
-    // out", which need different recovery paths (sign in vs resend).
+    // No matching token. Either the token was rotated by a resend
+    // (old link superseded) or it's forged — same generic error so
+    // we don't leak which. `reason: "invalid"` lets the UI route to
+    // the "already used / superseded" copy (sign in or check inbox
+    // for the newest link) instead of the "timed out" copy (resend).
     if (!user) {
       return NextResponse.json(
         { error: "Invalid or expired verification link", reason: "invalid" },
@@ -54,13 +57,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Only flip emailVerifiedAt. Leaving the token + expiry in place
+    // is what makes a refresh of /verify-email idempotent: the next
+    // hit finds the same row, sees emailVerifiedAt set, and returns
+    // alreadyVerified instead of "link no longer valid". The token
+    // is safe to leave because resend rotates it (invalidating this
+    // one) and emailVerificationExpiresAt still bounds its lifetime.
     await prisma.user.update({
       where: { id: user.id },
-      data: {
-        emailVerifiedAt: new Date(),
-        emailVerificationToken: null,
-        emailVerificationExpiresAt: null,
-      },
+      data: { emailVerifiedAt: new Date() },
     });
 
     // Welcome mail — sent on the FIRST successful verification only
