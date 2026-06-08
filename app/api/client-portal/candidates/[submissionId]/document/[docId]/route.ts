@@ -37,11 +37,24 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Solo permitir docs que la agencia eligio para esta submission.
+    // Backwards-compat: si no hay SubmissionDocument rows (legacy
+    // share), caemos al chequeo "doc del candidate" para no romper
+    // links historicos.
+    const totalShared = await prisma.submissionDocument.count({
+      where: { submissionId },
+    });
+    const docWhere =
+      totalShared > 0
+        ? {
+            id: docId,
+            candidateId: submission.candidateId,
+            submissionShares: { some: { submissionId } },
+          }
+        : { id: docId, candidateId: submission.candidateId };
+
     const doc = await prisma.document.findFirst({
-      where: {
-        id: docId,
-        candidateId: submission.candidateId,
-      },
+      where: docWhere,
       select: { url: true, name: true },
     });
 

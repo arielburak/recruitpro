@@ -131,6 +131,54 @@ export async function PATCH(
       data: updateData,
     });
 
+    // Documents que la agencia eligio compartir con el cliente. El
+    // caller manda la lista FINAL deseada en selectedDocumentIds y
+    // hacemos REPLACE — diff explicito (delete-only y create-only)
+    // para no destruir metadata de rows que ya existian. Mismo PATCH
+    // sirve para primer share (lista nueva) y para re-edit en
+    // submissions ya compartidas. Si selectedDocumentIds es
+    // undefined, no tocamos nada (PATCH de stage / etc).
+    if (Array.isArray(body.selectedDocumentIds)) {
+      const wantedRaw = body.selectedDocumentIds.filter(
+        (x: unknown): x is string => typeof x === "string",
+      );
+      // Validar contra los docs reales del candidate. Descartar ids
+      // ajenos silenciosamente.
+      const candidateDocs = wantedRaw.length > 0
+        ? await prisma.document.findMany({
+            where: {
+              candidateId: submission.candidateId,
+              id: { in: wantedRaw },
+            },
+            select: { id: true },
+          })
+        : [];
+      const validIds = new Set<string>(candidateDocs.map((d) => d.id));
+      const wanted = new Set<string>(wantedRaw.filter((x) => validIds.has(x)));
+      const existing = await prisma.submissionDocument.findMany({
+        where: { submissionId: id },
+        select: { documentId: true },
+      });
+      const currentIds = new Set<string>(existing.map((x) => x.documentId));
+      const toAdd = Array.from(wanted).filter((x) => !currentIds.has(x));
+      const toRemove = Array.from(currentIds).filter((x) => !wanted.has(x));
+      if (toRemove.length > 0) {
+        await prisma.submissionDocument.deleteMany({
+          where: { submissionId: id, documentId: { in: toRemove } },
+        });
+      }
+      if (toAdd.length > 0) {
+        await prisma.submissionDocument.createMany({
+          data: toAdd.map((documentId) => ({
+            submissionId: id,
+            documentId,
+            addedById: ctx.userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
     // Log stage change — covers both explicit moves (body.stageId) and the
     // implicit advance to "Submitted" we trigger from the share toggle.
     // Metadata carries the structured transition so reporting widgets
