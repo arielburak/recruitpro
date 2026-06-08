@@ -37,10 +37,23 @@ export async function GET() {
           select: { id: true, email: true, message: true, createdAt: true },
         },
         // Visible members for the JO's chip strip on the dashboard /
-        // detail page. Empty list = "everyone on the team".
+        // detail page. Empty list = "everyone on the team". passwordHash
+        // + emailVerifiedAt come along so the UI can mark members who
+        // were invited but never activated as "pending" — gives the
+        // client a clear cancel affordance on the panel where they
+        // originally hit Invite.
         members: {
           select: {
-            clientUser: { select: { id: true, name: true, email: true, role: true } },
+            clientUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                passwordHash: true,
+                emailVerifiedAt: true,
+              },
+            },
           },
         },
         // Chat-style notes thread for the ClientJob. Two tabs in the
@@ -136,8 +149,24 @@ export async function GET() {
           }
         }
 
+        // Strip passwordHash before shipping — the UI only needs the
+        // derived "isPending" boolean (member exists but never
+        // activated: no password set + email never verified). The
+        // hash itself stays server-side.
+        const sanitizedMembers = (job.members || []).map((m: any) => ({
+          clientUser: {
+            id: m.clientUser.id,
+            name: m.clientUser.name,
+            email: m.clientUser.email,
+            role: m.clientUser.role,
+            isPending:
+              !m.clientUser.passwordHash && !m.clientUser.emailVerifiedAt,
+          },
+        }));
+
         return {
           ...job,
+          members: sanitizedMembers,
           teamMembers: Array.from(teamMap.values()),
           firmCandidateCounts,
         };

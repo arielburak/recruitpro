@@ -147,6 +147,30 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setSavingAccess(false);
   }
 
+  // Cancel a teammate invite the user just sent. The endpoint reuses
+  // the same /members PUT so the "creator stays" rule, the diff +
+  // notification logic etc. all live in one place. We compute the new
+  // memberIds client-side as "current minus the one being cancelled"
+  // — cheap, no extra endpoint needed.
+  async function cancelMemberInvite(memberId: string, label: string) {
+    const ok = confirm(
+      `Cancel the invite for ${label}? They'll lose access to this search.`,
+    );
+    if (!ok) return;
+    const currentIds = (job?.members || [])
+      .map((m: any) => m.clientUser?.id)
+      .filter((x: any): x is string => typeof x === "string");
+    const nextIds = currentIds.filter((x: string) => x !== memberId);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: nextIds }),
+      });
+      if (res.ok) await fetchJob();
+    } catch {}
+  }
+
   // Candidates for this job + the client's pipeline stages, used by
   // the read-only pipeline view that mirrors the agency's kanban.
   const [jobCandidates, setJobCandidates] = useState<any[]>([]);
@@ -1042,10 +1066,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     <div className="flex flex-wrap gap-2">
                       {(job?.members || []).map((m: any) => {
                         const isCreator = job?.postedById === m.clientUser.id;
+                        const isPending = !!m.clientUser.isPending;
                         return (
                           <span
                             key={m.clientUser.id}
-                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-sm px-3 py-1.5 rounded-lg"
+                            className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg ${
+                              isPending
+                                ? "bg-amber-50 text-amber-800 border border-dashed border-amber-300"
+                                : "bg-emerald-50 text-emerald-700"
+                            }`}
                             title={m.clientUser.email}
                           >
                             {m.clientUser.name}
@@ -1053,6 +1082,31 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <span className="text-[11px] text-emerald-600/70 font-normal">
                                 (owner)
                               </span>
+                            )}
+                            {isPending && (
+                              <span className="text-[10px] uppercase tracking-wider text-amber-600 font-medium">
+                                pending
+                              </span>
+                            )}
+                            {/* Cancel × — only for pending invites and
+                                only when the chip isn't the creator
+                                (the creator stays a member by rule;
+                                cancelling them would just bounce). */}
+                            {isPending && !isCreator && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  cancelMemberInvite(
+                                    m.clientUser.id,
+                                    m.clientUser.name || m.clientUser.email,
+                                  )
+                                }
+                                className="ml-1 text-amber-600 hover:text-rose-600"
+                                title="Cancel invite"
+                                aria-label={`Cancel invite for ${m.clientUser.name || m.clientUser.email}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
                             )}
                           </span>
                         );
