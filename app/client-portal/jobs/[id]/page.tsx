@@ -94,6 +94,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   // When set, the recruiter-contacts list filters to that firm only.
   // null = show all firms (default).
   const [selectedFirm, setSelectedFirm] = useState<string | null>(null);
+  // Expand/collapse por firma en Assigned Firms. Click en el header
+  // de cada Card togglea ver los recruiters individualmente. State
+  // in-memory (no localStorage) para que no se quede vieja info si
+  // la lista de engagements cambia.
+  const [expandedFirms, setExpandedFirms] = useState<Set<string>>(new Set());
 
   // Team member management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -1210,77 +1215,152 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       // Status agregado: prioridad ACCEPTED > PENDING > DECLINED.
                       const aggregatedStatus =
                         accepted.length > 0 ? "ACCEPTED" : pending.length > 0 ? "PENDING" : "DECLINED";
-                      const recruiterNames = group.engagements
-                        .map((e) => e.invitedUser?.name)
-                        .filter(Boolean) as string[];
                       const earliestInvitedAt = group.engagements
                         .map((e) => e.invitedAt)
                         .sort()[0];
-                      // Withdraw solo si hay UN unico engagement PENDING
-                      // (caso univoco). Con multiples no sabemos cual
-                      // querria withdraw el cliente sin drill-down.
-                      const lonePending =
-                        pending.length === 1 && accepted.length === 0 && declined.length === 0
-                          ? pending[0]
-                          : null;
+                      const recruiterCount = group.engagements.length;
+                      const isExpanded = expandedFirms.has(group.firm.id);
+                      const toggleExpanded = () => {
+                        setExpandedFirms((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(group.firm.id)) next.delete(group.firm.id);
+                          else next.add(group.firm.id);
+                          return next;
+                        });
+                      };
+                      // Engagements ordenados al expandir: aceptados
+                      // arriba, pendientes en medio, declinados al
+                      // final. Dentro de cada bucket, el mas reciente
+                      // primero.
+                      const sortedEngagements = [
+                        ...accepted,
+                        ...pending,
+                        ...declined,
+                      ].sort((a, b) => {
+                        if (a.status !== b.status) return 0;
+                        return new Date(b.invitedAt).getTime() - new Date(a.invitedAt).getTime();
+                      });
                       return (
-                        <div key={group.firm.id} className="p-2.5 bg-gray-50 rounded-lg">
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
-                                <Building2 className="h-4 w-4 text-indigo-600" />
+                        <div key={group.firm.id} className="bg-gray-50 rounded-lg overflow-hidden">
+                          {/* Header clickeable — toggle accordion */}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={toggleExpanded}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleExpanded();
+                              }
+                            }}
+                            aria-expanded={isExpanded}
+                            aria-label={`${isExpanded ? "Collapse" : "Expand"} recruiters for ${group.firm.name}`}
+                            className="p-2.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                                  <Building2 className="h-4 w-4 text-indigo-600" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">
+                                    {group.firm.name}
+                                  </p>
+                                  <p className="text-[10px] text-gray-400 truncate">
+                                    {recruiterCount} recruiter{recruiterCount === 1 ? "" : "s"} · Invited {formatDate(earliestInvitedAt)}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium truncate">
-                                  {group.firm.name}
-                                </p>
-                                <p className="text-[10px] text-gray-400 truncate">
-                                  {recruiterNames.length > 0 ? (
-                                    <>{recruiterNames.join(", ")} · </>
-                                  ) : null}
-                                  Invited {formatDate(earliestInvitedAt)}
-                                </p>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Badge className={`text-[10px] ${statusColor[aggregatedStatus]}`}>
+                                  {aggregatedStatus === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
+                                  {aggregatedStatus === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
+                                  {aggregatedStatus === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
+                                  {aggregatedStatus.toLowerCase()}
+                                </Badge>
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                )}
                               </div>
                             </div>
-                            <Badge className={`text-[10px] shrink-0 ${statusColor[aggregatedStatus]}`}>
-                              {aggregatedStatus === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
-                              {aggregatedStatus === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
-                              {aggregatedStatus === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
-                              {aggregatedStatus.toLowerCase()}
-                            </Badge>
-                          </div>
-                          {aggregatedStatus === "ACCEPTED" && (
-                            <div className="ml-10 mt-1 space-y-0.5">
-                              <span className="text-xs text-gray-500 flex items-center gap-1">
-                                <Users className="h-3 w-3 shrink-0" />
-                                {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
-                              </span>
-                              {pending.length > 0 && (
-                                <p className="text-[10px] text-amber-600">
-                                  +{pending.length} pending invite{pending.length === 1 ? "" : "s"}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                          {aggregatedStatus === "PENDING" && (
-                            <div className="ml-10 mt-1 flex items-center justify-between gap-2">
-                              <p className="text-[10px] text-amber-600">
+                            {/* Summary debajo del header: candidates +
+                                pending count, solo cuando hay accepted */}
+                            {aggregatedStatus === "ACCEPTED" && (
+                              <div className="ml-10 mt-1 space-y-0.5">
+                                <span className="text-xs text-gray-500 flex items-center gap-1">
+                                  <Users className="h-3 w-3 shrink-0" />
+                                  {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
+                                </span>
+                                {pending.length > 0 && (
+                                  <p className="text-[10px] text-amber-600">
+                                    +{pending.length} pending invite{pending.length === 1 ? "" : "s"}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {aggregatedStatus === "PENDING" && (
+                              <p className="ml-10 mt-1 text-[10px] text-amber-600">
                                 Waiting for response{pending.length > 1 ? ` (${pending.length} recruiters)` : ""}...
                               </p>
-                              {lonePending && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    withdrawEngagement(
-                                      lonePending.id,
-                                      lonePending.invitedUser?.name || group.firm.name,
-                                    )
-                                  }
-                                  className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
-                                >
-                                  Withdraw
-                                </button>
-                              )}
+                            )}
+                          </div>
+                          {/* Lista de recruiters dentro de la firma —
+                              uno por engagement, con su propio status
+                              y boton Withdraw (solo para PENDING). */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-200 divide-y divide-gray-200">
+                              {sortedEngagements.map((eng: any) => {
+                                const recruiterName =
+                                  eng.invitedUser?.name || eng.invitedEmail || "(unknown recruiter)";
+                                return (
+                                  <div
+                                    key={eng.id}
+                                    className="px-2.5 py-2 bg-white flex items-center justify-between gap-2"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0 flex-1 ml-10">
+                                      <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
+                                        {(recruiterName.split(" ").map((w: string) => w[0]).join("") || "?").slice(0, 2).toUpperCase()}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-medium text-gray-800 truncate">
+                                          {recruiterName}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400">
+                                          Invited {formatDate(eng.invitedAt)}
+                                          {eng.message ? (
+                                            <span className="italic" title={eng.message}>
+                                              {" · "}
+                                              &quot;{eng.message.length > 40 ? eng.message.slice(0, 40) + "…" : eng.message}&quot;
+                                            </span>
+                                          ) : null}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge className={`text-[9px] px-1.5 py-0 h-4 ${statusColor[eng.status]}`}>
+                                        {eng.status.toLowerCase()}
+                                      </Badge>
+                                      {eng.status === "PENDING" && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            withdrawEngagement(
+                                              eng.id,
+                                              eng.invitedUser?.name || group.firm.name,
+                                            );
+                                          }}
+                                          className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                                        >
+                                          Withdraw
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
