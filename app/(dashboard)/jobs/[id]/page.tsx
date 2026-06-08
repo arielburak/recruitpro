@@ -183,6 +183,15 @@ export default function JobDetailPage() {
   const [shareSuccess, setShareSuccess] = useState("");
   const [shareError, setShareError] = useState("");
 
+  // Client portal access editor — manages who on the hiring company
+  // side can see this Job in their portal. Independent per Job; no
+  // special creator handling (the agency just shares with whoever
+  // needs to see it).
+  const [editingPortalAccess, setEditingPortalAccess] = useState(false);
+  const [accessSelectedIds, setAccessSelectedIds] = useState<Set<string>>(new Set());
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+
   // Autocomplete for the share-with-client dialog. As the recruiter
   // types, surface every ClientUser the agency already has on file so
   // they can pick "Nick Cuello · Lion Point" instead of re-typing a
@@ -1610,16 +1619,41 @@ export default function JobDetailPage() {
                       <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
                     </div>
                     {/* Client portal access — quien del cliente puede
-                        ver el job en su portal. Cuando job.clientJobMirror
-                        es null, la agencia todavia no compartio (no hay
-                        ClientJob mirror). Si tiene members explicitos,
-                        listamos esos; sino, fallback a todos los
-                        ClientUsers activos del cliente (regla legacy de
-                        ClientJob "miembros vacios = todos ven"). */}
+                        ver el job en su portal. Editable: la agencia
+                        agrega o quita ClientUsers libremente (sin
+                        special-casing del creator — el recruiter
+                        comparte con quien necesite, no le importa quien
+                        creo la mirror del lado cliente). Si el mirror
+                        no existe todavia, pointer al flow de Invite
+                        Client. Si existe pero no hay members explicitos
+                        usamos la regla legacy "todos los ClientUsers
+                        activos ven" como display, pero el editor
+                        permite acotar. */}
                     <div className="bg-gray-50 rounded-lg p-3 col-span-2 lg:col-span-4">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">
-                        Client portal access
-                      </p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                          Client portal access
+                        </p>
+                        {job.clientJobMirror && !editingPortalAccess && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const memberUsers = (job.clientJobMirror?.members || [])
+                                .map((m: any) => m.clientUser)
+                                .filter(Boolean);
+                              setAccessSelectedIds(
+                                new Set(memberUsers.map((u: any) => u.id)),
+                              );
+                              setAccessError(null);
+                              setEditingPortalAccess(true);
+                            }}
+                            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Manage
+                          </button>
+                        )}
+                      </div>
                       {(() => {
                         const mirror = job.clientJobMirror;
                         if (!mirror) {
@@ -1630,13 +1664,106 @@ export default function JobDetailPage() {
                             </p>
                           );
                         }
+
+                        const allClientUsers = job.client?.clientUsers || [];
+
+                        if (editingPortalAccess) {
+                          const toggleId = (uid: string) => {
+                            setAccessSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(uid)) next.delete(uid);
+                              else next.add(uid);
+                              return next;
+                            });
+                          };
+                          const saveAccess = async () => {
+                            setSavingAccess(true);
+                            setAccessError(null);
+                            try {
+                              const res = await fetch(`/api/jobs/${job.id}/client-portal-access`, {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  memberIds: Array.from(accessSelectedIds),
+                                }),
+                              });
+                              if (!res.ok) {
+                                const j = await res.json().catch(() => ({}));
+                                throw new Error(j.error || "Save failed");
+                              }
+                              setEditingPortalAccess(false);
+                              await fetchJob();
+                            } catch (e: any) {
+                              setAccessError(e.message || "Save failed");
+                            } finally {
+                              setSavingAccess(false);
+                            }
+                          };
+                          return (
+                            <div className="space-y-2">
+                              <p className="text-[11px] text-gray-500">
+                                Tick the people who should see this search. Unchecking everyone reverts to the legacy &quot;visible to the whole team&quot; state.
+                              </p>
+                              {allClientUsers.length === 0 ? (
+                                <p className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg p-3">
+                                  Nobody on {job.client?.name || "this client"} has a portal account yet. Invite them first.
+                                </p>
+                              ) : (
+                                <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                                  {allClientUsers.map((u: any) => {
+                                    const checked = accessSelectedIds.has(u.id);
+                                    return (
+                                      <label
+                                        key={u.id}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleId(u.id)}
+                                          className="rounded border-gray-300"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <p className="font-medium text-gray-900 truncate">{u.name || u.email}</p>
+                                          <p className="text-[11px] text-gray-500 truncate">{u.email}</p>
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {accessError && (
+                                <p className="text-xs text-rose-600">{accessError}</p>
+                              )}
+                              <div className="flex items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPortalAccess(false);
+                                    setAccessError(null);
+                                  }}
+                                  className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1"
+                                  disabled={savingAccess}
+                                >
+                                  Cancel
+                                </button>
+                                <Button
+                                  size="sm"
+                                  onClick={saveAccess}
+                                  disabled={savingAccess}
+                                >
+                                  {savingAccess ? "Saving…" : "Save"}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const memberUsers = (mirror.members || [])
                           .map((m: any) => m.clientUser)
                           .filter(Boolean);
                         const useFallback = memberUsers.length === 0;
-                        const allClientUsers = job.client?.clientUsers || [];
                         const visibleUsers = useFallback ? allClientUsers : memberUsers;
-                        const postedById = mirror.postedBy?.id || null;
                         if (visibleUsers.length === 0) {
                           return (
                             <p className="text-xs text-gray-500">
@@ -1652,35 +1779,18 @@ export default function JobDetailPage() {
                               </p>
                             )}
                             <div className="flex flex-wrap gap-1.5">
-                              {/* Sort: creator first so the column reads
-                                  top-down chronologically without the
-                                  loud CREATOR pill that used to sit
-                                  inside each chip — the order itself is
-                                  the cue (and there's nothing actionable
-                                  here from the agency side anyway). */}
-                              {[...visibleUsers]
-                                .sort((a: any, b: any) => {
-                                  const ac = postedById === a.id ? 0 : 1;
-                                  const bc = postedById === b.id ? 0 : 1;
-                                  return ac - bc;
-                                })
-                                .map((u: any) => {
+                              {visibleUsers.map((u: any) => {
                                 const initials = (u.name || u.email || "?")
                                   .split(/\s+/)
                                   .filter(Boolean)
                                   .slice(0, 2)
                                   .map((p: string) => p[0]?.toUpperCase() || "")
                                   .join("");
-                                const isCreator = postedById === u.id;
                                 return (
                                   <div
                                     key={u.id}
                                     className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full pl-1 pr-2.5 py-0.5"
-                                    title={
-                                      isCreator
-                                        ? `${u.email} · created this search`
-                                        : u.email
-                                    }
+                                    title={u.email}
                                   >
                                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-semibold">
                                       {initials || "?"}
