@@ -139,8 +139,12 @@ export async function PATCH(
     // submissions ya compartidas. Si selectedDocumentIds es
     // undefined, no tocamos nada (PATCH de stage / etc).
     if (Array.isArray(body.selectedDocumentIds)) {
-      const wantedRaw = body.selectedDocumentIds.filter(
-        (x: unknown): x is string => typeof x === "string",
+      // body.selectedDocumentIds es any[] (viene del JSON), asi que
+      // filtramos a string[] explicitamente con un tipo concreto.
+      // El predicate `is string` no narrowea cuando la base es any,
+      // por eso fijamos el array con `as string[]` al final.
+      const wantedRaw: string[] = (body.selectedDocumentIds as unknown[]).filter(
+        (x): x is string => typeof x === "string",
       );
       // Validar contra los docs reales del candidate. Descartar ids
       // ajenos silenciosamente.
@@ -153,15 +157,15 @@ export async function PATCH(
             select: { id: true },
           })
         : [];
-      const validIds = new Set<string>(candidateDocs.map((d) => d.id));
-      const wanted = new Set<string>(wantedRaw.filter((x) => validIds.has(x)));
+      const validIds = new Set<string>(candidateDocs.map((d: { id: string }) => d.id));
+      const wanted = new Set<string>(wantedRaw.filter((x: string) => validIds.has(x)));
       const existing = await prisma.submissionDocument.findMany({
         where: { submissionId: id },
         select: { documentId: true },
       });
-      const currentIds = new Set<string>(existing.map((x) => x.documentId));
-      const toAdd = Array.from(wanted).filter((x) => !currentIds.has(x));
-      const toRemove = Array.from(currentIds).filter((x) => !wanted.has(x));
+      const currentIds = new Set<string>(existing.map((x: { documentId: string }) => x.documentId));
+      const toAdd = Array.from(wanted).filter((x: string) => !currentIds.has(x));
+      const toRemove = Array.from(currentIds).filter((x: string) => !wanted.has(x));
       if (toRemove.length > 0) {
         await prisma.submissionDocument.deleteMany({
           where: { submissionId: id, documentId: { in: toRemove } },
@@ -248,7 +252,7 @@ export async function PATCH(
                 clientUser: { select: { id: true, email: true } },
               },
             })
-          ).map((m) => ({ id: m.clientUser.id, email: m.clientUser.email }))
+          ).map((m: { clientUser: { id: string; email: string } }) => ({ id: m.clientUser.id, email: m.clientUser.email }))
         : await prisma.clientUser.findMany({
             where: { clientId: submission.job.clientId, isActive: true },
             select: { id: true, email: true },
