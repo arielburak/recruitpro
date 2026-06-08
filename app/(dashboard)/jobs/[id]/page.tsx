@@ -192,6 +192,33 @@ export default function JobDetailPage() {
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
 
+  // Cancel a portal invite from the inline pending chip × button.
+  // Reuses the same PUT /client-portal-access endpoint as the Manage
+  // editor — we just send the current member ids minus the one being
+  // cancelled, so the diff / notification logic on the server stays
+  // in one place.
+  async function cancelPortalInvite(clientUserId: string, label: string) {
+    const ok = confirm(
+      `Cancel the portal invite for ${label}? They'll lose access to this search.`,
+    );
+    if (!ok) return;
+    const mirror = job?.clientJobMirror;
+    if (!mirror) return;
+    const memberUsers = (mirror.members || [])
+      .map((m: any) => m.clientUser)
+      .filter(Boolean);
+    const currentIds = memberUsers.map((u: any) => u.id);
+    const nextIds = currentIds.filter((x: string) => x !== clientUserId);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/client-portal-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: nextIds }),
+      });
+      if (res.ok) await fetchJob();
+    } catch {}
+  }
+
   // Autocomplete for the share-with-client dialog. As the recruiter
   // types, surface every ClientUser the agency already has on file so
   // they can pick "Nick Cuello · Lion Point" instead of re-typing a
@@ -1786,18 +1813,60 @@ export default function JobDetailPage() {
                                   .slice(0, 2)
                                   .map((p: string) => p[0]?.toUpperCase() || "")
                                   .join("");
+                                const isPending = !!u.isPending;
                                 return (
                                   <div
                                     key={u.id}
-                                    className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full pl-1 pr-2.5 py-0.5"
-                                    title={u.email}
+                                    className={`inline-flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-0.5 border ${
+                                      isPending
+                                        ? "bg-amber-50 border-amber-300 border-dashed"
+                                        : "bg-white border-gray-200"
+                                    }`}
+                                    title={
+                                      isPending
+                                        ? `${u.email} · pending sign-up`
+                                        : u.email
+                                    }
                                   >
-                                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-semibold">
+                                    <span
+                                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold ${
+                                        isPending
+                                          ? "bg-amber-100 text-amber-700"
+                                          : "bg-emerald-100 text-emerald-700"
+                                      }`}
+                                    >
                                       {initials || "?"}
                                     </span>
                                     <span className="text-xs font-medium text-gray-800">
                                       {u.name || u.email}
                                     </span>
+                                    {isPending && (
+                                      <>
+                                        <span className="text-[9px] uppercase tracking-wider text-amber-700 font-medium">
+                                          pending
+                                        </span>
+                                        {/* Cancel × — only on pending
+                                            chips. The endpoint dedupes
+                                            id removal; if the user
+                                            already activated since the
+                                            page rendered the server
+                                            just keeps them. */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            cancelPortalInvite(
+                                              u.id,
+                                              u.name || u.email,
+                                            )
+                                          }
+                                          className="ml-0.5 text-amber-600 hover:text-rose-600"
+                                          title="Cancel invite"
+                                          aria-label={`Cancel invite for ${u.name || u.email}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 );
                               })}
