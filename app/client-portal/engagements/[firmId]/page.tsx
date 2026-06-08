@@ -15,6 +15,7 @@ import {
   Clock,
   Briefcase,
   ChevronRight,
+  Users,
 } from "lucide-react";
 
 // Focused view of a single recruiting firm's engagement with this
@@ -32,6 +33,15 @@ type JobRow = {
   lastActivityAt: string | null;
 };
 
+type Contact = {
+  key: string;
+  userId: string | null;
+  name: string | null;
+  email: string;
+  title: string | null;
+  lastInvitedAt: string;
+};
+
 type Firm = {
   organizationId: string;
   name: string;
@@ -42,6 +52,7 @@ type Firm = {
   placements: number;
   lastActivityAt: string | null;
   jobs: JobRow[];
+  contacts?: Contact[];
 };
 
 function relativeDate(iso: string | null): string {
@@ -179,6 +190,63 @@ export default function ClientFirmEngagementPage() {
           </div>
         </div>
       </div>
+
+      {/* Contacts at this firm — the recruiters the client has been
+          collaborating with. Pulls from FirmEngagement.invitedUser
+          (registered) and invitedEmail (pending sign-up) so a single
+          recruiter invited across multiple jobs shows as ONE row. */}
+      {firm.contacts && firm.contacts.length > 0 && (
+        <Card>
+          <CardContent className="p-0">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-700 inline-flex items-center gap-2">
+                <Users className="h-4 w-4 text-gray-400" />
+                Contacts at {firm.name}
+                <span className="text-xs font-normal text-gray-400">
+                  ({firm.contacts.length})
+                </span>
+              </h2>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {firm.contacts.map((c) => {
+                const mainLabel = c.name || c.email;
+                const showEmail = c.name && c.email && c.email !== c.name;
+                const initial = (c.name || c.email || "?").trim().charAt(0).toUpperCase();
+                return (
+                  <div key={c.key} className="flex items-start gap-3 px-4 py-3">
+                    <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                      {initial}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate" title={mainLabel}>
+                        {mainLabel}
+                        {!c.userId && (
+                          <span className="ml-2 text-[10px] font-normal text-amber-600 align-middle">
+                            pending sign-up
+                          </span>
+                        )}
+                      </p>
+                      {showEmail && (
+                        <a
+                          href={`mailto:${c.email}`}
+                          className="text-xs text-gray-500 break-all hover:text-emerald-600"
+                          title={c.email}
+                        >
+                          {c.email}
+                        </a>
+                      )}
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        {c.title ? `${c.title} · ` : ""}
+                        Invited {relativeDate(c.lastInvitedAt)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Per-job breakdown */}
       <Card>

@@ -1301,22 +1301,52 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           {isExpanded && (
                             <div className="border-t border-gray-200 divide-y divide-gray-200">
                               {sortedEngagements.map((eng: any) => {
-                                const recruiterName =
-                                  eng.invitedUser?.name || eng.invitedEmail || "(unknown recruiter)";
+                                // Layout consistente para cada fila:
+                                // nombre arriba cuando hay User
+                                // registrado, email abajo. Cuando solo
+                                // tenemos email (recruiter todavia no
+                                // se sumo), email arriba y no hay
+                                // segunda linea. Asi no aparece "name"
+                                // crudo en una fila y email truncado
+                                // en la siguiente.
+                                const recruiterName = eng.invitedUser?.name || null;
+                                const recruiterEmail =
+                                  eng.invitedUser?.email || eng.invitedEmail || null;
+                                const mainLabel =
+                                  recruiterName || recruiterEmail || "(unknown recruiter)";
+                                const showEmailBelow =
+                                  !!recruiterName &&
+                                  !!recruiterEmail &&
+                                  recruiterEmail !== recruiterName;
+                                const initial = (recruiterName || recruiterEmail || "?")
+                                  .trim()
+                                  .split(/\s+/)
+                                  .map((w: string) => w[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase() || "?";
                                 return (
                                   <div
                                     key={eng.id}
-                                    className="px-2.5 py-2 bg-white flex items-center justify-between gap-2"
+                                    className="px-2.5 py-2 bg-white flex items-start justify-between gap-2"
                                   >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1 ml-10">
-                                      <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
-                                        {(recruiterName.split(" ").map((w: string) => w[0]).join("") || "?").slice(0, 2).toUpperCase()}
+                                    <div className="flex items-start gap-2 min-w-0 flex-1 ml-10">
+                                      <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center text-[10px] font-semibold shrink-0 mt-0.5">
+                                        {initial}
                                       </div>
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-medium text-gray-800 truncate">
-                                          {recruiterName}
+                                        <p className="text-xs font-medium text-gray-800 truncate" title={mainLabel}>
+                                          {mainLabel}
                                         </p>
-                                        <p className="text-[10px] text-gray-400">
+                                        {showEmailBelow && (
+                                          <p
+                                            className="text-[10px] text-gray-500 break-all"
+                                            title={recruiterEmail!}
+                                          >
+                                            {recruiterEmail}
+                                          </p>
+                                        )}
+                                        <p className="text-[10px] text-gray-400 mt-0.5">
                                           Invited {formatDate(eng.invitedAt)}
                                           {eng.message ? (
                                             <span className="italic" title={eng.message}>
