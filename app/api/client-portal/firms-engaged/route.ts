@@ -28,7 +28,7 @@ export async function GET() {
         invitedAt: true,
         respondedAt: true,
         invitedEmail: true,
-        invitedUser: { select: { id: true, name: true, email: true, title: true } },
+        invitedUser: { select: { id: true, name: true, email: true, title: true, organizationId: true } },
         organization: { select: { name: true } },
         clientJob: { select: { title: true, id: true } },
       },
@@ -135,26 +135,36 @@ export async function GET() {
 
       // Track recruiter contacts at the firm — surfaced on the firm
       // detail page so the client can see "who am I working with at
-      // Morabits?" Skips engagements with neither an invitedUser nor
-      // an invitedEmail (legacy org-level rows). Dedupes via userId
-      // when present, email otherwise.
-      const contactEmail = e.invitedUser?.email || e.invitedEmail || null;
-      const contactKey = e.invitedUser?.id || contactEmail;
-      if (contactKey) {
+      // Morabits?". Two strict rules so we never attribute a person
+      // to a firm they're not at:
+      //   1. The engagement must point to a registered User (no
+      //      invited-email-only orphans — that recruiter hasn't even
+      //      decided which firm they work at yet).
+      //   2. That User's CURRENT organizationId must match this
+      //      engagement's organizationId. Stale data (recruiter moved
+      //      firms after we recorded the engagement) drops off here
+      //      so we don't show "aburak@lionpoint" under Morabits just
+      //      because the engagement row says so.
+      const contactUser = e.invitedUser;
+      if (
+        contactUser &&
+        contactUser.id &&
+        contactUser.organizationId === e.organizationId
+      ) {
         let bucket = contactsByOrg.get(e.organizationId);
         if (!bucket) {
           bucket = new Map();
           contactsByOrg.set(e.organizationId, bucket);
         }
-        const prev = bucket.get(contactKey);
+        const prev = bucket.get(contactUser.id);
         const invitedIso = e.invitedAt.toISOString();
         if (!prev) {
-          bucket.set(contactKey, {
-            key: contactKey,
-            userId: e.invitedUser?.id || null,
-            name: e.invitedUser?.name || null,
-            email: contactEmail || "",
-            title: e.invitedUser?.title || null,
+          bucket.set(contactUser.id, {
+            key: contactUser.id,
+            userId: contactUser.id,
+            name: contactUser.name || null,
+            email: contactUser.email || e.invitedEmail || "",
+            title: contactUser.title || null,
             lastInvitedAt: invitedIso,
           });
         } else if (invitedIso > prev.lastInvitedAt) {

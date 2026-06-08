@@ -209,42 +209,29 @@ export default function ClientFirmEngagementPage() {
             </div>
             <div className="divide-y divide-gray-100">
               {firm.contacts.map((c) => {
-                // Registered → name on top + email below. Pending
-                // sign-up → email on top (break-all, no truncate) +
-                // "pending" badge so the recipient knows it's a raw
-                // email, not a weird display name. Signup gate
-                // (/register) forces name input, so as soon as the
-                // recruiter accepts the invite this row gets a real
-                // name without us doing anything.
-                const isPending = !c.name;
-                const topLabel = c.name || c.email;
-                const initial = (c.name || c.email).trim().charAt(0).toUpperCase();
+                // The API guarantees each contact here is a registered
+                // User whose current organizationId matches this firm —
+                // stale / pending rows are filtered out server-side so
+                // we never attribute somebody to a firm they're not
+                // actually at. Layout: name on top + email below.
+                const displayName = c.name || c.email;
+                const initial = displayName.trim().charAt(0).toUpperCase();
                 return (
                   <div key={c.key} className="flex items-start gap-3 px-4 py-3">
                     <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold shrink-0">
                       {initial}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p
-                        className={`text-sm font-medium text-gray-900 ${isPending ? "break-all" : "truncate"}`}
-                        title={topLabel}
-                      >
-                        {topLabel}
-                        {isPending && (
-                          <span className="ml-2 text-[10px] font-normal text-amber-600 align-middle">
-                            pending sign-up
-                          </span>
-                        )}
+                      <p className="text-sm font-medium text-gray-900 truncate" title={displayName}>
+                        {displayName}
                       </p>
-                      {c.name && c.email && (
-                        <a
-                          href={`mailto:${c.email}`}
-                          className="text-xs text-gray-500 break-all hover:text-emerald-600"
-                          title={c.email}
-                        >
-                          {c.email}
-                        </a>
-                      )}
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="text-xs text-gray-500 break-all hover:text-emerald-600"
+                        title={c.email}
+                      >
+                        {c.email}
+                      </a>
                       <p className="text-[11px] text-gray-400 mt-0.5">
                         {c.title ? `${c.title} · ` : ""}
                         Invited {relativeDate(c.lastInvitedAt)}
