@@ -11,11 +11,15 @@ import { accessibleAgencyJobIds, type ClientCtx } from "@/lib/client-job-access"
 async function verifyAccess(submissionId: string, ctx: ClientCtx) {
   const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
   if (visibleAgencyJobIds.length === 0) return false;
+  // Multi-firm support: sin `job.clientId === ctx.clientId`. Cada
+  // agencia tiene su propio Client record, asi que filtrar por
+  // ctx.clientId solo matchea la primera. El gate correcto es
+  // `jobId IN visibleAgencyJobIds`, que sale de ACCEPTED engagements
+  // en ClientJobs accesibles.
   const submission = await prisma.candidateSubmission.findFirst({
     where: {
       id: submissionId,
       isSharedWithClient: true,
-      job: { clientId: ctx.clientId },
       jobId: { in: visibleAgencyJobIds },
     },
     select: { id: true },
