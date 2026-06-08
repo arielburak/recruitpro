@@ -124,20 +124,27 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function renderMentions(text: string) {
+function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
   // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
+  //
+  // Estilo "Outlook chip": pill con bg sutil + bold. Variante segun
+  // bubble del que vive: en bubbles oscuros (mi voz, bg saturado +
+  // texto blanco) usamos bg-white/25 + texto blanco. En bubbles
+  // claros (recibido, bg-gray-100) usamos bg-indigo-100 +
+  // texto indigo. El resultado lee como un chip claro distinto del
+  // texto normal en ambos contextos.
+  const chipClass = opts.onDark
+    ? "bg-white/25 text-white font-semibold px-1.5 py-px rounded"
+    : "bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-px rounded";
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
-      // Sin background — el bubble que la contiene puede ser oscuro
-      // (cliente: emerald-600 con texto blanco) o claro, asi que bold +
-      // underline sutil funciona bien en ambos.
       return (
-        <span key={i} className="font-semibold underline underline-offset-2">
+        <span key={i} className={chipClass}>
           {part}
         </span>
       );
@@ -521,7 +528,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
                                 : "bg-gray-100 text-gray-800 rounded-tl-md"
                             }`}
                           >
-                            {isMyOrg ? displayContent : renderMentions(displayContent)}
+                            {isMyOrg ? renderMentions(displayContent, { onDark: true }) : renderMentions(displayContent)}
                           </div>
                           <span
                             className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"

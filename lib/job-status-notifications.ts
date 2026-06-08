@@ -1,19 +1,17 @@
 import { prisma } from "./prisma";
 
 // Fan-out a client-portal notification when an agency-managed Job
-// changes status in a way the client cares about. Right now that's:
+// changes status in a way the client cares about. Right now solo:
 //   - ON_HOLD  → the search is paused; the client likely wants to know
 //                so they can poke their hiring committee.
-//   - FILLED   → we placed the role; client should celebrate / start
-//                onboarding.
-// CANCELLED and LOST are intentionally NOT notified — those are
-// typically initiated by the client themselves (or are internal-only
-// outcomes), so a notif would be redundant.
 //
-// We notify every active ClientUser at the Job's Client. The
-// notification link points to the agency Job through the /go bouncer
-// so a multi-Client portal user gets flipped into the right context
-// before the page renders.
+// FILLED esta excluido a proposito: el cliente no debe enterarse por
+// notif automatica cuando la agencia marca filled o registra un
+// placement, porque si la agencia se equivoca (o lo marca antes de
+// que el candidato firme) el aviso desaparece pero el cliente ya
+// celebro. La agencia avisa manualmente cuando esta segura.
+// CANCELLED y LOST tampoco se notifican — son initiated by the client
+// themselves o son outcomes internos.
 export async function notifyClientOfJobStatusChange({
   jobId,
   newStatus,
@@ -23,7 +21,7 @@ export async function notifyClientOfJobStatusChange({
   newStatus: string;
   organizationId: string;
 }) {
-  if (newStatus !== "ON_HOLD" && newStatus !== "FILLED") return;
+  if (newStatus !== "ON_HOLD") return;
 
   const job = await prisma.job.findFirst({
     where: { id: jobId, organizationId },
@@ -60,23 +58,15 @@ export async function notifyClientOfJobStatusChange({
   });
   if (members.length === 0) return;
 
+  // newStatus = "ON_HOLD" garantizado por el early-return de arriba.
   const firmName = job.organization?.name || "Your recruiting firm";
-  const title =
-    newStatus === "ON_HOLD"
-      ? `${firmName} paused the search for ${job.title}`
-      : `${job.title} has been filled`;
-  const body =
-    newStatus === "ON_HOLD"
-      ? `The search is on hold. Check in with your recruiter to find out what's next.`
-      : `Congrats — ${firmName} placed a candidate in this role.`;
-
   await prisma.clientNotification.createMany({
     data: members.map((m) => ({
       clientId: job.clientId!,
       clientUserId: m.clientUserId,
-      type: newStatus === "ON_HOLD" ? "job_on_hold" : "job_filled",
-      title,
-      body,
+      type: "job_on_hold",
+      title: `${firmName} paused the search for ${job.title}`,
+      body: `The search is on hold. Check in with your recruiter to find out what's next.`,
       link: `/client-portal/jobs/${clientJobId}`,
     })),
   });
