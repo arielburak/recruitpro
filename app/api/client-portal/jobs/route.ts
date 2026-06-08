@@ -20,7 +20,14 @@ export async function GET() {
         engagements: {
           include: {
             organization: { select: { name: true, id: true } },
-            invitedUser: { select: { id: true, name: true, email: true } },
+            // organizationId on the User itself is the live "where do
+            // they actually work today" signal — the engagement's
+            // organizationId is whatever firm they were AT when the
+            // invite was extended. We expose both so the client UI
+            // can hide stale rows where the recruiter has since moved
+            // (or where invitedUserId is null entirely — orphaned
+            // invites that never resolved to a real agency contact).
+            invitedUser: { select: { id: true, name: true, email: true, organizationId: true } },
           },
         },
         // Email invites sent to people who haven't registered yet. We

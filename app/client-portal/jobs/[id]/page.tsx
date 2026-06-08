@@ -1189,8 +1189,25 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     // esta keyed por organization.id, no por
                     // engagement.id). Una card por firma, con la
                     // lista de recruiters adentro.
+                    // Filtro defensivo: solo agrupamos engagements
+                    // donde el recruiter realmente esta en esa firma
+                    // hoy (User.organizationId == engagement.org). Asi
+                    // un email de cliente que termino con un
+                    // FirmEngagement stale apuntando a Morabits no
+                    // aparece bajo "Morabits". Casos descartados:
+                    //   · invitedUser null (orphan engagement)
+                    //   · invitedUser.organizationId != engagement.org
+                    //     (recruiter se movio, o el row se cargo a la
+                    //     firma equivocada)
                     const byOrg = new Map<string, { firm: any; engagements: any[] }>();
                     for (const e of job.engagements || []) {
+                      if (
+                        !e.invitedUser ||
+                        !e.invitedUser.id ||
+                        e.invitedUser.organizationId !== e.organization.id
+                      ) {
+                        continue;
+                      }
                       const k = e.organization.id;
                       const g = byOrg.get(k);
                       if (g) g.engagements.push(e);
