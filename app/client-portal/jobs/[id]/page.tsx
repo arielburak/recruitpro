@@ -1149,12 +1149,32 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               </Button>
             </CardHeader>
             <CardContent>
-              {/* Summary Stats */}
+              {/* Summary Stats — contadores por FIRMA unica, no por
+                  engagement. Si Morabits tiene 2 engagements
+                  ACCEPTED (2 recruiters), cuenta como 1 firma Active,
+                  no 2. Mirror del dedupe que ya hace la lista de
+                  cards. Prioridad de status agregado por firma:
+                  ACCEPTED > PENDING > DECLINED. */}
               {(() => {
                 const pendingInvites = job.pendingFirmInvites || [];
-                const accepted = (job.engagements || []).filter((e: any) => e.status === "ACCEPTED").length;
-                const pending = (job.engagements || []).filter((e: any) => e.status === "PENDING").length + pendingInvites.length;
-                const declined = (job.engagements || []).filter((e: any) => e.status === "DECLINED").length;
+                const firmsByStatus = new Map<string, "ACCEPTED" | "PENDING" | "DECLINED">();
+                for (const e of job.engagements || []) {
+                  const orgId = e.organization?.id;
+                  if (!orgId) continue;
+                  const current = firmsByStatus.get(orgId);
+                  if (e.status === "ACCEPTED") {
+                    firmsByStatus.set(orgId, "ACCEPTED");
+                  } else if (e.status === "PENDING" && current !== "ACCEPTED") {
+                    firmsByStatus.set(orgId, "PENDING");
+                  } else if (!current) {
+                    firmsByStatus.set(orgId, "DECLINED");
+                  }
+                }
+                const statuses = Array.from(firmsByStatus.values());
+                const accepted = statuses.filter((s) => s === "ACCEPTED").length;
+                const pending =
+                  statuses.filter((s) => s === "PENDING").length + pendingInvites.length;
+                const declined = statuses.filter((s) => s === "DECLINED").length;
                 const totalRows = (job.engagements?.length || 0) + pendingInvites.length;
                 if (totalRows === 0) return null;
                 return (
