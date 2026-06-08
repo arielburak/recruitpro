@@ -4,9 +4,11 @@ import { sendClientPortalWelcomeEmail } from "@/lib/email";
 
 // Marks a ClientUser as verified when the token from the verification
 // email is presented. Mirror of /api/auth/verify-email on the agency
-// side — public endpoint, idempotent, generic error message so a
+// side — public endpoint, idempotent (the token stays on the row so a
+// refresh of /client-portal/verify-email returns alreadyVerified
+// instead of "link no longer valid"), generic error message so a
 // forged token doesn't leak the difference between "wrong" and
-// "already used".
+// "superseded by resend".
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -49,13 +51,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // Only flip emailVerifiedAt — see /api/auth/verify-email for the
+    // full rationale. Short version: leaving the token in place is
+    // what keeps a refresh idempotent.
     await prisma.clientUser.update({
       where: { id: user.id },
-      data: {
-        emailVerifiedAt: new Date(),
-        emailVerificationToken: null,
-        emailVerificationExpiresAt: null,
-      },
+      data: { emailVerifiedAt: new Date() },
     });
 
     // Welcome mail. Same rule as the agency side: dispatch on the
