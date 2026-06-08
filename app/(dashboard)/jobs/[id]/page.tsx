@@ -196,6 +196,10 @@ export default function JobDetailPage() {
     clientName: string;
     hasPassword: boolean;
     onCurrentClient: boolean;
+    // "clientUser" = portal user existente. "contact" = Contact cargado
+    // en /clients/[id]/contacts que todavia no tiene portal access; al
+    // mandar la invite se crea el ClientUser automaticamente.
+    source?: "clientUser" | "contact";
     // Contacts at OTHER Clients of this agency are listed but can't be
     // picked — the email-uniqueness rule prevents reusing them here.
     available: boolean;
