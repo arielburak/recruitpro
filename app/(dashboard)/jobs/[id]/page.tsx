@@ -1594,6 +1594,82 @@ export default function JobDetailPage() {
                       <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
                       <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
                     </div>
+                    {/* Client portal access — quien del cliente puede
+                        ver el job en su portal. Cuando job.clientJobMirror
+                        es null, la agencia todavia no compartio (no hay
+                        ClientJob mirror). Si tiene members explicitos,
+                        listamos esos; sino, fallback a todos los
+                        ClientUsers activos del cliente (regla legacy de
+                        ClientJob "miembros vacios = todos ven"). */}
+                    <div className="bg-gray-50 rounded-lg p-3 col-span-2 lg:col-span-4">
+                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">
+                        Client portal access
+                      </p>
+                      {(() => {
+                        const mirror = job.clientJobMirror;
+                        if (!mirror) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              No one from {job.client?.name || "the client"} has portal access to this search yet.
+                              Use <span className="font-medium text-gray-700">Invite Client</span> above to share it.
+                            </p>
+                          );
+                        }
+                        const memberUsers = (mirror.members || [])
+                          .map((m: any) => m.clientUser)
+                          .filter(Boolean);
+                        const useFallback = memberUsers.length === 0;
+                        const allClientUsers = job.client?.clientUsers || [];
+                        const visibleUsers = useFallback ? allClientUsers : memberUsers;
+                        const postedById = mirror.postedBy?.id || null;
+                        if (visibleUsers.length === 0) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Search is mirrored on the client portal but nobody is registered yet.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="space-y-1.5">
+                            {useFallback && (
+                              <p className="text-[10px] text-gray-400 italic">
+                                No explicit members — everyone on the client team can see this search.
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              {visibleUsers.map((u: any) => {
+                                const initials = (u.name || u.email || "?")
+                                  .split(/\s+/)
+                                  .filter(Boolean)
+                                  .slice(0, 2)
+                                  .map((p: string) => p[0]?.toUpperCase() || "")
+                                  .join("");
+                                const isCreator = postedById === u.id;
+                                return (
+                                  <div
+                                    key={u.id}
+                                    className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full pl-1 pr-2.5 py-0.5"
+                                    title={u.email}
+                                  >
+                                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-semibold">
+                                      {initials || "?"}
+                                    </span>
+                                    <span className="text-xs font-medium text-gray-800">
+                                      {u.name || u.email}
+                                    </span>
+                                    {isCreator && (
+                                      <span className="text-[9px] uppercase tracking-wider font-semibold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
+                                        creator
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
 
                   {/* Description — with proper paragraph spacing */}

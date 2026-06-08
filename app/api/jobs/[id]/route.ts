@@ -38,9 +38,57 @@ export async function GET(
     let job = await prisma.job.findFirst({
       where: { id, organizationId: ctx.organizationId },
       include: {
-        client: true,
+        client: {
+          include: {
+            // ClientUsers activos del cliente para resolver el caso
+            // legacy: si el ClientJob mirror existe pero no tiene
+            // members explicitos, todos los ClientUsers activos
+            // tienen acceso. Los devolvemos siempre asi el UI puede
+            // decidir si mostrar la lista de members o la fallback.
+            clientUsers: {
+              where: { isActive: true },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                title: true,
+                role: true,
+              },
+              orderBy: { name: "asc" },
+            },
+          },
+        },
         stages: { orderBy: { order: "asc" } },
         assignments: { include: { user: { select: { id: true, name: true } } } },
+        // ClientJob mirror (creado cuando la agencia comparte el job
+        // con el cliente). Lo incluimos solo para listar los client
+        // users con acceso desde la vista de agencia. Si la JO tiene
+        // members explicitos, solo esos ven el job; si esta vacio,
+        // todos los ClientUsers activos del cliente lo ven (legacy
+        // backwards-compat). Esa segunda regla la resolvemos en el
+        // page abajo cuando renderea.
+        clientJobMirror: {
+          select: {
+            id: true,
+            postedBy: {
+              select: { id: true, name: true, email: true, title: true, role: true, isActive: true },
+            },
+            members: {
+              select: {
+                clientUser: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    title: true,
+                    role: true,
+                    isActive: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         documents: { orderBy: { createdAt: "desc" } },
         submissions: {
           include: {
