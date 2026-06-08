@@ -1032,14 +1032,14 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               the one place a hiring contact needs to add or remove
               teammates for this specific JO. */}
 
-          {/* Job access — who on the team can see this JO. Skipped on
-              solo workspaces (no one else to restrict against). Shows
-              the explicit member list with a clear "restricted" copy +
-              count of the total team, or a banner pointing out the
-              legacy "everyone" state for jobs created before this
-              feature existed. The creator gets a subtle (owner) tag so
-              it's obvious which badge is the JO's author vs. someone
-              that was added later. */}
+          {/* Job access — quien del equipo cliente puede ver esta search.
+              Card unificado con los dos flows que antes vivian separados:
+              "Invite a teammate" (sumar gente nueva por email) y "Manage"
+              (acotar/extender entre los que ya tienen cuenta). Ambos
+              hablan de "colaborar con mi equipo en esta search", asi que
+              compartir un solo header + body conmutable evita la
+              fragmentacion de la version anterior con dos cards. Modos
+              mutuamente excluyentes — abrir uno cierra el otro. */}
           {teamMembers.length > 1 && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1047,20 +1047,130 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   <Users className="h-4 w-4 text-emerald-600" />
                   Job access
                 </CardTitle>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={() => (showManageAccess ? setShowManageAccess(false) : openManageAccess())}
-                >
-                  {showManageAccess ? "Close" : "Manage"}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 text-xs"
+                    onClick={() => {
+                      const next = !showAddMember;
+                      setShowAddMember(next);
+                      setMemberResult(null);
+                      if (next) setShowManageAccess(false);
+                    }}
+                  >
+                    {showAddMember ? (
+                      <X className="h-3 w-3" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
+                    {showAddMember ? "Cancel" : "Invite"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 text-xs"
+                    onClick={() => {
+                      if (showManageAccess) {
+                        setShowManageAccess(false);
+                      } else {
+                        openManageAccess();
+                        setShowAddMember(false);
+                      }
+                    }}
+                  >
+                    {showManageAccess ? "Close" : "Manage"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="pt-1">
-                {!showManageAccess && (
+                {/* Invite form — for brand new emails (creates ClientUser
+                    + ClientJobMember + manda mail). Cuando el form esta
+                    abierto, los chips y la lista de manage se ocultan
+                    porque ya estas en accion. */}
+                {showAddMember && (
+                  <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2 mb-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Name *</Label>
+                      <Input
+                        value={memberName}
+                        onChange={(e) => setMemberName(e.target.value)}
+                        placeholder="Jane Smith"
+                        className="text-sm h-8"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Role</Label>
+                      <Input
+                        value={memberTitle}
+                        onChange={(e) => setMemberTitle(e.target.value)}
+                        placeholder="e.g. Hiring Manager"
+                        className="text-sm h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email *</Label>
+                      <Input
+                        type="email"
+                        value={memberEmail}
+                        onChange={(e) => setMemberEmail(e.target.value)}
+                        placeholder="jane@company.com"
+                        className="text-sm h-8"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
+                      disabled={addingMember}
+                    >
+                      <Mail className="h-3 w-3" />
+                      {addingMember ? "Adding..." : "Send Invite"}
+                    </Button>
+                    {memberResult && (
+                      <div
+                        className={`text-xs p-2 rounded ${
+                          memberResult.type === "success"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        <p>{memberResult.message}</p>
+                        {memberResult.link && (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <input
+                              readOnly
+                              value={memberResult.link}
+                              className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(memberResult.link!);
+                                setCopiedLink(true);
+                                setTimeout(() => setCopiedLink(false), 2000);
+                              }}
+                              className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                            >
+                              {copiedLink ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3 text-gray-400" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </form>
+                )}
+
+                {!showAddMember && !showManageAccess && (
                   (job?.members?.length || 0) === 0 ? (
                     <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
+                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people, or <span className="font-medium">Invite</span> to add someone new.
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
@@ -1530,106 +1640,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               same fields, same outcomes — but scoped to this Job by
               construction so the invitee shows up as a member of THIS
               search the moment they accept. */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-emerald-600" />
-                Invite a teammate to this search
-              </CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1 text-xs"
-                onClick={() => {
-                  setShowAddMember(!showAddMember);
-                  setMemberResult(null);
-                }}
-              >
-                <Plus className="h-3 w-3" />
-                {showAddMember ? "Cancel" : "Invite"}
-              </Button>
-            </CardHeader>
-            {showAddMember && (
-              <CardContent>
-                <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Name *</Label>
-                    <Input
-                      value={memberName}
-                      onChange={(e) => setMemberName(e.target.value)}
-                      placeholder="Jane Smith"
-                      className="text-sm h-8"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Role</Label>
-                    <Input
-                      value={memberTitle}
-                      onChange={(e) => setMemberTitle(e.target.value)}
-                      placeholder="e.g. Hiring Manager"
-                      className="text-sm h-8"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Email *</Label>
-                    <Input
-                      type="email"
-                      value={memberEmail}
-                      onChange={(e) => setMemberEmail(e.target.value)}
-                      placeholder="jane@company.com"
-                      className="text-sm h-8"
-                      required
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
-                    disabled={addingMember}
-                  >
-                    <Mail className="h-3 w-3" />
-                    {addingMember ? "Adding..." : "Send Invite"}
-                  </Button>
-                  {memberResult && (
-                    <div
-                      className={`text-xs p-2 rounded ${
-                        memberResult.type === "success"
-                          ? "bg-green-50 text-green-700"
-                          : "bg-red-50 text-red-600"
-                      }`}
-                    >
-                      <p>{memberResult.message}</p>
-                      {memberResult.link && (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <input
-                            readOnly
-                            value={memberResult.link}
-                            className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(memberResult.link!);
-                              setCopiedLink(true);
-                              setTimeout(() => setCopiedLink(false), 2000);
-                            }}
-                            className="shrink-0 p-0.5 rounded hover:bg-green-100"
-                          >
-                            {copiedLink ? (
-                              <Check className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Copy className="h-3 w-3 text-gray-400" />
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </form>
-              </CardContent>
-            )}
-          </Card>
+          {/* "Invite a teammate" card eliminada — su flow vive ahora
+              dentro de Job access (boton "Invite" en el header), asi
+              ambas acciones (invitar nuevo email + manage existentes)
+              comparten el mismo container que habla del mismo concepto:
+              "quien de mi equipo colabora en esta search". */}
 
           {/* Invite Dialog */}
           {showInvite && (
