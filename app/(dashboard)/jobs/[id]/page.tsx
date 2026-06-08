@@ -1652,7 +1652,19 @@ export default function JobDetailPage() {
                               </p>
                             )}
                             <div className="flex flex-wrap gap-1.5">
-                              {visibleUsers.map((u: any) => {
+                              {/* Sort: creator first so the column reads
+                                  top-down chronologically without the
+                                  loud CREATOR pill that used to sit
+                                  inside each chip — the order itself is
+                                  the cue (and there's nothing actionable
+                                  here from the agency side anyway). */}
+                              {[...visibleUsers]
+                                .sort((a: any, b: any) => {
+                                  const ac = postedById === a.id ? 0 : 1;
+                                  const bc = postedById === b.id ? 0 : 1;
+                                  return ac - bc;
+                                })
+                                .map((u: any) => {
                                 const initials = (u.name || u.email || "?")
                                   .split(/\s+/)
                                   .filter(Boolean)
@@ -1664,7 +1676,11 @@ export default function JobDetailPage() {
                                   <div
                                     key={u.id}
                                     className="inline-flex items-center gap-1.5 bg-white border border-gray-200 rounded-full pl-1 pr-2.5 py-0.5"
-                                    title={u.email}
+                                    title={
+                                      isCreator
+                                        ? `${u.email} · created this search`
+                                        : u.email
+                                    }
                                   >
                                     <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-semibold">
                                       {initials || "?"}
@@ -1672,11 +1688,6 @@ export default function JobDetailPage() {
                                     <span className="text-xs font-medium text-gray-800">
                                       {u.name || u.email}
                                     </span>
-                                    {isCreator && (
-                                      <span className="text-[9px] uppercase tracking-wider font-semibold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
-                                        creator
-                                      </span>
-                                    )}
                                   </div>
                                 );
                               })}
