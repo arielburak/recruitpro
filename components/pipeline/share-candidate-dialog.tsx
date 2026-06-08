@@ -15,7 +15,6 @@ import {
   Share2,
   Building2,
   User,
-  CheckCircle2,
   FileText,
   Loader2,
 } from "lucide-react";
@@ -113,7 +112,7 @@ export function ShareCandidateDialog({
   }, [open, submission.id]);
 
   function toggleDoc(id: string) {
-    setSelectedIds((prev) => {
+    setSelectedIds((prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -122,7 +121,7 @@ export function ShareCandidateDialog({
   }
 
   function selectAll() {
-    setSelectedIds(new Set(docs.map((d) => d.id)));
+    setSelectedIds(new Set(docs.map((d: DocRow) => d.id)));
   }
   function selectNone() {
     setSelectedIds(new Set());
@@ -179,15 +178,18 @@ export function ShareCandidateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-4 w-4 text-emerald-600" />
             {editDocsOnly ? "Manage shared documents" : "Share candidate with client"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        {/* Body con scroll propio — el footer (Cancel/Confirm) queda
+            siempre visible abajo. Sin esto, cuando el list de docs
+            crece, el item de abajo se cortaba contra los botones. */}
+        <div className="space-y-4 px-6 py-2 overflow-y-auto flex-1 min-h-0">
           {/* Preview card */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-2">
             <div className="flex items-start gap-2.5">
@@ -257,8 +259,8 @@ export function ShareCandidateDialog({
                 will see the submission without attachments.
               </div>
             ) : (
-              <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
-                {docs.map((doc) => {
+              <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                {docs.map((doc: DocRow) => {
                   const checked = selectedIds.has(doc.id);
                   return (
                     <label
@@ -291,42 +293,33 @@ export function ShareCandidateDialog({
           </div>
 
           {/* Note + notify solo en primer share — re-edit no
-              re-dispara el mail. */}
+              re-dispara el mail. Mas compacto que antes para que el
+              picker de docs sea lo dominante: textarea de 2 filas,
+              info bg sacada (la promesa "you can adjust later" la
+              cubre el menu Manage shared docs), notify pasa a una
+              linea simple. */}
           {!editDocsOnly && (
             <>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label className="text-xs">Note for the client (optional)</Label>
                 <Textarea
                   value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Why this candidate is a great fit, what stands out..."
-                  rows={3}
-                  className="text-sm"
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNote(e.target.value)}
+                  placeholder="Why this candidate is a great fit..."
+                  rows={2}
+                  className="text-sm resize-none"
                 />
               </div>
 
-              <label className="flex items-start gap-2.5 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600">
                 <input
                   type="checkbox"
                   checked={notifyViaEmail}
-                  onChange={(e) => setNotifyViaEmail(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNotifyViaEmail(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                 />
-                <div>
-                  <p className="text-sm text-gray-900">Send email notification</p>
-                  <p className="text-[11px] text-gray-500">
-                    Notifies the client contacts on this job. They&apos;ll get a link to review.
-                  </p>
-                </div>
+                Send email notification to client contacts on this job
               </label>
-
-              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-800 flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>
-                  The candidate will appear in the client portal at <strong>Submitted</strong>. You can adjust which
-                  documents they see anytime from the candidate detail.
-                </span>
-              </div>
             </>
           )}
 
@@ -335,7 +328,7 @@ export function ShareCandidateDialog({
           )}
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0 bg-white">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
