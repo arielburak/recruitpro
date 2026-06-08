@@ -1187,74 +1187,106 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {job.engagements?.map((eng: any) => {
-                    const candidateCount = job.firmCandidateCounts?.[eng.organization.id] || 0;
-                    // Firma como label principal (lo que al cliente le
-                    // importa). Si tenemos el nombre del recruiter
-                    // (por invitedUser registrado), lo agregamos al
-                    // sub-line. NUNCA mostramos el email: el domain
-                    // del email del recruiter puede no matchear el
-                    // de la firma (signup con dominio personal, etc),
-                    // y eso lee confuso ("este mail no es de Morabits,
-                    // estara mal?"). El cliente puede contactar al
-                    // recruiter via el chat del job, no hace falta el
-                    // mail crudo aca.
-                    const recruiterName = eng.invitedUser?.name || null;
-                    const withdrawLabel = recruiterName || eng.organization.name;
-                    return (
-                      <div key={eng.id} className="p-2.5 bg-gray-50 rounded-lg">
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
-                              <Building2 className="h-4 w-4 text-indigo-600" />
+                  {(() => {
+                    // Dedupe por firma: si la misma firma tiene
+                    // multiples engagements (un row por recruiter
+                    // invitado), aparecian N cards iguales con el
+                    // mismo "candidates shared" (firmCandidateCounts
+                    // esta keyed por organization.id, no por
+                    // engagement.id). Una card por firma, con la
+                    // lista de recruiters adentro.
+                    const byOrg = new Map<string, { firm: any; engagements: any[] }>();
+                    for (const e of job.engagements || []) {
+                      const k = e.organization.id;
+                      const g = byOrg.get(k);
+                      if (g) g.engagements.push(e);
+                      else byOrg.set(k, { firm: e.organization, engagements: [e] });
+                    }
+                    return Array.from(byOrg.values()).map((group) => {
+                      const candidateCount = job.firmCandidateCounts?.[group.firm.id] || 0;
+                      const accepted = group.engagements.filter((e) => e.status === "ACCEPTED");
+                      const pending = group.engagements.filter((e) => e.status === "PENDING");
+                      const declined = group.engagements.filter((e) => e.status === "DECLINED");
+                      // Status agregado: prioridad ACCEPTED > PENDING > DECLINED.
+                      const aggregatedStatus =
+                        accepted.length > 0 ? "ACCEPTED" : pending.length > 0 ? "PENDING" : "DECLINED";
+                      const recruiterNames = group.engagements
+                        .map((e) => e.invitedUser?.name)
+                        .filter(Boolean) as string[];
+                      const earliestInvitedAt = group.engagements
+                        .map((e) => e.invitedAt)
+                        .sort()[0];
+                      // Withdraw solo si hay UN unico engagement PENDING
+                      // (caso univoco). Con multiples no sabemos cual
+                      // querria withdraw el cliente sin drill-down.
+                      const lonePending =
+                        pending.length === 1 && accepted.length === 0 && declined.length === 0
+                          ? pending[0]
+                          : null;
+                      return (
+                        <div key={group.firm.id} className="p-2.5 bg-gray-50 rounded-lg">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                                <Building2 className="h-4 w-4 text-indigo-600" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">
+                                  {group.firm.name}
+                                </p>
+                                <p className="text-[10px] text-gray-400 truncate">
+                                  {recruiterNames.length > 0 ? (
+                                    <>{recruiterNames.join(", ")} · </>
+                                  ) : null}
+                                  Invited {formatDate(earliestInvitedAt)}
+                                </p>
+                              </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">
-                                {eng.organization.name}
-                              </p>
-                              <p className="text-[10px] text-gray-400 truncate">
-                                {recruiterName ? <>{recruiterName} · </> : null}
-                                Invited {formatDate(eng.invitedAt)}
-                              </p>
-                            </div>
+                            <Badge className={`text-[10px] shrink-0 ${statusColor[aggregatedStatus]}`}>
+                              {aggregatedStatus === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
+                              {aggregatedStatus === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
+                              {aggregatedStatus === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
+                              {aggregatedStatus.toLowerCase()}
+                            </Badge>
                           </div>
-                          <Badge className={`text-[10px] shrink-0 ${statusColor[eng.status]}`}>
-                            {eng.status === "PENDING" && <Clock className="h-3 w-3 mr-1" />}
-                            {eng.status === "ACCEPTED" && <CheckCircle className="h-3 w-3 mr-1" />}
-                            {eng.status === "DECLINED" && <XCircle className="h-3 w-3 mr-1" />}
-                            {eng.status.toLowerCase()}
-                          </Badge>
+                          {aggregatedStatus === "ACCEPTED" && (
+                            <div className="ml-10 mt-1 space-y-0.5">
+                              <span className="text-xs text-gray-500 flex items-center gap-1">
+                                <Users className="h-3 w-3 shrink-0" />
+                                {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
+                              </span>
+                              {pending.length > 0 && (
+                                <p className="text-[10px] text-amber-600">
+                                  +{pending.length} pending invite{pending.length === 1 ? "" : "s"}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {aggregatedStatus === "PENDING" && (
+                            <div className="ml-10 mt-1 flex items-center justify-between gap-2">
+                              <p className="text-[10px] text-amber-600">
+                                Waiting for response{pending.length > 1 ? ` (${pending.length} recruiters)` : ""}...
+                              </p>
+                              {lonePending && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    withdrawEngagement(
+                                      lonePending.id,
+                                      lonePending.invitedUser?.name || group.firm.name,
+                                    )
+                                  }
+                                  className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                                >
+                                  Withdraw
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {eng.status === "ACCEPTED" && (
-                          <div className="ml-10 mt-1 space-y-0.5">
-                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                              <Users className="h-3 w-3 shrink-0" />
-                              {candidateCount} candidate{candidateCount !== 1 ? "s" : ""} shared
-                            </span>
-                            {eng.message && (
-                              <p className="text-[10px] text-gray-400 italic truncate" title={eng.message}>
-                                &quot;{eng.message}&quot;
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {eng.status === "PENDING" && (
-                          <div className="ml-10 mt-1 flex items-center justify-between gap-2">
-                            <p className="text-[10px] text-amber-600">
-                              Waiting for response...
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => withdrawEngagement(eng.id, withdrawLabel)}
-                              className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
-                            >
-                              Withdraw
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
 
                   {/* Pending email invites — the recipient hasn't signed
                       up yet, so there's no FirmEngagement row. Surface
