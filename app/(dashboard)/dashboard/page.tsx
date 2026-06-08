@@ -457,7 +457,7 @@ export default async function DashboardPage() {
               <UserPlus className="w-5 h-5 text-violet-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-violet-900">Working solo? Pull your team in.</p>
+              <p className="font-semibold text-violet-900">Working alone? Pull your team in.</p>
               <p className="text-sm text-violet-800/80 mt-0.5">
                 Recruiting works better with backup — invite a teammate so you can split searches,
                 share candidates, and chat with clients together. Free during your trial.
