@@ -95,7 +95,7 @@ export async function GET(
       orderBy: { addedAt: "desc" },
     });
     const documents = submissionDocs.length > 0
-      ? submissionDocs.map((s) => s.document)
+      ? submissionDocs.map((s: { document: any }) => s.document)
       : await prisma.document.findMany({
           where: { candidateId: submission.candidate.id },
           select: {
@@ -155,8 +155,8 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    const scores = allRatings.map((r) => r.score).filter((s): s is number => typeof s === "number" && s > 0);
-    const avgRating = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    const scores = allRatings.map((r: { score: number | null }) => r.score).filter((s: number | null): s is number => typeof s === "number" && s > 0);
+    const avgRating = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : null;
 
     return NextResponse.json({
       submissionId: submission.id,

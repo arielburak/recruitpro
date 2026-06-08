@@ -56,12 +56,14 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     const sharedIds = new Set<string>(
-      submission.sharedDocuments.map((s) => s.documentId),
+      submission.sharedDocuments.map((s: { documentId: string }) => s.documentId),
     );
-    const documents = submission.candidate.documents.map((d) => ({
-      ...d,
-      isShared: sharedIds.has(d.id),
-    }));
+    const documents = submission.candidate.documents.map(
+      (d: { id: string; name: string; type: string; size: number; category: string | null; createdAt: Date }) => ({
+        ...d,
+        isShared: sharedIds.has(d.id),
+      }),
+    );
     return NextResponse.json({ documents });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -76,8 +78,10 @@ export async function PUT(
     const ctx = await getOrgContext();
     const { id } = await params;
     const body = await request.json();
+    // body.documentIds es any[] desde el JSON; narrow a string[] con
+    // un cast intermedio porque `is string` no narrowea sobre any.
     const documentIds: string[] = Array.isArray(body.documentIds)
-      ? body.documentIds.filter((x: unknown): x is string => typeof x === "string")
+      ? (body.documentIds as unknown[]).filter((x): x is string => typeof x === "string")
       : [];
 
     const submission = await loadSubmission(id, ctx.organizationId);
@@ -90,16 +94,16 @@ export async function PUT(
     // no es necesariamente un ataque pero no queremos exponer ese
     // vector.
     const validIds = new Set<string>(
-      submission.candidate.documents.map((d) => d.id),
+      submission.candidate.documents.map((d: { id: string }) => d.id),
     );
-    const wantedIds = documentIds.filter((x) => validIds.has(x));
+    const wantedIds = documentIds.filter((x: string) => validIds.has(x));
 
     const currentIds = new Set<string>(
-      submission.sharedDocuments.map((s) => s.documentId),
+      submission.sharedDocuments.map((s: { documentId: string }) => s.documentId),
     );
     const wanted = new Set<string>(wantedIds);
-    const toAdd = wantedIds.filter((x) => !currentIds.has(x));
-    const toRemove = Array.from(currentIds).filter((x) => !wanted.has(x));
+    const toAdd = wantedIds.filter((x: string) => !currentIds.has(x));
+    const toRemove = Array.from(currentIds).filter((x: string) => !wanted.has(x));
 
     // Diff explicito en vez de deleteMany-then-createMany. Asi no
     // tiramos abajo metadata (addedBy/addedAt) de docs que ya
