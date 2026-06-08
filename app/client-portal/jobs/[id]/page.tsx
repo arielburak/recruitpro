@@ -123,6 +123,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       .map((m: any) => m.clientUser?.id)
       .filter((id: any): id is string => typeof id === "string");
     setAccessIds(ids);
+    setShowAddMember(false);
+    setMemberResult(null);
     setShowManageAccess(true);
   }
 
@@ -1042,46 +1044,43 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               mutuamente excluyentes — abrir uno cierra el otro. */}
           {teamMembers.length > 1 && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Users className="h-4 w-4 text-emerald-600" />
-                  Job access
+              {/* Header: title + ONE primary CTA "Invite teammate". El
+                  "Manage" baja al body como link discreto para no
+                  pelear por el ancho del header en la columna angosta
+                  del grid de soporte — la version con dos botones
+                  rompia el titulo en dos lineas. "Invite teammate" mas
+                  explicito que "Invite" solo, asi se entiende sin
+                  contexto que es para sumar a alguien del equipo
+                  cliente (no para invitar a una firma, que es Assigned
+                  Firms al lado). */}
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 min-w-0">
+                  <Users className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span className="truncate">Job access</span>
                 </CardTitle>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1 text-xs"
-                    onClick={() => {
-                      const next = !showAddMember;
-                      setShowAddMember(next);
-                      setMemberResult(null);
-                      if (next) setShowManageAccess(false);
-                    }}
-                  >
-                    {showAddMember ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs shrink-0 whitespace-nowrap"
+                  onClick={() => {
+                    const next = !showAddMember;
+                    setShowAddMember(next);
+                    setMemberResult(null);
+                    if (next) setShowManageAccess(false);
+                  }}
+                >
+                  {showAddMember ? (
+                    <>
                       <X className="h-3 w-3" />
-                    ) : (
+                      Cancel
+                    </>
+                  ) : (
+                    <>
                       <Plus className="h-3 w-3" />
-                    )}
-                    {showAddMember ? "Cancel" : "Invite"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1 text-xs"
-                    onClick={() => {
-                      if (showManageAccess) {
-                        setShowManageAccess(false);
-                      } else {
-                        openManageAccess();
-                        setShowAddMember(false);
-                      }
-                    }}
-                  >
-                    {showManageAccess ? "Close" : "Manage"}
-                  </Button>
-                </div>
+                      Invite teammate
+                    </>
+                  )}
+                </Button>
               </CardHeader>
               <CardContent className="pt-1">
                 {/* Invite form — for brand new emails (creates ClientUser
@@ -1223,6 +1222,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       })}
                     </div>
                   )
+                )}
+
+                {/* Manage link — toggle inline para entrar al checkbox
+                    mode. Antes era un boton en el header pero rompia el
+                    titulo en dos lineas en la columna angosta. Como
+                    link discreto debajo de los chips queda fuera del
+                    flujo principal (invite) pero accesible. */}
+                {!showAddMember && !showManageAccess && (
+                  <button
+                    type="button"
+                    onClick={openManageAccess}
+                    className="mt-3 text-xs text-emerald-700 hover:text-emerald-900 underline-offset-2 hover:underline inline-flex items-center gap-1"
+                  >
+                    Manage who can see this search
+                  </button>
                 )}
 
                 {showManageAccess && (
