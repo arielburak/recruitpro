@@ -584,33 +584,57 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, clientCh
         </div>
       ) : (
       <div className="border-t border-gray-200 p-3 bg-gray-50 shrink-0 relative">
-        {/* Mention dropdown (positioned above input) */}
+        {/* Mention dropdown (positioned above input). Avatar +
+            label color por equipo: indigo = agencia (mi equipo desde
+            esta vista), emerald = cliente. Misma paleta que ya usan
+            los chat bubbles para que el cliente y la agencia se
+            distingan al toque tambien en el picker. */}
         {showMentions && mentionResults.length > 0 && (
           <div className="absolute bottom-full mb-1 left-3 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-            {mentionResults.map((user, i) => (
-              <button
-                key={`${user.type}-${user.id}`}
-                onClick={() => insertMention(user)}
-                className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-indigo-50 ${
-                  i === selectedIndex ? "bg-indigo-50" : ""
-                }`}
-              >
-                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
-                  {user.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{user.name}</p>
-                  <p className="text-xs text-gray-400 truncate">
-                    {user.type === "client" ? `Client · ${user.companyName || ""}` : user.role || user.email}
-                  </p>
-                </div>
-              </button>
-            ))}
+            {mentionResults.map((user, i) => {
+              const isClient = user.type === "client";
+              return (
+                <button
+                  key={`${user.type}-${user.id}`}
+                  onClick={() => insertMention(user)}
+                  className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-indigo-50 ${
+                    i === selectedIndex ? "bg-indigo-50" : ""
+                  }`}
+                >
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${
+                      isClient
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-indigo-100 text-indigo-700"
+                    }`}
+                  >
+                    {user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-gray-900 truncate">{user.name}</p>
+                      <span
+                        className={`text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                          isClient
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-indigo-50 text-indigo-700"
+                        }`}
+                      >
+                        {isClient ? "Client" : "Team"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 truncate">
+                      {isClient ? user.companyName || user.email : user.role || user.email}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
 

@@ -458,32 +458,46 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
         {/* Mention autocomplete */}
         {mentionQuery !== null && mentionResults.length > 0 && (
           <div className="absolute bottom-full left-4 mb-2 w-72 bg-white border rounded-lg shadow-lg max-h-56 overflow-y-auto z-10">
-            {mentionResults.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => pickMention(u)}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
-              >
-                <div
-                  className={cn(
-                    "w-7 h-7 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
-                    u.kind === "staffing"
-                      ? "bg-gradient-to-br from-indigo-500 to-violet-600"
-                      : "bg-gradient-to-br from-emerald-500 to-teal-600"
-                  )}
+            {mentionResults.map((u) => {
+              const isStaffing = u.kind === "staffing";
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => pickMention(u)}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
                 >
-                  {initials(u.name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">{u.name}</p>
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {u.title ? `${u.title} · ` : ""}
-                    {u.kind === "staffing" ? "Recruiter" : "Team"}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  <div
+                    className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+                      isStaffing
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    )}
+                  >
+                    {initials(u.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-gray-900 truncate">{u.name}</p>
+                      <span
+                        className={cn(
+                          "text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded shrink-0",
+                          isStaffing
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "bg-emerald-50 text-emerald-700"
+                        )}
+                      >
+                        {isStaffing ? "Recruiter" : "Team"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {u.title ? u.title : isStaffing ? "Agency" : "Client team"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
 
