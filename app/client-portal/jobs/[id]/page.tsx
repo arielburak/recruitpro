@@ -123,6 +123,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       .map((m: any) => m.clientUser?.id)
       .filter((id: any): id is string => typeof id === "string");
     setAccessIds(ids);
+    setShowAddMember(false);
+    setMemberResult(null);
     setShowManageAccess(true);
   }
 
@@ -145,6 +147,30 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       }
     } catch {}
     setSavingAccess(false);
+  }
+
+  // Cancel a teammate invite the user just sent. The endpoint reuses
+  // the same /members PUT so the "creator stays" rule, the diff +
+  // notification logic etc. all live in one place. We compute the new
+  // memberIds client-side as "current minus the one being cancelled"
+  // — cheap, no extra endpoint needed.
+  async function cancelMemberInvite(memberId: string, label: string) {
+    const ok = confirm(
+      `Cancel the invite for ${label}? They'll lose access to this search.`,
+    );
+    if (!ok) return;
+    const currentIds = (job?.members || [])
+      .map((m: any) => m.clientUser?.id)
+      .filter((x: any): x is string => typeof x === "string");
+    const nextIds = currentIds.filter((x: string) => x !== memberId);
+    try {
+      const res = await fetch(`/api/client-portal/jobs/${id}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: nextIds }),
+      });
+      if (res.ok) await fetchJob();
+    } catch {}
   }
 
   // Candidates for this job + the client's pipeline stages, used by
@@ -1008,44 +1034,162 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               the one place a hiring contact needs to add or remove
               teammates for this specific JO. */}
 
-          {/* Job access — who on the team can see this JO. Skipped on
-              solo workspaces (no one else to restrict against). Shows
-              the explicit member list with a clear "restricted" copy +
-              count of the total team, or a banner pointing out the
-              legacy "everyone" state for jobs created before this
-              feature existed. The creator gets a subtle (owner) tag so
-              it's obvious which badge is the JO's author vs. someone
-              that was added later. */}
+          {/* Job access — quien del equipo cliente puede ver esta search.
+              Card unificado con los dos flows que antes vivian separados:
+              "Invite a teammate" (sumar gente nueva por email) y "Manage"
+              (acotar/extender entre los que ya tienen cuenta). Ambos
+              hablan de "colaborar con mi equipo en esta search", asi que
+              compartir un solo header + body conmutable evita la
+              fragmentacion de la version anterior con dos cards. Modos
+              mutuamente excluyentes — abrir uno cierra el otro. */}
           {teamMembers.length > 1 && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Users className="h-4 w-4 text-emerald-600" />
+              {/* Header: title + ONE primary CTA "Invite teammate". El
+                  "Manage" baja al body como link discreto para no
+                  pelear por el ancho del header en la columna angosta
+                  del grid de soporte — la version con dos botones
+                  rompia el titulo en dos lineas. "Invite teammate" mas
+                  explicito que "Invite" solo, asi se entiende sin
+                  contexto que es para sumar a alguien del equipo
+                  cliente (no para invitar a una firma, que es Assigned
+                  Firms al lado). */}
+              {/* Header con wrap controlado: title siempre completo
+                  (sin truncate), boton baja a la linea siguiente si
+                  no entra a lo ancho. Asi en la columna angosta del
+                  grid de soporte el header se ve "Job access" arriba
+                  + "Invite teammate" debajo, en vez de "Job acc..."
+                  cortado. */}
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 whitespace-nowrap">
+                  <Users className="h-4 w-4 text-emerald-600 shrink-0" />
                   Job access
                 </CardTitle>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1 text-xs"
-                  onClick={() => (showManageAccess ? setShowManageAccess(false) : openManageAccess())}
+                  className="gap-1 text-xs shrink-0 whitespace-nowrap"
+                  onClick={() => {
+                    const next = !showAddMember;
+                    setShowAddMember(next);
+                    setMemberResult(null);
+                    if (next) setShowManageAccess(false);
+                  }}
                 >
-                  {showManageAccess ? "Close" : "Manage"}
+                  {showAddMember ? (
+                    <>
+                      <X className="h-3 w-3" />
+                      Cancel
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-3 w-3" />
+                      Invite teammate
+                    </>
+                  )}
                 </Button>
               </CardHeader>
               <CardContent className="pt-1">
-                {!showManageAccess && (
+                {/* Invite form — for brand new emails (creates ClientUser
+                    + ClientJobMember + manda mail). Cuando el form esta
+                    abierto, los chips y la lista de manage se ocultan
+                    porque ya estas en accion. */}
+                {showAddMember && (
+                  <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2 mb-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Name *</Label>
+                      <Input
+                        value={memberName}
+                        onChange={(e) => setMemberName(e.target.value)}
+                        placeholder="Jane Smith"
+                        className="text-sm h-8"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Role</Label>
+                      <Input
+                        value={memberTitle}
+                        onChange={(e) => setMemberTitle(e.target.value)}
+                        placeholder="e.g. Hiring Manager"
+                        className="text-sm h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email *</Label>
+                      <Input
+                        type="email"
+                        value={memberEmail}
+                        onChange={(e) => setMemberEmail(e.target.value)}
+                        placeholder="jane@company.com"
+                        className="text-sm h-8"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
+                      disabled={addingMember}
+                    >
+                      <Mail className="h-3 w-3" />
+                      {addingMember ? "Adding..." : "Send Invite"}
+                    </Button>
+                    {memberResult && (
+                      <div
+                        className={`text-xs p-2 rounded ${
+                          memberResult.type === "success"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        <p>{memberResult.message}</p>
+                        {memberResult.link && (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <input
+                              readOnly
+                              value={memberResult.link}
+                              className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(memberResult.link!);
+                                setCopiedLink(true);
+                                setTimeout(() => setCopiedLink(false), 2000);
+                              }}
+                              className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                            >
+                              {copiedLink ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3 text-gray-400" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </form>
+                )}
+
+                {!showAddMember && !showManageAccess && (
                   (job?.members?.length || 0) === 0 ? (
                     <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people.
+                      Everyone on your team can see this job. Click <span className="font-medium">Manage</span> to restrict it to specific people, or <span className="font-medium">Invite</span> to add someone new.
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {(job?.members || []).map((m: any) => {
                         const isCreator = job?.postedById === m.clientUser.id;
+                        const isPending = !!m.clientUser.isPending;
                         return (
                           <span
                             key={m.clientUser.id}
-                            className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-sm px-3 py-1.5 rounded-lg"
+                            className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg ${
+                              isPending
+                                ? "bg-amber-50 text-amber-800 border border-dashed border-amber-300"
+                                : "bg-emerald-50 text-emerald-700"
+                            }`}
                             title={m.clientUser.email}
                           >
                             {m.clientUser.name}
@@ -1054,11 +1198,53 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                 (owner)
                               </span>
                             )}
+                            {isPending && (
+                              <span className="text-[10px] uppercase tracking-wider text-amber-600 font-medium">
+                                pending
+                              </span>
+                            )}
+                            {/* Cancel × — only for pending invites and
+                                only when the chip isn't the creator
+                                (the creator stays a member by rule;
+                                cancelling them would just bounce). */}
+                            {isPending && !isCreator && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  cancelMemberInvite(
+                                    m.clientUser.id,
+                                    m.clientUser.name || m.clientUser.email,
+                                  )
+                                }
+                                className="ml-1 text-amber-600 hover:text-rose-600"
+                                title="Cancel invite"
+                                aria-label={`Cancel invite for ${m.clientUser.name || m.clientUser.email}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
                           </span>
                         );
                       })}
                     </div>
                   )
+                )}
+
+                {/* Manage link — bottom-right del card como ya pidio
+                    el usuario, label simple "Manage" (la frase larga
+                    "Manage who can see this search" se leia rara). El
+                    contexto se entiende porque vive adentro de Job
+                    access. */}
+                {!showAddMember && !showManageAccess && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={openManageAccess}
+                      className="text-xs text-gray-500 hover:text-gray-900 underline-offset-2 hover:underline"
+                    >
+                      Manage
+                    </button>
+                  </div>
                 )}
 
                 {showManageAccess && (
@@ -1476,106 +1662,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               same fields, same outcomes — but scoped to this Job by
               construction so the invitee shows up as a member of THIS
               search the moment they accept. */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-emerald-600" />
-                Invite a teammate to this search
-              </CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1 text-xs"
-                onClick={() => {
-                  setShowAddMember(!showAddMember);
-                  setMemberResult(null);
-                }}
-              >
-                <Plus className="h-3 w-3" />
-                {showAddMember ? "Cancel" : "Invite"}
-              </Button>
-            </CardHeader>
-            {showAddMember && (
-              <CardContent>
-                <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Name *</Label>
-                    <Input
-                      value={memberName}
-                      onChange={(e) => setMemberName(e.target.value)}
-                      placeholder="Jane Smith"
-                      className="text-sm h-8"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Role</Label>
-                    <Input
-                      value={memberTitle}
-                      onChange={(e) => setMemberTitle(e.target.value)}
-                      placeholder="e.g. Hiring Manager"
-                      className="text-sm h-8"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Email *</Label>
-                    <Input
-                      type="email"
-                      value={memberEmail}
-                      onChange={(e) => setMemberEmail(e.target.value)}
-                      placeholder="jane@company.com"
-                      className="text-sm h-8"
-                      required
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
-                    disabled={addingMember}
-                  >
-                    <Mail className="h-3 w-3" />
-                    {addingMember ? "Adding..." : "Send Invite"}
-                  </Button>
-                  {memberResult && (
-                    <div
-                      className={`text-xs p-2 rounded ${
-                        memberResult.type === "success"
-                          ? "bg-green-50 text-green-700"
-                          : "bg-red-50 text-red-600"
-                      }`}
-                    >
-                      <p>{memberResult.message}</p>
-                      {memberResult.link && (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <input
-                            readOnly
-                            value={memberResult.link}
-                            className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(memberResult.link!);
-                              setCopiedLink(true);
-                              setTimeout(() => setCopiedLink(false), 2000);
-                            }}
-                            className="shrink-0 p-0.5 rounded hover:bg-green-100"
-                          >
-                            {copiedLink ? (
-                              <Check className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Copy className="h-3 w-3 text-gray-400" />
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </form>
-              </CardContent>
-            )}
-          </Card>
+          {/* "Invite a teammate" card eliminada — su flow vive ahora
+              dentro de Job access (boton "Invite" en el header), asi
+              ambas acciones (invitar nuevo email + manage existentes)
+              comparten el mismo container que habla del mismo concepto:
+              "quien de mi equipo colabora en esta search". */}
 
           {/* Invite Dialog */}
           {showInvite && (

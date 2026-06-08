@@ -229,7 +229,7 @@ export const authOptions: NextAuthOptions = {
       // Org name is a placeholder — user is forced through /onboarding
       // to set the real company name before accessing the app.
       const slug = user.email.split("@")[0] + "-" + Date.now().toString(36);
-      await prisma.organization.create({
+      const createdOrg = await prisma.organization.create({
         data: {
           name: "",
           slug,
@@ -246,7 +246,32 @@ export const authOptions: NextAuthOptions = {
             },
           },
         },
+        include: { users: { select: { id: true, email: true } } },
       });
+
+      // Materialize PendingFirmInvite rows that were waiting for this
+      // email. Mirrors /api/auth/register so the OAuth path doesn't
+      // leave a recruiter staring at an empty dashboard when a client
+      // already invited them — the invited search has to be visible
+      // the moment they finish signing up, not after they wander into
+      // /engagements (which would trigger the safety-net re-claim).
+      // Fire-and-forget: a transient DB hiccup shouldn't block the
+      // session; processPendingInvites is idempotent so /engagements
+      // will pick up anything we miss here.
+      const createdUser = createdOrg.users.find((u) => u.email === user.email);
+      if (createdUser) {
+        try {
+          const { processPendingInvites } = await import(
+            "./process-pending-invites"
+          );
+          await processPendingInvites(user.email, createdOrg.id, createdUser.id);
+        } catch (err) {
+          console.error(
+            "[oauth signup] processPendingInvites failed:",
+            err,
+          );
+        }
+      }
 
       // Welcome mail — sent on first OAuth sign-up so the user gets
       // the same "your account is ready" experience as the manual

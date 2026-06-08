@@ -53,6 +53,14 @@ export async function GET(
                 email: true,
                 title: true,
                 role: true,
+                // Hash + verifiedAt feed the derived "isPending" flag
+                // below. We DROP the hash itself before responding —
+                // never sent to the agency client. A pending user is
+                // one we invited but who never set a password and
+                // never verified their email = the invite is still
+                // outstanding and cancellable.
+                passwordHash: true,
+                emailVerifiedAt: true,
               },
               orderBy: { name: "asc" },
             },
@@ -83,6 +91,8 @@ export async function GET(
                     title: true,
                     role: true,
                     isActive: true,
+                    passwordHash: true,
+                    emailVerifiedAt: true,
                   },
                 },
               },
@@ -208,7 +218,35 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    return NextResponse.json(job);
+    // Strip passwordHash everywhere it leaked through ClientUser
+    // selects, derive isPending in its place. The flag tells the UI
+    // which invites are still cancellable (never activated).
+    const sanitizeClientUser = (u: any) => {
+      if (!u) return u;
+      const { passwordHash, emailVerifiedAt, ...rest } = u;
+      return {
+        ...rest,
+        isPending: !passwordHash && !emailVerifiedAt,
+      };
+    };
+    const payload: any = { ...job };
+    if (payload.client?.clientUsers) {
+      payload.client = {
+        ...payload.client,
+        clientUsers: payload.client.clientUsers.map(sanitizeClientUser),
+      };
+    }
+    if (payload.clientJobMirror?.members) {
+      payload.clientJobMirror = {
+        ...payload.clientJobMirror,
+        members: payload.clientJobMirror.members.map((m: any) => ({
+          ...m,
+          clientUser: sanitizeClientUser(m.clientUser),
+        })),
+      };
+    }
+
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
