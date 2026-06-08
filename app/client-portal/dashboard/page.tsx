@@ -756,12 +756,20 @@ export default function ClientDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {([
-                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", href: "/client-portal/jobs" },
-                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500", onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined },
-                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", href: "/client-portal/candidates" },
-                ] as Array<{ label: string; value: number; max: number; color: string; href?: string; onClick?: () => void }>).map((item) => {
-                  const pct = Math.min((item.value / item.max) * 100, 100);
+                {(() => {
+                  const items = [
+                    { label: "Jobs Posted", value: totalJobs, color: "bg-emerald-500", href: "/client-portal/jobs" as string | undefined, onClick: undefined as undefined | (() => void) },
+                    { label: "Firms Engaged", value: activeRecruiters, color: "bg-indigo-500", href: undefined as string | undefined, onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined as undefined | (() => void) },
+                    { label: "Candidates Shared", value: totalCandidates, color: "bg-blue-500", href: "/client-portal/candidates" as string | undefined, onClick: undefined as undefined | (() => void) },
+                  ];
+                  // Max compartido entre las 3 barras — sino valores
+                  // iguales rendean anchos distintos (cada item tenia
+                  // su propio max calculado distinto). Floor de 10
+                  // para que cuando todo es 0 o 1 las barras no se
+                  // vean comicamente vacias.
+                  const sharedMax = Math.max(10, ...items.map((i) => i.value));
+                  return items.map((item) => {
+                    const pct = Math.min((item.value / sharedMax) * 100, 100);
                   const interactive = !!item.href || !!item.onClick;
                   const Row = (
                     <div className="space-y-1.5">
@@ -801,7 +809,8 @@ export default function ClientDashboardPage() {
                     );
                   }
                   return <div key={item.label}>{Row}</div>;
-                })}
+                });
+                })()}
               </div>
             </CardContent>
           </Card>

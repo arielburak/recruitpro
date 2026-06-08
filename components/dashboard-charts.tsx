@@ -142,16 +142,21 @@ export function JobStatusChart({ data }: { data: { status: string; count: number
     CLOSED: "Closed",
   };
 
+  // Max compartido entre todas las barras — calculado una sola vez,
+  // no por iteracion. Cualquier item con count === maxCount llega a
+  // 100%; el resto proporcional.
+  const maxCount = data.length > 0 ? Math.max(...data.map((d) => d.count || 0)) : 0;
+
   return (
     <div className="space-y-3">
       {data.map((item) => {
-        const maxCount = Math.max(...data.map((d) => d.count));
-        const pct = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+        const safeCount = Number.isFinite(item.count) ? item.count : 0;
+        const pct = maxCount > 0 ? (safeCount / maxCount) * 100 : 0;
         return (
           <div key={item.status} className="space-y-1">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">{STATUS_LABELS[item.status] || item.status}</span>
-              <span className="font-bold text-gray-900">{item.count}</span>
+              <span className="font-bold text-gray-900">{safeCount}</span>
             </div>
             <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
               <div
