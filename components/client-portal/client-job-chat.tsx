@@ -111,7 +111,13 @@ type MentionUser = {
   name: string;
   email: string;
   title?: string | null;
-  kind: "client";
+  // Lado al que pertenece la persona. La API ya devuelve este flag
+  // (route /api/client-portal/mentions/search) y aca lo usamos para
+  // pintar avatar + badge distinto: emerald + "Team" para nuestro
+  // lado, indigo + "Recruiter" para la agencia engaged. Sin el flag,
+  // el picker mezclaba ambos lados con el mismo color y no se podia
+  // distinguir si estabas arrobando a alguien del cliente o del firm.
+  kind: "client" | "staffing";
 };
 
 export function ClientJobChat({
@@ -465,30 +471,52 @@ export function ClientJobChat({
             blocked from reading the thread anyway. */}
         {mentionQuery !== null && mentionResults.length > 0 && (
           <div className="absolute bottom-full left-3 right-3 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto z-10">
-            {mentionResults.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => pickMention(u)}
-                className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center gap-2 text-sm"
-              >
-                <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-semibold shrink-0">
-                  {u.name
-                    .split(/\s+/)
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((p) => p[0]?.toUpperCase() || "")
-                    .join("")}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-medium text-gray-900 truncate">{u.name}</div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {u.title ? `${u.title} · ` : ""}
-                    {u.email}
+            {mentionResults.map((u) => {
+              const isStaffing = u.kind === "staffing";
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => pickMention(u)}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
+                >
+                  <div
+                    className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+                      isStaffing
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-emerald-100 text-emerald-700",
+                    )}
+                  >
+                    {u.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((p) => p[0]?.toUpperCase() || "")
+                      .join("")}
                   </div>
-                </div>
-              </button>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-gray-900 truncate">{u.name}</p>
+                      <span
+                        className={cn(
+                          "text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded shrink-0",
+                          isStaffing
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "bg-emerald-50 text-emerald-700",
+                        )}
+                      >
+                        {isStaffing ? "Recruiter" : "Team"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {u.title ? `${u.title} · ` : ""}
+                      {u.email}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
         <div className="flex items-end gap-2">
