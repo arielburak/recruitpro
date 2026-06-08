@@ -1544,7 +1544,22 @@ export default function JobDetailPage() {
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
-          <div className="border rounded-xl bg-white p-5 space-y-5">
+          <div className="border rounded-xl bg-white p-5 space-y-5 relative">
+              {/* Pencil shortcut — vive en la esquina top-right del
+                  bloque para que se pueda entrar a editar sin tener
+                  que scrollear arriba al boton Edit del header. Solo
+                  visible en modo lectura. */}
+              {!editing && (
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="absolute top-3 right-3 inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Edit job details"
+                  aria-label="Edit job details"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
               {!editing ? (
                 <>
                   {/* Key info — compact 2-column layout */}
