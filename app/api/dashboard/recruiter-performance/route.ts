@@ -4,6 +4,15 @@ import { getOrgContext } from "@/lib/tenant";
 
 // Per-recruiter performance aggregate for the dashboard widget.
 //
+// Counting policy: every metric counts STAGE TRANSITIONS, not the
+// underlying CRM entities. Submissions = entered "Submitted",
+// Interviews = entered "Interviewing", Offers = entered "Offered",
+// Placements = entered "Placed". This is what an operator means by
+// "Karen had 4 interviews this week" — four candidates of hers
+// reached the interview stage, not four calendar events were
+// dispatched. Scheduling a second-round interview on someone who's
+// already in Interviewing should NOT bump the counter.
+//
 // Attribution policy (consistent across every metric):
 //   - Submissions / Offers / Interviews → `candidate.ownerId`. No
 //     per-event override exists yet.
@@ -76,13 +85,34 @@ async function bucketMetrics(
       // recent transition per submission for free.
       orderBy: { createdAt: "desc" },
     }),
-    prisma.interview.findMany({
+    // "Interviews" counts every distinct SUBMISSION that entered the
+    // Interviewing stage in the window — mirror of the Offers query
+    // below. Scheduling a calendar Interview row no longer bumps
+    // this counter on its own; only the kanban-stage transition
+    // counts. Reason: a recruiter who books a second-round on a
+    // candidate that's already in Interviewing was inflating their
+    // number for the same milestone. Dedup logic (post-query)
+    // matches the Offers pattern — by metadata.submissionId when
+    // present, with a coarser candidate+job fallback for legacy
+    // activity rows.
+    prisma.activity.findMany({
       where: {
         organizationId,
-        startTime: { gte: from, lte: to },
+        action: "submission.stage_changed",
+        createdAt: { gte: from, lte: to },
         candidate: { ownerId: { in: userIds } },
+        OR: [
+          { metadata: { path: ["toStage"], equals: "Interviewing" } },
+          { description: { contains: 'to "Interviewing" in' } },
+        ],
       },
-      select: { candidate: { select: { ownerId: true } } },
+      select: {
+        candidateId: true,
+        description: true,
+        metadata: true,
+        candidate: { select: { ownerId: true } },
+      },
+      orderBy: { createdAt: "desc" },
     }),
     prisma.placement.findMany({
       where: {
@@ -106,29 +136,47 @@ async function bucketMetrics(
     return m;
   };
 
-  // Dedup the offers by submission so a candidate moved in/out of
-  // Offered on the same job only counts once. New rows carry
-  // metadata.submissionId; legacy rows fall back to a synthetic
-  // key combining candidateId + the job title scraped from the
-  // description. Coarse but good enough — a single candidate would
-  // need to have parallel submissions on multiple jobs to collide.
-  const seenOfferKeys = new Set<string>();
-  const offersMap = new Map<string, number>();
-  for (const a of offers) {
-    const ownerId = a.candidate?.ownerId;
-    if (!ownerId) continue;
-    const meta = (a.metadata as any) || {};
-    let key: string;
-    if (meta?.submissionId) {
-      key = `s:${meta.submissionId}`;
-    } else {
-      const jobMatch = /in "([^"]+)"/.exec(a.description || "");
-      key = `c:${a.candidateId}|j:${jobMatch?.[1] || ""}`;
+  // Dedup the stage-transition rows (offers + interviews) by
+  // submission so a candidate moved in/out of the same stage on the
+  // same job only counts once. New rows carry metadata.submissionId;
+  // legacy rows fall back to a synthetic key combining candidateId +
+  // the job title scraped from the description. Coarse but good
+  // enough — a single candidate would need to have parallel
+  // submissions on multiple jobs to collide. Same logic for both
+  // metrics, factored into one helper.
+  function bucketByOwnerDeduped(
+    rows: Array<{
+      // Activity.candidateId is nullable in the schema — it gets
+      // unlinked when a candidate is hard-deleted but the activity
+      // log row survives. We never read it as a non-null value here;
+      // it's only used as a salt for the synthetic dedup key.
+      candidateId: string | null;
+      description: string | null;
+      metadata: unknown;
+      candidate: { ownerId: string | null } | null;
+    }>,
+  ) {
+    const seen = new Set<string>();
+    const m = new Map<string, number>();
+    for (const a of rows) {
+      const ownerId = a.candidate?.ownerId;
+      if (!ownerId) continue;
+      const meta = (a.metadata as { submissionId?: string } | null) || {};
+      let key: string;
+      if (meta?.submissionId) {
+        key = `s:${meta.submissionId}`;
+      } else {
+        const jobMatch = /in "([^"]+)"/.exec(a.description || "");
+        key = `c:${a.candidateId}|j:${jobMatch?.[1] || ""}`;
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      m.set(ownerId, (m.get(ownerId) || 0) + 1);
     }
-    if (seenOfferKeys.has(key)) continue;
-    seenOfferKeys.add(key);
-    offersMap.set(ownerId, (offersMap.get(ownerId) || 0) + 1);
+    return m;
   }
+  const offersMap = bucketByOwnerDeduped(offers);
+  const interviewsMap = bucketByOwnerDeduped(interviews);
 
   const placementMap = new Map<string, number>();
   for (const p of placements) {
@@ -140,7 +188,7 @@ async function bucketMetrics(
   return {
     submissions: count(submissions),
     offers: offersMap,
-    interviews: count(interviews),
+    interviews: interviewsMap,
     placements: placementMap,
   };
 }

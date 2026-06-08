@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+    // Re-bind to a non-nullable local so the narrowing survives into
+    // the helper closure below — TS doesn't always carry control-flow
+    // narrowing across an `async function` declaration boundary.
+    const userId: string = recruiterId;
 
     const now = new Date();
     const from = fromParam ? new Date(fromParam) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -44,7 +48,7 @@ export async function GET(request: NextRequest) {
     // Confirm the recruiter belongs to the caller's org so a hand-
     // crafted request can't list activity from a different firm.
     const recruiter = await prisma.user.findFirst({
-      where: { id: recruiterId, organizationId: ctx.organizationId },
+      where: { id: userId, organizationId: ctx.organizationId },
       select: { id: true, name: true, email: true },
     });
     if (!recruiter) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
       const rows = await prisma.candidateSubmission.findMany({
         where: {
           createdAt: { gte: from, lte: to },
-          candidate: { organizationId: ctx.organizationId, ownerId: recruiterId },
+          candidate: { organizationId: ctx.organizationId, ownerId: userId },
         },
         select: {
           id: true,
@@ -68,42 +72,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ metric, recruiter, items: rows });
     }
 
-    if (metric === "interviews") {
-      const rows = await prisma.interview.findMany({
-        where: {
-          organizationId: ctx.organizationId,
-          startTime: { gte: from, lte: to },
-          candidate: { ownerId: recruiterId },
-        },
-        select: {
-          id: true,
-          title: true,
-          startTime: true,
-          status: true,
-          type: true,
-          candidate: { select: { id: true, firstName: true, lastName: true } },
-          job: { select: { id: true, title: true, client: { select: { name: true } } } },
-        },
-        orderBy: { startTime: "desc" },
-      });
-      return NextResponse.json({ metric, recruiter, items: rows });
-    }
-
-    if (metric === "offers") {
-      // Mirror the aggregate's semantic: every move INTO Offered in
-      // the window counts, regardless of where the submission sits
-      // now. Pull the matching Activity rows + their candidates;
-      // legacy-compat with description-only logs is the same OR
-      // we use in the count query.
+    // Stage-transition drill-downs (Interviews + Offers). Both metrics
+    // count distinct submissions that entered a target stage in the
+    // window. Same query shape, same dedup logic — just the stage
+    // name differs. Pulled into a helper so the two endpoints stay
+    // in lock-step.
+    async function stageTransitionItems(toStage: string) {
       const rows = await prisma.activity.findMany({
         where: {
           organizationId: ctx.organizationId,
           action: "submission.stage_changed",
           createdAt: { gte: from, lte: to },
-          candidate: { ownerId: recruiterId },
+          candidate: { ownerId: userId },
           OR: [
-            { metadata: { path: ["toStage"], equals: "Offered" } },
-            { description: { contains: 'to "Offered" in' } },
+            { metadata: { path: ["toStage"], equals: toStage } },
+            { description: { contains: `to "${toStage}" in` } },
           ],
         },
         select: {
@@ -118,11 +101,12 @@ export async function GET(request: NextRequest) {
       // Normalise to a stable shape — the drill-down UI doesn't need
       // to know whether the row came from structured metadata or
       // from parsing the description. The job title is recoverable
-      // either way (metadata.jobId resolves through the Submission;
-      // legacy rows have the title quoted inside `description`).
+      // either way (metadata.submissionId resolves through the
+      // Submission; legacy rows have the title quoted inside the
+      // description).
       const items = await Promise.all(
         rows.map(async (a) => {
-          const meta = (a.metadata as any) || {};
+          const meta = (a.metadata as { submissionId?: string } | null) || {};
           let jobTitle: string | null = null;
           let jobId: string | null = null;
           let clientName: string | null = null;
@@ -147,7 +131,7 @@ export async function GET(request: NextRequest) {
           }
           return {
             id: a.id,
-            offeredAt: a.createdAt,
+            enteredStageAt: a.createdAt,
             candidate: a.candidate,
             jobId,
             jobTitle,
@@ -157,13 +141,13 @@ export async function GET(request: NextRequest) {
         }),
       );
       // Dedup same as the aggregate count: one row per submission.
-      // A candidate bounced in/out of Offered on the same job shows
-      // once, with the most recent transition kept (rows are
-      // already sorted desc by createdAt). The synthetic key for
-      // legacy rows combines candidate + job title so two distinct
-      // jobs for the same candidate still both appear.
+      // A candidate bounced in/out of the stage on the same job shows
+      // once, with the most recent transition kept (rows are already
+      // sorted desc by createdAt). The synthetic key for legacy rows
+      // combines candidate + job title so two distinct jobs for the
+      // same candidate still both appear.
       const seen = new Set<string>();
-      const deduped = items.filter((it) => {
+      return items.filter((it) => {
         const key = it.submissionId
           ? `s:${it.submissionId}`
           : `c:${it.candidate?.id || ""}|j:${it.jobTitle || ""}`;
@@ -171,6 +155,15 @@ export async function GET(request: NextRequest) {
         seen.add(key);
         return true;
       });
+    }
+
+    if (metric === "interviews") {
+      const deduped = await stageTransitionItems("Interviewing");
+      return NextResponse.json({ metric, recruiter, items: deduped });
+    }
+
+    if (metric === "offers") {
+      const deduped = await stageTransitionItems("Offered");
       return NextResponse.json({ metric, recruiter, items: deduped });
     }
 
@@ -183,14 +176,14 @@ export async function GET(request: NextRequest) {
           organizationId: ctx.organizationId,
           updatedAt: { gte: from, lte: to },
           OR: [
-            { recruiterId },
+            { recruiterId: userId },
             // Fallback: no override AND candidate is owned by the
             // recruiter. The null check on recruiterId avoids double-
             // counting a placement that was explicitly attributed to
             // someone else but whose candidate is owned by this user.
             {
               recruiterId: null,
-              submission: { candidate: { ownerId: recruiterId } },
+              submission: { candidate: { ownerId: userId } },
             },
           ],
         },

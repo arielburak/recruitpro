@@ -19,6 +19,7 @@ import {
   BarChart3,
   Activity,
   Upload,
+  Info,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
@@ -249,6 +250,12 @@ export default async function DashboardPage() {
   const candidateTrend = meaningfulTrend(candidatesThisMonth, candidatesLastMonth);
   const placementTrend = meaningfulTrend(placementsThisMonth, placementsLastMonth);
 
+  // Tooltips are plain-English explanations of WHEN each tile
+  // increments. Surfaced as a gray Info icon next to the label so an
+  // operator can hover before trusting the number. Wording matches
+  // the policy enforced server-side — Placements counts submissions
+  // that reached the Placed stage (not Placement rows), Active
+  // Searches respects strict assignment-based visibility, etc.
   const stats = [
     {
       label: "Active Searches",
@@ -258,6 +265,7 @@ export default async function DashboardPage() {
       lightBg: "bg-blue-50",
       lightColor: "text-blue-600",
       href: "/jobs",
+      tooltip: "Jobs in OPEN or ACTIVE status that you're assigned to. Searches the rest of the firm owns but didn't share with you don't count here.",
     },
     {
       label: "Total Candidates",
@@ -269,6 +277,7 @@ export default async function DashboardPage() {
       trend: candidateTrend,
       trendLabel: "vs last 30d",
       href: "/candidates",
+      tooltip: "Every candidate row in your firm's database. The trend chip compares the last 30 days of new candidates vs the prior 30.",
     },
     // "In Pipeline" removido del strip de stats: duplicaba info que
     // ya esta granular en Total Candidates + per-job kanban, y como
@@ -285,6 +294,7 @@ export default async function DashboardPage() {
       trend: placementTrend,
       trendLabel: "vs last 30d",
       href: "/placements",
+      tooltip: "Submissions that reached the Placed stage. The trend chip compares Placed transitions in the last 30 days vs the prior 30.",
     },
     {
       label: "Clients",
@@ -294,6 +304,7 @@ export default async function DashboardPage() {
       lightBg: "bg-amber-50",
       lightColor: "text-amber-600",
       href: "/clients",
+      tooltip: "Hiring companies your firm is engaged with (linked via OrganizationClient). The global Client pool isn't counted — only the ones you're working with.",
     },
   ];
 
@@ -503,7 +514,25 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <p className="text-xs text-gray-500">{stat.label}</p>
+                  {stat.tooltip && (
+                    <Info
+                      className="h-3 w-3 text-gray-300 hover:text-gray-500 cursor-help shrink-0"
+                      aria-label={stat.tooltip}
+                      // Native browser tooltip — works without extra
+                      // portal wiring. The whole tile is a Link, so
+                      // stopPropagation here prevents the hover from
+                      // dragging the user into the link's nav target
+                      // on mobile-style click-through.
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      {...({ title: stat.tooltip } as any)}
+                    />
+                  )}
+                </div>
               </CardContent>
             </Card>
           </Link>
