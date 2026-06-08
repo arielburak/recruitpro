@@ -135,8 +135,8 @@ export async function POST(request: Request) {
               <p><strong>${job.title}</strong></p>
               <p>${message || "They'd like you to work on this role."}</p>
               <p>Join Recruiting ATS to manage this engagement:</p>
-              <a href="${baseUrl}/register?invite=${clientJobId}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
-                Join Recruiting ATS
+              <a href="${baseUrl}/register?invite=firm&jobId=${clientJobId}&email=${encodeURIComponent(normalizedEmail)}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
+                Set up your firm on Recruiting ATS
               </a>
               <p style="margin-top: 16px; font-size: 13px; color: #6b7280;">
                 Already have an account? <a href="${baseUrl}/login" style="color: #4f46e5;">Sign in here</a>

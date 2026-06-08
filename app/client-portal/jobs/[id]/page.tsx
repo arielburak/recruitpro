@@ -12,6 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ArrowLeft,
   Building2,
   Send,
@@ -1748,22 +1755,22 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               comparten el mismo container que habla del mismo concepto:
               "quien de mi equipo colabora en esta search". */}
 
-          {/* Invite Dialog */}
-          {showInvite && (
-            <Card className="border-emerald-200">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">Invite a Recruiter</h4>
-                  <button onClick={() => setShowInvite(false)}>
-                    <X className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-gray-500">
+          {/* Invite Recruiter modal. Lives outside the right-rail
+              column so it overlays the whole page instead of pushing
+              the supporting cards around (the prior implementation
+              was a <Card> embedded inline below "Assigned Firms",
+              which looked off — it competed for column width with
+              the firm list right above it and felt half-hidden). */}
+          <Dialog open={showInvite} onOpenChange={setShowInvite}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Invite a Recruiter</DialogTitle>
+                <DialogDescription>
                   Invite by email. The invitation reaches only that person — not
                   their whole firm — so you can pick a specific HM or POC.
-                </p>
-
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
@@ -2046,9 +2053,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 {inviteSuccess && (
                   <p className="text-xs text-center text-emerald-600">{inviteSuccess}</p>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
