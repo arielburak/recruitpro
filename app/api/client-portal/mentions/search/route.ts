@@ -97,15 +97,34 @@ export async function GET(request: NextRequest) {
       let staffingOrgId: string | null = null;
       let staffingUserIdScope: string[] | null = null;
       if (submissionId) {
+        // Pull tambien las assignments del job: el picker NO debe
+        // listar a todos los recruiters de la agencia, solo a los
+        // que estan asignados a esta busqueda. El cliente puede
+        // arrobar unicamente a quienes ya estan trabajando este
+        // job. Mirror exacto del scope que ya hace el path de
+        // clientJobId (line 109-137).
         const sub = await prisma.candidateSubmission.findFirst({
           where: {
             id: submissionId,
             isSharedWithClient: true,
             job: { clientId: ctx.clientId },
           },
-          select: { job: { select: { organizationId: true } } },
+          select: {
+            job: {
+              select: {
+                organizationId: true,
+                assignments: { select: { userId: true } },
+              },
+            },
+          },
         });
-        if (sub) staffingOrgId = sub.job.organizationId;
+        if (sub) {
+          staffingOrgId = sub.job.organizationId;
+          const assignees = sub.job.assignments ?? [];
+          if (assignees.length > 0) {
+            staffingUserIdScope = assignees.map((a) => a.userId);
+          }
+        }
       } else if (clientJobId) {
         // If the chat tab knows which firm is targeted, scope the
         // engagement lookup to that specific Job. Otherwise fall
