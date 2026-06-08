@@ -19,9 +19,11 @@ export async function GET() {
 
     const [submissions, clientStages] = await Promise.all([
       prisma.candidateSubmission.findMany({
+        // Multi-firm: sin job.clientId === ctx.clientId — el gate
+        // correcto es jobId IN visibleAgencyJobIds. Ver
+        // /api/client-portal/candidates/route.ts para el rationale.
         where: {
           isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
           jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
         },
         select: {

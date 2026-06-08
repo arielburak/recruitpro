@@ -97,17 +97,23 @@ export async function GET(request: NextRequest) {
       let staffingOrgId: string | null = null;
       let staffingUserIdScope: string[] | null = null;
       if (submissionId) {
-        // Pull tambien las assignments del job: el picker NO debe
-        // listar a todos los recruiters de la agencia, solo a los
-        // que estan asignados a esta busqueda. El cliente puede
-        // arrobar unicamente a quienes ya estan trabajando este
-        // job. Mirror exacto del scope que ya hace el path de
+        // Multi-firm gate: firmEngagements ACCEPTED en un ClientJob
+        // accesible. Ademas, pull las assignments del job — el picker
+        // NO debe listar a todos los recruiters de la agencia, solo a
+        // los asignados a esta busqueda. Mirror del scope del path
         // clientJobId (line 109-137).
         const sub = await prisma.candidateSubmission.findFirst({
           where: {
             id: submissionId,
             isSharedWithClient: true,
-            job: { clientId: ctx.clientId },
+            job: {
+              firmEngagements: {
+                some: {
+                  status: "ACCEPTED",
+                  clientJob: { clientId: ctx.clientId },
+                },
+              },
+            },
           },
           select: {
             job: {

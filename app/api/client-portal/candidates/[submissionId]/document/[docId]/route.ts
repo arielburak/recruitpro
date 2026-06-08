@@ -23,11 +23,13 @@ export async function GET(
     // ClientJob is legacy-open) to fetch a document on the shared
     // submission.
     const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+    // Multi-firm: sin job.clientId === ctx.clientId — ver comentario
+    // en candidates/route.ts. El gate correcto es jobId IN
+    // visibleAgencyJobIds.
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
         jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: { candidateId: true },

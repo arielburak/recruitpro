@@ -39,9 +39,13 @@ export async function GET() {
       // clientId matched leaked into the portal regardless of
       // whether the ClientUser had been invited to it — exactly
       // the bug the user flagged.
+      // Multi-firm: sin clientId: ctx.clientId. Cuando 2 agencias
+      // trabajan el mismo ClientJob, cada Job creado por ellas tiene
+      // su propio Client record (audit metadata, NO authoritative).
+      // El gate de membership via firmEngagements.clientJob.members
+      // ya hace el trabajo correcto.
       prisma.job.findMany({
         where: {
-          clientId: ctx.clientId,
           firmEngagements: {
             some: {
               status: "ACCEPTED",
@@ -66,11 +70,22 @@ export async function GET() {
         },
         orderBy: { createdAt: "desc" },
       }),
-      // Count candidates shared with this client across all recruiter firms
+      // Count candidates shared with this client across all recruiter
+      // firms. Multi-firm: el gate correcto es el firmEngagement chain
+      // (job.firmEngagements ACCEPTED.clientJob.clientId === ctx.clientId)
+      // en vez de job.clientId, ya que cada agencia tiene su propio
+      // Client record para el mismo cliente real.
       prisma.candidateSubmission.count({
         where: {
           isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
+          job: {
+            firmEngagements: {
+              some: {
+                status: "ACCEPTED",
+                clientJob: { clientId: ctx.clientId },
+              },
+            },
+          },
         },
       }),
       // Count UNIQUE accepted firms (one firm on three jobs = 1, not 3).

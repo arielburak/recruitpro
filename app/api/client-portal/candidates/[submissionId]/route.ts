@@ -19,11 +19,16 @@ export async function GET(
     // not a member of.
     const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
 
+    // Sin `job.clientId === ctx.clientId`: cuando 2 agencias engaged
+    // con el mismo ClientJob, cada una tiene su propio Client record
+    // (audit metadata, no authoritative). Filtrar por clientId solo
+    // matchea la agencia que originalmente invito al cliente. El gate
+    // correcto es `jobId IN visibleAgencyJobIds`, que viene de los
+    // FirmEngagements ACCEPTED en ClientJobs accesibles.
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
         jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: {
@@ -155,7 +160,9 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    const scores = allRatings.map((r: { score: number | null }) => r.score).filter((s: number | null): s is number => typeof s === "number" && s > 0);
+    const scores = allRatings
+      .map((r: { score: number | null }) => r.score)
+      .filter((s: number | null): s is number => typeof s === "number" && s > 0);
     const avgRating = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : null;
 
     return NextResponse.json({
