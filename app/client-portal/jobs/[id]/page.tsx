@@ -575,22 +575,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      {/* Provenance banner for agency-mirrored jobs. The client can
-          still post notes and review the pipeline; description,
-          requirements and files belong to the firm. */}
-      {job.createdByAgency && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-2.5 text-xs text-indigo-800 flex items-center gap-2">
-          <Building2 className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
-          <span>
-            This search was set up by
-            {(() => {
-              const firmName = job.engagements?.find((e: any) => e.status === "ACCEPTED")?.organization?.name;
-              return firmName ? <strong className="font-semibold"> {firmName}</strong> : <span> your recruiting firm</span>;
-            })()}.
-            You can review candidates and post internal notes; editing the search itself happens on their side.
-          </span>
-        </div>
-      )}
+      {/* Provenance banner removido por feedback: cuando el cliente
+          mira su propio job no necesita que le digan "tu agencia lo
+          armo". Confundia mas de lo que aportaba. La restriccion de
+          edicion sigue intacta (botton Edit gated en createdByAgency
+          arriba); solo se quito el texto explicativo de "set up by". */}
 
       {/* Stacked layout — pipeline + tabs take the full width up top
           because that's what the hiring manager actually came for;

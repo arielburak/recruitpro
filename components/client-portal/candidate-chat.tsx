@@ -107,22 +107,26 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function renderMentions(text: string) {
+function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
   // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
   //
-  // Sin background — el bubble que la contiene es solido (indigo-600
-  // o emerald-600 con texto blanco), asi que bold + underline sutil
-  // funciona en ambos lados sin clashes de color. Mirror exacto del
-  // helper en components/chat-notes.tsx.
+  // Estilo "Outlook chip": pill con bg sutil + bold. Mirror del helper
+  // en components/chat-notes.tsx — bubble oscuro (mi voz, emerald-600
+  // en client view) usa bg-white/25 + texto blanco; bubble claro
+  // (recibido de la agencia, bg-gray-100) usa bg-indigo-100 + indigo
+  // texto.
+  const chipClass = opts.onDark
+    ? "bg-white/25 text-white font-semibold px-1.5 py-px rounded"
+    : "bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-px rounded";
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
       return (
-        <span key={i} className="font-semibold underline underline-offset-2">
+        <span key={i} className={chipClass}>
           {part}
         </span>
       );
@@ -429,7 +433,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded, firmName
                                   : "bg-gray-100 text-gray-800 rounded-tl-md"
                               )}
                             >
-                              {isMyOrg ? c.content : renderMentions(c.content)}
+                              {isMyOrg ? renderMentions(c.content, { onDark: true }) : renderMentions(c.content)}
                             </div>
                             <span
                               className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"

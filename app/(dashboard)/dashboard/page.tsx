@@ -86,6 +86,11 @@ export default async function DashboardPage() {
     activityByDay,
     recruiterStats,
     recentSubmissions,
+    // teamSize: solo para gating del banner de "Invite Team Member"
+    // de primera semana. Si el user esta solo (count === 1) y todavia
+    // esta dentro de los primeros 7 dias, le destacamos el CTA para
+    // sumar al equipo. Cualquier invite hecho saca el banner.
+    teamSize,
   ] = await Promise.all([
     prisma.job.count({
       where: {
@@ -176,6 +181,9 @@ export default async function DashboardPage() {
         job: { select: { title: true, id: true } },
         stage: { select: { name: true, color: true } },
       },
+    }),
+    prisma.user.count({
+      where: { organizationId: orgId, isActive: true },
     }),
   ]);
 
@@ -436,6 +444,39 @@ export default async function DashboardPage() {
       )}
       {isWithinFirstWeek && daysSinceSignup > 0 && (
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
+      )}
+
+      {/* Invite teammate banner — primera semana, solo si el usuario
+          esta solo (count === 1). Apenas invita a alguien o pasa la
+          semana, desaparece. Mismo formato que el migrate banner
+          pero en violeta para diferenciar. */}
+      {isWithinFirstWeek && teamSize === 1 && (
+        <div className="bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 border border-violet-200 rounded-2xl p-5">
+          <div className="flex items-start gap-4 pr-6">
+            <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
+              <UserPlus className="w-5 h-5 text-violet-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-violet-900">Working solo? Pull your team in.</p>
+              <p className="text-sm text-violet-800/80 mt-0.5">
+                Recruiting works better with backup — invite a teammate so you can split searches,
+                share candidates, and chat with clients together. Free during your trial.
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <Link
+                  href="/settings/team"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Invite a teammate
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+                <span className="text-[11px] text-violet-700/70">
+                  {7 - daysSinceSignup} day{7 - daysSinceSignup === 1 ? "" : "s"} left in your first week
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* KPI Cards */}
