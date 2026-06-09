@@ -59,7 +59,7 @@ Aplican a cualquier feature nueva o existente:
 
 ### En staging — verificá y pasa a `[x]`
 
-- [~] **#1 — Link de verificación inválido al actualizar**. Token row idempotente; `/verify-email` agregado a proxy publicPaths. Commits `17fc2af` + `dae38ba`.
+- [x] **#1 — Link de verificación inválido al actualizar**. Token row idempotente; `/verify-email` agregado a proxy publicPaths. Confirmado funcionando 2026-06-09. Commits `17fc2af` + `dae38ba`.
 - [~] **#2 — Selección de documentos por envío**. Pivot `SubmissionDocument`, picker en share dialog, editable post-envío. El cliente ve solo lo seleccionado. PR #305.
 - [~] **#9 — Contabilizar solo cambio de stage + tooltip KPI**. Dashboard cuenta transitions, no calendar events. Tooltips grises explicando cada métrica. Commit `df5db65`.
 - [~] **#15 — Popup invite agencia + signup→Agency**. Modal nuevo + mail con link de registro que rutea a `/register?type=agency` (no a Client). Commits `319dca6` + `c7cf391`.
@@ -67,6 +67,7 @@ Aplican a cualquier feature nueva o existente:
 - [~] **#17 — Barras proporcionales en charts**. Max compartido entre series + NaN guard. PR #304.
 - [~] **#23 — Sugerir contactos del cliente al compartir búsqueda**. Autocomplete de mail con contactos cargados. PR #299.
 - [~] **#27 — Invite Team Member first-week banner**. Banner en dashboard la primera semana. `2d24a36` / #297. **Verificar si está bien visible o falta destacar más.**
+- [~] **#29 — Sentry: captación de errores end-to-end**. `@sentry/nextjs` integrado en server (Node + Edge) + client + `onRequestError` de Next 16 (Server Components / Route Handlers / Server Actions / Proxy). `app/global-error.tsx` para crashes del root layout. `next.config.ts` con `withSentryConfig`; source maps gated en `SENTRY_AUTH_TOKEN`. Sin DSN todo es no-op. Commit `eafa844`. **Pendiente vos**: crear cuenta en sentry.io → New Project Next.js → setear `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_ORG` + `SENTRY_PROJECT` + `SENTRY_AUTH_TOKEN` en Vercel staging + production. Romper algo en staging y confirmar que el evento llega.
 
 ---
 
@@ -117,7 +118,6 @@ Aplican a cualquier feature nueva o existente:
 
 - [ ] `sitemap.xml` + `robots.txt`
 - [ ] Meta descriptions decentes
-- [ ] Sentry para errores
 - [ ] PostHog o Plausible para analytics
 - [ ] Tests automáticos mínimos (smoke)
 - [ ] Issue/PR templates GitHub
@@ -133,6 +133,7 @@ Aplican a cualquier feature nueva o existente:
 - Industry + company size obligatorios en signup + nombre empresa en header
 - Welcome email automático al registrarse
 - Stages estándar (no personalizados) + decisión + migración
+- Email verification idempotente + `/verify-email` público (agency + client portal) — `17fc2af` + `dae38ba` — confirmado 2026-06-09
 
 **Clients / Contacts / JD**
 - Quitar Main contact del create + "Set as main" en lista + Main contact en `/contacts`
