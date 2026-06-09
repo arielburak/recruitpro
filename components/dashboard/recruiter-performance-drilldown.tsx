@@ -36,18 +36,14 @@ type SubmissionItem = {
   job: { id: string; title: string; client: { name: string } | null };
   stage: { name: string } | null;
 };
-type InterviewItem = {
+// Stage-transition shape — shared by Interviews + Offers. Both
+// metrics count distinct submissions that entered a target stage in
+// the window, so the row payload is identical. `enteredStageAt` is
+// the activity timestamp; jobTitle/clientName may be null when the
+// underlying legacy activity row didn't link to a submission.
+type StageTransitionItem = {
   id: string;
-  title: string;
-  startTime: string;
-  status: string;
-  type: string;
-  candidate: { id: string; firstName: string; lastName: string };
-  job: { id: string; title: string; client: { name: string } | null };
-};
-type OfferItem = {
-  id: string;
-  offeredAt: string;
+  enteredStageAt: string;
   candidate: { id: string; firstName: string; lastName: string };
   jobId: string | null;
   jobTitle: string | null;
@@ -69,8 +65,8 @@ type PlacementItem = {
 
 type ApiPayload =
   | { metric: "submissions"; recruiter: Recruiter; items: SubmissionItem[] }
-  | { metric: "interviews"; recruiter: Recruiter; items: InterviewItem[] }
-  | { metric: "offers"; recruiter: Recruiter; items: OfferItem[] }
+  | { metric: "interviews"; recruiter: Recruiter; items: StageTransitionItem[] }
+  | { metric: "offers"; recruiter: Recruiter; items: StageTransitionItem[] }
   | { metric: "placements"; recruiter: Recruiter; items: PlacementItem[] };
 
 const METRIC_META: Record<
@@ -207,31 +203,19 @@ export function RecruiterPerformanceDrilldown({
                     href={`/candidates/${r.candidate.id}`}
                   />
                 ))}
-              {data.metric === "interviews" &&
-                (data.items as InterviewItem[]).map((r) => (
-                  <DrilldownRow
-                    key={r.id}
-                    title={`${r.candidate.firstName} ${r.candidate.lastName}`}
-                    subtitle={`${r.job.title}${r.job.client?.name ? ` · ${r.job.client.name}` : ""}`}
-                    meta={[
-                      fmtDate(r.startTime),
-                      r.type,
-                      r.status,
-                    ]}
-                    href={`/candidates/${r.candidate.id}`}
-                  />
-                ))}
-              {data.metric === "offers" &&
-                (data.items as OfferItem[]).map((r) => {
+              {(data.metric === "interviews" || data.metric === "offers") &&
+                (data.items as StageTransitionItem[]).map((r) => {
                   const subtitle = r.jobTitle
                     ? `${r.jobTitle}${r.clientName ? ` · ${r.clientName}` : ""}`
                     : "—";
+                  const verb =
+                    data.metric === "interviews" ? "Entered Interviewing" : "Offered";
                   return (
                     <DrilldownRow
                       key={r.id}
                       title={`${r.candidate.firstName} ${r.candidate.lastName}`}
                       subtitle={subtitle}
-                      meta={[`Offered ${fmtDate(r.offeredAt)}`]}
+                      meta={[`${verb} ${fmtDate(r.enteredStageAt)}`]}
                       href={`/candidates/${r.candidate.id}`}
                     />
                   );

@@ -12,6 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ArrowLeft,
   Building2,
   Send,
@@ -147,6 +154,34 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       }
     } catch {}
     setSavingAccess(false);
+  }
+
+  // Quick-add an existing ClientUser as member of this Job — sin
+  // pasar por el form de invite + email. PUT /members con currentIds
+  // + el nuevo asi reusamos la misma logica de diff + notif.
+  const [addingExistingId, setAddingExistingId] = useState<string | null>(null);
+  async function addExistingMember(clientUserId: string) {
+    if (addingExistingId) return;
+    setAddingExistingId(clientUserId);
+    try {
+      const currentIds = (job?.members || [])
+        .map((m: any) => m.clientUser?.id)
+        .filter((x: any): x is string => typeof x === "string");
+      const res = await fetch(`/api/client-portal/jobs/${id}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: [...currentIds, clientUserId] }),
+      });
+      if (res.ok) {
+        setShowAddMember(false);
+        setMemberName("");
+        setMemberTitle("");
+        setMemberEmail("");
+        setMemberResult(null);
+        await fetchJob();
+      }
+    } catch {}
+    setAddingExistingId(null);
   }
 
   // Cancel a teammate invite the user just sent. The endpoint reuses
@@ -1089,88 +1124,140 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </Button>
               </CardHeader>
               <CardContent className="pt-1">
-                {/* Invite form — for brand new emails (creates ClientUser
-                    + ClientJobMember + manda mail). Cuando el form esta
-                    abierto, los chips y la lista de manage se ocultan
-                    porque ya estas en accion. */}
-                {showAddMember && (
-                  <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2 mb-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Name *</Label>
-                      <Input
-                        value={memberName}
-                        onChange={(e) => setMemberName(e.target.value)}
-                        placeholder="Jane Smith"
-                        className="text-sm h-8"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Role</Label>
-                      <Input
-                        value={memberTitle}
-                        onChange={(e) => setMemberTitle(e.target.value)}
-                        placeholder="e.g. Hiring Manager"
-                        className="text-sm h-8"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Email *</Label>
-                      <Input
-                        type="email"
-                        value={memberEmail}
-                        onChange={(e) => setMemberEmail(e.target.value)}
-                        placeholder="jane@company.com"
-                        className="text-sm h-8"
-                        required
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
-                      disabled={addingMember}
-                    >
-                      <Mail className="h-3 w-3" />
-                      {addingMember ? "Adding..." : "Send Invite"}
-                    </Button>
-                    {memberResult && (
-                      <div
-                        className={`text-xs p-2 rounded ${
-                          memberResult.type === "success"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-red-50 text-red-600"
-                        }`}
-                      >
-                        <p>{memberResult.message}</p>
-                        {memberResult.link && (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <input
-                              readOnly
-                              value={memberResult.link}
-                              className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
-                            />
+                {/* Invite mode: arranca con sugerencias del equipo
+                    (ClientUsers ya registrados que NO son members aun)
+                    + form para invitar email nuevo abajo. Si todos los
+                    teammates ya estan en la search, solo se ve el form
+                    (los chips arriba ya cubren al resto del equipo). */}
+                {showAddMember && (() => {
+                  const memberIdSet = new Set<string>(
+                    (job?.members || [])
+                      .map((m: any) => m.clientUser?.id)
+                      .filter(Boolean),
+                  );
+                  const q = memberEmail.trim().toLowerCase();
+                  const available = (teamMembers || [])
+                    .filter((u: any) => u.isActive !== false)
+                    .filter((u: any) => !memberIdSet.has(u.id))
+                    .filter((u: any) => {
+                      if (!q) return true;
+                      const n = (u.name || "").toLowerCase();
+                      const e = (u.email || "").toLowerCase();
+                      return n.includes(q) || e.includes(q);
+                    });
+                  return (
+                    <div className="space-y-3 mb-3">
+                      {available.length > 0 && (
+                        <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium px-3 pt-2">
+                            From your team
+                          </p>
+                          {available.map((u: any) => (
                             <button
+                              key={u.id}
                               type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(memberResult.link!);
-                                setCopiedLink(true);
-                                setTimeout(() => setCopiedLink(false), 2000);
-                              }}
-                              className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                              onClick={() => addExistingMember(u.id)}
+                              disabled={addingExistingId === u.id}
+                              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {copiedLink ? (
-                                <Check className="h-3 w-3 text-green-600" />
-                              ) : (
-                                <Copy className="h-3 w-3 text-gray-400" />
-                              )}
+                              <div className="min-w-0 flex-1 text-left">
+                                <p className="font-medium text-gray-900 truncate">
+                                  {u.name || u.email}
+                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">{u.email}</p>
+                              </div>
+                              <span className="text-xs text-emerald-700 font-medium shrink-0">
+                                {addingExistingId === u.id ? "Adding…" : "Add"}
+                              </span>
                             </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <form onSubmit={addMember} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                        {available.length > 0 && (
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
+                            Or invite someone new
+                          </p>
+                        )}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Name *</Label>
+                          <Input
+                            value={memberName}
+                            onChange={(e) => setMemberName(e.target.value)}
+                            placeholder="Jane Smith"
+                            className="text-sm h-8"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Role</Label>
+                          <Input
+                            value={memberTitle}
+                            onChange={(e) => setMemberTitle(e.target.value)}
+                            placeholder="e.g. Hiring Manager"
+                            className="text-sm h-8"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Email *</Label>
+                          <Input
+                            type="email"
+                            value={memberEmail}
+                            onChange={(e) => setMemberEmail(e.target.value)}
+                            placeholder="jane@company.com"
+                            className="text-sm h-8"
+                            required
+                          />
+                        </div>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
+                          disabled={addingMember}
+                        >
+                          <Mail className="h-3 w-3" />
+                          {addingMember ? "Adding..." : "Send Invite"}
+                        </Button>
+                        {memberResult && (
+                          <div
+                            className={`text-xs p-2 rounded ${
+                              memberResult.type === "success"
+                                ? "bg-green-50 text-green-700"
+                                : "bg-red-50 text-red-600"
+                            }`}
+                          >
+                            <p>{memberResult.message}</p>
+                            {memberResult.link && (
+                              <div className="mt-1.5 flex items-center gap-1.5">
+                                <input
+                                  readOnly
+                                  value={memberResult.link}
+                                  className="flex-1 bg-white border rounded px-1.5 py-0.5 text-[10px] text-gray-500 truncate"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(memberResult.link!);
+                                    setCopiedLink(true);
+                                    setTimeout(() => setCopiedLink(false), 2000);
+                                  }}
+                                  className="shrink-0 p-0.5 rounded hover:bg-green-100"
+                                >
+                                  {copiedLink ? (
+                                    <Check className="h-3 w-3 text-green-600" />
+                                  ) : (
+                                    <Copy className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </form>
-                )}
+                      </form>
+                    </div>
+                  );
+                })()}
 
                 {!showAddMember && !showManageAccess && (
                   (job?.members?.length || 0) === 0 ? (
@@ -1668,22 +1755,22 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               comparten el mismo container que habla del mismo concepto:
               "quien de mi equipo colabora en esta search". */}
 
-          {/* Invite Dialog */}
-          {showInvite && (
-            <Card className="border-emerald-200">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">Invite a Recruiter</h4>
-                  <button onClick={() => setShowInvite(false)}>
-                    <X className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-gray-500">
+          {/* Invite Recruiter modal. Lives outside the right-rail
+              column so it overlays the whole page instead of pushing
+              the supporting cards around (the prior implementation
+              was a <Card> embedded inline below "Assigned Firms",
+              which looked off — it competed for column width with
+              the firm list right above it and felt half-hidden). */}
+          <Dialog open={showInvite} onOpenChange={setShowInvite}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Invite a Recruiter</DialogTitle>
+                <DialogDescription>
                   Invite by email. The invitation reaches only that person — not
                   their whole firm — so you can pick a specific HM or POC.
-                </p>
-
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
                   <Input
@@ -1966,9 +2053,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 {inviteSuccess && (
                   <p className="text-xs text-center text-emerald-600">{inviteSuccess}</p>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
