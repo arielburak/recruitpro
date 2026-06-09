@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 export default function Error({
   error,
@@ -10,6 +11,10 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
+    // Mirror to Sentry — onRequestError catches server-side errors but
+    // client-side React errors that hit this boundary need an explicit
+    // captureException. console.error stays for local dev visibility.
+    Sentry.captureException(error);
     console.error(error);
   }, [error]);
 

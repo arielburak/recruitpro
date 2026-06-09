@@ -1,13 +1,26 @@
+import * as Sentry from "@sentry/nextjs";
+
 /**
- * Runs once per Next.js server instance boot. We use it to auto-apply the
- * one-shot "canonical 9-stage pipeline" migration so staging/production
- * don't need anyone to SSH in and run a script after deploy.
+ * Runs once per Next.js server instance boot. We use it to:
+ *   1. Initialize Sentry on the active runtime (node or edge).
+ *   2. Auto-apply the one-shot "canonical 9-stage pipeline" migration
+ *      so staging/production don't need anyone to SSH in and run a
+ *      script after deploy.
  *
  * runStageMigration() has a fast-path check (no legacy stage names + every
  * tenant has exactly 9 stages) so once the migration succeeds on a given
  * database, every subsequent cold start pays only two count() queries.
  */
 export async function register() {
+  // Sentry init is runtime-specific — the Edge SDK has a smaller surface
+  // than the Node SDK, so we import the right config based on the
+  // active runtime. Both files no-op cleanly when SENTRY_DSN is unset.
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./sentry.server.config");
+  } else if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
+
   // Skip on edge runtime — Prisma + Neon adapter only runs on the Node
   // runtime, and the migrations don't need to run twice.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
@@ -103,3 +116,9 @@ export async function register() {
     console.error("[merge-client-jobs] failed:", err);
   }
 }
+
+// Forward Next.js server errors (Server Components, Route Handlers,
+// Server Actions, Proxy) into Sentry. Without this we'd only catch
+// what Next surfaces to the client error boundary, not the original
+// stack on the server. See Next 16 docs: instrumentation.md.
+export const onRequestError = Sentry.captureRequestError;
