@@ -517,20 +517,19 @@ export default async function DashboardPage() {
                 <div className="flex items-center gap-1 mt-0.5">
                   <p className="text-xs text-gray-500">{stat.label}</p>
                   {stat.tooltip && (
-                    <Info
-                      className="h-3 w-3 text-gray-300 hover:text-gray-500 cursor-help shrink-0"
+                    <span
+                      // Wrapping en un <span> con title hace que el
+                      // hover tooltip funcione sin necesidad de un
+                      // event handler (este page.tsx es server
+                      // component y pasar onClick al icon tira
+                      // "Event handlers cannot be passed to Client
+                      // Component props" en el render server-side).
+                      title={stat.tooltip}
                       aria-label={stat.tooltip}
-                      // Native browser tooltip — works without extra
-                      // portal wiring. The whole tile is a Link, so
-                      // stopPropagation here prevents the hover from
-                      // dragging the user into the link's nav target
-                      // on mobile-style click-through.
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      {...({ title: stat.tooltip } as any)}
-                    />
+                      className="inline-flex"
+                    >
+                      <Info className="h-3 w-3 text-gray-300 hover:text-gray-500 cursor-help shrink-0" />
+                    </span>
                   )}
                 </div>
               </CardContent>
