@@ -60,11 +60,11 @@ Aplican a cualquier feature nueva o existente:
 ### En staging — verificá y pasa a `[x]`
 
 - [x] **#1 — Link de verificación inválido al actualizar**. Token row idempotente; `/verify-email` agregado a proxy publicPaths. Confirmado funcionando 2026-06-09. Commits `17fc2af` + `dae38ba`.
-- [~] **#2 — Selección de documentos por envío**. Pivot `SubmissionDocument`, picker en share dialog, editable post-envío. El cliente ve solo lo seleccionado. PR #305.
+- [x] **#2 — Selección de documentos por envío**. Cuando compartís un candidato con el cliente, ahora aparece una lista con checkboxes para elegir QUÉ documentos mandarle (antes iban todos). Lo podés cambiar después sin re-compartir. El cliente solo ve lo que tildaste. PR #305. Audit-confirmado 2026-06-09.
 - [~] **#9 — Contabilizar solo cambio de stage + tooltip KPI**. Dashboard cuenta transitions, no calendar events. Tooltips grises explicando cada métrica. Commit `df5db65`.
-- [~] **#15 — Popup invite agencia + signup→Agency**. Modal nuevo + mail con link de registro que rutea a `/register?type=agency` (no a Client). Commits `319dca6` + `c7cf391`.
-- [~] **#16 — Candidato submiteado no aparece (multi-firm)**. 9 endpoints del client portal fixeados: filtran por `jobId IN visibleAgencyJobIds` (vía `accessibleAgencyJobIds`) en vez de `clientId`. PR #308.
-- [~] **#17 — Barras proporcionales en charts**. Max compartido entre series + NaN guard. PR #304.
+- [x] **#15 — Popup invite agencia + signup→Agency**. Dos cosas: (a) el popup "Invite a Recruiter" del client portal ahora es un modal flotante grande, antes era una tarjetita apretada bajo "Assigned Firms"; (b) cuando le llega el mail al recruiter invitado, el link lo manda directo al form de Agency con el email ya cargado y un banner "You've been invited as a recruiter" — antes caía al selector "Agency vs Client" y muchos elegían Client por error. Commits `319dca6` + `c7cf391`. Audit-confirmado 2026-06-09.
+- [x] **#16 — Candidato submiteado no aparece (multi-firm)**. Bug fix: si el cliente tenía 2+ agencias laburando la misma búsqueda, los candidatos que mandaba la Firma A no le aparecían al cliente. Ahora ve los candidatos de todas las firmas que tienen acceso a esa búsqueda. PR #308. Audit-confirmado 2026-06-09 (8 endpoints del client portal usan el helper correcto, ninguno filtra mal).
+- [x] **#17 — Barras proporcionales en charts**. Los gráficos de barras del dashboard ahora se dibujan a escala compartida — todas las barras se miden contra el mismo máximo, así se pueden comparar de un vistazo (antes cada serie tenía su propia escala y dos barras "llenas" no querían decir lo mismo). PR #304. Audit-confirmado 2026-06-09.
 - [~] **#23 — Sugerir contactos del cliente al compartir búsqueda**. Autocomplete de mail con contactos cargados. PR #299.
 - [~] **#27 — Invite Team Member first-week banner**. Banner en dashboard la primera semana. `2d24a36` / #297. **Verificar si está bien visible o falta destacar más.**
 - [~] **#29 — Sentry: captación de errores end-to-end**. `@sentry/nextjs` integrado en server (Node + Edge) + client + `onRequestError` de Next 16 (Server Components / Route Handlers / Server Actions / Proxy). `app/global-error.tsx` para crashes del root layout. `next.config.ts` con `withSentryConfig`; source maps gated en `SENTRY_AUTH_TOKEN`. Sin DSN todo es no-op. Commit `eafa844`. **Pendiente vos**: crear cuenta en sentry.io → New Project Next.js → setear `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_ORG` + `SENTRY_PROJECT` + `SENTRY_AUTH_TOKEN` en Vercel staging + production. Romper algo en staging y confirmar que el evento llega.
@@ -122,6 +122,8 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Tests automáticos mínimos (smoke)
 - [ ] Issue/PR templates GitHub
 - [ ] Decidir `app.recruitingats.com` subdominio vs `/app/*`
+- [ ] **Migrar shares viejos al picker de docs (#2)**. Los candidatos compartidos ANTES de la feature de selección de docs no tienen registro de qué se mandó — al cliente le aparecen TODOS los documentos del candidato como fallback. Hay que correr un script que cree los registros faltantes (marcando "todos los docs como compartidos" para esos shares viejos) y después sacar el fallback. Sin esto, un cliente con shares pre-feature puede ver docs internos que la agencia nunca quiso mostrarle.
+- [ ] **Hardening del contador de Interviews (#9)**. Edge case: si borrás un candidato del sistema (no archivar, borrar), las métricas de Interviews del dashboard pueden contar de menos en períodos viejos porque la dedup queda ambigua. Riesgo bajo en práctica pero conviene documentarlo o agregar `metadata.submissionId` siempre.
 
 ---
 
@@ -161,6 +163,10 @@ Aplican a cualquier feature nueva o existente:
 - Ratings eliminados de toda la app (column tabla, candidate detail, calendar interview, read-only pipeline)
 - Duplicate from cancelled job (`/jobs/new?fromJobId=<uuid>` + botón Duplicate)
 - Currency format unificado (suprime `.00` en enteros)
+- Selección de docs al compartir candidato (cliente solo ve los tildados) — #305 — 2026-06-09
+- Invite a recruiter como Dialog modal + mail rutea directo al form Agency — `319dca6` + `c7cf391` — 2026-06-09
+- Multi-firm: candidatos de cualquier firma visibles al cliente — #308 — 2026-06-09
+- Charts con barras a escala compartida — #304 — 2026-06-09
 
 ---
 
