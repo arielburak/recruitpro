@@ -122,7 +122,6 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Tests automáticos mínimos (smoke)
 - [ ] Issue/PR templates GitHub
 - [ ] Decidir `app.recruitingats.com` subdominio vs `/app/*`
-- [ ] **Migrar shares viejos al picker de docs (#2)**. Los candidatos compartidos ANTES de la feature de selección de docs no tienen registro de qué se mandó — al cliente le aparecen TODOS los documentos del candidato como fallback. Hay que correr un script que cree los registros faltantes (marcando "todos los docs como compartidos" para esos shares viejos) y después sacar el fallback. Sin esto, un cliente con shares pre-feature puede ver docs internos que la agencia nunca quiso mostrarle.
 - [ ] **Hardening del contador de Interviews (#9)**. Edge case: si borrás un candidato del sistema (no archivar, borrar), las métricas de Interviews del dashboard pueden contar de menos en períodos viejos porque la dedup queda ambigua. Riesgo bajo en práctica pero conviene documentarlo o agregar `metadata.submissionId` siempre.
 
 ---
