@@ -400,11 +400,20 @@ export default function CandidateDetailPage() {
         onOpenChange={setShowDelete}
         itemLabel={candidate ? `${candidate.firstName} ${candidate.lastName}` : "este candidato"}
         itemKind="candidato"
-        consequences={[
-          `${(candidate?.submissions || []).length} submission${(candidate?.submissions || []).length === 1 ? "" : "s"} a jobs`,
-          `${(candidate?.interviews || []).length} interview${(candidate?.interviews || []).length === 1 ? "" : "s"} registradas`,
-          `${(candidate?.documents || []).length} documento${(candidate?.documents || []).length === 1 ? "" : "s"} adjuntos`,
-        ]}
+        consequences={(() => {
+          // Only list count buckets that actually have something —
+          // surfacing "0 submissions" reads as noise and confuses the
+          // user about whether anything will happen. Empty list → the
+          // dialog skips the red box entirely.
+          const subs = (candidate?.submissions || []).length;
+          const ivs = (candidate?.interviews || []).length;
+          const docs = (candidate?.documents || []).length;
+          const out: string[] = [];
+          if (subs > 0) out.push(`${subs} submission${subs === 1 ? "" : "s"} a jobs`);
+          if (ivs > 0) out.push(`${ivs} interview${ivs === 1 ? "" : "s"} registradas`);
+          if (docs > 0) out.push(`${docs} documento${docs === 1 ? "" : "s"} adjuntos`);
+          return out;
+        })()}
         extraToggle={{
           label: "También borrar sus métricas históricas",
           description:

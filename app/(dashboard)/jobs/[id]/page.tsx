@@ -2344,11 +2344,18 @@ export default function JobDetailPage() {
         onOpenChange={setShowDeleteJob}
         itemLabel={job?.title || "este job"}
         itemKind="job"
-        consequences={[
-          `${job?.submissions?.length || 0} submissions del pipeline`,
-          "Todas las entrevistas y placements",
-          "Documentos asociados",
-        ]}
+        consequences={(() => {
+          // Hide bullets with zero data — surfacing "0 submissions"
+          // on a fresh / empty job reads as noise.
+          const subs = job?.submissions?.length || 0;
+          const ivs = job?.interviews?.length || 0;
+          const docs = job?.documents?.length || 0;
+          const out: string[] = [];
+          if (subs > 0) out.push(`${subs} submission${subs === 1 ? "" : "s"} del pipeline`);
+          if (ivs > 0) out.push(`${ivs} entrevista${ivs === 1 ? "" : "s"} y sus placements`);
+          if (docs > 0) out.push(`${docs} documento${docs === 1 ? "" : "s"} asociados`);
+          return out;
+        })()}
         onConfirm={deleteJob}
         confirmLabel="Sí, borrar"
       />
