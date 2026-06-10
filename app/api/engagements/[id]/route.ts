@@ -84,6 +84,27 @@ export async function PUT(
         });
       }
 
+      // Critical: the agency-side /clients listing (and the access
+      // helpers in lib/client-access.ts) authorize via the
+      // OrganizationClient pivot, NOT via Client.organizationId.
+      // Without this row the Client we just created — or found —
+      // doesn't appear in the firm's Clients tab even though the
+      // engagement was accepted. Idempotent upsert covers re-accepts
+      // and Clients that already had this pivot from a prior engagement.
+      await prisma.organizationClient.upsert({
+        where: {
+          organizationId_clientId: {
+            organizationId: ctx.organizationId,
+            clientId: client.id,
+          },
+        },
+        update: {},
+        create: {
+          organizationId: ctx.organizationId,
+          clientId: client.id,
+        },
+      });
+
       // Seed a Contact for the ClientUser who invited the firm, so the
       // Client doesn't open as a bare row with no point-of-contact.
       // One-time, idempotent: if the firm already has a Contact at this
