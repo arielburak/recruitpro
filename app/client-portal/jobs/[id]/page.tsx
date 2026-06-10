@@ -101,6 +101,22 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   // When set, the recruiter-contacts list filters to that firm only.
   // null = show all firms (default).
   const [selectedFirm, setSelectedFirm] = useState<string | null>(null);
+
+  // Reset the form whenever the Invite dialog closes — covers ESC,
+  // backdrop click, the X button, and any code path that sets
+  // showInvite=false. Without this the user reopens the modal and
+  // finds their last attempt still in the input, which feels broken.
+  // inviteSuggestions stays — that's the loaded book of contacts, not
+  // user input.
+  useEffect(() => {
+    if (!showInvite) {
+      setInviteEmail("");
+      setInviteMessage("");
+      setInviteSuccess("");
+      setInviteLookup(null);
+      setSelectedFirm(null);
+    }
+  }, [showInvite]);
   // Expand/collapse por firma en Assigned Firms. Click en el header
   // de cada Card togglea ver los recruiters individualmente. State
   // in-memory (no localStorage) para que no se quede vieja info si
