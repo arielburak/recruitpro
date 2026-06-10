@@ -15,22 +15,15 @@ import {
   TrendingDown,
   Clock,
   Target,
-  Zap,
-  BarChart3,
   Activity,
   Upload,
   Info,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
-import {
-  PipelineChart,
-  ActivityTrendChart,
-  RecruiterLeaderboard,
-} from "@/components/dashboard-charts";
+import { ActivityTrendChart } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
-import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
-import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
+import { MigrateBanner } from "@/components/dashboard/migrate-banner";
 
 // Force dynamic rendering. The page already depends on getServerSession
 // + prisma so Next.js auto-detects this, but stating it explicitly
@@ -83,7 +76,6 @@ export default async function DashboardPage() {
     candidatesLastMonth,
     placementsThisMonth,
     placementsLastMonth,
-    pipelineData,
     activityByDay,
     recruiterStats,
     recentSubmissions,
@@ -146,12 +138,6 @@ export default async function DashboardPage() {
         updatedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
       },
     }),
-    // Pipeline stage distribution (all active jobs)
-    prisma.pipelineStage.findMany({
-      where: { job: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } } },
-      include: { _count: { select: { submissions: true } } },
-      orderBy: { order: "asc" },
-    }),
     // Activity count by day (last 14 days)
     prisma.activity.findMany({
       where: { organizationId: orgId, createdAt: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) } },
@@ -187,13 +173,6 @@ export default async function DashboardPage() {
       where: { organizationId: orgId, isActive: true },
     }),
   ]);
-
-  // Aggregate pipeline data by stage name
-  const pipelineAgg = new Map<string, number>();
-  for (const stage of pipelineData) {
-    pipelineAgg.set(stage.name, (pipelineAgg.get(stage.name) || 0) + stage._count.submissions);
-  }
-  const pipelineChartData = Array.from(pipelineAgg.entries()).map(([name, count]) => ({ name, count }));
 
   // Aggregate activity by day
   const dayMap = new Map<string, number>();
@@ -545,29 +524,23 @@ export default async function DashboardPage() {
           compare-vs-prior) re-fetch independently of the SSR shell. */}
       <RecruiterPerformance />
 
-      {/* Main Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Distribution — client-side so the date range
-            picker can re-aggregate without re-running the SSR
-            dashboard. Uses the shared DateRangePicker so the
-            "time" semantics match the Recruiter Performance widget
-            above. */}
-        <PipelineDistribution />
-
-        {/* Activity Trend */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-indigo-500" />
-              Activity (Last 14 Days)
-            </CardTitle>
-            <p className="text-xs text-gray-400">Daily team activity across all actions</p>
-          </CardHeader>
-          <CardContent>
-            <ActivityTrendChart data={activityTrendData} />
-          </CardContent>
-        </Card>
-      </div>
+      {/* Activity Trend — full width ahora que sacamos el Pipeline
+          Distribution de al lado. El strip violeta de pipeline
+          duplicaba la lectura del kanban por job y como agregado
+          no movia decisiones; queda Activity sola hasta que demos
+          con una metrica de pipeline que aporte algo nuevo. */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="h-4 w-4 text-indigo-500" />
+            Activity (Last 14 Days)
+          </CardTitle>
+          <p className="text-xs text-gray-400">Daily team activity across all actions</p>
+        </CardHeader>
+        <CardContent>
+          <ActivityTrendChart data={activityTrendData} />
+        </CardContent>
+      </Card>
 
       {/* Bottom Row: Recent Submissions + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
