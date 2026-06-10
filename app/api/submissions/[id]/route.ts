@@ -6,6 +6,7 @@ import { sendCandidateSharedEmail } from "@/lib/email";
 import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { requireAdminResponse } from "@/lib/permissions";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function PATCH(
   request: Request,
@@ -29,6 +30,24 @@ export async function PATCH(
     });
 
     if (!submission || submission.job.organizationId !== ctx.organizationId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // ROADMAP.md #3 (security). The same JobAssignment gate that
+    // protects /api/jobs/[id] applies here too — without it, a
+    // recruiter who can see a candidate's profile (because candidates
+    // are org-wide) could PATCH the stage / share toggle of that
+    // candidate's submission to ANY job in the org, including jobs
+    // they were never assigned to. 404 (not 403) on purpose: it
+    // matches the "Job not found" the user would see on the job
+    // detail page, so we don't leak "yes this exists, just not for
+    // you" via differing status codes.
+    const allowed = await canAccessJob(
+      submission.job.id,
+      ctx.organizationId,
+      ctx.userId
+    );
+    if (!allowed) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -374,10 +393,21 @@ export async function DELETE(
 
     const submission = await prisma.candidateSubmission.findFirst({
       where: { id },
-      include: { job: { select: { organizationId: true } } },
+      include: { job: { select: { id: true, organizationId: true } } },
     });
 
     if (!submission || submission.job.organizationId !== ctx.organizationId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Same canAccessJob gate as the PATCH above. Admins included —
+    // the visibility rule has no role bypass (see lib/job-access.ts).
+    const allowed = await canAccessJob(
+      submission.job.id,
+      ctx.organizationId,
+      ctx.userId
+    );
+    if (!allowed) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

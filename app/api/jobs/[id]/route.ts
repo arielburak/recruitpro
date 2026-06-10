@@ -4,29 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 import { requireAdminResponse } from "@/lib/permissions";
-
-// Job visibility is strictly assignment-based: everyone — admins
-// included — needs an explicit JobAssignment row to see / mutate the
-// job. The `role` argument stays in the signature so callers don't
-// have to rewire, but it no longer grants a bypass. Public/private
-// distinction is irrelevant here; the GET handler still loads
-// firmEngagements separately for the legacy mention/engagement
-// fallback grants below.
-async function canAccessJob(
-  jobId: string,
-  organizationId: string,
-  userId: string,
-  _role: "ADMIN" | "USER"
-): Promise<boolean> {
-  const job = await prisma.job.findFirst({
-    where: { id: jobId, organizationId },
-    select: {
-      assignments: { where: { userId }, select: { userId: true } },
-    },
-  });
-  if (!job) return false;
-  return job.assignments.length > 0;
-}
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   _request: Request,
@@ -263,7 +241,7 @@ export async function PUT(
     const body = await request.json();
     const data = jobSchema.parse(body);
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const updated = await prisma.job.updateMany({
@@ -288,7 +266,7 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.job.deleteMany({
@@ -327,7 +305,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const data: any = {};

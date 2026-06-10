@@ -50,6 +50,17 @@ export async function GET(
                   select: { id: true, name: true, color: true, order: true },
                   orderBy: { order: "asc" },
                 },
+                // Defense-in-depth for ROADMAP.md #3: include this
+                // user's JobAssignment for each submission's job so
+                // the candidate page can hide the stage selector +
+                // share toggle on jobs the user isn't on. Server still
+                // enforces in /api/submissions/[id] (PATCH/DELETE),
+                // this just stops the UI from offering a control that
+                // would 404.
+                assignments: {
+                  where: { userId: ctx.userId },
+                  select: { userId: true },
+                },
               },
             },
             stage: { select: { id: true, name: true, color: true } },
