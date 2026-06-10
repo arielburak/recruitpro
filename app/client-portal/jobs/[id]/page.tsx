@@ -1944,15 +1944,20 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         </select>
                       </div>
 
-                      {/* Recruiter contacts — only rendered once the
-                          user has actively picked a firm. Default
-                          state (no firm selected) shows nothing, so
-                          the modal stays compact and the user
-                          consciously narrows before scanning a list. */}
-                      {selectedFirm && (
+                      {/* Recruiter contacts — surfaced in two modes:
+                          (a) firm picked from the dropdown → list of
+                              that firm's contacts, filtered by query.
+                          (b) user types ≥2 chars in the email input
+                              before picking a firm → live autocomplete
+                              across ALL firms by name / email / firm.
+                          Default state (no firm + no query) shows
+                          nothing so the modal opens compact. */}
+                      {(selectedFirm || q.length >= 2) && (
                         filteredContacts.length === 0 ? (
                           <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
-                            No contacts at {selectedFirmInfo?.name} match &ldquo;{q}&rdquo;.
+                            {selectedFirmInfo
+                              ? `No contacts at ${selectedFirmInfo.name} match "${q}".`
+                              : `No saved recruiters match "${q}". We'll send a fresh signup link.`}
                           </p>
                         ) : (
                           <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
