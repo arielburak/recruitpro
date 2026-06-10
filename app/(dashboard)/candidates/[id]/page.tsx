@@ -199,7 +199,7 @@ export default function CandidateDetailPage() {
     const res = await fetch(`/api/candidates/${params.id}${qs}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data?.error || "No se pudo borrar el candidato");
+      alert(data?.error || "Couldn't delete the candidate");
       return;
     }
     router.push("/candidates");
@@ -393,13 +393,13 @@ export default function CandidateDetailPage() {
 
       {/* Confirmation dialog. The extra toggle lets the admin decide
           if the candidate's past metric events go with them or stay
-          orphaned (credited but un-attributable). Default tildado =
-          mismo comportamiento que cascade: se va todo. */}
+          orphaned (credited but un-attributable). Default checked =
+          same as cascade: everything goes. */}
       <DeleteConfirmDialog
         open={showDelete}
         onOpenChange={setShowDelete}
-        itemLabel={candidate ? `${candidate.firstName} ${candidate.lastName}` : "este candidato"}
-        itemKind="candidato"
+        itemLabel={candidate ? `${candidate.firstName} ${candidate.lastName}` : "this candidate"}
+        itemKind="candidate"
         consequences={(() => {
           // Only list count buckets that actually have something —
           // surfacing "0 submissions" reads as noise and confuses the
@@ -409,19 +409,19 @@ export default function CandidateDetailPage() {
           const ivs = (candidate?.interviews || []).length;
           const docs = (candidate?.documents || []).length;
           const out: string[] = [];
-          if (subs > 0) out.push(`${subs} submission${subs === 1 ? "" : "s"} a jobs`);
-          if (ivs > 0) out.push(`${ivs} interview${ivs === 1 ? "" : "s"} registradas`);
-          if (docs > 0) out.push(`${docs} documento${docs === 1 ? "" : "s"} adjuntos`);
+          if (subs > 0) out.push(`${subs} job submission${subs === 1 ? "" : "s"}`);
+          if (ivs > 0) out.push(`${ivs} logged interview${ivs === 1 ? "" : "s"}`);
+          if (docs > 0) out.push(`${docs} attached document${docs === 1 ? "" : "s"}`);
           return out;
         })()}
         extraToggle={{
-          label: "También borrar sus métricas históricas",
+          label: "Also remove their historical metrics",
           description:
-            "Tildado: sus eventos del historial (interviews, transitions, etc.) también se eliminan y bajan las métricas viejas del dashboard. Destildado: el candidato se va pero sus métricas pasadas siguen contando en el reporting.",
+            "Checked: their history events (interviews, stage transitions, etc.) are removed too and past dashboard metrics drop. Unchecked: the candidate is removed but their past activity still counts in reporting.",
           defaultChecked: true,
         }}
         onConfirm={deleteCandidate}
-        confirmLabel="Sí, borrar candidato"
+        confirmLabel="Yes, delete candidate"
       />
 
       <Tabs defaultValue={initialTab}>

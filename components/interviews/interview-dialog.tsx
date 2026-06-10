@@ -512,14 +512,14 @@ export function InterviewDialog(props: Props) {
       <DeleteConfirmDialog
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
-        itemLabel={title || "esta entrevista"}
-        itemKind="entrevista"
+        itemLabel={title || "this interview"}
+        itemKind="interview"
         consequences={[
-          "Feedback y notas asociadas",
-          "Cualquier evento de calendario vinculado",
+          "Linked feedback and notes",
+          "Any linked calendar events",
         ]}
         onConfirm={handleDelete}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </Dialog>
   );

@@ -2126,34 +2126,34 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         open={!!deletingDoc}
         onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
         itemLabel={deletingDoc?.name || ""}
-        itemKind="documento"
+        itemKind="document"
         onConfirm={async () => {
           if (deletingDoc) await deleteDocument(deletingDoc.id);
           setDeletingDoc(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
 
       <DeleteConfirmDialog
         open={!!withdrawingEngagement}
         onOpenChange={(open) => { if (!open) setWithdrawingEngagement(null); }}
-        itemLabel={`la invitación a ${withdrawingEngagement?.label || ""}`}
+        itemLabel={`the invitation to ${withdrawingEngagement?.label || ""}`}
         onConfirm={async () => {
           if (withdrawingEngagement) await withdrawEngagement(withdrawingEngagement.id);
           setWithdrawingEngagement(null);
         }}
-        confirmLabel="Sí, retirar invitación"
+        confirmLabel="Yes, withdraw"
       />
 
       <DeleteConfirmDialog
         open={!!cancellingInvite}
         onOpenChange={(open) => { if (!open) setCancellingInvite(null); }}
-        itemLabel={`la invitación a ${cancellingInvite?.email || ""}`}
+        itemLabel={`the invitation to ${cancellingInvite?.email || ""}`}
         onConfirm={async () => {
           if (cancellingInvite) await withdrawPendingInvite(cancellingInvite.id);
           setCancellingInvite(null);
         }}
-        confirmLabel="Sí, cancelar"
+        confirmLabel="Yes, cancel"
       />
     </div>
   );

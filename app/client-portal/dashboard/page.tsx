@@ -742,7 +742,7 @@ export default function ClientDashboardPage() {
                           <button
                             onClick={() => {
                               setTeamMenuOpen(null);
-                              setRemovingMember({ id: member.id, name: member.name || member.email || "este miembro" });
+                              setRemovingMember({ id: member.id, name: member.name || member.email || "this team member" });
                             }}
                             className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                           >
@@ -945,7 +945,7 @@ export default function ClientDashboardPage() {
           if (removingMember) await removeMember(removingMember.id);
           setRemovingMember(null);
         }}
-        confirmLabel="Sí, remover del equipo"
+        confirmLabel="Yes, remove from team"
       />
     </div>
   );

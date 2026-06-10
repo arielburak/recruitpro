@@ -25,7 +25,7 @@ export function requireAdminResponse(role: string | undefined): NextResponse | n
   return NextResponse.json(
     {
       error:
-        "Solo los admins de la cuenta pueden borrar. Si necesitás eliminar este registro, pedile a un admin o que te promueva a admin.",
+        "Only admins can delete. Ask one of your admins to remove this record, or have them promote you to admin.",
     },
     { status: 403 }
   );

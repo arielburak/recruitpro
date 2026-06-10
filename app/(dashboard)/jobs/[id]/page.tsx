@@ -734,8 +734,8 @@ export default function JobDetailPage() {
     // Returns a resolved promise so the prop type (Promise<void>) is happy.
     const sub = job?.submissions?.find((s: any) => s.id === submissionId);
     const label = sub
-      ? `${sub.candidate?.firstName || ""} ${sub.candidate?.lastName || ""}`.trim() || "este candidato"
-      : "este candidato";
+      ? `${sub.candidate?.firstName || ""} ${sub.candidate?.lastName || ""}`.trim() || "this candidate"
+      : "this candidate";
     setRemovingSubmission({ id: submissionId, label });
   }
 
@@ -2342,7 +2342,7 @@ export default function JobDetailPage() {
       <DeleteConfirmDialog
         open={showDeleteJob}
         onOpenChange={setShowDeleteJob}
-        itemLabel={job?.title || "este job"}
+        itemLabel={job?.title || "this job"}
         itemKind="job"
         consequences={(() => {
           // Hide bullets with zero data — surfacing "0 submissions"
@@ -2351,13 +2351,13 @@ export default function JobDetailPage() {
           const ivs = job?.interviews?.length || 0;
           const docs = job?.documents?.length || 0;
           const out: string[] = [];
-          if (subs > 0) out.push(`${subs} submission${subs === 1 ? "" : "s"} del pipeline`);
-          if (ivs > 0) out.push(`${ivs} entrevista${ivs === 1 ? "" : "s"} y sus placements`);
-          if (docs > 0) out.push(`${docs} documento${docs === 1 ? "" : "s"} asociados`);
+          if (subs > 0) out.push(`${subs} pipeline submission${subs === 1 ? "" : "s"}`);
+          if (ivs > 0) out.push(`${ivs} interview${ivs === 1 ? "" : "s"} and their placements`);
+          if (docs > 0) out.push(`${docs} linked document${docs === 1 ? "" : "s"}`);
           return out;
         })()}
         onConfirm={deleteJob}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
 
       <DeleteConfirmDialog
@@ -2368,7 +2368,7 @@ export default function JobDetailPage() {
           if (removingSubmission) await removeSubmission(removingSubmission.id);
           setRemovingSubmission(null);
         }}
-        confirmLabel="Sí, quitar del pipeline"
+        confirmLabel="Yes, remove from pipeline"
       />
 
       <DeleteConfirmDialog
@@ -2381,19 +2381,19 @@ export default function JobDetailPage() {
           }
           setRemovingAssignment(null);
         }}
-        confirmLabel="Sí, quitar del job"
+        confirmLabel="Yes, remove from job"
       />
 
       <DeleteConfirmDialog
         open={!!deletingDoc}
         onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
         itemLabel={deletingDoc?.name || ""}
-        itemKind="documento"
+        itemKind="document"
         onConfirm={async () => {
           if (deletingDoc) await deleteJobDocument(deletingDoc.id, deletingDoc.isJD);
           setDeletingDoc(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

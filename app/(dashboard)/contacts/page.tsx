@@ -613,10 +613,10 @@ export default function ContactsPage() {
       <DeleteConfirmDialog
         open={showBulkDelete}
         onOpenChange={setShowBulkDelete}
-        itemLabel={`${selectedIds.size} contacto${selectedIds.size === 1 ? "" : "s"}`}
-        itemKind={selectedIds.size === 1 ? "contacto" : undefined}
+        itemLabel={`${selectedIds.size} contact${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "contact" : undefined}
         onConfirm={bulkDelete}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

@@ -1559,14 +1559,14 @@ export function PlacementDialog(props: Props) {
       <DeleteConfirmDialog
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
-        itemLabel="este placement"
+        itemLabel="this placement"
         itemKind="placement"
         consequences={[
-          "El candidato vuelve al stage anterior del pipeline",
-          "Se borra el registro de comisiones y métricas asociadas",
+          "The candidate returns to the previous pipeline stage",
+          "The commission record and related metrics will be removed",
         ]}
         onConfirm={handleDeletePlacement}
-        confirmLabel="Sí, borrar placement"
+        confirmLabel="Yes, delete placement"
       />
     </Dialog>
   );

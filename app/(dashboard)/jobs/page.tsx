@@ -886,12 +886,12 @@ export default function JobsPage() {
         itemLabel={`${selectedIds.size} job${selectedIds.size === 1 ? "" : "s"}`}
         itemKind={selectedIds.size === 1 ? "job" : undefined}
         consequences={[
-          "Todo el pipeline de candidatos",
-          "Submissions, entrevistas e historial",
-          "Documentos asociados",
+          "The full candidate pipeline",
+          "Submissions, interviews and history",
+          "Linked documents",
         ]}
         onConfirm={bulkDelete}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
 
       <DeleteConfirmDialog
@@ -900,15 +900,15 @@ export default function JobsPage() {
         itemLabel={deletingJob?.title || ""}
         itemKind="job"
         consequences={[
-          "Todo el pipeline de candidatos",
-          "Submissions, entrevistas e historial",
-          "Documentos asociados",
+          "The full candidate pipeline",
+          "Submissions, interviews and history",
+          "Linked documents",
         ]}
         onConfirm={async () => {
           if (deletingJob) await deleteJob(deletingJob.id);
           setDeletingJob(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

@@ -533,14 +533,14 @@ export default function ClientJobsPage() {
         itemLabel={deletingJob?.title || ""}
         itemKind="job"
         consequences={[
-          "Las invitaciones a firms (engagements)",
-          "Documentos y candidatos asociados",
+          "Firm invitations (engagements)",
+          "Linked documents and candidates",
         ]}
         onConfirm={async () => {
           if (deletingJob) await deleteJob(deletingJob.id);
           setDeletingJob(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

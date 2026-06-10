@@ -475,12 +475,12 @@ export default function ClientContactsPage() {
         open={!!deletingContact}
         onOpenChange={(open) => { if (!open) setDeletingContact(null); }}
         itemLabel={deletingContact?.name || ""}
-        itemKind="contacto"
+        itemKind="contact"
         onConfirm={async () => {
           if (deletingContact) await deleteContact(deletingContact.id);
           setDeletingContact(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

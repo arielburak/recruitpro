@@ -150,12 +150,12 @@ export function InterviewAttachments({ interviewId }: { interviewId: string }) {
         open={!!deletingDoc}
         onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
         itemLabel={deletingDoc?.name || ""}
-        itemKind="adjunto"
+        itemKind="attachment"
         onConfirm={async () => {
           if (deletingDoc) await remove(deletingDoc.id);
           setDeletingDoc(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

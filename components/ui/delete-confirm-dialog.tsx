@@ -54,13 +54,13 @@ type DeleteConfirmDialogProps = {
   // is passed to onConfirm so the caller can branch on it.
   extraToggle?: ExtraToggle;
   // Async-aware. While the returned promise is pending, the dialog
-  // shows a disabled "Borrando…" button. Errors should be handled
+  // shows a disabled "Deleting…" button. Errors should be handled
   // upstream (toast / inline) — this component just gates the action.
   // The second arg is the extraToggle value (true if checked) — undefined
   // when there's no toggle.
   onConfirm: (extraChecked?: boolean) => void | Promise<void>;
-  // Override the destructive button label if "Sí, borrar" doesn't
-  // fit (e.g. "Sí, eliminar permanentemente" for higher-stakes flows).
+  // Override the destructive button label if "Yes, delete" doesn't
+  // fit (e.g. "Yes, permanently remove" for higher-stakes flows).
   confirmLabel?: string;
 };
 
@@ -72,7 +72,7 @@ export function DeleteConfirmDialog({
   consequences,
   extraToggle,
   onConfirm,
-  confirmLabel = "Sí, borrar",
+  confirmLabel = "Yes, delete",
 }: DeleteConfirmDialogProps) {
   const [loading, setLoading] = useState(false);
   const [extraChecked, setExtraChecked] = useState(extraToggle?.defaultChecked ?? true);
@@ -97,7 +97,7 @@ export function DeleteConfirmDialog({
   };
 
   // Reset loading when the dialog closes from the outside (cancel /
-  // escape / backdrop) so a re-open doesn't get stuck in "Borrando…".
+  // escape / backdrop) so a re-open doesn't get stuck in "Deleting…".
   const handleOpenChange = (next: boolean) => {
     if (!next) setLoading(false);
     onOpenChange(next);
@@ -113,11 +113,11 @@ export function DeleteConfirmDialog({
             </div>
             <div className="flex-1 min-w-0">
               <DialogTitle className="text-base font-semibold">
-                ¿Borrar {itemLabel}?
+                Delete {itemLabel}?
               </DialogTitle>
               <DialogDescription className="mt-1 text-sm">
-                Esta acción <span className="font-semibold text-red-600">no se puede deshacer</span>
-                {itemKind ? ` y eliminará permanentemente este ${itemKind} de la base de datos` : ""}.
+                This action <span className="font-semibold text-red-600">cannot be undone</span>
+                {itemKind ? ` and will permanently remove this ${itemKind} from the database` : ""}.
               </DialogDescription>
             </div>
           </div>
@@ -126,7 +126,7 @@ export function DeleteConfirmDialog({
         {consequences && consequences.length > 0 && (
           <div className="rounded-md border border-red-200 bg-red-50/70 px-3 py-2.5">
             <p className="text-xs font-semibold text-red-700 mb-1.5 uppercase tracking-wider">
-              Esto también se eliminará:
+              This will also be deleted:
             </p>
             <ul className="text-sm text-red-700 space-y-1 list-disc list-inside">
               {consequences.map((c, i) => (
@@ -164,14 +164,14 @@ export function DeleteConfirmDialog({
             onClick={() => handleOpenChange(false)}
             disabled={loading}
           >
-            Cancelar
+            Cancel
           </Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}
             disabled={loading}
           >
-            {loading ? "Borrando…" : confirmLabel}
+            {loading ? "Deleting…" : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

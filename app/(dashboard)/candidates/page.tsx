@@ -717,15 +717,15 @@ export default function CandidatesPage() {
       <DeleteConfirmDialog
         open={showBulkDelete}
         onOpenChange={setShowBulkDelete}
-        itemLabel={`${selectedIds.size} candidato${selectedIds.size === 1 ? "" : "s"}`}
-        itemKind={selectedIds.size === 1 ? "candidato" : undefined}
+        itemLabel={`${selectedIds.size} candidate${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "candidate" : undefined}
         consequences={[
-          "Sus submissions a jobs",
-          "Su historial de entrevistas",
-          "Toda su actividad y notas",
+          "Their job submissions",
+          "Their interview history",
+          "All their activity and notes",
         ]}
         onConfirm={bulkDelete}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

@@ -1289,7 +1289,7 @@ export default function CalendarPage() {
                         size="sm"
                         variant="outline"
                         className="text-red-500"
-                        onClick={() => setDeletingEvent({ id: selectedEvent.id, title: selectedEvent.title || "este evento" })}
+                        onClick={() => setDeletingEvent({ id: selectedEvent.id, title: selectedEvent.title || "this event" })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -1890,23 +1890,23 @@ export default function CalendarPage() {
       <DeleteConfirmDialog
         open={showDeleteInterview}
         onOpenChange={setShowDeleteInterview}
-        itemLabel={selectedInterview?.title || "esta entrevista"}
-        itemKind="entrevista"
+        itemLabel={selectedInterview?.title || "this interview"}
+        itemKind="interview"
         consequences={[
-          "Feedback y notas asociadas",
-          "Cualquier evento de calendario vinculado",
+          "Linked feedback and notes",
+          "Any linked calendar events",
         ]}
         onConfirm={async () => {
           if (selectedInterview) await handleDelete(selectedInterview.id);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
 
       <DeleteConfirmDialog
         open={!!deletingEvent}
         onOpenChange={(open) => { if (!open) setDeletingEvent(null); }}
         itemLabel={deletingEvent?.title || ""}
-        itemKind="evento"
+        itemKind="event"
         onConfirm={async () => {
           if (deletingEvent) {
             await fetch(`/api/events/${deletingEvent.id}`, { method: "DELETE" });
@@ -1915,7 +1915,7 @@ export default function CalendarPage() {
           }
           setDeletingEvent(null);
         }}
-        confirmLabel="Sí, borrar"
+        confirmLabel="Yes, delete"
       />
     </div>
   );

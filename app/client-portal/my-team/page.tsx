@@ -535,7 +535,7 @@ export default function MyTeamPage() {
                                     <button
                                       onClick={() => {
                                         setMemberMenu(null);
-                                        setRemovingMember({ id: member.id, name: member.name || member.email || "este miembro" });
+                                        setRemovingMember({ id: member.id, name: member.name || member.email || "this team member" });
                                       }}
                                       className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                     >
@@ -564,18 +564,18 @@ export default function MyTeamPage() {
           if (removingMember) await removeMember(removingMember.id);
           setRemovingMember(null);
         }}
-        confirmLabel="Sí, remover del equipo"
+        confirmLabel="Yes, remove from team"
       />
 
       <DeleteConfirmDialog
         open={!!cancellingInvite}
         onOpenChange={(open) => { if (!open) setCancellingInvite(null); }}
-        itemLabel={`la invitación a ${cancellingInvite?.email || ""}`}
+        itemLabel={`the invitation to ${cancellingInvite?.email || ""}`}
         onConfirm={async () => {
           if (cancellingInvite) await cancelInvite(cancellingInvite.id);
           setCancellingInvite(null);
         }}
-        confirmLabel="Sí, cancelar invitación"
+        confirmLabel="Yes, cancel invitation"
       />
     </div>
   );
