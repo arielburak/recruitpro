@@ -38,6 +38,16 @@ export default function InvitePage({
     setError("");
 
     const formData = new FormData(e.currentTarget);
+    const password = formData.get("password") as string;
+    const confirmPassword = formData.get("confirmPassword") as string;
+    // Match the other signup paths (/register, set-password,
+    // reset-password) — explicit confirm so a typo doesn't lock the
+    // invitee out of their own account.
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/invite/${token}`, {
@@ -161,6 +171,17 @@ export default function InvitePage({
                 id="password"
                 name="password"
                 placeholder="Min. 8 characters"
+                minLength={8}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <PasswordInput
+                id="confirmPassword"
+                name="confirmPassword"
+                placeholder="Re-enter the same password"
                 minLength={8}
                 required
               />
