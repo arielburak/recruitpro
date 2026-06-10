@@ -29,6 +29,7 @@ import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { ChatNotes } from "@/components/chat-notes";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type TeamMember = { id: string; name: string; email: string };
 
@@ -37,6 +38,7 @@ export default function JobDetailPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +47,13 @@ export default function JobDetailPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Delete-confirm dialog state. One state slot per kind of destructive
+  // action — they each open a separate dialog with their own copy.
+  const [showDeleteJob, setShowDeleteJob] = useState(false);
+  const [removingSubmission, setRemovingSubmission] = useState<{ id: string; label: string } | null>(null);
+  const [removingAssignment, setRemovingAssignment] = useState<{ userId: string; name: string } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<{ id: string; name: string; isJD?: boolean } | null>(null);
 
   // "Add Candidate" dialog — inline create mode
   const [addMode, setAddMode] = useState<"search" | "create">("search");
@@ -720,14 +729,22 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
+  async function requestRemoveSubmission(submissionId: string) {
+    // Look up the submission so the dialog can show the candidate's name.
+    // Returns a resolved promise so the prop type (Promise<void>) is happy.
+    const sub = job?.submissions?.find((s: any) => s.id === submissionId);
+    const label = sub
+      ? `${sub.candidate?.firstName || ""} ${sub.candidate?.lastName || ""}`.trim() || "este candidato"
+      : "este candidato";
+    setRemovingSubmission({ id: submissionId, label });
+  }
+
   async function removeSubmission(submissionId: string) {
-    if (!confirm("Remove this candidate from the pipeline?")) return;
     await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
     fetchJob();
   }
 
   async function deleteJob() {
-    if (!confirm(`Delete "${job.title}"? This will remove all candidates from its pipeline. This cannot be undone.`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/jobs/${params.id}`, { method: "DELETE" });
@@ -816,7 +833,6 @@ export default function JobDetailPage() {
   }
 
   async function deleteJobDocument(docId: string, isJD?: boolean) {
-    if (!confirm("Delete this document?")) return;
     await fetch(`/api/documents/${docId}`, { method: "DELETE" });
     if (isJD) {
       await fetch(`/api/jobs/${params.id}`, {
@@ -906,14 +922,16 @@ export default function JobDetailPage() {
           <Button onClick={() => setShowAddCandidate(true)}>
             <Plus className="mr-2 h-4 w-4" /> Add Candidate
           </Button>
-          <Button
-            variant="outline"
-            onClick={deleteJob}
-            disabled={deleting}
-            className="text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteJob(true)}
+              disabled={deleting}
+              className="text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
 
           {/* Invite Client Dialog */}
           <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
@@ -1423,7 +1441,7 @@ export default function JobDetailPage() {
               submissions={job.submissions}
               onMove={moveSubmission}
               onToggleShare={toggleShare}
-              onRemove={removeSubmission}
+              onRemove={isAdmin ? requestRemoveSubmission : undefined}
               clientName={job.client?.name}
               jobTitle={job.title}
             />
@@ -1433,7 +1451,7 @@ export default function JobDetailPage() {
               submissions={job.submissions}
               onMove={moveSubmission}
               onToggleShare={toggleShare}
-              onRemove={removeSubmission}
+              onRemove={isAdmin ? requestRemoveSubmission : undefined}
               clientName={job.client?.name}
               jobTitle={job.title}
             />
@@ -2134,9 +2152,11 @@ export default function JobDetailPage() {
                         <a href={`/api/documents/${jdDoc.id}?download=1`} download>
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
-                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {isAdmin && (
+                          <Button variant="ghost" size="sm" onClick={() => setDeletingDoc({ id: jdDoc.id, name: jdDoc.name, isJD: true })} className="text-red-400 hover:text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2183,9 +2203,11 @@ export default function JobDetailPage() {
                     <a href={`/api/documents/${doc.id}?download=1`} download>
                       <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                     </a>
-                    <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="sm" onClick={() => setDeletingDoc({ id: doc.id, name: doc.name })} className="text-red-400 hover:text-red-600">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2267,13 +2289,15 @@ export default function JobDetailPage() {
                         <p className="text-xs text-gray-400">{a.user.role || "Recruiter"}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeAssignment(a.user.id)}
-                      className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Remove"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setRemovingAssignment({ userId: a.user.id, name: a.user.name || "este recruiter" })}
+                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Remove"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2314,6 +2338,56 @@ export default function JobDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={showDeleteJob}
+        onOpenChange={setShowDeleteJob}
+        itemLabel={job?.title || "este job"}
+        itemKind="job"
+        consequences={[
+          `${job?.submissions?.length || 0} submissions del pipeline`,
+          "Todas las entrevistas y placements",
+          "Documentos asociados",
+        ]}
+        onConfirm={deleteJob}
+        confirmLabel="Sí, borrar"
+      />
+
+      <DeleteConfirmDialog
+        open={!!removingSubmission}
+        onOpenChange={(open) => { if (!open) setRemovingSubmission(null); }}
+        itemLabel={removingSubmission?.label || ""}
+        onConfirm={async () => {
+          if (removingSubmission) await removeSubmission(removingSubmission.id);
+          setRemovingSubmission(null);
+        }}
+        confirmLabel="Sí, quitar del pipeline"
+      />
+
+      <DeleteConfirmDialog
+        open={!!removingAssignment}
+        onOpenChange={(open) => { if (!open) setRemovingAssignment(null); }}
+        itemLabel={removingAssignment?.name || ""}
+        onConfirm={async () => {
+          if (removingAssignment) {
+            await removeAssignment(removingAssignment.userId);
+          }
+          setRemovingAssignment(null);
+        }}
+        confirmLabel="Sí, quitar del job"
+      />
+
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
+        itemLabel={deletingDoc?.name || ""}
+        itemKind="documento"
+        onConfirm={async () => {
+          if (deletingDoc) await deleteJobDocument(deletingDoc.id, deletingDoc.isJD);
+          setDeletingDoc(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

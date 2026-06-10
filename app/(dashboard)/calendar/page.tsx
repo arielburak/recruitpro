@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -160,8 +162,13 @@ type CalendarEvent = {
 // ─── Component ───
 
 export default function CalendarPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [showDeleteInterview, setShowDeleteInterview] = useState(false);
+  const [deletingEvent, setDeletingEvent] = useState<{ id: string; title: string } | null>(null);
   const [placements, setPlacements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
@@ -617,7 +624,6 @@ export default function CalendarPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this interview?")) return;
     await fetch(`/api/interviews/${id}`, { method: "DELETE" });
     setSelectedInterview(null);
     fetchInterviews();
@@ -1278,19 +1284,16 @@ export default function CalendarPage() {
                   </div>
 
                   <div className="border-t pt-3 flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-red-500"
-                      onClick={async () => {
-                        if (!confirm("Delete this event?")) return;
-                        await fetch(`/api/events/${selectedEvent.id}`, { method: "DELETE" });
-                        setSelectedEvent(null);
-                        fetchEvents();
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-500"
+                        onClick={() => setDeletingEvent({ id: selectedEvent.id, title: selectedEvent.title || "este evento" })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1437,9 +1440,11 @@ export default function CalendarPage() {
                         Cancel
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" className="text-red-500" onClick={() => handleDelete(selectedInterview.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {isAdmin && (
+                      <Button size="sm" variant="outline" className="text-red-500" onClick={() => setShowDeleteInterview(true)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1881,6 +1886,37 @@ export default function CalendarPage() {
           }}
         />
       )}
+
+      <DeleteConfirmDialog
+        open={showDeleteInterview}
+        onOpenChange={setShowDeleteInterview}
+        itemLabel={selectedInterview?.title || "esta entrevista"}
+        itemKind="entrevista"
+        consequences={[
+          "Feedback y notas asociadas",
+          "Cualquier evento de calendario vinculado",
+        ]}
+        onConfirm={async () => {
+          if (selectedInterview) await handleDelete(selectedInterview.id);
+        }}
+        confirmLabel="Sí, borrar"
+      />
+
+      <DeleteConfirmDialog
+        open={!!deletingEvent}
+        onOpenChange={(open) => { if (!open) setDeletingEvent(null); }}
+        itemLabel={deletingEvent?.title || ""}
+        itemKind="evento"
+        onConfirm={async () => {
+          if (deletingEvent) {
+            await fetch(`/api/events/${deletingEvent.id}`, { method: "DELETE" });
+            setSelectedEvent(null);
+            fetchEvents();
+          }
+          setDeletingEvent(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

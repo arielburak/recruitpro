@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { UserRound, Search, Building2, Shield, KeyRound, Trash2, Send, MailPlus, ChevronDown, ChevronRight } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type PortalStatus = "none" | "pending" | "active";
 
@@ -89,6 +91,9 @@ function StatusPill({ status }: { status: PortalStatus }) {
 }
 
 export default function ContactsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [contacts, setContacts] = useState<UnifiedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -104,6 +109,7 @@ export default function ContactsPage() {
   // history, and we don't want to nuke that from a multi-select.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   // Per-client collapse state. Click on the company header toggles it;
   // we keep state in-memory only (no localStorage) because the filter
   // bar already changes which groups exist, and stale persisted ids
@@ -176,8 +182,6 @@ export default function ContactsPage() {
 
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} contact${n === 1 ? "" : "s"}? Cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/contacts/bulk-delete", {
@@ -382,15 +386,17 @@ export default function ContactsPage() {
               </button>
               <div className="ml-auto flex items-center gap-2">
                 <ExportCsvButton type="contacts" ids={Array.from(selectedIds)} variant="subtle" />
-                <button
-                  type="button"
-                  onClick={bulkDelete}
-                  disabled={bulkDeleting}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {bulkDeleting ? "Deleting…" : "Delete"}
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkDelete(true)}
+                    disabled={bulkDeleting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {bulkDeleting ? "Deleting…" : "Delete"}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -603,6 +609,15 @@ export default function ContactsPage() {
           </div>
         </>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} contacto${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "contacto" : undefined}
+        onConfirm={bulkDelete}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

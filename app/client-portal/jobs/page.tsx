@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   Plus,
   Search,
@@ -187,9 +189,13 @@ function MultiFilter({
 // ─── Main Page ───
 
 export default function ClientJobsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deletingJob, setDeletingJob] = useState<{ id: string; title: string } | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [jobTypeFilter, setJobTypeFilter] = useState<string[]>([]);
@@ -206,10 +212,7 @@ export default function ClientJobsPage() {
       .catch(() => setLoading(false));
   }, []);
 
-  async function deleteJob(id: string, title: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+  async function deleteJob(id: string) {
     const res = await fetch(`/api/client-portal/jobs/${id}`, { method: "DELETE" });
     if (res.ok) setJobs(jobs.filter((j) => j.id !== id));
   }
@@ -503,13 +506,19 @@ export default function ClientJobsPage() {
                   </div>
                   <div className="text-right flex items-center justify-end gap-1">
                     <span className="text-xs text-gray-400">{formatDate(j.createdAt)}</span>
-                    <button
-                      onClick={(e) => deleteJob(j.id, j.title, e)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
-                      title="Delete job"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeletingJob({ id: j.id, title: j.title });
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
+                        title="Delete job"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -517,6 +526,22 @@ export default function ClientJobsPage() {
           })}
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={!!deletingJob}
+        onOpenChange={(open) => { if (!open) setDeletingJob(null); }}
+        itemLabel={deletingJob?.title || ""}
+        itemKind="job"
+        consequences={[
+          "Las invitaciones a firms (engagements)",
+          "Documentos y candidatos asociados",
+        ]}
+        onConfirm={async () => {
+          if (deletingJob) await deleteJob(deletingJob.id);
+          setDeletingJob(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

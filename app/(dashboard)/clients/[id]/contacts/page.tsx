@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import { Plus, UserCircle, Pencil, Trash2, KeyRound, Send, MailPlus, Shield } fr
 import { BackButton } from "@/components/ui/back-button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type PortalStatus = "none" | "pending" | "active";
 
@@ -74,8 +76,11 @@ function StatusPill({ status }: { status: PortalStatus }) {
 export default function ClientContactsPage() {
   const params = useParams();
   const clientId = params.id as string;
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const [contacts, setContacts] = useState<UnifiedContact[]>([]);
+  const [deletingContact, setDeletingContact] = useState<{ id: string; name: string } | null>(null);
   const [client, setClient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -149,7 +154,6 @@ export default function ClientContactsPage() {
   }
 
   async function deleteContact(contactId: string) {
-    if (!confirm("Delete this contact? This won't revoke any existing portal access.")) return;
     try {
       const res = await fetch(`/api/contacts/${contactId}`, { method: "DELETE" });
       if (!res.ok) {
@@ -443,15 +447,17 @@ export default function ClientContactsPage() {
                               >
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-red-500 hover:text-red-700"
-                                onClick={() => deleteContact(row.contactId!)}
-                                title="Delete"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() => setDeletingContact({ id: row.contactId!, name: row.name || `${row.firstName} ${row.lastName}`.trim() })}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>
@@ -464,6 +470,18 @@ export default function ClientContactsPage() {
           </CardContent>
         </Card>
       )}
+
+      <DeleteConfirmDialog
+        open={!!deletingContact}
+        onOpenChange={(open) => { if (!open) setDeletingContact(null); }}
+        itemLabel={deletingContact?.name || ""}
+        itemKind="contacto"
+        onConfirm={async () => {
+          if (deletingContact) await deleteContact(deletingContact.id);
+          setDeletingContact(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 import { AR_NET_TO_GROSS, SALARY_KIND_CURRENCIES } from "@/lib/constants";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
@@ -157,6 +159,9 @@ function previewFromAnchor(
 }
 
 export function PlacementDialog(props: Props) {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const isCongrats = props.mode === "congrats";
   const isEdit = props.mode === "edit";
 
@@ -166,6 +171,7 @@ export function PlacementDialog(props: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [skipping, setSkipping] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Manual-mode-only: which job the recruiter is back-filling.
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -648,12 +654,6 @@ export function PlacementDialog(props: Props) {
 
   async function handleDeletePlacement() {
     if (props.mode !== "edit") return;
-    if (
-      !confirm(
-        "Delete this placement? The candidate will move back to the previous stage on the pipeline. This cannot be undone."
-      )
-    )
-      return;
     setSubmitting(true);
     setError("");
     try {
@@ -1524,10 +1524,10 @@ export function PlacementDialog(props: Props) {
             )}
 
             <div className="flex items-center justify-between gap-2">
-              {isEdit ? (
+              {isEdit && isAdmin ? (
                 <Button
                   variant="ghost"
-                  onClick={handleDeletePlacement}
+                  onClick={() => setShowDeleteConfirm(true)}
                   disabled={submitting}
                   className="text-red-600 hover:bg-red-50 hover:text-red-700"
                 >
@@ -1556,6 +1556,18 @@ export function PlacementDialog(props: Props) {
           </div>
         )}
       </DialogContent>
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        itemLabel="este placement"
+        itemKind="placement"
+        consequences={[
+          "El candidato vuelve al stage anterior del pipeline",
+          "Se borra el registro de comisiones y métricas asociadas",
+        ]}
+        onConfirm={handleDeletePlacement}
+        confirmLabel="Sí, borrar placement"
+      />
     </Dialog>
   );
 }

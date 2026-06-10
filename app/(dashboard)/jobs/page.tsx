@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -316,6 +318,9 @@ function ViewSwitcher({
 // ─── Main Page ───
 
 export default function JobsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -325,6 +330,8 @@ export default function JobsPage() {
   // doesn't leave dangling ids.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [deletingJob, setDeletingJob] = useState<{ id: string; title: string } | null>(null);
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -343,8 +350,6 @@ export default function JobsPage() {
   }
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} job${n === 1 ? "" : "s"}? This removes their pipeline, submissions, interviews, and history. Cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/jobs/bulk-delete", {
@@ -489,10 +494,7 @@ export default function JobsPage() {
       });
   }, []);
 
-  async function deleteJob(id: string, title: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Delete "${title}"? This will remove all pipeline data. This cannot be undone.`)) return;
+  async function deleteJob(id: string) {
     await fetch(`/api/jobs/${id}`, { method: "DELETE" });
     setJobs(jobs.filter((j) => j.id !== id));
   }
@@ -728,15 +730,17 @@ export default function JobsPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <ExportCsvButton type="jobs" ids={Array.from(selectedIds)} variant="subtle" />
-            <button
-              type="button"
-              onClick={bulkDelete}
-              disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkDeleting ? "Deleting…" : "Delete"}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "Deleting…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -856,19 +860,56 @@ export default function JobsPage() {
                   ) : (
                     <span className="text-xs text-gray-300">—</span>
                   )}
-                  <button
-                    onClick={(e) => deleteJob(j.id, j.title, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
-                    title="Delete job"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeletingJob({ id: j.id, title: j.title });
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
+                      title="Delete job"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </Link>
             </div>
           ))}
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} job${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "job" : undefined}
+        consequences={[
+          "Todo el pipeline de candidatos",
+          "Submissions, entrevistas e historial",
+          "Documentos asociados",
+        ]}
+        onConfirm={bulkDelete}
+        confirmLabel="Sí, borrar"
+      />
+
+      <DeleteConfirmDialog
+        open={!!deletingJob}
+        onOpenChange={(open) => { if (!open) setDeletingJob(null); }}
+        itemLabel={deletingJob?.title || ""}
+        itemKind="job"
+        consequences={[
+          "Todo el pipeline de candidatos",
+          "Submissions, entrevistas e historial",
+          "Documentos asociados",
+        ]}
+        onConfirm={async () => {
+          if (deletingJob) await deleteJob(deletingJob.id);
+          setDeletingJob(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

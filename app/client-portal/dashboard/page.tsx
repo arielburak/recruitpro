@@ -34,12 +34,17 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { formatDate } from "@/lib/utils";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 export default function ClientDashboardPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [removingMember, setRemovingMember] = useState<{ id: string; name: string } | null>(null);
 
   // Team management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -195,7 +200,6 @@ export default function ClientDashboardPage() {
   }
 
   async function removeMember(id: string) {
-    if (!confirm("Remove this team member? This cannot be undone.")) return;
     await fetch(`/api/client-portal/team/${id}`, { method: "DELETE" });
     setTeamMenuOpen(null);
     fetchTeam();
@@ -734,12 +738,17 @@ export default function ClientDashboardPage() {
                             <CheckCircle className="h-3.5 w-3.5" /> Reactivate
                           </button>
                         )}
-                        <button
-                          onClick={() => removeMember(member.id)}
-                          className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                        >
-                          <X className="h-3.5 w-3.5" /> Remove
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setTeamMenuOpen(null);
+                              setRemovingMember({ id: member.id, name: member.name || member.email || "este miembro" });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                          >
+                            <X className="h-3.5 w-3.5" /> Remove
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -927,6 +936,17 @@ export default function ClientDashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={!!removingMember}
+        onOpenChange={(open) => { if (!open) setRemovingMember(null); }}
+        itemLabel={removingMember?.name || ""}
+        onConfirm={async () => {
+          if (removingMember) await removeMember(removingMember.id);
+          setRemovingMember(null);
+        }}
+        confirmLabel="Sí, remover del equipo"
+      />
     </div>
   );
 }

@@ -56,6 +56,7 @@ import {
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { ReadOnlyPipeline } from "@/components/client-portal/read-only-pipeline";
 import { formatDate } from "@/lib/utils";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
 
@@ -87,8 +88,12 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const { data: session } = useSession();
   const currentClientUserId = (session?.user as any)?.id || "";
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingDoc, setDeletingDoc] = useState<{ id: string; name: string } | null>(null);
+  const [withdrawingEngagement, setWithdrawingEngagement] = useState<{ id: string; label: string } | null>(null);
+  const [cancellingInvite, setCancellingInvite] = useState<{ id: string; email: string } | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
@@ -435,7 +440,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   }
 
   async function deleteDocument(docId: string) {
-    if (!confirm("Delete this document?")) return;
     await fetch(`/api/client-portal/jobs/${id}/documents?documentId=${docId}`, {
       method: "DELETE",
     });
@@ -568,8 +572,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     setInviting(false);
   }
 
-  async function withdrawEngagement(engagementId: string, label: string) {
-    if (!confirm(`Withdraw the invitation to ${label}? They won't be able to accept it anymore.`)) return;
+  async function withdrawEngagement(engagementId: string) {
     const res = await fetch(`/api/client-portal/engagements/${engagementId}`, {
       method: "DELETE",
     });
@@ -581,8 +584,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  async function withdrawPendingInvite(pendingId: string, email: string) {
-    if (!confirm(`Cancel the pending invitation to ${email}?`)) return;
+  async function withdrawPendingInvite(pendingId: string) {
     const res = await fetch(`/api/client-portal/pending-invites/${pendingId}`, {
       method: "DELETE",
     });
@@ -969,8 +971,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               {/* Delete only when the search lives on
                                   the client side. Agency-mirrored docs
                                   belong to the firm. */}
-                              {!job.createdByAgency && (
-                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(jdDoc.id)}>
+                              {!job.createdByAgency && isAdmin && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => setDeletingDoc({ id: jdDoc.id, name: jdDoc.name })}>
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               )}
@@ -1065,8 +1067,8 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               <a href={doc.downloadUrl || doc.url} target="_blank" rel="noopener noreferrer" download>
                                 <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5" /></Button>
                               </a>
-                              {!job.createdByAgency && (
-                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => deleteDocument(doc.id)}>
+                              {!job.createdByAgency && isAdmin && (
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600" onClick={() => setDeletingDoc({ id: doc.id, name: doc.name })}>
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               )}
@@ -1707,15 +1709,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                       <Badge className={`text-[9px] px-1.5 py-0 h-4 ${statusColor[eng.status]}`}>
                                         {eng.status.toLowerCase()}
                                       </Badge>
-                                      {eng.status === "PENDING" && (
+                                      {eng.status === "PENDING" && isAdmin && (
                                         <button
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            withdrawEngagement(
-                                              eng.id,
-                                              eng.invitedUser?.name || group.firm.name,
-                                            );
+                                            setWithdrawingEngagement({
+                                              id: eng.id,
+                                              label: eng.invitedUser?.name || group.firm.name,
+                                            });
                                           }}
                                           className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
                                         >
@@ -1758,13 +1760,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                         </Badge>
                       </div>
                       <div className="ml-10 mt-1 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => withdrawPendingInvite(p.id, p.email)}
-                          className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
-                        >
-                          Cancel invitation
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setCancellingInvite({ id: p.id, email: p.email })}
+                            className="text-[10px] text-gray-400 hover:text-red-600 underline-offset-2 hover:underline transition-colors"
+                          >
+                            Cancel invitation
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2117,6 +2121,40 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           </Dialog>
         </div>
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
+        itemLabel={deletingDoc?.name || ""}
+        itemKind="documento"
+        onConfirm={async () => {
+          if (deletingDoc) await deleteDocument(deletingDoc.id);
+          setDeletingDoc(null);
+        }}
+        confirmLabel="Sí, borrar"
+      />
+
+      <DeleteConfirmDialog
+        open={!!withdrawingEngagement}
+        onOpenChange={(open) => { if (!open) setWithdrawingEngagement(null); }}
+        itemLabel={`la invitación a ${withdrawingEngagement?.label || ""}`}
+        onConfirm={async () => {
+          if (withdrawingEngagement) await withdrawEngagement(withdrawingEngagement.id);
+          setWithdrawingEngagement(null);
+        }}
+        confirmLabel="Sí, retirar invitación"
+      />
+
+      <DeleteConfirmDialog
+        open={!!cancellingInvite}
+        onOpenChange={(open) => { if (!open) setCancellingInvite(null); }}
+        itemLabel={`la invitación a ${cancellingInvite?.email || ""}`}
+        onConfirm={async () => {
+          if (cancellingInvite) await withdrawPendingInvite(cancellingInvite.id);
+          setCancellingInvite(null);
+        }}
+        confirmLabel="Sí, cancelar"
+      />
     </div>
   );
 }

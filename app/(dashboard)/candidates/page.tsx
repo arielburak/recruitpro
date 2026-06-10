@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // ─── Types ───
 
@@ -259,6 +261,9 @@ function SortSelector({
 // ─── Main Page ───
 
 export default function CandidatesPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -270,6 +275,7 @@ export default function CandidatesPage() {
   // the visible page doesn't leave dangling ids selected.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -290,10 +296,6 @@ export default function CandidatesPage() {
 
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} candidate${n === 1 ? "" : "s"}? This removes their submissions, interviews, and history. Cannot be undone.`)) {
-      return;
-    }
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/candidates/bulk-delete", {
@@ -535,15 +537,17 @@ export default function CandidatesPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
-            <button
-              type="button"
-              onClick={bulkDelete}
-              disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkDeleting ? "Deleting…" : "Delete"}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "Deleting…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -709,6 +713,20 @@ export default function CandidatesPage() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} candidato${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "candidato" : undefined}
+        consequences={[
+          "Sus submissions a jobs",
+          "Su historial de entrevistas",
+          "Toda su actividad y notas",
+        ]}
+        onConfirm={bulkDelete}
+        confirmLabel="Sí, borrar"
+      />
     </div>
   );
 }

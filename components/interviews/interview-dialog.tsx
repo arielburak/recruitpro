@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar, Video, Phone, MapPin, Trash2 } from "lucide-react";
 import { InterviewAttachments } from "./interview-attachments";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // Generic schedule-or-edit interview dialog used from both the
 // candidate page (picker = job) and the job page (picker = candidate).
@@ -107,8 +109,12 @@ function addMinutes(hhmm: string, mins: number): string {
 }
 
 export function InterviewDialog(props: Props) {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const isEdit = props.mode === "edit";
   const initial = isEdit ? props.interview : null;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const initialStart = initial ? new Date(initial.startTime) : null;
   const initialEnd = initial ? new Date(initial.endTime) : null;
@@ -221,7 +227,6 @@ export function InterviewDialog(props: Props) {
 
   async function handleDelete() {
     if (!isEdit) return;
-    if (!confirm("Delete this interview? This cannot be undone.")) return;
     setSubmitting(true);
     setError("");
     try {
@@ -466,11 +471,11 @@ export function InterviewDialog(props: Props) {
         </div>
 
         <div className="flex justify-between items-center gap-2">
-          {isEdit ? (
+          {isEdit && isAdmin ? (
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleDelete}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={submitting}
               className="text-red-600 hover:text-red-700 hover:bg-red-50"
             >
@@ -504,6 +509,18 @@ export function InterviewDialog(props: Props) {
           </div>
         </div>
       </DialogContent>
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        itemLabel={title || "esta entrevista"}
+        itemKind="entrevista"
+        consequences={[
+          "Feedback y notas asociadas",
+          "Cualquier evento de calendario vinculado",
+        ]}
+        onConfirm={handleDelete}
+        confirmLabel="Sí, borrar"
+      />
     </Dialog>
   );
 }
