@@ -24,6 +24,21 @@ export async function POST(request: Request) {
       );
     }
 
+    // ROADMAP.md #25 — invited signups skip the verify-email banner.
+    // If there's a PendingFirmInvite already waiting for this email,
+    // the user clicked a link Resend sent specifically to that
+    // address, so we trust it the same way `/invite/[token]` (agency
+    // teammate invite) and `/client-portal/set-password` already do.
+    // The verification token is still generated below so the mail goes
+    // out (defensive: the address can be re-verified at will), but
+    // emailVerifiedAt gets stamped now so the dashboard banner stays
+    // hidden on first login.
+    const pendingInvite = await prisma.pendingFirmInvite.findFirst({
+      where: { email: data.email },
+      select: { id: true },
+    });
+    const verifiedByInvite = !!pendingInvite;
+
     const passwordHash = await bcrypt.hash(data.password, 12);
     let slug = slugify(data.orgName);
 
@@ -63,6 +78,9 @@ export async function POST(request: Request) {
           organizationId: org.id,
           emailVerificationToken: verificationToken,
           emailVerificationExpiresAt: verificationExpiresAt,
+          // See the `verifiedByInvite` block above. Invited signups land
+          // already-verified so the dashboard banner doesn't show.
+          emailVerifiedAt: verifiedByInvite ? new Date() : null,
         },
       });
 

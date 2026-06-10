@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
-import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 
 export async function GET() {
   try {
@@ -344,18 +343,15 @@ export async function POST(request: Request) {
           where: { id: jobId! },
           data: { status: "FILLED" },
         });
-        // Same notification fan-out as a manual flip to FILLED so the
-        // client portal hears about the placement regardless of which
-        // path triggered the status change.
-        try {
-          await notifyClientOfJobStatusChange({
-            jobId: jobId!,
-            newStatus: "FILLED",
-            organizationId: ctx.organizationId,
-          });
-        } catch (e) {
-          console.error("[placement] FILLED notif failed:", e);
-        }
+        // ROADMAP.md #22 — we intentionally DON'T notify the client
+        // when a job auto-flips to FILLED on placement creation. The
+        // shared helper already early-returns for non-ON_HOLD status
+        // changes (see lib/job-status-notifications.ts), so the call
+        // we used to make here was a no-op AND the comment misled
+        // future devs into thinking the client got pinged. The agency
+        // tells the client manually when the placement is firm — if a
+        // pre-signature flip got auto-announced and then reverted,
+        // the client would have celebrated for nothing.
       }
     }
 
