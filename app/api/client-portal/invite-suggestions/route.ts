@@ -41,6 +41,22 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const clientJobId = url.searchParams.get("clientJobId");
 
+    // Defensive: never surface this client's own portal members as
+    // recruiter suggestions. The write-side check in invite-firm
+    // already rejects creating an engagement against an own-team email,
+    // but legacy rows can have it set (the dirty data we cleaned up
+    // 2026-06-09 was exactly this case). Treating own-team emails as
+    // banned at read-time keeps the dropdown trustworthy even if a
+    // stray row sneaks in via OAuth claim or import.
+    const ownTeamEmails = new Set(
+      (
+        await prisma.clientUser.findMany({
+          where: { clientId: ctx.clientId },
+          select: { email: true },
+        })
+      ).map((u) => u.email.toLowerCase())
+    );
+
     const [personEngagements, legacyEngagements, pending, workedJobs] = await Promise.all([
       prisma.firmEngagement.findMany({
         where: {
@@ -264,9 +280,9 @@ export async function GET(request: Request) {
       });
     }
 
-    const suggestions = Array.from(byKey.values()).sort((a, b) =>
-      b.lastInvitedAt.localeCompare(a.lastInvitedAt)
-    );
+    const suggestions = Array.from(byKey.values())
+      .filter((s) => !s.email || !ownTeamEmails.has(s.email))
+      .sort((a, b) => b.lastInvitedAt.localeCompare(a.lastInvitedAt));
 
     return NextResponse.json(suggestions);
   } catch (error: any) {

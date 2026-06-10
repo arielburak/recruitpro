@@ -77,6 +77,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    // Reject early if the email is already a portal member of THIS
+    // client — they belong on the team, not on the recruiter side. Lets
+    // an admin who fat-fingered their own email get a clear error
+    // instead of silently creating a FirmEngagement whose invitedEmail
+    // points at one of their own users (which then bleeds into the
+    // "previously engaged firms" dropdown as a fake recruiter contact).
+    const ownTeamMember = await prisma.clientUser.findFirst({
+      where: { email: normalizedEmail, clientId: ctx.clientId },
+      select: { id: true, name: true },
+    });
+    if (ownTeamMember) {
+      return NextResponse.json(
+        {
+          error:
+            "That email belongs to your own team. Recruiter invites go to people at the firm you want to engage, not to your colleagues.",
+        },
+        { status: 400 }
+      );
+    }
+
     // Was this exact email already invited to this exact job?
     const [existingEngagement, existingPending] = await Promise.all([
       prisma.firmEngagement.findUnique({
