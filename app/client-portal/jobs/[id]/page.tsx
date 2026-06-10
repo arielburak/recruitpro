@@ -118,17 +118,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
     }
   }, [showInvite]);
 
-  // Same pattern for the Add Member panel right above. The panel toggles
-  // open/closed inline (not a Dialog), but the UX hazard is identical:
-  // half-finished form persists across opens and reads as broken.
-  useEffect(() => {
-    if (!showAddMember) {
-      setMemberName("");
-      setMemberTitle("");
-      setMemberEmail("");
-      setMemberResult(null);
-    }
-  }, [showAddMember]);
   // Expand/collapse por firma en Assigned Firms. Click en el header
   // de cada Card togglea ver los recruiters individualmente. State
   // in-memory (no localStorage) para que no se quede vieja info si
@@ -144,6 +133,19 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [addingMember, setAddingMember] = useState(false);
   const [memberResult, setMemberResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Same reset pattern as the Invite dialog above. The Add Member
+  // panel toggles open/closed inline (not a Dialog), but the UX
+  // hazard is identical: half-finished form persists across opens and
+  // reads as broken.
+  useEffect(() => {
+    if (!showAddMember) {
+      setMemberName("");
+      setMemberTitle("");
+      setMemberEmail("");
+      setMemberResult(null);
+    }
+  }, [showAddMember]);
 
   // Per-JO access management. Sidebar shows the current member list;
   // clicking "Manage" opens a dialog with checkboxes for the whole
