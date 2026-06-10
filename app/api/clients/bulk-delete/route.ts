@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
 
 // Bulk-delete clients = bulk disengage. Shared-Client model: the
 // Client row itself stays (other agencies may also be engaged with
@@ -12,6 +13,8 @@ import { logActivity } from "@/lib/activity";
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const body = await request.json();
     const ids: string[] = Array.isArray(body?.ids)
       ? body.ids.filter((x: unknown): x is string => typeof x === "string")

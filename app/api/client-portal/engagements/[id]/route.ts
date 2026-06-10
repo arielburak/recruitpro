@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { requireAdminResponse } from "@/lib/permissions";
 
 // DELETE — withdraw a firm invitation from the client portal side.
 // Only PENDING engagements can be withdrawn: once a firm has accepted, they
@@ -12,6 +13,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getClientContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     const engagement = await prisma.firmEngagement.findUnique({

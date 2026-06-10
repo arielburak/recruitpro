@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
 import { clientAccessWhere } from "@/lib/client-access";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function GET(
   _request: Request,
@@ -62,6 +63,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // "Delete client" on the agency side = disengage from the

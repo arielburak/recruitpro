@@ -5,6 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { sendCandidateSharedEmail } from "@/lib/email";
 import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function PATCH(
   request: Request,
@@ -367,6 +368,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     const submission = await prisma.candidateSubmission.findFirst({

@@ -3,6 +3,7 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
+import { requireAdminResponse } from "@/lib/permissions";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([
@@ -175,6 +176,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getClientContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
     const url = new URL(request.url);
     const documentId = url.searchParams.get("documentId");

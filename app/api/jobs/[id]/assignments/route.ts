@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendJobAssignedEmail } from "@/lib/email";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function GET(
   _request: Request,
@@ -130,6 +131,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // Any authenticated org user can remove assignments

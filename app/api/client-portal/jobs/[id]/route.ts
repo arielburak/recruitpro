@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function PUT(
   request: Request,
@@ -79,6 +80,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getClientContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // Refuse to delete agency-mirrored jobs. The agency owns the

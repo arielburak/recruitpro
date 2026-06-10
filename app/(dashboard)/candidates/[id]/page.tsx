@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,6 +50,13 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  // Role gate: only ADMIN can delete entities of shared org data. The
+  // server already enforces this (returns 403 to non-admins), but
+  // hiding the button up front avoids a confusing 403 toast and
+  // respects the UX agreement (cf. /lib/permissions.ts).
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   // Inline Owner picker on the Owner card. Loads the workspace
   // roster once on mount so the dropdown is instant when the user
   // clicks "Change".
@@ -178,9 +187,21 @@ export default function CandidateDetailPage() {
     return perJob + candidateLevel;
   }
 
-  async function deleteCandidate() {
-    if (!confirm("Delete this candidate? This cannot be undone.")) return;
-    await fetch(`/api/candidates/${params.id}`, { method: "DELETE" });
+  // Submit handler called from the DeleteConfirmDialog. The dialog's
+  // "También borrar sus métricas históricas" checkbox is the extra
+  // toggle — when checked (default), the API cascade-deletes the
+  // Activity rows. When unchecked, we pass keepMetrics=true so the
+  // server orphans them first and the dashboard keeps crediting the
+  // candidate's past activity.
+  async function deleteCandidate(deleteMetricsAlso?: boolean) {
+    const keepMetrics = deleteMetricsAlso === false;
+    const qs = keepMetrics ? "?keepMetrics=true" : "";
+    const res = await fetch(`/api/candidates/${params.id}${qs}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data?.error || "No se pudo borrar el candidato");
+      return;
+    }
     router.push("/candidates");
   }
 
@@ -357,16 +378,42 @@ export default function CandidateDetailPage() {
           >
             <Plus className="h-4 w-4 mr-1" /> Assign to Jobs
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={deleteCandidate}
-            className="text-red-600 hover:text-red-700"
-          >
-            <Trash2 className="h-4 w-4 mr-1" /> Delete
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDelete(true)}
+              className="text-red-600 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Confirmation dialog. The extra toggle lets the admin decide
+          if the candidate's past metric events go with them or stay
+          orphaned (credited but un-attributable). Default tildado =
+          mismo comportamiento que cascade: se va todo. */}
+      <DeleteConfirmDialog
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        itemLabel={candidate ? `${candidate.firstName} ${candidate.lastName}` : "este candidato"}
+        itemKind="candidato"
+        consequences={[
+          `${(candidate?.submissions || []).length} submission${(candidate?.submissions || []).length === 1 ? "" : "s"} a jobs`,
+          `${(candidate?.interviews || []).length} interview${(candidate?.interviews || []).length === 1 ? "" : "s"} registradas`,
+          `${(candidate?.documents || []).length} documento${(candidate?.documents || []).length === 1 ? "" : "s"} adjuntos`,
+        ]}
+        extraToggle={{
+          label: "También borrar sus métricas históricas",
+          description:
+            "Tildado: sus eventos del historial (interviews, transitions, etc.) también se eliminan y bajan las métricas viejas del dashboard. Destildado: el candidato se va pero sus métricas pasadas siguen contando en el reporting.",
+          defaultChecked: true,
+        }}
+        onConfirm={deleteCandidate}
+        confirmLabel="Sí, borrar candidato"
+      />
 
       <Tabs defaultValue={initialTab}>
         <TabsList>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
+import { requireAdminResponse } from "@/lib/permissions";
 
 // Job visibility is strictly assignment-based: everyone — admins
 // included — needs an explicit JobAssignment row to see / mutate the
@@ -283,6 +284,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);

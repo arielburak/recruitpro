@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { requireAdminResponse } from "@/lib/permissions";
 
 // DELETE — cancel a pending email invite that was sent to someone who
 // hadn't yet registered on the platform. Same contract as withdrawing a
@@ -12,6 +13,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getClientContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     const invite = await prisma.pendingFirmInvite.findUnique({

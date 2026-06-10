@@ -810,7 +810,15 @@ model Activity {
   createdAt      DateTime @default(now())
 
   user         User?        @relation(fields: [userId], references: [id])
-  candidate    Candidate?   @relation("CandidateActivities", fields: [candidateId], references: [id])
+  // Cascade so deleting a candidate also wipes their activity history.
+  // Intent: "if I deleted them, I don't want their metrics any more"
+  // — the dashboard's Recruiter Performance bucket recounts cleanly
+  // because there are no orphan rows with candidateId=null to
+  // half-credit. Was SetNull (Prisma default for nullable relations);
+  // the SetNull behaviour also caused dedup ambiguity in the
+  // Interviews counter when many candidates were hard-deleted on
+  // the same job.
+  candidate    Candidate?   @relation("CandidateActivities", fields: [candidateId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, createdAt(sort: Desc)])

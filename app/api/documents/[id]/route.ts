@@ -3,6 +3,7 @@ import { del, get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function GET(
   request: Request,
@@ -66,6 +67,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // Confirm the document belongs to this org (via candidate, job, or client)
