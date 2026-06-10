@@ -1985,11 +1985,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                       <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
                                         {s.name || s.email}
                                       </p>
-                                      {s.name && (
-                                        <p className="text-[11px] text-gray-500 break-all">
-                                          {s.email}
-                                        </p>
-                                      )}
+                                      {(() => {
+                                        // Compose the subtitle: email
+                                        // (when we have a name as the
+                                        // title) + firm name (only when
+                                        // searching across all firms,
+                                        // since selecting a firm makes
+                                        // the firm name redundant).
+                                        const showEmailSubtitle = !!s.name;
+                                        const showFirmSubtitle =
+                                          !selectedFirm && !!s.firmName;
+                                        if (!showEmailSubtitle && !showFirmSubtitle) return null;
+                                        return (
+                                          <p className="text-[11px] text-gray-500 break-all">
+                                            {showEmailSubtitle && s.email}
+                                            {showEmailSubtitle && showFirmSubtitle && (
+                                              <span className="text-gray-400"> · </span>
+                                            )}
+                                            {showFirmSubtitle && <span>{s.firmName}</span>}
+                                          </p>
+                                        );
+                                      })()}
                                     </div>
                                     {(() => {
                                       // Pill policy: only render when there's something
