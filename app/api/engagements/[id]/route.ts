@@ -23,8 +23,9 @@ export async function PUT(
             client: { select: { id: true, name: true } },
             // postedBy = ClientUser que invito a la firma. Lo usamos
             // para notificar de vuelta cuando aceptamos: in-app
-            // notification al bell + mail directo al inviter.
-            postedBy: { select: { id: true, name: true, email: true, isActive: true } },
+            // notification al bell + mail directo al inviter. Title
+            // ademas, para sembrar el Contact en el book del firm.
+            postedBy: { select: { id: true, name: true, email: true, title: true, isActive: true } },
           },
         },
         organization: { select: { name: true } },
@@ -81,6 +82,37 @@ export async function PUT(
             organizationId: ctx.organizationId,
           },
         });
+      }
+
+      // Seed a Contact for the ClientUser who invited the firm, so the
+      // Client doesn't open as a bare row with no point-of-contact.
+      // One-time, idempotent: if the firm already has a Contact at this
+      // Client with the same email, we leave the existing record alone
+      // (the recruiter may have edited it after the first accept). The
+      // FIRST contact at a Client gets isPrimary=true so it surfaces on
+      // /contacts and the client list.
+      const inviter = engagement.clientJob.postedBy;
+      if (inviter?.email) {
+        const existingContact = await prisma.contact.findFirst({
+          where: { clientId: client.id, email: inviter.email },
+          select: { id: true },
+        });
+        if (!existingContact) {
+          const [firstName, ...rest] = (inviter.name || "").trim().split(/\s+/);
+          const lastName = rest.join(" ");
+          const contactCount = await prisma.contact.count({ where: { clientId: client.id } });
+          await prisma.contact.create({
+            data: {
+              firstName: firstName || inviter.email,
+              lastName: lastName || "",
+              title: inviter.title || null,
+              email: inviter.email,
+              clientId: client.id,
+              organizationId: ctx.organizationId,
+              isPrimary: contactCount === 0,
+            },
+          });
+        }
       }
 
       // If another recruiter at this firm already accepted this same
