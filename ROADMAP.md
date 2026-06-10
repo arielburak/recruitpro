@@ -23,7 +23,7 @@ Aplican a cualquier feature nueva o existente:
 
 ## 🚨 Crítico
 
-- [ ] **#3 — Cambio de estado sin acceso al job** (BUG seguridad). Desde la vista del candidato, un user sin acceso a una búsqueda puede mover el stage y compartirlo. Debe bloquearse — mismo gate que ya existe en el tab Jobs ("Job not found"). Atacar primero.
+- [~] **#3 — Cambio de estado sin acceso al job** (BUG seguridad). `canAccessJob` extraído a `lib/job-access.ts` y aplicado en `PATCH` + `DELETE` de `/api/submissions/[id]` (cubre stage change Y share-with-client). 404, no 403, para no leakear existencia. Defensa en UI: `/candidates/[id]` esconde stage select + share + remove cuando no estás asignado al job; muestra un badge readonly con el stage actual + "view only". Commit `7277df0`.
 
 ---
 
