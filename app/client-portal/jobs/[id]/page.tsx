@@ -117,6 +117,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       setSelectedFirm(null);
     }
   }, [showInvite]);
+
+  // Same pattern for the Add Member panel right above. The panel toggles
+  // open/closed inline (not a Dialog), but the UX hazard is identical:
+  // half-finished form persists across opens and reads as broken.
+  useEffect(() => {
+    if (!showAddMember) {
+      setMemberName("");
+      setMemberTitle("");
+      setMemberEmail("");
+      setMemberResult(null);
+    }
+  }, [showAddMember]);
   // Expand/collapse por firma en Assigned Firms. Click en el header
   // de cada Card togglea ver los recruiters individualmente. State
   // in-memory (no localStorage) para que no se quede vieja info si
@@ -1845,9 +1857,9 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-start gap-2">
                       <Mail className="h-3.5 w-3.5 shrink-0 mt-0.5 text-gray-400" />
                       <span className="break-words">
-                        No account found — we&apos;ll email{" "}
+                        We&apos;ll send a signup link to{" "}
                         <span className="font-medium text-gray-700">{inviteLookup.email}</span>{" "}
-                        a signup link to join Recruiting ATS.
+                        so they can join Recruiting ATS and accept.
                       </span>
                     </div>
                   );
@@ -1970,11 +1982,19 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           nothing so the modal opens compact. */}
                       {(selectedFirm || q.length >= 2) && (
                         filteredContacts.length === 0 ? (
-                          <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
-                            {selectedFirmInfo
-                              ? `No contacts at ${selectedFirmInfo.name} match "${q}".`
-                              : `No saved recruiters match "${q}". We'll send a fresh signup link.`}
-                          </p>
+                          // When the user picked a firm and nothing
+                          // matches their query, tell them. When NO
+                          // firm is picked, the inviteLookup block
+                          // above already handles the "we'll email a
+                          // signup link" case — repeating it here just
+                          // doubles a pastel-gray banner and reads as
+                          // two warnings about something that isn't
+                          // an error.
+                          selectedFirmInfo ? (
+                            <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
+                              No contacts at {selectedFirmInfo.name} match &ldquo;{q}&rdquo;.
+                            </p>
+                          ) : null
                         ) : (
                           <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
                             {filteredContacts.map((s) => {

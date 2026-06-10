@@ -257,6 +257,28 @@ export default function JobDetailPage() {
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignSearching, setAssignSearching] = useState(false);
 
+  // Reset form state whenever the Invite-Client-to-Portal dialog
+  // closes (ESC, backdrop, X). Without this the user reopens it and
+  // sees their previous half-finished attempt, which reads as broken.
+  useEffect(() => {
+    if (!showShareDialog) {
+      setShareEmail("");
+      setShareName("");
+      setShareSuccess("");
+      setShareError("");
+    }
+  }, [showShareDialog]);
+
+  // Same hygiene for the Assign Team Members dialog. Stale
+  // assignResults from a previous query would render results that no
+  // longer correspond to the visible search box.
+  useEffect(() => {
+    if (!showAssignDialog) {
+      setAssignSearch("");
+      setAssignResults([]);
+    }
+  }, [showAssignDialog]);
+
   // Document upload state
   const [uploadingJD, setUploadingJD] = useState(false);
   const [uploadingAdditional, setUploadingAdditional] = useState(false);

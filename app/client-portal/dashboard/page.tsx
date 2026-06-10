@@ -60,6 +60,22 @@ export default function ClientDashboardPage() {
     email: string;
   } | null>(null);
 
+  // Reset the inline Invite-Teammate form when the panel collapses.
+  // Without this the user opens it, types something, closes it, and
+  // the next open still has the leftover input — reads as broken.
+  // inviteResult also clears here (the toggle button already cleared
+  // it for the toggle-on path, but ESC / close button / external
+  // setShowInvite(false) would have left it stale).
+  useEffect(() => {
+    if (!showInvite) {
+      setInviteName("");
+      setInviteTitle("");
+      setInviteEmail("");
+      setInviteResult(null);
+      setContactMatch(null);
+    }
+  }, [showInvite]);
+
   // Firms Engaged drawer
   const [firmsOpen, setFirmsOpen] = useState(false);
   const [firms, setFirms] = useState<

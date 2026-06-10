@@ -72,6 +72,19 @@ export function ShareCandidateDialog({
   const clientName = submission.job?.client?.name;
   const jobTitle = submission.job?.title;
 
+  // Reset transient form state when the dialog closes — important
+  // because some callers (e.g. kanban-card) keep this component
+  // mounted across opens, so without an explicit reset the previous
+  // note + notify toggle survive. Re-opens always start as a fresh
+  // share, not a half-edited one. docs + selectedIds re-fetch on
+  // open=true in the effect below, so no need to reset them here.
+  useEffect(() => {
+    if (open) return;
+    setNote("");
+    setNotifyViaEmail(true);
+    setError("");
+  }, [open]);
+
   // Trae los docs del candidate cuando se abre el dialog. Defaults:
   // - Primer share (ningun doc shared todavia): pre-marcamos TODOS.
   //   El recruiter solo desmarca lo que no quiera exponer.
