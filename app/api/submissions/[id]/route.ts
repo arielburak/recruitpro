@@ -24,7 +24,7 @@ export async function PATCH(
       where: { id },
       include: {
         job: { select: { id: true, organizationId: true, title: true, clientId: true } },
-        candidate: { select: { firstName: true, lastName: true } },
+        candidate: { select: { firstName: true, lastName: true, ownerId: true } },
         stage: { select: { name: true, order: true } },
       },
     });
@@ -33,21 +33,21 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // ROADMAP.md #3 (security). The same JobAssignment gate that
-    // protects /api/jobs/[id] applies here too — without it, a
-    // recruiter who can see a candidate's profile (because candidates
-    // are org-wide) could PATCH the stage / share toggle of that
-    // candidate's submission to ANY job in the org, including jobs
-    // they were never assigned to. 404 (not 403) on purpose: it
-    // matches the "Job not found" the user would see on the job
-    // detail page, so we don't leak "yes this exists, just not for
-    // you" via differing status codes.
-    const allowed = await canAccessJob(
+    // ROADMAP.md #3 (security) + decision 10 jun 2026: the user can
+    // mutate this submission's stage / share toggle iff they're (a)
+    // assigned to the underlying job OR (b) the owner of the
+    // candidate. (a) covers the normal multi-recruiter job kanban;
+    // (b) lets the original sourcer act on their candidate even when
+    // the submission lands in someone else's pipeline. 404 (not 403)
+    // on purpose: matches the "Job not found" leak shape used
+    // elsewhere so we don't differentiate "exists but not for you".
+    const isAssigned = await canAccessJob(
       submission.job.id,
       ctx.organizationId,
       ctx.userId
     );
-    if (!allowed) {
+    const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
+    if (!isAssigned && !isCandidateOwner) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -393,21 +393,26 @@ export async function DELETE(
 
     const submission = await prisma.candidateSubmission.findFirst({
       where: { id },
-      include: { job: { select: { id: true, organizationId: true } } },
+      include: {
+        job: { select: { id: true, organizationId: true } },
+        candidate: { select: { ownerId: true } },
+      },
     });
 
     if (!submission || submission.job.organizationId !== ctx.organizationId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Same canAccessJob gate as the PATCH above. Admins included —
-    // the visibility rule has no role bypass (see lib/job-access.ts).
-    const allowed = await canAccessJob(
+    // Same gate semantics as the PATCH above: assigned to the job OR
+    // owner of the candidate. Admins included — no role bypass on
+    // the visibility rule (see lib/job-access.ts).
+    const isAssigned = await canAccessJob(
       submission.job.id,
       ctx.organizationId,
       ctx.userId
     );
-    if (!allowed) {
+    const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
+    if (!isAssigned && !isCandidateOwner) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

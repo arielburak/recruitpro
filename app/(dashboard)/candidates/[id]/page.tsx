@@ -67,6 +67,7 @@ export default function CandidateDetailPage() {
   // respects the UX agreement (cf. /lib/permissions.ts).
   const { data: session } = useSession();
   const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const currentUserId = (session?.user as any)?.id as string | undefined;
   // Inline Owner picker on the Owner card. Loads the workspace
   // roster once on mount so the dropdown is instant when the user
   // clicks "Change".
@@ -719,15 +720,18 @@ export default function CandidateDetailPage() {
 
                       {/* ROADMAP.md #3 — defense in depth. Hide the
                           stage select / share toggle / remove button
-                          when the user isn't assigned to this
-                          submission's job. The server still rejects
-                          the mutation (canAccessJob gate in
-                          /api/submissions/[id]), this just stops the
-                          UI from offering a control that would 404.
-                          Read-only fallback shows the current stage as
-                          a static badge so the recruiter still sees
-                          where the candidate is, just can't move them. */}
-                      {(sub.job?.assignments || []).length === 0 ? (
+                          when the user can't act on this submission.
+                          Two paths grant edit access (decision 10 jun
+                          2026): they're assigned to the underlying
+                          job, OR they're the candidate's owner. The
+                          server enforces the same rule in
+                          /api/submissions/[id] (PATCH + DELETE) — this
+                          just stops the UI from offering a control
+                          that would 404. Read-only fallback shows the
+                          current stage as a static badge so the
+                          recruiter still sees where the candidate is,
+                          just can't move them. */}
+                      {((sub.job?.assignments || []).length === 0 && candidate.ownerId !== currentUserId) ? (
                         <span
                           className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border bg-gray-50"
                           style={{ borderColor: sub.stage.color + "55", color: sub.stage.color }}
