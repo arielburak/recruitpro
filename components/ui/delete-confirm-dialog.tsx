@@ -46,6 +46,14 @@ type DeleteConfirmDialogProps = {
   // description. E.g. "candidato", "job", "cliente". Falls back to
   // a generic copy if omitted.
   itemKind?: string;
+  // Full override for the title. When set, replaces the default
+  // "Delete {itemLabel}?" so the same component can power non-delete
+  // confirms like "Stop sharing Juan Pérez with Acme Corp?".
+  title?: string;
+  // Full override for the description. When set, replaces the default
+  // "This action cannot be undone…" text. Compose plain user-facing
+  // copy — the component just renders it.
+  description?: string;
   // Bullet list of what will also be deleted as part of this action.
   // Compose plain user-facing strings — the component just renders
   // them. Keep them concrete: "3 submissions" beats "related records".
@@ -69,6 +77,8 @@ export function DeleteConfirmDialog({
   onOpenChange,
   itemLabel,
   itemKind,
+  title,
+  description,
   consequences,
   extraToggle,
   onConfirm,
@@ -113,11 +123,17 @@ export function DeleteConfirmDialog({
             </div>
             <div className="flex-1 min-w-0">
               <DialogTitle className="text-base font-semibold">
-                Delete {itemLabel}?
+                {title ?? `Delete ${itemLabel}?`}
               </DialogTitle>
               <DialogDescription className="mt-1 text-sm">
-                This action <span className="font-semibold text-red-600">cannot be undone</span>
-                {itemKind ? ` and will permanently remove this ${itemKind} from the database` : ""}.
+                {description ? (
+                  description
+                ) : (
+                  <>
+                    This action <span className="font-semibold text-red-600">cannot be undone</span>
+                    {itemKind ? ` and will permanently remove this ${itemKind} from the database` : ""}.
+                  </>
+                )}
               </DialogDescription>
             </div>
           </div>

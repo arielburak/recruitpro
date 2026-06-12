@@ -51,6 +51,16 @@ export default function CandidateDetailPage() {
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  // Tracks which submission's "Shared" chip the user clicked. The
+  // confirm dialog reads this; null when no dialog is open. Stop-
+  // sharing is destructive from the client's perspective (they lose
+  // access instantly), so it goes through the universal confirm rule.
+  const [unsharingSubmission, setUnsharingSubmission] = useState<{
+    id: string;
+    candidateName: string;
+    clientName: string;
+    jobTitle: string;
+  } | null>(null);
   // Role gate: only ADMIN can delete entities of shared org data. The
   // server already enforces this (returns 403 to non-admins), but
   // hiding the button up front avoids a confusing 403 toast and
@@ -424,6 +434,32 @@ export default function CandidateDetailPage() {
         confirmLabel="Yes, delete candidate"
       />
 
+      {/* Stop-sharing confirm. Wired via setUnsharingSubmission from
+          the green "Shared" chip on each submission row. The client
+          loses access the instant the PATCH lands, so we follow the
+          universal "confirm any destructive single-click action"
+          rule (cf. memory feedback-confirm-destructive-clicks). */}
+      <DeleteConfirmDialog
+        open={!!unsharingSubmission}
+        onOpenChange={(open) => { if (!open) setUnsharingSubmission(null); }}
+        itemLabel={unsharingSubmission?.candidateName || ""}
+        title={
+          unsharingSubmission
+            ? `Stop sharing ${unsharingSubmission.candidateName} with ${unsharingSubmission.clientName}?`
+            : undefined
+        }
+        description={
+          unsharingSubmission
+            ? `${unsharingSubmission.clientName} will lose access to this submission for "${unsharingSubmission.jobTitle}" immediately. You can re-share later, but any client-side feedback or stage tracking on this submission won't be visible to them until you do.`
+            : undefined
+        }
+        onConfirm={async () => {
+          if (!unsharingSubmission) return;
+          await toggleSubmissionShare(unsharingSubmission.id, false);
+        }}
+        confirmLabel="Yes, stop sharing"
+      />
+
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -708,24 +744,31 @@ export default function CandidateDetailPage() {
                           {isShared ? (
                             <button
                               type="button"
-                              onClick={() => toggleSubmissionShare(sub.id, false)}
-                              className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors"
+                              onClick={() =>
+                                setUnsharingSubmission({
+                                  id: sub.id,
+                                  candidateName: candidate
+                                    ? `${candidate.firstName} ${candidate.lastName}`
+                                    : "this candidate",
+                                  clientName: sub.job?.client?.name || "the client",
+                                  jobTitle: sub.job?.title || "this job",
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 font-medium border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-100 transition-colors group"
                               title={
-                                (sub.sharedAt ? `Shared on ${new Date(sub.sharedAt).toLocaleString()}` : "Shared with client") +
-                                (sub.clientStage ? ` · Client sees: ${sub.clientStage.name}` : "") +
-                                "\nClick to stop sharing"
+                                sub.sharedAt
+                                  ? `Shared on ${new Date(sub.sharedAt).toLocaleString()} — click to stop sharing`
+                                  : "Shared with client — click to stop sharing"
                               }
                             >
                               <CheckCircle2 className="h-3 w-3" />
-                              Shared
+                              <span>Shared</span>
                               {sub.clientStage && (
-                                <span
-                                  className="ml-1 text-[10px] font-semibold"
-                                  style={{ color: sub.clientStage.color }}
-                                >
-                                  · {sub.clientStage.name}
+                                <span className="text-[10px] text-emerald-600/80 font-normal border-l border-emerald-200 pl-1.5">
+                                  Client sees: {sub.clientStage.name}
                                 </span>
                               )}
+                              <X className="h-3 w-3 ml-0.5 text-emerald-500/60 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
                           ) : (
                             <button
