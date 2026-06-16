@@ -1455,16 +1455,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               </Button>
             </CardHeader>
             <CardContent>
-              {/* Summary Stats — contadores por FIRMA unica, no por
-                  engagement. Si Morabits tiene 2 engagements
-                  ACCEPTED (2 recruiters), cuenta como 1 firma Active,
-                  no 2. Mirror del dedupe que ya hace la lista de
-                  cards. Prioridad de status agregado por firma:
-                  ACCEPTED > PENDING > DECLINED. */}
+              {/* SINGLE SOURCE OF TRUTH — el filter defensivo se
+                  aplica una sola vez al inicio del card y la const
+                  resultante alimenta stats + lista + empty-state.
+                  Antes, los stats contaban engagements crudos y la
+                  lista filtraba — generaba "2 Active · 1 card"
+                  cuando un user inactivo se escondia. Mismo criterio:
+                  rechazar (a) invitedUser apuntando a otra org, (b)
+                  invitedUser inactivo (soft-released). Aceptar
+                  invitedUser null. */}
               {(() => {
+                const visibleEngagements = (job.engagements || []).filter(
+                  (e: any) => {
+                    if (!e.invitedUser) return true;
+                    if (e.invitedUser.organizationId !== e.organization.id) return false;
+                    if (e.invitedUser.isActive === false) return false;
+                    return true;
+                  },
+                );
                 const pendingInvites = job.pendingFirmInvites || [];
                 const firmsByStatus = new Map<string, "ACCEPTED" | "PENDING" | "DECLINED">();
-                for (const e of job.engagements || []) {
+                for (const e of visibleEngagements) {
                   const orgId = e.organization?.id;
                   if (!orgId) continue;
                   const current = firmsByStatus.get(orgId);
@@ -1481,7 +1492,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 const pending =
                   statuses.filter((s) => s === "PENDING").length + pendingInvites.length;
                 const declined = statuses.filter((s) => s === "DECLINED").length;
-                const totalRows = (job.engagements?.length || 0) + pendingInvites.length;
+                const totalRows = visibleEngagements.length + pendingInvites.length;
                 if (totalRows === 0) return null;
                 return (
                   <div className="flex gap-3 mb-3">
@@ -1501,7 +1512,17 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 );
               })()}
 
-              {(job.engagements?.length || 0) + (job.pendingFirmInvites?.length || 0) === 0 ? (
+              {(() => {
+                const visibleEngagements = (job.engagements || []).filter(
+                  (e: any) => {
+                    if (!e.invitedUser) return true;
+                    if (e.invitedUser.organizationId !== e.organization.id) return false;
+                    if (e.invitedUser.isActive === false) return false;
+                    return true;
+                  },
+                );
+                return visibleEngagements.length + (job.pendingFirmInvites?.length || 0) === 0;
+              })() ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
                   No recruiters invited yet. Click Invite to get started.
                 </p>
