@@ -41,16 +41,16 @@ Aplican a cualquier feature nueva o existente:
 - [~] **#6 — Scroll en pantalla Pop-out**. Un fix en `components/ui/dialog.tsx` agrega `max-h-[90dvh] overflow-y-auto` al DialogContent base. Beneficia automáticamente a TODOS los dialogs (placement, share docs, interview, etc.). Botón X close sigue accesible. Commit `b415833`.
 - [~] **#22 — No notificar fill/placement al cliente**. Funcionalmente ya estaba (el helper de status notifs solo notifica ON_HOLD). Hoy: cleanup del call desde `/api/placements` que era no-op pero confuso. Commit `a713cb0`.
 
-### Alcance medio
+### Alcance medio — cayó todo en staging 2026-06-10, verificá
 
-- [ ] **#4 — Botón confirmar al sumar member a búsqueda**.
-- [ ] **#5 — Submission cuenta al mandar al cliente, no al subir al portal** (Recruiter Performance).
-- [ ] **#12 — Resaltar @menciones seleccionadas** estilo Outlook (color al hacer click).
-- [ ] **#13 — Auditoría visibilidad de candidatos por org**: todos los candidatos visibles para todos los miembros de la org, scoped a la org.
-- [ ] **#19 — My Team accesible para users no-admin**. Tab dentro del portal de la agencia visible en el menú; user (no admin) puede invitar gente de su equipo.
-- [ ] **#20 — Engagements: cliente y contacto correctos** al aceptar. Quitar texto del creador debajo del título del job en portal cliente.
-- [ ] **#21 — Robar members solo con acceso a la búsqueda**. En el chat con cliente, limitar el picker a members que tienen acceso a esa búsqueda (no a toda la agencia).
-- [ ] **#28 — Notificar al cliente cuando agencia acepta**. Notificación ATS + mail al cliente que invitó.
+- [~] **#4 — Confirmar al sumar member a búsqueda**. Dialog Assign Team Members ahora es multi-select. Click en row toggle chip indigo; barra abajo "Add N members" + Clear cuando hay al menos uno. Reset al close. Commit `4569050`.
+- [~] **#5 — Submission cuenta al mandar al cliente** (Recruiter Performance). La métrica pasa de contar `submission.createdAt` a contar `Activity.action="submission.shared"`. Dashboard + drilldown actualizados. Legacy rows con fallback regex. Commit `4569050`.
+- [~] **#12 — @menciones resaltadas al click** estilo Outlook. Nuevo subcomponente MentionChip con local state — click toggle entre look default y activated (ring + bg). Aplicado en chat-notes y client-portal/candidate-chat. Commit `4569050`.
+- [~] **#13 — Auditoría visibilidad candidatos por org**. Audit encontró que `/api/candidates` GET ocultaba candidatos a USER no-admin por default (la UI lo paliaba con `mine=false` pero el endpoint mentía). Removido el branch — ahora todos ven todos. Commit `4569050`.
+- [~] **#19 — /settings/team accesible para users no-admin**. La tab Team pasa de admin-only a accesible a cualquier user del org. Lectura libre (lista + roles + status), escritura (invite, promote/demote, remove) sigue admin-only. GET endpoints abiertos, mutations gateados. Commit `4569050`.
+- [~] **#20 — Engagements: quitar texto del creador**. En `/engagements/page.tsx` (lado agency), el card de pending invite mostraba "Contact: X (email)" debajo del título del job — ruido redundante. Removido. Commit `4569050`.
+- [~] **#21 — Mention picker scoped a job assignees**. Fix de un edge case: cuando un job no tenía assignees, el filter del picker fallaba abierto y mostraba TODOS los recruiters del org. Ahora siempre se aplica el scope, incluso con lista vacía (fail-closed). Cierra el leak. Commit `4569050`.
+- [x] **#28 — Notificar al cliente cuando agencia acepta**. Ya estaba implementado — `/api/engagements/[id]/route.ts` acción "accept" crea ClientNotification + manda mail vía sendEngagementAcceptedEmail al inviter. Audit-confirmado 2026-06-10.
 
 ### Grandes (sesión completa cada uno)
 
