@@ -150,6 +150,7 @@ export async function POST(
         authorKind: "client",
         authorId: ctx.clientUserId,
         authorName: ctx.userName || "A teammate",
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) => console.error("[client feedback POST] notify failed:", e));
 
       // Activity log: only surface CLIENT_VISIBLE posts on the

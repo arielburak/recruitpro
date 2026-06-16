@@ -182,11 +182,23 @@ export async function POST(request: Request) {
 
     const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(rawEmail)}`;
 
+    // Pull the firm name para el greeting del email ("X has shared
+    // candidates with you" en vez del fallback "A recruiting firm").
+    let firmName: string | undefined = undefined;
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { name: true },
+      });
+      firmName = org?.name || undefined;
+    } catch {}
+
     try {
       await sendClientSetPasswordEmail({
         to: rawEmail,
         setPasswordUrl,
         clientName: clientUser.name,
+        firmName,
       });
     } catch (e) {
       console.error("[quick-invite] set-password email failed:", e);

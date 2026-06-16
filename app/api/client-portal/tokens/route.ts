@@ -362,6 +362,7 @@ export async function POST(request: Request) {
         to: inviteEmail,
         setPasswordUrl,
         clientName: recipientName,
+        firmName,
       }).catch((err) =>
         console.error("[tokens] set-password mail failed:", err),
       );

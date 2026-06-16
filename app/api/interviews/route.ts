@@ -383,6 +383,7 @@ export async function POST(request: Request) {
           location: location || undefined,
           notes: notes || undefined,
           recruiterName: ctx.userName,
+          recruiterEmail: ctx.userEmail || undefined,
         });
       } catch (emailErr) {
         console.error("[interview] Failed to send candidate invite:", emailErr);
@@ -411,6 +412,7 @@ export async function POST(request: Request) {
               notes: notes || undefined,
               recruiterName: ctx.userName,
               firmName: org?.name || "Our recruiting team",
+              recruiterEmail: ctx.userEmail || undefined,
             });
           } catch (emailErr) {
             console.error(`[interview] Failed to send client contact invite to ${cc.contact.email}:`, emailErr);

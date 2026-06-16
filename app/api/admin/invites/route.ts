@@ -83,6 +83,7 @@ export async function POST(request: Request) {
         inviteUrl,
         inviterName: ctx.userName,
         organizationName: org?.name || "the team",
+        recipientName: name || undefined,
       });
     } catch (emailError) {
       console.error("Failed to send invite email:", emailError);

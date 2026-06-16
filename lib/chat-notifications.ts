@@ -9,6 +9,9 @@ type NotifyArgs = {
   authorKind: "staffing" | "client";
   authorId: string;
   authorName: string;
+  // Optional sender email for wiring Reply-To on mention/new-message
+  // mails so replies land in a real inbox instead of noreply@.
+  authorEmail?: string;
 };
 
 // Centralized notification logic for new comments posted in a candidate chat.
@@ -25,7 +28,7 @@ type NotifyArgs = {
 //     → in-app ClientNotification + email for mentioned client users
 //     → NO staffing-side notification
 export async function notifyOnNewComment(args: NotifyArgs) {
-  const { submissionId, commentType, content, mentions, authorKind, authorId, authorName } = args;
+  const { submissionId, commentType, content, mentions, authorKind, authorId, authorName, authorEmail } = args;
 
   const submission = await prisma.candidateSubmission.findUnique({
     where: { id: submissionId },
@@ -107,6 +110,8 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               jobTitle,
               preview,
               url: staffingUrl,
+              recipientName: u.name || undefined,
+              senderEmail: authorEmail || undefined,
             });
           } catch (e) {
             console.error("[chat-notify] mention email (staffing) failed:", e);
@@ -142,6 +147,8 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               jobTitle,
               preview,
               url: clientUrl,
+              recipientName: cu.name || undefined,
+              senderEmail: authorEmail || undefined,
             });
           } catch (e) {
             console.error("[chat-notify] mention email (client) failed:", e);
@@ -275,8 +282,9 @@ export async function notifyOnNewCandidateComment(args: {
   mentions: string[]; // staffing user IDs
   authorId: string;
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { candidateId, content, mentions, authorId, authorName } = args;
+  const { candidateId, content, mentions, authorId, authorName, authorEmail } = args;
 
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -331,6 +339,8 @@ export async function notifyOnNewCandidateComment(args: {
         jobTitle: "candidate-level note",
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] candidate notification email failed:", e);
@@ -352,8 +362,9 @@ export async function notifyOnNewJobComment(args: {
   mentions: string[]; // staffing user IDs
   authorId: string;
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { jobId, content, mentions, authorId, authorName } = args;
+  const { jobId, content, mentions, authorId, authorName, authorEmail } = args;
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
@@ -419,6 +430,8 @@ export async function notifyOnNewJobComment(args: {
         jobTitle: "Job notes",
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] job notification email failed:", e);
@@ -436,8 +449,9 @@ export async function notifyOnNewClientJobComment(args: {
   mentions: string[]; // ClientUser IDs
   authorId: string; // ClientUser ID of the poster
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { clientJobId, content, mentions, authorId, authorName } = args;
+  const { clientJobId, content, mentions, authorId, authorName, authorEmail } = args;
   if (mentions.length === 0) return;
 
   const job = await prisma.clientJob.findUnique({
@@ -480,6 +494,8 @@ export async function notifyOnNewClientJobComment(args: {
         jobTitle: job.title,
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] client-job mention email failed:", e);

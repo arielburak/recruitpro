@@ -153,6 +153,7 @@ export async function POST(
           mentions,
           authorId: ctx.clientUserId,
           authorName,
+          authorEmail: ctx.userEmail || undefined,
         }).catch((e) =>
           console.error("[client-job-comments POST] internal notify failed:", e),
         );
@@ -163,6 +164,7 @@ export async function POST(
           mentions,
           authorId: ctx.clientUserId,
           authorName,
+          authorEmail: ctx.userEmail || undefined,
         }).catch((e) =>
           console.error("[client-job-comments POST] visible notify failed:", e),
         );

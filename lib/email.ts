@@ -30,9 +30,91 @@ type SendArgs = {
   to: string;
   subject: string;
   html: string;
+  // Optional Reply-To header. Use when the recipient's instinct will
+  // be to "reply" to a real person — interview invites that say
+  // "contact ${recruiterName}", mention emails, etc. Without this
+  // their reply lands in noreply@ and vanishes. Default is unset
+  // (no Reply-To header) so transactional account mails (verify,
+  // reset, welcome) stay on the noreply@ envelope.
+  replyTo?: string;
 };
 
-async function sendEmail({ to, subject, html }: SendArgs) {
+// Shared copy helpers — single source of truth for the structural
+// pieces every transactional email shares. The wrapTemplate handles
+// VISUAL consistency (card, fonts, colors); these helpers handle
+// TONAL/COPY consistency (greeting shape, quote box, footers). When
+// you write a new sendX, compose the body using these — don't reroll
+// the patterns.
+
+// "Hi {first name}," / "Hi there," default. Always returns a wrapped
+// <p>. Centralizes the first-name extraction so we never end up with
+// "Hi  ," (double space) or "Hi Federico Bochinsky," (full name).
+function firstName(full: string | null | undefined): string {
+  if (!full) return "";
+  const trimmed = full.trim();
+  if (!trimmed) return "";
+  return trimmed.split(/\s+/)[0];
+}
+
+function greeting(recipientName?: string | null): string {
+  const f = firstName(recipientName);
+  return `<p>Hi ${f || "there"},</p>`;
+}
+
+// Slack-style quote / preview block. Use for chat previews, mention
+// excerpts, candidate-shared notes, feedback comments — anything
+// where we're echoing user-generated content as a blockquote.
+// `accent` defaults to indigo to match the CTA button; pass "emerald"
+// for "warm" notifications (candidate shared, feedback).
+function quoteBlock(
+  text: string,
+  opts?: { label?: string; accent?: "indigo" | "emerald" }
+): string {
+  const trimmed = text.length > 240 ? `${text.slice(0, 240)}…` : text;
+  const accentColor = opts?.accent === "emerald" ? "#10b981" : "#6366f1";
+  const labelHtml = opts?.label
+    ? `<p style="font-size: 12px; color: #6b7280; margin: 0 0 6px 0; font-weight: 600;">${opts.label}</p>`
+    : "";
+  return `<div style="margin: 16px 0;">
+      ${labelHtml}
+      <div style="padding: 12px 14px; background: #f9fafb; border-left: 3px solid ${accentColor}; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmed}</div>
+    </div>`;
+}
+
+// Interview details table — used by sendInterviewInviteEmail (to
+// candidate) and sendInterviewInviteToClientContact (to client
+// contact). Same shape minus/plus a candidate row. Centralizing here
+// means a future field (timezone offset, reschedule link, etc.) gets
+// added once and lights up both call sites.
+function interviewDetailsTable(args: {
+  candidate?: { name: string };
+  job: { title: string };
+  client: { name: string };
+  date: string;
+  time: string;
+  endTime: string;
+  timezone: string;
+  type: string;
+  location?: string;
+  notes?: string;
+}): string {
+  const row = (label: string, value: string) =>
+    `<tr>
+      <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px; vertical-align: top; white-space: nowrap;">${label}</td>
+      <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${value}</td>
+    </tr>`;
+  return `<table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
+      ${args.candidate ? row("Candidate", args.candidate.name) : ""}
+      ${row("Job", args.job.title)}
+      ${row("Client", args.client.name)}
+      ${row("When", `${args.date} · ${args.time}–${args.endTime} (${args.timezone})`)}
+      ${row("Type", args.type)}
+      ${args.location ? row("Where", args.location) : ""}
+      ${args.notes ? row("Notes", args.notes) : ""}
+    </table>`;
+}
+
+async function sendEmail({ to, subject, html, replyTo }: SendArgs) {
   if (outboundDisabled) {
     console.warn(
       `[email] DISABLE_OUTBOUND_EMAIL set — dropping mail to ${to}: ${subject}`
@@ -58,6 +140,7 @@ async function sendEmail({ to, subject, html }: SendArgs) {
     to,
     subject,
     html,
+    ...(replyTo ? { reply_to: replyTo } : {}),
   });
 
   if (error) {
@@ -116,10 +199,11 @@ export async function sendPasswordResetEmail({
 }) {
   const html = wrapTemplate(
     "Reset your password",
-    `<p>Hi${recipientName ? ` ${recipientName}` : ""},</p>
-     <p>We received a request to reset your ${appName} password. Click the button below to choose a new one. This link will expire in 1 hour.</p>`,
+    `${greeting(recipientName)}
+     <p>We received a request to reset your ${appName} password. Click the button below to choose a new one. This link expires in 1 hour.</p>
+     <p>If you didn't request this, ignore — your password stays unchanged.</p>`,
     resetUrl,
-    "Reset password"
+    "Reset Password"
   );
 
   return sendEmail({
@@ -154,12 +238,12 @@ export async function sendJobAssignedEmail({
   const context = [role, clientName].filter(Boolean).join(" · ");
   const html = wrapTemplate(
     `You're now collaborating on ${jobTitle}`,
-    `<p>Hi ${recipientName || "there"},</p>
+    `${greeting(recipientName)}
      <p>${assignerName} just added you to the search for <strong>${jobTitle}</strong>${
        context ? ` (${context})` : ""
      }. Open the job to see the pipeline and start sourcing.</p>`,
     jobUrl,
-    "Open the job",
+    "Open Job",
   );
 
   return sendEmail({ to, subject, html });
@@ -170,23 +254,27 @@ export async function sendTeamInviteEmail({
   inviteUrl,
   inviterName,
   organizationName,
+  recipientName,
 }: {
   to: string;
   inviteUrl: string;
   inviterName: string;
   organizationName: string;
+  recipientName?: string;
 }) {
   const html = wrapTemplate(
     `You've been invited to join ${organizationName}`,
-    `<p>${inviterName} has invited you to collaborate on ${appName}, an applicant tracking system used by their recruiting team.</p>
-     <p>Accept the invitation to create your account and get started. This link expires in 7 days.</p>`,
+    `${greeting(recipientName)}
+     <p><strong>${inviterName}</strong> invited you to collaborate on ${appName}.</p>
+     <p>${appName} is where ${organizationName} runs their searches — accept to join the team there.</p>
+     <p>This link expires in 7 days.</p>`,
     inviteUrl,
-    "Accept invitation"
+    "Accept Invitation"
   );
 
   return sendEmail({
     to,
-    subject: `${inviterName} invited you to ${organizationName} on ${appName}`,
+    subject: `${inviterName} invited you to ${organizationName}`,
     html,
   });
 }
@@ -217,7 +305,7 @@ export async function sendClientPortalShareEmail({
 
   const html = wrapTemplate(
     `${firmName} shared candidates with you`,
-    `<p>Hi ${clientName},</p>
+    `${greeting(clientName)}
      <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> has shared a candidate shortlist with you on ${appName}.</p>
      ${jobLine}
      ${candidateLine}
@@ -247,6 +335,7 @@ export async function sendInterviewInviteEmail({
   location,
   notes,
   recruiterName,
+  recruiterEmail,
 }: {
   to: string;
   candidateName: string;
@@ -261,45 +350,29 @@ export async function sendInterviewInviteEmail({
   location?: string;
   notes?: string;
   recruiterName: string;
+  recruiterEmail?: string;
 }) {
   const typeLabel =
     interviewType === "VIDEO" ? "Video Call" : interviewType === "PHONE" ? "Phone Call" : "In Person";
 
   const tzLabel = timezone.split("/").pop()?.replace(/_/g, " ") || timezone;
 
-  let detailsHtml = `
-    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6; width: 120px;">Position</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${jobTitle} @ ${clientName}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Date</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewDate}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Time</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewTime} - ${interviewEndTime} (${tzLabel})</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Format</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${typeLabel}</td>
-      </tr>
-      ${location ? `<tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Location</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${location}</td>
-      </tr>` : ""}
-    </table>`;
-
-  if (notes) {
-    detailsHtml += `<p style="font-size: 13px; color: #6b7280; margin: 12px 0 4px 0;">Additional notes:</p>
-    <p style="font-size: 14px; color: #374151; background: #f9fafb; padding: 12px; border-radius: 8px; white-space: pre-wrap;">${notes}</p>`;
-  }
+  const detailsHtml = interviewDetailsTable({
+    job: { title: jobTitle },
+    client: { name: clientName },
+    date: interviewDate,
+    time: interviewTime,
+    endTime: interviewEndTime,
+    timezone: tzLabel,
+    type: typeLabel,
+    location,
+    notes,
+  });
 
   const html = wrapTemplate(
     "Interview Invitation",
-    `<p>Hi ${candidateName},</p>
-     <p>You have been scheduled for an interview. Here are the details:</p>
+    `${greeting(candidateName)}
+     <p>You've been scheduled for an interview. Here are the details:</p>
      ${detailsHtml}
      <p style="margin-top: 16px;">If you need to reschedule or have any questions, please contact <strong>${recruiterName}</strong>.</p>
      <p>Good luck!</p>`,
@@ -311,6 +384,7 @@ export async function sendInterviewInviteEmail({
     to,
     subject: `Interview Invitation: ${jobTitle} @ ${clientName}`,
     html,
+    ...(recruiterEmail ? { replyTo: recruiterEmail } : {}),
   });
 }
 
@@ -330,6 +404,7 @@ export async function sendInterviewInviteToClientContact({
   notes,
   recruiterName,
   firmName,
+  recruiterEmail,
 }: {
   to: string;
   contactName: string;
@@ -346,47 +421,31 @@ export async function sendInterviewInviteToClientContact({
   notes?: string;
   recruiterName: string;
   firmName: string;
+  recruiterEmail?: string;
 }) {
   const typeLabel =
     interviewType === "VIDEO" ? "Video Call" : interviewType === "PHONE" ? "Phone Call" : "In Person";
   const tzLabel = timezone.split("/").pop()?.replace(/_/g, " ") || timezone;
 
-  const detailsHtml = `
-    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6; width: 120px;">Candidate</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${candidateName}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Position</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${jobTitle}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Date</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewDate}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Time</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${interviewTime} - ${interviewEndTime} (${tzLabel})</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Format</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${typeLabel}</td>
-      </tr>
-      ${location ? `<tr>
-        <td style="padding: 8px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #f3f4f6;">Location</td>
-        <td style="padding: 8px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #f3f4f6; font-weight: 500;">${location}</td>
-      </tr>` : ""}
-    </table>
-    ${notes ? `<p style="font-size: 13px; color: #6b7280; margin: 12px 0 4px 0;">Additional notes:</p>
-    <p style="font-size: 14px; color: #374151; background: #f9fafb; padding: 12px; border-radius: 8px; white-space: pre-wrap;">${notes}</p>` : ""}`;
+  const detailsHtml = interviewDetailsTable({
+    candidate: { name: candidateName },
+    job: { title: jobTitle },
+    client: { name: clientName },
+    date: interviewDate,
+    time: interviewTime,
+    endTime: interviewEndTime,
+    timezone: tzLabel,
+    type: typeLabel,
+    location,
+    notes,
+  });
 
   const html = wrapTemplate(
     "Interview Scheduled",
-    `<p>Hi ${contactName},</p>
+    `${greeting(contactName)}
      <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> has scheduled an interview for your review:</p>
      ${detailsHtml}
-     <p style="margin-top: 16px;">If you need to reschedule, please contact <strong>${recruiterName}</strong>.</p>`,
+     <p style="margin-top: 16px;">Thanks for taking the time — let us know if you need to reschedule.</p>`,
     meetingLink || undefined,
     meetingLink ? "Join Meeting" : undefined
   );
@@ -395,6 +454,7 @@ export async function sendInterviewInviteToClientContact({
     to,
     subject: `Interview Scheduled: ${candidateName} for ${jobTitle} @ ${clientName}`,
     html,
+    ...(recruiterEmail ? { replyTo: recruiterEmail } : {}),
   });
 }
 
@@ -416,7 +476,7 @@ export async function sendClientTeamInviteEmail({
   const titleLine = title ? `<p style="color: #6b7280;">Role: <strong>${title}</strong></p>` : "";
   const html = wrapTemplate(
     `You've been added to ${companyName}'s hiring team`,
-    `<p>Hi ${memberName},</p>
+    `${greeting(memberName)}
      <p><strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong>'s hiring team on ${appName}.</p>
      ${titleLine}
      <p>With your account, you can:</p>
@@ -433,13 +493,11 @@ export async function sendClientTeamInviteEmail({
 
   return sendEmail({
     to,
-    subject: `${inviterName} invited you to ${companyName}'s hiring team on ${appName}`,
+    subject: `${inviterName} invited you to ${companyName}'s hiring team`,
     html,
   });
 }
 
-// Sent when an existing teammate gets added to a specific Job on
-// the client portal. Different from the team-invite path (no
 // Sent to the client contact who invited an agency to a search,
 // when that agency accepts the engagement. Heads-up that the firm
 // is now active on the search and can start sharing candidates.
@@ -456,13 +514,12 @@ export async function sendEngagementAcceptedEmail({
   jobTitle: string;
   jobUrl: string;
 }) {
-  const firstName = inviterName?.split(" ")[0] || inviterName;
   const html = wrapTemplate(
     `${firmName} accepted ${jobTitle}`,
-    `<p>Hi ${firstName},</p>
+    `${greeting(inviterName)}
      <p><strong>${firmName}</strong> just accepted your invitation to work on <strong>${jobTitle}</strong>. They can now start sharing candidates and chatting with your team.</p>`,
     jobUrl,
-    "Open the search"
+    "Open Search"
   );
   return sendEmail({
     to,
@@ -471,6 +528,8 @@ export async function sendEngagementAcceptedEmail({
   });
 }
 
+// Sent when an existing teammate gets added to a specific Job on
+// the client portal. Different from the team-invite path (no
 // set-password — they already have a portal account); this just
 // tells them "you can now see this search" and links straight to it.
 export async function sendClientJobAccessGrantedEmail({
@@ -490,11 +549,11 @@ export async function sendClientJobAccessGrantedEmail({
 }) {
   const html = wrapTemplate(
     `${inviterName} added you to ${jobTitle}`,
-    `<p>Hi ${memberName},</p>
+    `${greeting(memberName)}
      <p><strong>${inviterName}</strong> just gave you access to <strong>${jobTitle}</strong> on ${companyName}'s portal.</p>
      <p>You can now review shared candidates, post notes for the team, and follow the pipeline.</p>`,
     jobUrl,
-    "Open the search"
+    "Open Search"
   );
 
   return sendEmail({
@@ -513,6 +572,8 @@ export async function sendNewMessageEmail({
   preview,
   portalUrl,
   isInternal,
+  recipientName,
+  senderEmail,
 }: {
   to: string;
   fromName: string;
@@ -522,18 +583,18 @@ export async function sendNewMessageEmail({
   preview: string;
   portalUrl: string;
   isInternal?: boolean;
+  recipientName?: string;
+  senderEmail?: string;
 }) {
   const roleLabel =
     fromRole === "recruiter" ? "a recruiter" : fromRole === "client" ? "the client" : "your team";
   const channelLabel = isInternal ? "your internal channel" : "the shared chat";
 
-  const trimmedPreview = preview.length > 240 ? `${preview.slice(0, 240)}…` : preview;
-
   const html = wrapTemplate(
     `New message about ${candidateName}`,
-    `<p>Hi,</p>
+    `${greeting(recipientName)}
      <p><strong>${fromName}</strong> (${roleLabel}) left a new message in ${channelLabel} for <strong>${candidateName}</strong> (<em>${jobTitle}</em>):</p>
-     <div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #6366f1; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedPreview}</div>`,
+     ${quoteBlock(preview, { accent: "indigo" })}`,
     portalUrl,
     "View Conversation"
   );
@@ -542,6 +603,7 @@ export async function sendNewMessageEmail({
     to,
     subject: `New message on ${candidateName} — ${jobTitle}`,
     html,
+    ...(senderEmail ? { replyTo: senderEmail } : {}),
   });
 }
 
@@ -552,6 +614,8 @@ export async function sendMentionEmail({
   jobTitle,
   preview,
   url,
+  recipientName,
+  senderEmail,
 }: {
   to: string;
   mentionedBy: string;
@@ -559,12 +623,14 @@ export async function sendMentionEmail({
   jobTitle: string;
   preview: string;
   url: string;
+  recipientName?: string;
+  senderEmail?: string;
 }) {
-  const trimmedPreview = preview.length > 240 ? `${preview.slice(0, 240)}…` : preview;
   const html = wrapTemplate(
     `${mentionedBy} mentioned you`,
-    `<p><strong>${mentionedBy}</strong> mentioned you in a message about <strong>${candidateName}</strong> (<em>${jobTitle}</em>):</p>
-     <div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #10b981; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedPreview}</div>`,
+    `${greeting(recipientName)}
+     <p><strong>${mentionedBy}</strong> mentioned you in a message about <strong>${candidateName}</strong> (<em>${jobTitle}</em>):</p>
+     ${quoteBlock(preview, { accent: "indigo" })}`,
     url,
     "View Conversation"
   );
@@ -573,6 +639,7 @@ export async function sendMentionEmail({
     to,
     subject: `${mentionedBy} mentioned you — ${candidateName}`,
     html,
+    ...(senderEmail ? { replyTo: senderEmail } : {}),
   });
 }
 
@@ -585,6 +652,8 @@ export async function sendCandidateSharedEmail({
   clientName,
   portalUrl,
   note,
+  recipientName,
+  recruiterEmail,
 }: {
   to: string;
   candidateName: string;
@@ -594,17 +663,16 @@ export async function sendCandidateSharedEmail({
   clientName: string;
   portalUrl: string;
   note?: string;
+  recipientName?: string;
+  recruiterEmail?: string;
 }) {
   const noteBlock = note
-    ? `<div style="margin: 16px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #10b981; border-radius: 4px;">
-         <p style="margin: 0 0 4px 0; font-size: 12px; color: #6b7280; font-weight: 600;">Note from ${recruiterName}:</p>
-         <p style="margin: 0; font-size: 14px; color: #374151; white-space: pre-wrap;">${note}</p>
-       </div>`
+    ? quoteBlock(note, { label: `Note from ${recruiterName}:`, accent: "emerald" })
     : "";
 
   const html = wrapTemplate(
     `New candidate for ${jobTitle}`,
-    `<p>Hi,</p>
+    `${greeting(recipientName)}
      <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> just shared a new candidate with <strong>${clientName}</strong>:</p>
      <p style="font-size: 17px; font-weight: 600; color: #111827; margin: 16px 0 4px 0;">${candidateName}</p>
      <p style="color: #6b7280; margin: 0;">for <strong>${jobTitle}</strong></p>
@@ -618,6 +686,7 @@ export async function sendCandidateSharedEmail({
     to,
     subject: `New candidate shared: ${candidateName} for ${jobTitle}`,
     html,
+    ...(recruiterEmail ? { replyTo: recruiterEmail } : {}),
   });
 }
 
@@ -642,11 +711,11 @@ export async function sendStaffingMemberWelcomeEmail({
   const subject = `Your ${appName} account is ready — ${organizationName}`;
   const html = wrapTemplate(
     `Welcome to ${organizationName} on ${appName}`,
-    `<p>Hi ${recipientName || "there"},</p>
+    `${greeting(recipientName)}
      <p>Your ${appName} account at <strong>${organizationName}</strong> is now active and your email has been confirmed. You can sign in any time at the link below.</p>
      <p>From the dashboard you'll see the searches you're assigned to, candidates in flight, and your team's recent activity.</p>`,
     appUrl,
-    "Open the dashboard",
+    "Open Dashboard",
   );
 
   return sendEmail({ to, subject, html });
@@ -674,11 +743,11 @@ export async function sendClientPortalWelcomeEmail({
   const subject = `Your ${appName} client portal account is ready`;
   const html = wrapTemplate(
     `Welcome to ${appName}`,
-    `<p>Hi ${recipientName || "there"},</p>
+    `${greeting(recipientName)}
      <p>Your client portal account${company} is now active. Your email has been confirmed and you can sign in any time at the link below.</p>
      <p>Use the portal to review candidates shared by your recruiter, leave feedback, and track the searches you're hiring on.</p>`,
     portalUrl,
-    "Open the portal",
+    "Open Portal",
   );
 
   return sendEmail({ to, subject, html });
@@ -688,15 +757,18 @@ export async function sendClientSetPasswordEmail({
   to,
   setPasswordUrl,
   clientName,
+  firmName,
 }: {
   to: string;
   setPasswordUrl: string;
   clientName: string;
+  firmName?: string;
 }) {
+  const sharer = firmName ? `<strong>${firmName}</strong>` : "A recruiting firm";
   const html = wrapTemplate(
     "Set up your client portal account",
-    `<p>Hi${clientName ? ` ${clientName}` : ""},</p>
-     <p>A recruiting firm has shared candidates with you on ${appName}. To review them, you'll need to set a password for your account.</p>
+    `${greeting(clientName)}
+     <p>${sharer} has shared candidates with you on ${appName}. To review them, you'll need to set a password for your account.</p>
      <p>Click below to set your password and access your portal.</p>`,
     setPasswordUrl,
     "Set Password & Sign In"
@@ -741,9 +813,7 @@ export async function sendCandidateFeedbackEmail({
 
   const trimmedComment = comment?.trim();
   const commentBlock = trimmedComment
-    ? `<div style="margin: 12px 0 0 0; padding: 12px; background: #f9fafb; border-left: 3px solid #6366f1; border-radius: 4px;">
-         <p style="margin: 0; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmedComment}</p>
-       </div>`
+    ? quoteBlock(trimmedComment, { accent: "emerald" })
     : "";
 
   const subjectFragment =
@@ -755,7 +825,7 @@ export async function sendCandidateFeedbackEmail({
 
   const html = wrapTemplate(
     `New feedback on ${candidateName}`,
-    `<p>Hi${recruiterName ? ` ${recruiterName.split(" ")[0]}` : ""},</p>
+    `${greeting(recruiterName)}
      <p><strong>${reviewerName}</strong> at <strong>${clientCompanyName}</strong> just left feedback on <strong>${candidateName}</strong> for <em>${jobTitle}</em>.</p>
      ${ratingBlock}
      ${commentBlock}
@@ -780,14 +850,13 @@ export async function sendEmailVerificationEmail({
   recipientName: string;
   verifyUrl: string;
 }) {
-  const firstName = recipientName?.split(" ")[0] || recipientName;
   const html = wrapTemplate(
     `Verify your email`,
-    `<p>Hi ${firstName},</p>
-     <p>Thanks for signing up. Please confirm this email address belongs to you so we can keep your account secure.</p>
+    `${greeting(recipientName)}
+     <p>Thanks for signing up. Click the button to confirm this is your email.</p>
      <p>This link expires in 24 hours.</p>`,
     verifyUrl,
-    "Verify email"
+    "Verify Email"
   );
   return sendEmail({
     to,
@@ -809,7 +878,7 @@ export async function sendWelcomeEmail({
   dashboardUrl: string;
   trialEndsAt?: Date;
 }) {
-  const firstName = recipientName?.split(" ")[0] || recipientName;
+  const first = firstName(recipientName) || recipientName;
 
   // Deep-link to the specific create flows so the recruiter
   // doesn't have to hunt for them. dashboardUrl is the full
@@ -824,7 +893,7 @@ export async function sendWelcomeEmail({
     : "";
 
   const html = wrapTemplate(
-    `Welcome, ${firstName}`,
+    `Welcome, ${first}`,
     `<p><strong>${organizationName}</strong> is live on ${appName}. Here's the fastest path to your first placement:</p>
      ${trialLine}
      <ol style="color: #4b5563; padding-left: 20px; line-height: 1.9;">

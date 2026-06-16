@@ -261,7 +261,7 @@ export async function PATCH(
         select: { id: true },
       });
 
-      const audience: { id: string; email: string | null }[] = clientJob
+      const audience: { id: string; email: string | null; name: string | null }[] = clientJob
         ? (
             await prisma.clientJobMember.findMany({
               where: {
@@ -269,13 +269,13 @@ export async function PATCH(
                 clientUser: { isActive: true },
               },
               select: {
-                clientUser: { select: { id: true, email: true } },
+                clientUser: { select: { id: true, email: true, name: true } },
               },
             })
-          ).map((m: { clientUser: { id: string; email: string } }) => ({ id: m.clientUser.id, email: m.clientUser.email }))
+          ).map((m: { clientUser: { id: string; email: string; name: string | null } }) => ({ id: m.clientUser.id, email: m.clientUser.email, name: m.clientUser.name }))
         : await prisma.clientUser.findMany({
             where: { clientId: submission.job.clientId, isActive: true },
-            select: { id: true, email: true },
+            select: { id: true, email: true, name: true },
           });
 
       // Save note as a CLIENT_VISIBLE comment
@@ -325,15 +325,20 @@ export async function PATCH(
             }),
           ]);
 
-          const recipients = new Set<string>();
+          // Dedupe by lowercased email but keep the recipient's name
+          // so the greeting can use "Hi Federico," instead of the
+          // generic "Hi there,".
+          const recipients = new Map<string, { name: string | null }>();
           for (const cu of audience) {
-            if (cu.email) recipients.add(cu.email.toLowerCase());
+            if (!cu.email) continue;
+            const key = cu.email.toLowerCase();
+            if (!recipients.has(key)) recipients.set(key, { name: cu.name });
           }
 
           const portalBase = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
           const portalUrl = `${portalBase}/client-portal/candidates/${id}`;
 
-          const emailPromises = Array.from(recipients).map((to) =>
+          const emailPromises = Array.from(recipients.entries()).map(([to, meta]) =>
             sendCandidateSharedEmail({
               to,
               candidateName,
@@ -343,6 +348,8 @@ export async function PATCH(
               clientName: client?.name || "your team",
               portalUrl,
               note: shareNote || undefined,
+              recipientName: meta.name || undefined,
+              recruiterEmail: ctx.userEmail || undefined,
             }).catch((err) => console.error(`[share email] failed to send to ${to}:`, err))
           );
           await Promise.all(emailPromises);

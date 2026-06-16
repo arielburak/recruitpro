@@ -190,11 +190,24 @@ export async function POST(
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
     const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(email)}`;
 
+    // Pull the firm name so the email greeting can say "Morabits has
+    // shared candidates..." instead of the generic "A recruiting firm".
+    // Single indexed lookup; non-fatal on failure (we just fall back).
+    let firmName: string | undefined = undefined;
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { name: true },
+      });
+      firmName = org?.name || undefined;
+    } catch {}
+
     try {
       await sendClientSetPasswordEmail({
         to: email,
         setPasswordUrl,
         clientName: fullName,
+        firmName,
       });
     } catch (e) {
       // Non-fatal — the recruiter can re-send from the UI if the SMTP

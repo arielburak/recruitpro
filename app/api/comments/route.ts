@@ -108,6 +108,7 @@ export async function POST(request: Request) {
         authorKind: "staffing",
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) => console.error("[comments POST] notify failed:", e));
     } else if (body.candidateId) {
       notifyOnNewCandidateComment({
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
         mentions,
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) =>
         console.error("[comments POST] candidate notify failed:", e),
       );
@@ -126,6 +128,7 @@ export async function POST(request: Request) {
         mentions,
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) =>
         console.error("[comments POST] job notify failed:", e),
       );

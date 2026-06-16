@@ -229,7 +229,7 @@ export async function PUT(
         },
         include: {
           job: { select: { title: true, client: { select: { name: true } } } },
-          creator: { select: { name: true } },
+          creator: { select: { name: true, email: true } },
         },
       });
 
@@ -293,6 +293,7 @@ export async function PUT(
               location: iv.location || undefined,
               notes: iv.notes || undefined,
               recruiterName: iv.creator?.name || ctx.userName,
+              recruiterEmail: iv.creator?.email || ctx.userEmail || undefined,
             });
             emailResentCount++;
           } catch (emailErr) {
