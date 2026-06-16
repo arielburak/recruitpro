@@ -123,7 +123,12 @@ export function DeleteConfirmDialog({
             </div>
             <div className="flex-1 min-w-0">
               <DialogTitle className="text-base font-semibold">
-                {title ?? `Delete ${itemLabel}?`}
+                {/* QA P4 (2026-06-16): si no hay title override y itemLabel
+                    todavia no fue seteado (caller con state lazy), antes
+                    quedaba renderizado como "Delete ?" en el DOM (visible
+                    para screen readers aunque el dialog esté cerrado).
+                    Fallback explicito a "Confirm deletion". */}
+                {title ?? (itemLabel ? `Delete ${itemLabel}?` : "Confirm deletion")}
               </DialogTitle>
               <DialogDescription className="mt-1 text-sm">
                 {description ? (

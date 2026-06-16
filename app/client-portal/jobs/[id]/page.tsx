@@ -877,7 +877,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   currentClientUserId={currentClientUserId}
                   agencyTabs={(job?.engagements || [])
                     .filter(
-                      (e: any) => e.status === "ACCEPTED" && e.jobId,
+                      (e: any) =>
+                        e.status === "ACCEPTED" &&
+                        e.jobId &&
+                        // QA P2 (2026-06-16): mismo filtro que Assigned Firms
+                        // y el dropdown del Invite Recruiter. Si la firma fue
+                        // ocultada por invitedUser soft-released o org-mismatch,
+                        // tampoco mostramos su chat tab — sino el cliente ve
+                        // "Shared with Newells" sin tener forma de ver Newells
+                        // en Assigned Firms.
+                        isInvitedUserVisible(e.invitedUser, e.organization?.id),
                     )
                     .reduce((acc: any[], e: any) => {
                       // Dedupe por organizationId: si una firma tiene

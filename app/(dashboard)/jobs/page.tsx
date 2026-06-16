@@ -814,28 +814,43 @@ export default function JobsPage() {
                       list still scans like before, but you can change
                       it without leaving the page. preventDefault +
                       stopPropagation so the row Link doesn't fire when
-                      the recruiter clicks the dropdown. */}
-                  <select
-                    value={j.status}
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                    onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
-                    className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
-                    aria-label={`Status for ${j.title}`}
-                  >
-                    {JOB_STATUS_SELECTABLE.map((value) => (
-                      <option key={value} value={value} className="bg-white text-gray-900">
-                        {JOB_STATUS_LABELS[value]}
-                      </option>
-                    ))}
-                    {/* Render the legacy CLOSED option only when this
-                        specific row still has it — otherwise it stays
-                        out of the picker. Once you flip it, it's gone. */}
-                    {j.status === "CLOSED" && (
-                      <option value="CLOSED" className="bg-white text-gray-900">
-                        {JOB_STATUS_LABELS.CLOSED}
-                      </option>
-                    )}
-                  </select>
+                      the recruiter clicks the dropdown.
+
+                      QA P2 (2026-06-16): el endpoint /api/jobs/[id] PUT
+                      esta gateado a ADMIN. Para USER mostrabamos el
+                      select pero al cambiarlo daba 403 con alert UX
+                      dead-end. Para no-admin renderizamos badge readonly
+                      con el mismo color para que la lista siga
+                      escaneando igual. */}
+                  {isAdmin ? (
+                    <select
+                      value={j.status}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
+                      className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
+                      aria-label={`Status for ${j.title}`}
+                    >
+                      {JOB_STATUS_SELECTABLE.map((value) => (
+                        <option key={value} value={value} className="bg-white text-gray-900">
+                          {JOB_STATUS_LABELS[value]}
+                        </option>
+                      ))}
+                      {/* Render the legacy CLOSED option only when this
+                          specific row still has it — otherwise it stays
+                          out of the picker. Once you flip it, it's gone. */}
+                      {j.status === "CLOSED" && (
+                        <option value="CLOSED" className="bg-white text-gray-900">
+                          {JOB_STATUS_LABELS.CLOSED}
+                        </option>
+                      )}
+                    </select>
+                  ) : (
+                    <span
+                      className={`inline-block text-[10px] font-semibold rounded px-1.5 py-0.5 ${JOB_STATUS_COLORS[j.status]}`}
+                    >
+                      {JOB_STATUS_LABELS[j.status] || j.status}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <Badge className={`${WORK_ARRANGEMENT_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>

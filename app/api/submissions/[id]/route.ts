@@ -209,7 +209,12 @@ export async function PATCH(
     // (e.g. Recruiter Performance's "Offers" tile) can count every
     // candidate that ever passed through a given stage, instead of
     // only the ones currently sitting there.
-    if (updateData.stageId) {
+    //
+    // QA P3 (2026-06-16): skip no-op transitions. Si compartis un
+    // candidato que ya estaba en "Submitted", el share toggle dispara
+    // un implicit move a Submitted → updateData.stageId === stageId
+    // actual y antes loggeabamos "moved from Submitted to Submitted".
+    if (updateData.stageId && updateData.stageId !== submission.stageId) {
       await logActivity({
         action: "submission.stage_changed",
         description: `${ctx.userName} moved ${submission.candidate.firstName} ${submission.candidate.lastName} from "${submission.stage.name}" to "${mirroredStageName || "another stage"}" in "${submission.job.title}"`,
