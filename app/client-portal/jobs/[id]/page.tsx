@@ -1515,22 +1515,25 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     // esta keyed por organization.id, no por
                     // engagement.id). Una card por firma, con la
                     // lista de recruiters adentro.
-                    // Filtro defensivo (relajado 10 jun 2026): rechazamos
-                    // SOLO los rows donde invitedUser existe pero apunta
-                    // a una org distinta a la del engagement — esos son
-                    // los inconsistentes (bug aburak: invitedUser era un
-                    // ClientUser del cliente disfrazado de recruiter).
+                    // Filtro defensivo: rechazamos los rows donde
+                    //   (a) invitedUser existe pero apunta a una org
+                    //       distinta al engagement (bug aburak: el
+                    //       invitedUser era un ClientUser disfrazado);
+                    //   (b) invitedUser existe pero esta inactivo
+                    //       (soft-released con email scrambleado, ej.
+                    //       'released+<id>@deleted.local'). No es util
+                    //       mostrar un mail roto al cliente.
                     // Aceptamos:
-                    //   · invitedUser correcto (caso normal)
+                    //   · invitedUser activo en la org correcta (normal)
                     //   · invitedUser null (firm-level legacy o post-
                     //     cleanup) — los renderizamos como "no specific
-                    //     recruiter on record" abajo, sin desaparecer
-                    //     la firma de la lista cuando la firma acepto.
+                    //     recruiter on record" abajo.
                     const byOrg = new Map<string, { firm: any; engagements: any[] }>();
                     for (const e of job.engagements || []) {
                       if (
                         e.invitedUser &&
-                        e.invitedUser.organizationId !== e.organization.id
+                        (e.invitedUser.organizationId !== e.organization.id ||
+                          e.invitedUser.isActive === false)
                       ) {
                         continue;
                       }

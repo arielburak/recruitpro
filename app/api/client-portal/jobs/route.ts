@@ -27,7 +27,12 @@ export async function GET() {
             // can hide stale rows where the recruiter has since moved
             // (or where invitedUserId is null entirely — orphaned
             // invites that never resolved to a real agency contact).
-            invitedUser: { select: { id: true, name: true, email: true, organizationId: true } },
+            // isActive feed el filter del cliente: cuando un User se
+            // soft-deactiva (scramble del mail + isActive=false), la
+            // row de engagement queda apuntando al user inactivo. La
+            // UI filtra esos como si no existieran para no mostrar
+            // 'released+<id>@deleted.local' en el panel de firms.
+            invitedUser: { select: { id: true, name: true, email: true, organizationId: true, isActive: true } },
           },
         },
         // Email invites sent to people who haven't registered yet. We
