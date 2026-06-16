@@ -40,6 +40,10 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           title: true,
           clientId: true,
           organizationId: true,
+          // Cliente para identificar la busqueda en el mail: "Senior
+          // Engineer @ Acme" en vez de "Senior Engineer" suelto.
+          // Mismo motivo que en notifyOnNewJobComment.
+          client: { select: { name: true } },
           assignments: {
             select: { userId: true, user: { select: { id: true, email: true, name: true } } },
           },
@@ -51,7 +55,9 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   if (!submission) return;
 
   const candidateName = `${submission.candidate.firstName} ${submission.candidate.lastName}`.trim();
-  const jobTitle = submission.job.title;
+  const jobTitle = submission.job.client?.name
+    ? `${submission.job.title} @ ${submission.job.client.name}`
+    : submission.job.title;
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
   const staffingUrl = `${baseUrl}/candidates/${submission.candidateId}?submissionId=${submissionId}`;
   const clientUrl = `${baseUrl}/client-portal/candidates/${submissionId}`;
@@ -405,8 +411,12 @@ export async function notifyOnNewJobComment(args: {
       await sendMentionEmail({
         to: u.email,
         mentionedBy: authorName,
-        candidateName: job.title,
-        jobTitle: "job-level note",
+        // jobLabel ya combina "Senior Engineer @ Acme" cuando hay
+        // cliente — sin esto el email decia solo el titulo del job
+        // y con 5 jobs llamados "Senior Engineer" en distintos
+        // clientes nadie sabia cual era.
+        candidateName: jobLabel,
+        jobTitle: "Job notes",
         preview,
         url,
       });
