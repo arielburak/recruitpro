@@ -357,6 +357,14 @@ export async function PATCH(
         userId: ctx.userId,
         candidateId: submission.candidateId,
         organizationId: ctx.organizationId,
+        // Structured payload powers the "Submissions" metric on the
+        // Recruiter Performance widget — counts share events (= when
+        // the candidate actually reaches the client), deduped by
+        // submissionId so re-shares after an un-share don't double.
+        metadata: {
+          submissionId: id,
+          jobId: submission.job.id,
+        },
       });
     }
 
@@ -368,6 +376,10 @@ export async function PATCH(
         userId: ctx.userId,
         candidateId: submission.candidateId,
         organizationId: ctx.organizationId,
+        metadata: {
+          submissionId: id,
+          jobId: submission.job.id,
+        },
       });
     }
 

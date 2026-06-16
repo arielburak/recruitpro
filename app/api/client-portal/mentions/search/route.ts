@@ -126,10 +126,11 @@ export async function GET(request: NextRequest) {
         });
         if (sub) {
           staffingOrgId = sub.job.organizationId;
-          const assignees = sub.job.assignments ?? [];
-          if (assignees.length > 0) {
-            staffingUserIdScope = assignees.map((a) => a.userId);
-          }
+          // Siempre scopeamos a los assignees, incluso si la lista es
+          // vacia. ROADMAP #21: no queremos leakear a TODOS los
+          // recruiters del firm cuando un job no tiene assignments
+          // formales — fail closed, no abierto.
+          staffingUserIdScope = (sub.job.assignments ?? []).map((a) => a.userId);
         }
       } else if (clientJobId) {
         // If the chat tab knows which firm is targeted, scope the

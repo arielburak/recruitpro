@@ -54,22 +54,95 @@ export async function GET(request: NextRequest) {
     if (!recruiter) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (metric === "submissions") {
-      const rows = await prisma.candidateSubmission.findMany({
+      // Submissions list = the share-with-client events, not the raw
+      // CandidateSubmission rows. Each item is a moment the recruiter
+      // pushed a candidate to the client. We dedup by submissionId
+      // so a re-share inside the window only shows once (newest
+      // share kept since we sort desc). Legacy rows logged before
+      // the metric switched sources won't carry metadata
+      // submissionId — we fall back to the activity row id so they
+      // still appear, just without de-dup against potential
+      // re-shares of the same submission.
+      const rows = await prisma.activity.findMany({
         where: {
+          organizationId: ctx.organizationId,
+          action: "submission.shared",
           createdAt: { gte: from, lte: to },
-          candidate: { organizationId: ctx.organizationId, ownerId: userId },
+          candidate: { ownerId: userId },
         },
         select: {
           id: true,
           createdAt: true,
-          isSharedWithClient: true,
+          description: true,
+          metadata: true,
           candidate: { select: { id: true, firstName: true, lastName: true } },
-          job: { select: { id: true, title: true, client: { select: { name: true } } } },
-          stage: { select: { name: true } },
         },
         orderBy: { createdAt: "desc" },
       });
-      return NextResponse.json({ metric, recruiter, items: rows });
+
+      // Resolve the related submission (job + stage) for each event.
+      // Rows logged before this switch don't carry submissionId; for
+      // those we surface what we can scrape from the description and
+      // leave job/stage blank rather than hitting the DB blindly.
+      const SHARE_TITLE_RX = / with (.+?)'s client$/;
+      const items = await Promise.all(
+        rows.map(async (a) => {
+          const meta = (a.metadata as { submissionId?: string } | null) || {};
+          let candidateSubmissionId: string | null = meta?.submissionId || null;
+          let jobInfo: { id: string; title: string; client: { name: string } | null } | null = null;
+          let stage: { name: string } | null = null;
+          let isSharedWithClient = true;
+          if (candidateSubmissionId) {
+            const sub = await prisma.candidateSubmission.findUnique({
+              where: { id: candidateSubmissionId },
+              select: {
+                isSharedWithClient: true,
+                stage: { select: { name: true } },
+                job: { select: { id: true, title: true, client: { select: { name: true } } } },
+              },
+            });
+            // Submission might have been deleted since the share — keep
+            // the row but degrade the metadata; the recruiter still
+            // gets credit for the share event.
+            jobInfo = sub?.job || null;
+            stage = sub?.stage || null;
+            // Note: we report isSharedWithClient = true because this
+            // list represents share events; the current toggle state
+            // is irrelevant to whether the share happened.
+            isSharedWithClient = true;
+          }
+          // Legacy fallback: scrape the job title from the canonical
+          // description shape. No clientName available without the
+          // submission row.
+          if (!jobInfo) {
+            const m = SHARE_TITLE_RX.exec(a.description || "");
+            const fallbackTitle = m?.[1] || "—";
+            jobInfo = { id: "", title: fallbackTitle, client: null };
+          }
+          return {
+            id: a.id,
+            createdAt: a.createdAt,
+            isSharedWithClient,
+            candidate: a.candidate,
+            job: jobInfo,
+            stage,
+            submissionId: candidateSubmissionId,
+          };
+        }),
+      );
+
+      // One row per submission — drop duplicate share events for the
+      // same submissionId (newer kept since we sorted desc). Legacy
+      // rows without submissionId stay as-is (keyed by activity id).
+      const seen = new Set<string>();
+      const deduped = items.filter((it) => {
+        const key = it.submissionId ? `s:${it.submissionId}` : `a:${it.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return NextResponse.json({ metric, recruiter, items: deduped });
     }
 
     // Stage-transition drill-downs (Interviews + Offers). Both metrics

@@ -257,11 +257,11 @@ export default function EngagementsPage() {
                         {eng.message}
                       </div>
                     )}
-                    {eng.clientJob.postedBy && (
-                      <p className="text-xs text-gray-400 mt-2">
-                        Contact: {eng.clientJob.postedBy.name} ({eng.clientJob.postedBy.email})
-                      </p>
-                    )}
+                    {/* Creator info removido por feedback: aparecia
+                        redundante debajo del titulo. El cliente y la
+                        firma ya se muestran arriba; quien personalmente
+                        cargo la search no aporta valor en la lista de
+                        invites pendientes. */}
                   </div>
                   <div className="flex flex-col gap-2 shrink-0">
                     <Button

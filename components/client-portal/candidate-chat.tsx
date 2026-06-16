@@ -107,6 +107,33 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+// Clickable mention chip — mirror del helper en components/chat-notes.tsx.
+// Click togglea un highlight visual (sin navegacion). State local por
+// chip; cada uno se ocupa del suyo.
+function MentionChip({ label, onDark }: { label: string; onDark?: boolean }) {
+  const [selected, setSelected] = useState(false);
+  const base = onDark
+    ? "bg-white/25 text-white"
+    : "bg-indigo-100 text-indigo-700";
+  const activeCls = onDark
+    ? "bg-white/40 text-white ring-1 ring-white/60"
+    : "bg-indigo-300 text-indigo-900 ring-1 ring-indigo-500";
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelected((v) => !v);
+      }}
+      className={`font-semibold px-1.5 py-px rounded transition-colors cursor-pointer ${
+        selected ? activeCls : base
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
@@ -114,22 +141,12 @@ function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
   //
-  // Estilo "Outlook chip": pill con bg sutil + bold. Mirror del helper
-  // en components/chat-notes.tsx — bubble oscuro (mi voz, emerald-600
-  // en client view) usa bg-white/25 + texto blanco; bubble claro
-  // (recibido de la agencia, bg-gray-100) usa bg-indigo-100 + indigo
-  // texto.
-  const chipClass = opts.onDark
-    ? "bg-white/25 text-white font-semibold px-1.5 py-px rounded"
-    : "bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-px rounded";
+  // Estilo "Outlook chip" clickeable — mirror del helper en
+  // components/chat-notes.tsx.
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
-      return (
-        <span key={i} className={chipClass}>
-          {part}
-        </span>
-      );
+      return <MentionChip key={i} label={part} onDark={opts.onDark} />;
     }
     return part;
   });

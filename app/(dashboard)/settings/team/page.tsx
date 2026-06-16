@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,8 @@ import {
 } from "lucide-react";
 
 export default function AdminUsersPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [users, setUsers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -186,9 +189,11 @@ export default function AdminUsersPage() {
           {activeUsers.length !== 1 ? "s" : ""} &middot; $
           {activeUsers.length * 10}/mo
         </p>
-        <Button onClick={() => setShowInvite(true)}>
-          <Mail className="mr-2 h-4 w-4" /> Invite Team Member
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setShowInvite(true)}>
+            <Mail className="mr-2 h-4 w-4" /> Invite Team Member
+          </Button>
+        )}
       </div>
 
       {/* Notifications */}
@@ -317,49 +322,51 @@ export default function AdminUsersPage() {
                     <span className="text-xs text-gray-400">
                       {u._count.candidates} candidates
                     </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {u.role === "USER" ? (
-                          <DropdownMenuItem
-                            onClick={() => changeUserRole(u.id, "ADMIN")}
+                    {isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                           >
-                            <Shield className="mr-2 h-4 w-4" />
-                            Promote to Admin
-                          </DropdownMenuItem>
-                        ) : (
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {u.role === "USER" ? (
+                            <DropdownMenuItem
+                              onClick={() => changeUserRole(u.id, "ADMIN")}
+                            >
+                              <Shield className="mr-2 h-4 w-4" />
+                              Promote to Admin
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => changeUserRole(u.id, "USER")}
+                            >
+                              <User className="mr-2 h-4 w-4" />
+                              Demote to User
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
-                            onClick={() => changeUserRole(u.id, "USER")}
+                            onClick={() =>
+                              toggleUserActive(u.id, u.isActive)
+                            }
                           >
-                            <User className="mr-2 h-4 w-4" />
-                            Demote to User
+                            <UserMinus className="mr-2 h-4 w-4" />
+                            {u.isActive ? "Deactivate" : "Reactivate"}
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={() =>
-                            toggleUserActive(u.id, u.isActive)
-                          }
-                        >
-                          <UserMinus className="mr-2 h-4 w-4" />
-                          {u.isActive ? "Deactivate" : "Reactivate"}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600"
-                          onClick={() => removeUser(u.id, u.name)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Remove permanently
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={() => removeUser(u.id, u.name)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove permanently
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -399,24 +406,28 @@ export default function AdminUsersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{inv.role === "ADMIN" ? "Admin" : "User"}</Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            resendInvite(inv.email, inv.role, inv.id, inv.name)
-                          }
-                          title="Resend invite"
-                        >
-                          <Send className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => cancelInvite(inv.id)}
-                          title="Cancel invite"
-                        >
-                          <XCircle className="h-4 w-4 text-red-400" />
-                        </Button>
+                        {isAdmin && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                resendInvite(inv.email, inv.role, inv.id, inv.name)
+                              }
+                              title="Resend invite"
+                            >
+                              <Send className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => cancelInvite(inv.id)}
+                              title="Cancel invite"
+                            >
+                              <XCircle className="h-4 w-4 text-red-400" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

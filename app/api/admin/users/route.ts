@@ -5,10 +5,10 @@ import { getOrgContext } from "@/lib/tenant";
 
 export async function GET() {
   try {
+    // Read is open to any authenticated org member — the My Team tab is
+    // visible to every user so they can see who's on the team. Mutations
+    // (POST/PATCH/DELETE below) remain admin-only.
     const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin only" }, { status: 403 });
-    }
 
     const users = await prisma.user.findMany({
       where: { organizationId: ctx.organizationId },

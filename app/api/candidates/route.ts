@@ -15,10 +15,11 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Non-admin sees own candidates by default
-    if (ctx.role !== "ADMIN" && searchParams.get("mine") !== "false") {
-      where.ownerId = ctx.userId;
-    }
+    // Candidates son org-wide: cualquier user del agency ve todos los
+    // candidatos. El filter opcional `?ownerId=` mas abajo sirve para
+    // "ver solo los mios" desde la UI sin imponerlo a nivel API.
+    // ROADMAP #13: se removio el default que ocultaba candidatos a
+    // USERs no-admin — violaba la regla del producto "todos ven todos".
 
     if (search) {
       where.OR = [

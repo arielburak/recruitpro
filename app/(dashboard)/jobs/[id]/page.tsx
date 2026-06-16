@@ -265,6 +265,16 @@ export default function JobDetailPage() {
   const [assignSearch, setAssignSearch] = useState("");
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignSearching, setAssignSearching] = useState(false);
+  // Pending selection bucket: click on a search row toggles the user
+  // here instead of firing assignRecruiter immediately. Keeps a record
+  // of name (for the chip label) alongside id so we can render without
+  // re-querying the search results. A separate confirm button at the
+  // dialog footer commits the batch. Avoids the old "tap a name → row
+  // disappears, did it actually save?" footgun.
+  const [pendingAssignSelections, setPendingAssignSelections] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [assigningBatch, setAssigningBatch] = useState(false);
 
   // Reset form state whenever the Invite-Client-to-Portal dialog
   // closes (ESC, backdrop, X). Without this the user reopens it and
@@ -285,6 +295,7 @@ export default function JobDetailPage() {
     if (!showAssignDialog) {
       setAssignSearch("");
       setAssignResults([]);
+      setPendingAssignSelections([]);
     }
   }, [showAssignDialog]);
 
@@ -779,6 +790,46 @@ export default function JobDetailPage() {
     setAssignSearch("");
     setAssignResults([]);
     fetchJob();
+  }
+
+  // Toggle a teammate in/out of the pending-selection bucket. Same row
+  // tapped twice deselects. Searching for another name keeps existing
+  // picks in the chips strip above so the recruiter can build up a
+  // batch across multiple queries.
+  function togglePendingAssignSelection(user: { id: string; name: string }) {
+    setPendingAssignSelections((prev) => {
+      if (prev.some((p) => p.id === user.id)) {
+        return prev.filter((p) => p.id !== user.id);
+      }
+      return [...prev, { id: user.id, name: user.name || "Teammate" }];
+    });
+  }
+
+  // Confirm-button handler: fires one POST per selected user in
+  // parallel and clears the bucket on success. We keep the dialog
+  // open and refresh the job so the new chips render in
+  // "Currently Assigned" — the user sees the result land before
+  // closing manually, which matches the rest of the app's
+  // commit-feedback pattern.
+  async function commitPendingAssignSelections() {
+    if (pendingAssignSelections.length === 0 || assigningBatch) return;
+    setAssigningBatch(true);
+    try {
+      await Promise.all(
+        pendingAssignSelections.map((u) =>
+          fetch(`/api/jobs/${params.id}/assignments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: u.id }),
+          }),
+        ),
+      );
+      setPendingAssignSelections([]);
+      setAssignSearch("");
+      setAssignResults([]);
+      await fetchJob();
+    } catch {}
+    setAssigningBatch(false);
   }
 
   async function removeAssignment(userId: string) {
@@ -2312,23 +2363,59 @@ export default function JobDetailPage() {
               value={assignSearch}
               onChange={(e) => searchRecruiters(e.target.value)}
             />
+            {/* Pending selections chips — los users que el usuario ya
+                tocö en la lista de resultados pero todavia no commiteo
+                con el boton Confirm. Sobreviven a cambios en el query
+                de busqueda asi se puede armar una batch tipeando varios
+                nombres uno tras otro. Click en la × deselecciona. */}
+            {pendingAssignSelections.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {pendingAssignSelections.map((u) => (
+                  <span
+                    key={u.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200"
+                  >
+                    {u.name}
+                    <button
+                      type="button"
+                      onClick={() => togglePendingAssignSelection(u)}
+                      className="hover:text-indigo-900"
+                      aria-label={`Remove ${u.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             {assignResults.length > 0 && (
               <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-100 rounded-md">
-                {assignResults.map((u: any) => (
-                  <button
-                    key={u.id}
-                    onClick={() => assignRecruiter(u.id)}
-                    className="w-full text-left p-2.5 hover:bg-indigo-50 flex items-center gap-2 transition-colors"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-semibold">
-                      {u.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{u.name}</p>
-                      <p className="text-xs text-gray-400">{u.role} · {u.email}</p>
-                    </div>
-                  </button>
-                ))}
+                {assignResults.map((u: any) => {
+                  const selected = pendingAssignSelections.some((p) => p.id === u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => togglePendingAssignSelection({ id: u.id, name: u.name })}
+                      className={`w-full text-left p-2.5 flex items-center gap-2 transition-colors ${
+                        selected ? "bg-indigo-50" : "hover:bg-indigo-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        readOnly
+                        className="rounded border-gray-300 pointer-events-none"
+                      />
+                      <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-semibold">
+                        {u.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{u.name}</p>
+                        <p className="text-xs text-gray-400">{u.role} · {u.email}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
             {assignSearching && <p className="text-sm text-gray-400 p-2">Searching...</p>}
@@ -2336,6 +2423,39 @@ export default function JobDetailPage() {
               <p className="text-sm text-gray-400 p-2">No matching team members found</p>
             )}
           </div>
+
+          {/* Confirm bar — solo aparece cuando hay al menos un row
+              seleccionado. Sin pending selections el dialogo se ve
+              identico al anterior (la accion de cerrar la X o el ESC
+              alcanza). */}
+          {pendingAssignSelections.length > 0 && (
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+              <p className="text-xs text-gray-500">
+                {pendingAssignSelections.length} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPendingAssignSelections([])}
+                  disabled={assigningBatch}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={commitPendingAssignSelections}
+                  disabled={assigningBatch}
+                >
+                  {assigningBatch
+                    ? "Adding..."
+                    : `Add ${pendingAssignSelections.length} member${
+                        pendingAssignSelections.length === 1 ? "" : "s"
+                      }`}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

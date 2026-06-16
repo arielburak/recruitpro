@@ -99,12 +99,11 @@ export async function POST(request: Request) {
 }
 
 // GET - list pending invites
+// Open to any authenticated org member so the My Team tab can render
+// pending invitations. Mutations (POST/DELETE) remain admin-only.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-    }
 
     const invites = await prisma.userInvite.findMany({
       where: { organizationId: ctx.organizationId, usedAt: null },

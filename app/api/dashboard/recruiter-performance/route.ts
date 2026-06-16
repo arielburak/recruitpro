@@ -4,14 +4,16 @@ import { getOrgContext } from "@/lib/tenant";
 
 // Per-recruiter performance aggregate for the dashboard widget.
 //
-// Counting policy: every metric counts STAGE TRANSITIONS, not the
-// underlying CRM entities. Submissions = entered "Submitted",
-// Interviews = entered "Interviewing", Offers = entered "Offered",
-// Placements = entered "Placed". This is what an operator means by
-// "Karen had 4 interviews this week" — four candidates of hers
-// reached the interview stage, not four calendar events were
-// dispatched. Scheduling a second-round interview on someone who's
-// already in Interviewing should NOT bump the counter.
+// Counting policy: every metric counts a meaningful EVENT, not the
+// underlying CRM entity. Submissions = the candidate was shared with
+// the client (real moment the submission impacts the client; mere
+// pipeline creation doesn't count). Interviews = entered
+// "Interviewing", Offers = entered "Offered", Placements = entered
+// "Placed". This is what an operator means by "Karen had 4
+// interviews this week" — four candidates of hers reached that
+// milestone, not four calendar events were dispatched. Re-doing the
+// same milestone on the same submission (un-share + re-share,
+// bouncing in/out of Interviewing) should NOT bump the counter.
 //
 // Attribution policy (consistent across every metric):
 //   - Submissions / Offers / Interviews → `candidate.ownerId`. No
@@ -48,12 +50,32 @@ async function bucketMetrics(
   to: Date,
 ) {
   const [submissions, offers, interviews, placements] = await Promise.all([
-    prisma.candidateSubmission.findMany({
+    // "Submissions" counts the share-with-client event, not the
+    // CandidateSubmission row creation. The pipeline row is internal
+    // bookkeeping; the submission only matters once the candidate
+    // actually lands in front of the client. We dedup by
+    // metadata.submissionId so a re-share after an un-share within
+    // the window still counts once. Legacy rows logged before this
+    // metric switched sources won't carry submissionId — we fall
+    // back to parsing the description, which has the canonical shape
+    // `<user> shared <candidate> with <jobTitle>'s client` (anchored
+    // pattern below). Same attribution policy as the other metrics:
+    // count belongs to the candidate's owner, NOT the user who
+    // happened to click Share.
+    prisma.activity.findMany({
       where: {
+        organizationId,
+        action: "submission.shared",
         createdAt: { gte: from, lte: to },
-        candidate: { organizationId, ownerId: { in: userIds } },
+        candidate: { ownerId: { in: userIds } },
       },
-      select: { candidate: { select: { ownerId: true } } },
+      select: {
+        candidateId: true,
+        description: true,
+        metadata: true,
+        candidate: { select: { ownerId: true } },
+      },
+      orderBy: { createdAt: "desc" },
     }),
     // "Offers" counts every distinct SUBMISSION that entered the
     // Offered stage in the window — not every move event. A
@@ -126,24 +148,16 @@ async function bucketMetrics(
     }),
   ]);
 
-  const count = (rows: { candidate: { ownerId: string | null } | null }[]) => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      const id = r.candidate?.ownerId;
-      if (!id) continue;
-      m.set(id, (m.get(id) || 0) + 1);
-    }
-    return m;
-  };
-
-  // Dedup the stage-transition rows (offers + interviews) by
-  // submission so a candidate moved in/out of the same stage on the
-  // same job only counts once. New rows carry metadata.submissionId;
-  // legacy rows fall back to a synthetic key combining candidateId +
-  // the job title scraped from the description. Coarse but good
-  // enough — a single candidate would need to have parallel
-  // submissions on multiple jobs to collide. Same logic for both
-  // metrics, factored into one helper.
+  // Dedup activity rows by submission so the same milestone on the
+  // same submission only counts once per window. New rows carry
+  // metadata.submissionId; legacy rows fall back to a synthetic key
+  // combining candidateId + the job title scraped from the
+  // description. Coarse but good enough — a single candidate would
+  // need to have parallel submissions on multiple jobs for the same
+  // milestone to collide. The legacy regex differs per action type
+  // because the description shapes are different (stage_changed
+  // quotes the job with `in "<title>"`, shared embeds it as `with
+  // <title>'s client`), so the caller passes the right pattern.
   function bucketByOwnerDeduped(
     rows: Array<{
       // Activity.candidateId is nullable in the schema — it gets
@@ -155,6 +169,7 @@ async function bucketMetrics(
       metadata: unknown;
       candidate: { ownerId: string | null } | null;
     }>,
+    legacyJobTitleRegex: RegExp,
   ) {
     const seen = new Set<string>();
     const m = new Map<string, number>();
@@ -166,7 +181,7 @@ async function bucketMetrics(
       if (meta?.submissionId) {
         key = `s:${meta.submissionId}`;
       } else {
-        const jobMatch = /in "([^"]+)"/.exec(a.description || "");
+        const jobMatch = legacyJobTitleRegex.exec(a.description || "");
         key = `c:${a.candidateId}|j:${jobMatch?.[1] || ""}`;
       }
       if (seen.has(key)) continue;
@@ -175,8 +190,11 @@ async function bucketMetrics(
     }
     return m;
   }
-  const offersMap = bucketByOwnerDeduped(offers);
-  const interviewsMap = bucketByOwnerDeduped(interviews);
+  const STAGE_TITLE_RX = /in "([^"]+)"/;
+  const SHARE_TITLE_RX = / with (.+?)'s client$/;
+  const submissionsMap = bucketByOwnerDeduped(submissions, SHARE_TITLE_RX);
+  const offersMap = bucketByOwnerDeduped(offers, STAGE_TITLE_RX);
+  const interviewsMap = bucketByOwnerDeduped(interviews, STAGE_TITLE_RX);
 
   const placementMap = new Map<string, number>();
   for (const p of placements) {
@@ -186,7 +204,7 @@ async function bucketMetrics(
   }
 
   return {
-    submissions: count(submissions),
+    submissions: submissionsMap,
     offers: offersMap,
     interviews: interviewsMap,
     placements: placementMap,

@@ -124,6 +124,39 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+// Clickable mention chip — Outlook-style toggle: click highlights it
+// with a stronger bg; click again (or click another chip) clears it.
+// State is local per chip so we don't thread anything through the
+// parent component. Purely visual feedback — no navigation, no side
+// effects.
+function MentionChip({ label, onDark }: { label: string; onDark?: boolean }) {
+  const [selected, setSelected] = useState(false);
+  // Base + selected variant per bubble color. The unselected chip keeps
+  // the original "Outlook chip" look from before this change; selected
+  // jumps to indigo-300 / white-40% so the difference is obvious without
+  // being loud.
+  const base = onDark
+    ? "bg-white/25 text-white"
+    : "bg-indigo-100 text-indigo-700";
+  const activeCls = onDark
+    ? "bg-white/40 text-white ring-1 ring-white/60"
+    : "bg-indigo-300 text-indigo-900 ring-1 ring-indigo-500";
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelected((v) => !v);
+      }}
+      className={`font-semibold px-1.5 py-px rounded transition-colors cursor-pointer ${
+        selected ? activeCls : base
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
@@ -131,23 +164,13 @@ function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
   //
-  // Estilo "Outlook chip": pill con bg sutil + bold. Variante segun
-  // bubble del que vive: en bubbles oscuros (mi voz, bg saturado +
-  // texto blanco) usamos bg-white/25 + texto blanco. En bubbles
-  // claros (recibido, bg-gray-100) usamos bg-indigo-100 +
-  // texto indigo. El resultado lee como un chip claro distinto del
-  // texto normal en ambos contextos.
-  const chipClass = opts.onDark
-    ? "bg-white/25 text-white font-semibold px-1.5 py-px rounded"
-    : "bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-px rounded";
+  // Estilo "Outlook chip": pill con bg sutil + bold + clickable. Cada
+  // chip mantiene su propio estado local de "seleccionado" — click
+  // togglea el highlight (feedback visual solo, sin navegacion).
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
-      return (
-        <span key={i} className={chipClass}>
-          {part}
-        </span>
-      );
+      return <MentionChip key={i} label={part} onDark={opts.onDark} />;
     }
     return part;
   });
