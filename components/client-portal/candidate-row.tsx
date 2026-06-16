@@ -219,12 +219,11 @@ export function CandidateMultiSearchRow({ rows }: { rows: CandidateRow[] }) {
                 {primary.candidate.currentCompany ? ` · ${primary.candidate.currentCompany}` : ""}
               </p>
             )}
-            {primary.candidate.location && (
-              <p className="text-[11px] text-gray-400 truncate inline-flex items-center gap-1 mt-0.5">
-                <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
-                {primary.candidate.location}
-              </p>
-            )}
+            {/* Location se renderiza por sub-row mas abajo, en la
+                columna Location de la tabla — mismo patron que el
+                single-row variant. Asi las 5 cells de la derecha
+                (Job, Stage, Firm, Location, Shared) alinean con
+                el header. */}
           </div>
         </Link>
       </TableCell>
@@ -234,14 +233,17 @@ export function CandidateMultiSearchRow({ rows }: { rows: CandidateRow[] }) {
           submission. We stack vertically — horizontal chips ran out
           of width once a candidate had three or more searches with
           long client/firm names. Each row is its own link to that
-          submission's detail page. */}
+          submission's detail page. Las 5 columnas alinean con el
+          header de la tabla; Location se repite por sub-row porque
+          es la misma para todos (el patron sigue matching el
+          single-row variant). */}
       <TableCell colSpan={5} className="p-0">
         <div className="divide-y divide-gray-100">
           {rows.map((r) => (
             <Link
               key={r.submissionId}
               href={`/client-portal/candidates/${r.submissionId}`}
-              className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)] items-center gap-3 px-3 py-2 text-xs hover:bg-emerald-50/50 transition-colors"
+              className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.7fr)] items-center gap-3 px-3 py-2 text-xs hover:bg-emerald-50/50 transition-colors"
             >
               <span className="inline-flex items-center gap-1.5 text-gray-700 min-w-0">
                 <Briefcase className="h-3 w-3 text-gray-400 shrink-0" />
@@ -265,6 +267,16 @@ export function CandidateMultiSearchRow({ rows }: { rows: CandidateRow[] }) {
               <span className="inline-flex items-center gap-1 text-gray-600 min-w-0">
                 <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
                 <span className="truncate">{r.firm.name}</span>
+              </span>
+              <span className="inline-flex items-center gap-1 text-gray-600 min-w-0">
+                {r.candidate.location ? (
+                  <>
+                    <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
+                    <span className="truncate">{r.candidate.location}</span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
               </span>
               <span className="text-gray-500 whitespace-nowrap text-right pr-1">
                 {formatDateShort(r.sharedAt)}
