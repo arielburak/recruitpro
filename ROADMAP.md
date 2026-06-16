@@ -17,7 +17,7 @@ Aplican a cualquier feature nueva o existente:
 - `- [ ]` pendiente / nuevo
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-06-09
+**Última actualización**: 2026-06-10
 
 ---
 
@@ -29,17 +29,17 @@ Aplican a cualquier feature nueva o existente:
 
 ## 🎯 Sprint actual — Notion 9 jun
 
-### Quick wins
+### Quick wins — todos cayeron en staging 2026-06-10, verificá
 
-- [ ] **#11 — Confirmar password en signup**. Pedir confirmación y validar coincidencia.
-- [ ] **#14 — Logo clickeable** para volver al menú desde cualquier pantalla.
-- [ ] **#26 — Sacar Create Account del lado cliente**. El cliente solo entra por invitación.
-- [ ] **#8 — Sacar pipeline violeta del dashboard**. No aporta valor.
-- [ ] **#10 — Nombre del cliente en notificaciones de JD**. Al comentar una JD, incluir el cliente para identificar la búsqueda.
-- [ ] **#24 — Assigned Firms muestra mail equivocado** (client portal). Tienen que aparecer los mails de la agencia colaboradora, no el del cliente. Bonus: al compartir candidatos, indicar de qué agencia provienen.
-- [ ] **#25 — No mostrar verify-banner si ya validó por invitación**. Solo el alta manual debe pedir verificación; los invitados no deben ver el cartel.
-- [ ] **#6 — Scroll en pantalla Pop-out**. No deja scrollear.
-- [ ] **#22 — No notificar fill/placement al cliente** (ni mail ni notification). Evita confusión si la agencia se equivoca.
+- [~] **#11 — Confirmar password en signup**. Ya estaba en `/register`, los 2 reset-password y `/set-password`. Faltaba `/invite/[token]` (aceptar invitación teammate) — agregado input + validación. Commit `5d4f5e7`.
+- [~] **#14 — Logo clickeable**. Ya estaba hecho en agency sidebar y client portal layout — el logo está envuelto en `<Link href="{/dashboard|/client-portal/dashboard}">`. Audit confirmó.
+- [~] **#26 — Sacar Create Account del lado cliente**. `/register` ahora muestra SOLO el form de Agency. Removido el step "select" y el step "client-info". `/login` ya mandaba al cliente al portal sin signup. Commit `5f4f135`.
+- [~] **#8 — Sacar pipeline violeta del dashboard**. Removido `<PipelineDistribution>` (BarChart violeta de stages). Activity Trend ocupa fila completa. Commit `5f4f135`.
+- [~] **#10 — Nombre del cliente en notificaciones de JD**. `notifyOnNewJobComment` email ahora usa `jobLabel = "<title> @ <client>"`. `notifyOnNewComment` también suma el cliente al jobTitle del mail de candidate mention. Commit `32c1f3f`.
+- [~] **#24 — Assigned Firms mail equivocado + firms aceptados visibles**. Bug principal del email del cliente apareciendo como recruiter ya estaba cerrado por el sweep aburak (3 capas: block al invitar + filtro defensivo + cleanup). Hoy: el filtro defensivo se relajó para que los engagements legacy/post-cleanup (con `invitedUser` null) aparezcan como "No specific recruiter on record · firm-level" en vez de desaparecer la firma entera. Commit `0755eb7`.
+- [~] **#25 — No mostrar verify-banner si ya validó por invitación**. `/api/auth/register` ahora hace lookup de `PendingFirmInvite` antes de crear el user, y stampea `emailVerifiedAt = now()` si la había. Los demás paths invitados (`/invite/[token]`, `/client-portal/set-password`) ya lo tenían. Commit `a713cb0`.
+- [~] **#6 — Scroll en pantalla Pop-out**. Un fix en `components/ui/dialog.tsx` agrega `max-h-[90dvh] overflow-y-auto` al DialogContent base. Beneficia automáticamente a TODOS los dialogs (placement, share docs, interview, etc.). Botón X close sigue accesible. Commit `b415833`.
+- [~] **#22 — No notificar fill/placement al cliente**. Funcionalmente ya estaba (el helper de status notifs solo notifica ON_HOLD). Hoy: cleanup del call desde `/api/placements` que era no-op pero confuso. Commit `a713cb0`.
 
 ### Alcance medio
 
@@ -68,6 +68,18 @@ Aplican a cualquier feature nueva o existente:
 - [~] **#23 — Sugerir contactos del cliente al compartir búsqueda**. Autocomplete de mail con contactos cargados. PR #299.
 - [~] **#27 — Invite Team Member first-week banner**. Banner en dashboard la primera semana. `2d24a36` / #297. **Verificar si está bien visible o falta destacar más.**
 - [~] **#29 — Sentry: captación de errores end-to-end**. `@sentry/nextjs` integrado en server (Node + Edge) + client + `onRequestError` de Next 16 (Server Components / Route Handlers / Server Actions / Proxy). `app/global-error.tsx` para crashes del root layout. `next.config.ts` con `withSentryConfig`; source maps gated en `SENTRY_AUTH_TOKEN`. Sin DSN todo es no-op. Commit `eafa844`. **Pendiente vos**: crear cuenta en sentry.io → New Project Next.js → setear `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_ORG` + `SENTRY_PROJECT` + `SENTRY_AUTH_TOKEN` en Vercel staging + production. Romper algo en staging y confirmar que el evento llega.
+
+### En staging — bloque grande del 2026-06-10
+
+- [~] **Admin-only delete + DeleteConfirmDialog universal**. 17 endpoints DELETE gateados con `requireAdminResponse(role)` (devuelve 403 con copy claro). Componente `<DeleteConfirmDialog>` reusable en `components/ui/` (con consequence list + optional toggle + custom title/description). 14+ call sites del UI wireados; botones escondidos para USER. Toda la copy en inglés. Bonus: el delete de candidate acepta `?keepMetrics=true` para preservar Activity rows del dashboard. Commits varios — el final es `b6211ee`.
+- [~] **Activity cascade migration**. Schema cambió de SetNull a Cascade en `Activity.candidateId`. Pusheado a staging DB. Borrar un candidato ahora se lleva sus eventos de historial — métricas viejas del dashboard se limpian solas. Commit `c582d70`.
+- [~] **#3 Crítico — Gate canAccessJob en submissions PATCH/DELETE + UI defense**. Helper extraído a `lib/job-access.ts`, gateado el endpoint, UI esconde controles cuando no tenés acceso. Defensa en profundidad. Commit `7277df0`.
+- [~] **Owner del candidato también puede mover/share submissions**. Extensión del gate anterior con un OR: `isAssigned(job) OR isOwner(candidate)`. Server + UI espejados. Commit `1a946a4`.
+- [~] **Stop-sharing confirm dialog + chip Shared visual nuevo**. Click en el chip "Shared" del row de un job ahora abre confirm modal en vez de un-share directo. Visual del chip cleanup: separador sutil + "Client sees: X" + icono X en hover. Commit `5c34e3d`.
+- [~] **Bug aburak (ClientUser apareciendo como recruiter)**. Tres capas: bloqueo al invitar self-team email + filtro defensivo en `/api/client-portal/invite-suggestions` + cleanup de las 2 filas sucias en DB. Commit `eba0a18`.
+- [~] **Engagement accept: sembrar Contact + OrganizationClient pivot**. Cuando una agency acepta una invitación: (a) crea el Client en su book (ya estaba), (b) NUEVO: upsert el pivot OrganizationClient para que aparezca en `/clients`, (c) NUEVO: seedea un Contact con datos del ClientUser que invitó (postedBy). Idempotente. Backfill aplicado a los 3 orgs que les faltaba el pivot. Commit `1197f89`.
+- [~] **Portal status match por (name + email)**. En el detail del cliente y en `/contacts`, el badge "In portal" / "Invite" se calculaba mal porque comparaba IDs entre Contact y ClientUser que viven en namespaces distintos. Ahora matchea por nombre+email. Nick aparece como "In portal" cuando es quien invitó. Commit `d4b0088`.
+- [~] **Modal state retention universal fix**. 5 dialogs del ATS tenían state retention al cerrar (Invite Recruiter, Add Member, Invite Client, Assign Team, Share Candidate, dashboard Invite Teammate). useEffect que resetea state al `!open`. Commit `31b2f32`.
 
 ---
 
@@ -175,3 +187,35 @@ Aplican a cualquier feature nueva o existente:
 2. Cuando vos testeás y confirmás, pasa de `[~]` a `[x]`.
 3. Items nuevos van al bloque "Sprint actual". Si requiere decisión de producto, va a "Decisiones pendientes".
 4. Landing y marketing quedan al final hasta que vos digas lo contrario.
+
+---
+
+## 📋 Inventario de cierre — 2026-06-10
+
+**Lo que QUEDA pendiente** (no en lo que cayó hoy):
+
+### Alcance medio (8 items, sin tocar todavía)
+- #4, #5, #12, #13, #19, #20, #21, #28 — quedan como están. Son trabajos de sesión completa cada uno, no quick wins.
+
+### Grandes (2 items)
+- #7 — Revisar copys de mails transaccionales (auditoría completa)
+- #18 — Rehacer UX del invite a Recruiter
+
+### Decisiones de producto (charlar con Ari)
+- Métricas que mostrar primero en reporting
+- Campos Staff Aug vs Recruiting
+- ¿Cobrar a hiring companies?
+- Referral scheme
+- Set final de JobStatus
+
+### Pre-launch
+- Landing copy + sacar testimonios inventados
+- Billing (Stripe checkout end-to-end)
+
+### Verificación tuya pendiente (todo lo que está `[~]`)
+- 9 quick wins de hoy
+- 9 items grandes de hoy (admin-only delete, cascade, gates, etc.)
+- #9 Dashboard interviews (necesita Ari sign-off por el cambio semántico)
+- #23 Autocomplete contactos (audit-confirmed, falta tu OK)
+- #27 First-week banner (mejorar visibilidad si querés)
+- #29 Sentry (setup de DSN en Vercel)
