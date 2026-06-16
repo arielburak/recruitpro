@@ -270,7 +270,12 @@ export default function ClientDashboardPage() {
       href: "/client-portal/candidates",
     },
     {
-      label: "Active Recruiters",
+      // El stat cuenta FirmEngagements aceptadas, no recruiters
+      // individuales (una firm con 3 recruiters cuenta 1 vez). El
+      // label viejo "Active Recruiters" leía como "personas trabajando
+      // tus búsquedas" cuando en realidad es "firmas". Renombre 2026-
+      // 06-10 — el drawer al click ya se llama Firms Engaged.
+      label: "Recruiting Firms",
       value: activeRecruiters,
       icon: Handshake,
       gradient: "from-violet-500 to-purple-600",
