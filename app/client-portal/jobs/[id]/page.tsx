@@ -56,6 +56,7 @@ import {
 import { CandidateTableRow } from "@/components/client-portal/candidate-row";
 import { ReadOnlyPipeline } from "@/components/client-portal/read-only-pipeline";
 import { formatDate } from "@/lib/utils";
+import { isInvitedUserVisible } from "@/lib/firm-engagement-visibility";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
@@ -1460,18 +1461,13 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   resultante alimenta stats + lista + empty-state.
                   Antes, los stats contaban engagements crudos y la
                   lista filtraba — generaba "2 Active · 1 card"
-                  cuando un user inactivo se escondia. Mismo criterio:
-                  rechazar (a) invitedUser apuntando a otra org, (b)
-                  invitedUser inactivo (soft-released). Aceptar
-                  invitedUser null. */}
+                  cuando un user inactivo se escondia. Mismo criterio
+                  vive en isInvitedUserVisible (lib/firm-engagement-
+                  visibility.ts) para que el server-side de
+                  invite-suggestions use exactamente el mismo filtro. */}
               {(() => {
                 const visibleEngagements = (job.engagements || []).filter(
-                  (e: any) => {
-                    if (!e.invitedUser) return true;
-                    if (e.invitedUser.organizationId !== e.organization.id) return false;
-                    if (e.invitedUser.isActive === false) return false;
-                    return true;
-                  },
+                  (e: any) => isInvitedUserVisible(e.invitedUser, e.organization?.id),
                 );
                 const pendingInvites = job.pendingFirmInvites || [];
                 const firmsByStatus = new Map<string, "ACCEPTED" | "PENDING" | "DECLINED">();
@@ -1514,12 +1510,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
 
               {(() => {
                 const visibleEngagements = (job.engagements || []).filter(
-                  (e: any) => {
-                    if (!e.invitedUser) return true;
-                    if (e.invitedUser.organizationId !== e.organization.id) return false;
-                    if (e.invitedUser.isActive === false) return false;
-                    return true;
-                  },
+                  (e: any) => isInvitedUserVisible(e.invitedUser, e.organization?.id),
                 );
                 return visibleEngagements.length + (job.pendingFirmInvites?.length || 0) === 0;
               })() ? (
@@ -1536,26 +1527,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     // esta keyed por organization.id, no por
                     // engagement.id). Una card por firma, con la
                     // lista de recruiters adentro.
-                    // Filtro defensivo: rechazamos los rows donde
-                    //   (a) invitedUser existe pero apunta a una org
-                    //       distinta al engagement (bug aburak: el
-                    //       invitedUser era un ClientUser disfrazado);
-                    //   (b) invitedUser existe pero esta inactivo
-                    //       (soft-released con email scrambleado, ej.
-                    //       'released+<id>@deleted.local'). No es util
-                    //       mostrar un mail roto al cliente.
-                    // Aceptamos:
-                    //   · invitedUser activo en la org correcta (normal)
-                    //   · invitedUser null (firm-level legacy o post-
-                    //     cleanup) — los renderizamos como "no specific
-                    //     recruiter on record" abajo.
+                    // Filtro defensivo via helper compartido — mismo
+                    // criterio que el server-side de invite-suggestions
+                    // (ver lib/firm-engagement-visibility.ts). Cuando
+                    // el invitedUser apunta a una org distinta (bug
+                    // aburak) o esta inactivo (soft-released), skip.
+                    // Aceptamos invitedUser null como firm-level legacy.
                     const byOrg = new Map<string, { firm: any; engagements: any[] }>();
                     for (const e of job.engagements || []) {
-                      if (
-                        e.invitedUser &&
-                        (e.invitedUser.organizationId !== e.organization.id ||
-                          e.invitedUser.isActive === false)
-                      ) {
+                      if (!isInvitedUserVisible(e.invitedUser, e.organization?.id)) {
                         continue;
                       }
                       const k = e.organization.id;
