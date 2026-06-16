@@ -179,112 +179,12 @@ export function CandidateTableRow({ row, showJob = true, showFirm = true, asSeco
   );
 }
 
-// Row variant for a candidate with 2+ submissions on the portal. We
-// collapse them into a single "super-row" of the table: the left
-// cell is the candidate's identity (avatar + name + pill), the rest
-// of the columns become a stacked mini-list of the searches, one
-// per submission. The user picked this layout over the previous
-// expandable sub-rows because the all-at-once view reads more like
-// "one candidate, three searches" instead of repeated rows.
-export function CandidateMultiSearchRow({ rows }: { rows: CandidateRow[] }) {
-  // Server already orders by sharedAt DESC, so rows[0] is the most
-  // recent submission — we use it as the anchor for the candidate's
-  // identity (title/company come from the same Candidate row anyway).
-  const primary = rows[0];
-  const fullName = `${primary.candidate.firstName} ${primary.candidate.lastName}`.trim();
-  const initials = (primary.candidate.firstName[0] || "") + (primary.candidate.lastName[0] || "");
-
-  return (
-    <TableRow className="hover:bg-gray-50 align-top">
-      <TableCell className="py-3">
-        <Link
-          href={`/client-portal/candidates/${primary.submissionId}`}
-          className="flex items-center gap-2.5 min-w-0 group"
-        >
-          <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
-            {initials.toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
-                {fullName}
-              </p>
-              <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">
-                in {rows.length} searches
-              </span>
-            </div>
-            {primary.candidate.currentTitle && (
-              <p className="text-[11px] text-gray-500 truncate">
-                {primary.candidate.currentTitle}
-                {primary.candidate.currentCompany ? ` · ${primary.candidate.currentCompany}` : ""}
-              </p>
-            )}
-            {/* Location se renderiza por sub-row mas abajo, en la
-                columna Location de la tabla — mismo patron que el
-                single-row variant. Asi las 5 cells de la derecha
-                (Job, Stage, Firm, Location, Shared) alinean con
-                el header. */}
-          </div>
-        </Link>
-      </TableCell>
-
-      {/* Right-side cell spans the remaining 5 columns (Job, Stage,
-          Firm, Location, Shared) and renders one mini-row per
-          submission. We stack vertically — horizontal chips ran out
-          of width once a candidate had three or more searches with
-          long client/firm names. Each row is its own link to that
-          submission's detail page. Las 5 columnas alinean con el
-          header de la tabla; Location se repite por sub-row porque
-          es la misma para todos (el patron sigue matching el
-          single-row variant). */}
-      <TableCell colSpan={5} className="p-0">
-        <div className="divide-y divide-gray-100">
-          {rows.map((r) => (
-            <Link
-              key={r.submissionId}
-              href={`/client-portal/candidates/${r.submissionId}`}
-              className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.7fr)] items-center gap-3 px-3 py-2 text-xs hover:bg-emerald-50/50 transition-colors"
-            >
-              <span className="inline-flex items-center gap-1.5 text-gray-700 min-w-0">
-                <Briefcase className="h-3 w-3 text-gray-400 shrink-0" />
-                <span className="truncate">{r.job.title}</span>
-              </span>
-              <span>
-                {r.stage ? (
-                  <Badge
-                    className="text-[10px] border-0"
-                    style={{
-                      backgroundColor: `${r.stage.color}22`,
-                      color: r.stage.color,
-                    }}
-                  >
-                    {r.stage.name}
-                  </Badge>
-                ) : (
-                  <span className="text-gray-400">—</span>
-                )}
-              </span>
-              <span className="inline-flex items-center gap-1 text-gray-600 min-w-0">
-                <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
-                <span className="truncate">{r.firm.name}</span>
-              </span>
-              <span className="inline-flex items-center gap-1 text-gray-600 min-w-0">
-                {r.candidate.location ? (
-                  <>
-                    <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
-                    <span className="truncate">{r.candidate.location}</span>
-                  </>
-                ) : (
-                  <span className="text-gray-400">—</span>
-                )}
-              </span>
-              <span className="text-gray-500 whitespace-nowrap text-right pr-1">
-                {formatDateShort(r.sharedAt)}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </TableCell>
-    </TableRow>
-  );
-}
+// El antiguo CandidateMultiSearchRow se elimino — combinaba todas
+// las submissions del candidato en un "super-row" con grid hardcodeado
+// que se desalineaba cada vez que sumabamos columnas a la tabla o el
+// candidato tenia muchos jobs. Ahora el caller (app/client-portal/
+// candidates/page.tsx) emite N CandidateTableRow comunes: el primero
+// con `totalSearches={N}` (pill "in N searches") y los siguientes con
+// `asSecondary={true}` (L-line indent en la cell de candidato). Asi
+// todos los sub-rows usan las TableCell de la tabla y heredan sus
+// anchos — robusto ante cambios de schema y de cantidad de submissions.

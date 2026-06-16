@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/table";
 import { Users, Search, Briefcase, Filter } from "lucide-react";
 import {
-  CandidateMultiSearchRow,
   CandidateTableRow,
   type CandidateRow,
 } from "@/components/client-portal/candidate-row";
@@ -289,11 +288,19 @@ function ClientCandidatesPageInner() {
               </TableHeader>
               <TableBody>
                 {groupedRows.map((group) => {
-                  // Single-submission candidate → normal row. Multi-
-                  // submission candidate → super-row that shows the
-                  // identity once and stacks the N searches as
-                  // mini-rows in the right cell, picked by the user
-                  // over the previous expand-on-click variant.
+                  // Single-submission candidate → un solo CandidateTableRow.
+                  // Multi-submission → tantas CandidateTableRow como rows,
+                  // todas usando las mismas TableCells de la tabla (Job,
+                  // Stage, Firm, Location, Shared). La primera lleva el
+                  // pill "in N searches"; las subsiguientes van con
+                  // asSecondary=true para mostrar la L-line indent en la
+                  // cell de candidato. Asi:
+                  //   · cada sub-row usa el ancho que la tabla asigna a
+                  //     cada columna (no hay grid hardcodeado);
+                  //   · si manana sumamos una columna al header, los
+                  //     sub-rows la heredan sin tocar nada;
+                  //   · si un candidato pasa a tener 5 jobs en vez de 2,
+                  //     el formato sigue prolijo.
                   if (group.rows.length === 1) {
                     return (
                       <CandidateTableRow
@@ -303,12 +310,15 @@ function ClientCandidatesPageInner() {
                       />
                     );
                   }
-                  return (
-                    <CandidateMultiSearchRow
-                      key={group.candidateId}
-                      rows={group.rows}
+                  return group.rows.map((r, idx) => (
+                    <CandidateTableRow
+                      key={r.submissionId}
+                      row={r}
+                      asSecondary={idx > 0}
+                      totalSearches={idx === 0 ? group.rows.length : undefined}
+                      onRated={refetch}
                     />
-                  );
+                  ));
                 })}
               </TableBody>
             </Table>
