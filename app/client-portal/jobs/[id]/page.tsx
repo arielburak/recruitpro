@@ -94,6 +94,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   const [deletingDoc, setDeletingDoc] = useState<{ id: string; name: string } | null>(null);
   const [withdrawingEngagement, setWithdrawingEngagement] = useState<{ id: string; label: string } | null>(null);
   const [cancellingInvite, setCancellingInvite] = useState<{ id: string; email: string } | null>(null);
+  // Confirm-dialog state for cancelling a teammate's per-JO membership
+  // invite. Distinct from cancellingInvite above (which is for firm-
+  // level pending engagement invites) — different endpoint + different
+  // copy. Wired from the X icon next to a pending member chip.
+  const [cancellingMemberInvite, setCancellingMemberInvite] = useState<{ id: string; label: string } | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
@@ -224,11 +229,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   // notification logic etc. all live in one place. We compute the new
   // memberIds client-side as "current minus the one being cancelled"
   // — cheap, no extra endpoint needed.
-  async function cancelMemberInvite(memberId: string, label: string) {
-    const ok = confirm(
-      `Cancel the invite for ${label}? They'll lose access to this search.`,
-    );
-    if (!ok) return;
+  async function cancelMemberInvite(memberId: string) {
     const currentIds = (job?.members || [])
       .map((m: any) => m.clientUser?.id)
       .filter((x: any): x is string => typeof x === "string");
@@ -1326,14 +1327,14 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                 only when the chip isn't the creator
                                 (the creator stays a member by rule;
                                 cancelling them would just bounce). */}
-                            {isPending && !isCreator && (
+                            {isPending && !isCreator && isAdmin && (
                               <button
                                 type="button"
                                 onClick={() =>
-                                  cancelMemberInvite(
-                                    m.clientUser.id,
-                                    m.clientUser.name || m.clientUser.email,
-                                  )
+                                  setCancellingMemberInvite({
+                                    id: m.clientUser.id,
+                                    label: m.clientUser.name || m.clientUser.email,
+                                  })
                                 }
                                 className="ml-1 text-amber-600 hover:text-rose-600"
                                 title="Cancel invite"
@@ -2176,6 +2177,27 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           setCancellingInvite(null);
         }}
         confirmLabel="Yes, cancel"
+      />
+
+      {/* Cancel a teammate's per-JO membership invite. Hits the
+          members PUT endpoint with the pending member removed — the
+          server's diff logic handles the actual cancellation + the
+          notification cleanup. */}
+      <DeleteConfirmDialog
+        open={!!cancellingMemberInvite}
+        onOpenChange={(open) => { if (!open) setCancellingMemberInvite(null); }}
+        itemLabel={cancellingMemberInvite?.label || ""}
+        title={
+          cancellingMemberInvite
+            ? `Cancel the invite for ${cancellingMemberInvite.label}?`
+            : undefined
+        }
+        description="They'll lose access to this search immediately. You can re-invite them later if needed."
+        onConfirm={async () => {
+          if (cancellingMemberInvite) await cancelMemberInvite(cancellingMemberInvite.id);
+          setCancellingMemberInvite(null);
+        }}
+        confirmLabel="Yes, cancel invite"
       />
     </div>
   );

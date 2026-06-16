@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,11 +27,19 @@ import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const clientId = params.id as string;
+  // Confirm-dialog state. The header "Delete Client" is really a
+  // disengage (server removes the OrganizationClient pivot, not the
+  // Client itself) — the copy reflects that, see the dialog below.
+  const [removingClient, setRemovingClient] = useState(false);
+  const [removingContact, setRemovingContact] = useState<{ id: string; label: string } | null>(null);
   const [client, setClient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [contacts, setContacts] = useState<any[]>([]);
@@ -174,10 +183,9 @@ export default function ClientDetailPage() {
   }
 
   async function deleteContact(id: string) {
-    if (!confirm("Delete this contact?")) return;
     try {
       await fetch(`/api/contacts/${id}`, { method: "DELETE" });
-      setContacts(contacts.filter((c) => c.id !== id));
+      setContacts((arr) => arr.filter((c) => c.id !== id));
     } catch {
       setContactError("Failed to delete contact");
     }
@@ -244,12 +252,15 @@ export default function ClientDetailPage() {
   }
 
   async function deleteClient() {
-    if (!confirm(`Delete "${client.name}"? This will also delete all associated jobs, pipeline data, and contacts. This cannot be undone.`)) return;
     try {
-      await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
-      router.push("/clients");
+      const res = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      if (res.ok) {
+        router.push("/clients");
+      } else {
+        alert("Failed to remove client.");
+      }
     } catch {
-      // stay on page
+      alert("Failed to remove client.");
     }
   }
 
@@ -270,25 +281,15 @@ export default function ClientDetailPage() {
           <Link href={`/jobs/new?clientId=${client.id}`}>
             <Button>Create Job for {client.name}</Button>
           </Link>
-          <Button
-            variant="outline"
-            className="text-red-600 border-red-300 hover:bg-red-50"
-            onClick={async () => {
-              if (!confirm("Are you sure you want to delete this client? This action cannot be undone.")) return;
-              try {
-                const res = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
-                if (res.ok) {
-                  router.push("/clients");
-                } else {
-                  alert("Failed to delete client.");
-                }
-              } catch {
-                alert("Failed to delete client.");
-              }
-            }}
-          >
-            <Trash2 className="mr-2 h-4 w-4" /> Delete Client
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-300 hover:bg-red-50"
+              onClick={() => setRemovingClient(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Remove Client
+            </Button>
+          )}
         </div>
       </div>
 
@@ -752,9 +753,22 @@ export default function ClientDetailPage() {
                               <Button size="sm" variant="ghost" onClick={() => startEditContact(contact)} title="Edit contact">
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteContact(contact.id)} title="Delete contact">
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() =>
+                                    setRemovingContact({
+                                      id: contact.id,
+                                      label: `${contact.firstName} ${contact.lastName}`.trim() || contact.email || "this contact",
+                                    })
+                                  }
+                                  title="Delete contact"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -767,6 +781,44 @@ export default function ClientDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Header "Remove Client" — disengage, not hard-delete. The
+          server keeps the Client row so other agencies (and the
+          portal side) aren't affected. */}
+      <DeleteConfirmDialog
+        open={removingClient}
+        onOpenChange={(open) => { if (!open) setRemovingClient(false); }}
+        itemLabel={client?.name || ""}
+        itemKind="client"
+        title={
+          client
+            ? `Remove ${client.name} from your client list?`
+            : undefined
+        }
+        description={
+          client
+            ? `This will detach ${client.name} from your firm. Their jobs and shared data stay on file — you can re-engage with them later by accepting a new invite. The client portal side is not affected.`
+            : undefined
+        }
+        onConfirm={async () => {
+          await deleteClient();
+        }}
+        confirmLabel="Yes, remove"
+      />
+
+      {/* Contact row trash — hard-delete on a Contact row. The API
+          cascades any pivot rows but doesn't touch the parent
+          Client. */}
+      <DeleteConfirmDialog
+        open={!!removingContact}
+        onOpenChange={(open) => { if (!open) setRemovingContact(null); }}
+        itemLabel={removingContact?.label || ""}
+        itemKind="contact"
+        onConfirm={async () => {
+          if (removingContact) await deleteContact(removingContact.id);
+        }}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

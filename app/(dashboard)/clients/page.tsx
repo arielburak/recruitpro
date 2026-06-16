@@ -2,18 +2,27 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Building2, Trash2 } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 export default function ClientsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
+  // Confirm-dialog state for both bulk and single removal. Both flows
+  // hit the same disengage endpoint (the Client itself stays in the
+  // system; only the pivot is removed), so the copy is shared.
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
+  const [removingClient, setRemovingClient] = useState<{ id: string; name: string } | null>(null);
   // "all" = no filter, "RECRUITING" or "STAFF_AUG" filters the list
   // by engagement model. Empty/legacy engagementType is treated as
   // RECRUITING (that's the schema default) so legacy rows show up
@@ -44,8 +53,6 @@ export default function ClientsPage() {
   }
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Remove ${n} client${n === 1 ? "" : "s"} from your workspace? Their jobs / candidates / engagements stay in the system but you'll need to re-engage to see them again.`)) return;
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/clients/bulk-delete", {
@@ -72,12 +79,9 @@ export default function ClientsPage() {
       });
   }, []);
 
-  async function deleteClient(id: string, name: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Delete "${name}"? This will also delete all associated jobs and data. This cannot be undone.`)) return;
+  async function deleteClient(id: string) {
     await fetch(`/api/clients/${id}`, { method: "DELETE" });
-    setClients(clients.filter((c) => c.id !== id));
+    setClients((arr) => arr.filter((c) => c.id !== id));
   }
 
   const engagementCounts = useMemo(() => {
@@ -161,15 +165,17 @@ export default function ClientsPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <ExportCsvButton type="clients" ids={Array.from(selectedIds)} variant="subtle" />
-            <button
-              type="button"
-              onClick={bulkDelete}
-              disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkDeleting ? "Removing…" : "Remove from workspace"}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setConfirmingBulk(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "Removing…" : "Remove from workspace"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -260,19 +266,65 @@ export default function ClientsPage() {
                   </Badge>
                 </div>
                 <div>
-                  <button
-                    onClick={(e) => deleteClient(c.id, c.name, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-1 rounded"
-                    title="Delete client"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setRemovingClient({ id: c.id, name: c.name });
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-1 rounded"
+                      title="Remove client"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </Link>
             </div>
           ))}
         </div>
       )}
+
+      {/* Single-row remove. The /api/clients/[id] DELETE endpoint
+          actually disengages (removes the OrganizationClient pivot)
+          rather than hard-deleting the Client — so the copy talks
+          about "removing from your list", not "permanent delete". */}
+      <DeleteConfirmDialog
+        open={!!removingClient}
+        onOpenChange={(open) => { if (!open) setRemovingClient(null); }}
+        itemLabel={removingClient?.name || ""}
+        itemKind="client"
+        title={
+          removingClient
+            ? `Remove ${removingClient.name} from your client list?`
+            : undefined
+        }
+        description={
+          removingClient
+            ? `This will detach ${removingClient.name} from your firm. Their jobs and shared data stay on file — you can re-engage with them later by accepting a new invite. The client portal side is not affected.`
+            : undefined
+        }
+        onConfirm={async () => {
+          if (removingClient) await deleteClient(removingClient.id);
+        }}
+        confirmLabel="Yes, remove"
+      />
+
+      {/* Bulk remove. Same disengage semantics as the single row,
+          plural copy. The actual fetch lives in bulkDelete(). */}
+      <DeleteConfirmDialog
+        open={confirmingBulk}
+        onOpenChange={(open) => { if (!open) setConfirmingBulk(false); }}
+        itemLabel={`${selectedIds.size} client${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind="clients"
+        title={`Remove ${selectedIds.size} client${selectedIds.size === 1 ? "" : "s"} from your client list?`}
+        description={`This will detach the selected client${selectedIds.size === 1 ? "" : "s"} from your firm. Their jobs and shared data stay on file — you can re-engage with them later by accepting new invites. The client portal side is not affected.`}
+        onConfirm={async () => {
+          await bulkDelete();
+        }}
+        confirmLabel="Yes, remove"
+      />
     </div>
   );
 }

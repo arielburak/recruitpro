@@ -61,6 +61,17 @@ export default function CandidateDetailPage() {
     clientName: string;
     jobTitle: string;
   } | null>(null);
+  // Confirm-dialog state for the per-submission X (remove from this
+  // job) and for deleting an uploaded document — both are destructive
+  // single-click actions, so they follow the universal confirm rule.
+  const [removingSubmission, setRemovingSubmission] = useState<{
+    id: string;
+    jobTitle: string;
+  } | null>(null);
+  const [deletingDocument, setDeletingDocument] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   // Role gate: only ADMIN can delete entities of shared org data. The
   // server already enforces this (returns 403 to non-admins), but
   // hiding the button up front avoids a confusing 403 toast and
@@ -309,7 +320,6 @@ export default function CandidateDetailPage() {
   }
 
   async function removeSubmissionFromJob(submissionId: string) {
-    if (!confirm("Remove this candidate from the pipeline?")) return;
     await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
     await fetchCandidate();
   }
@@ -335,7 +345,6 @@ export default function CandidateDetailPage() {
   }
 
   async function deleteDocument(id: string) {
-    if (!confirm("Delete this document?")) return;
     await fetch(`/api/documents/${id}`, { method: "DELETE" });
     fetchCandidate();
   }
@@ -459,6 +468,37 @@ export default function CandidateDetailPage() {
           await toggleSubmissionShare(unsharingSubmission.id, false);
         }}
         confirmLabel="Yes, stop sharing"
+      />
+
+      {/* Remove-from-job confirm. Wired via setRemovingSubmission from
+          the X icon on each submission row in the Jobs tab. */}
+      <DeleteConfirmDialog
+        open={!!removingSubmission}
+        onOpenChange={(open) => { if (!open) setRemovingSubmission(null); }}
+        itemLabel={removingSubmission?.jobTitle || ""}
+        title={
+          removingSubmission
+            ? `Remove this candidate from "${removingSubmission.jobTitle}"?`
+            : undefined
+        }
+        description="The submission and any per-job notes / activity tied to it will be removed. The candidate stays on file and on every other job they're assigned to."
+        onConfirm={async () => {
+          if (removingSubmission) await removeSubmissionFromJob(removingSubmission.id);
+        }}
+        confirmLabel="Yes, remove"
+      />
+
+      {/* Document delete confirm. Wired via setDeletingDocument from
+          the X icon on each document row in the Documents tab. */}
+      <DeleteConfirmDialog
+        open={!!deletingDocument}
+        onOpenChange={(open) => { if (!open) setDeletingDocument(null); }}
+        itemLabel={deletingDocument?.name || ""}
+        itemKind="document"
+        onConfirm={async () => {
+          if (deletingDocument) await deleteDocument(deletingDocument.id);
+        }}
+        confirmLabel="Yes, delete"
       />
 
       <Tabs defaultValue={initialTab}>
@@ -813,15 +853,23 @@ export default function CandidateDetailPage() {
                               list view's trash icon — deletes the
                               submission (and any placement attached via
                               the API's existing guard) without leaving
-                              the page. */}
-                          <button
-                            type="button"
-                            onClick={() => removeSubmissionFromJob(sub.id)}
-                            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                            title="Remove from this job"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
+                              the page. ADMIN-gated and routed through
+                              the universal confirm dialog. */}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRemovingSubmission({
+                                  id: sub.id,
+                                  jobTitle: sub.job?.title || "this job",
+                                })
+                              }
+                              className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              title="Remove from this job"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -901,13 +949,17 @@ export default function CandidateDetailPage() {
                     >
                       <Download className="h-4 w-4" />
                     </a>
-                    <button
-                      onClick={() => deleteDocument(doc.id)}
-                      className="p-2 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"
-                      title="Delete"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() =>
+                          setDeletingDocument({ id: doc.id, name: doc.name })
+                        }
+                        className="p-2 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"
+                        title="Delete"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
