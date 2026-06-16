@@ -1514,21 +1514,21 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     // esta keyed por organization.id, no por
                     // engagement.id). Una card por firma, con la
                     // lista de recruiters adentro.
-                    // Filtro defensivo: solo agrupamos engagements
-                    // donde el recruiter realmente esta en esa firma
-                    // hoy (User.organizationId == engagement.org). Asi
-                    // un email de cliente que termino con un
-                    // FirmEngagement stale apuntando a Morabits no
-                    // aparece bajo "Morabits". Casos descartados:
-                    //   · invitedUser null (orphan engagement)
-                    //   · invitedUser.organizationId != engagement.org
-                    //     (recruiter se movio, o el row se cargo a la
-                    //     firma equivocada)
+                    // Filtro defensivo (relajado 10 jun 2026): rechazamos
+                    // SOLO los rows donde invitedUser existe pero apunta
+                    // a una org distinta a la del engagement — esos son
+                    // los inconsistentes (bug aburak: invitedUser era un
+                    // ClientUser del cliente disfrazado de recruiter).
+                    // Aceptamos:
+                    //   · invitedUser correcto (caso normal)
+                    //   · invitedUser null (firm-level legacy o post-
+                    //     cleanup) — los renderizamos como "no specific
+                    //     recruiter on record" abajo, sin desaparecer
+                    //     la firma de la lista cuando la firma acepto.
                     const byOrg = new Map<string, { firm: any; engagements: any[] }>();
                     for (const e of job.engagements || []) {
                       if (
-                        !e.invitedUser ||
-                        !e.invitedUser.id ||
+                        e.invitedUser &&
                         e.invitedUser.organizationId !== e.organization.id
                       ) {
                         continue;
@@ -1643,28 +1643,45 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           {isExpanded && (
                             <div className="border-t border-gray-200 divide-y divide-gray-200">
                               {sortedEngagements.map((eng: any) => {
-                                // Registered → nombre arriba + email
-                                // full abajo. Pending (todavia no
-                                // acepto) → email arriba con
-                                // break-all + chip "pending sign-up"
-                                // para que se entienda que no es un
-                                // "nombre raro" sino un email crudo.
-                                // En cuanto haga signup el form de
-                                // /register le obliga a poner nombre
-                                // (zod min 2) y la fila pasa al primer
-                                // caso sin nuestra intervencion.
+                                // Three render shapes:
+                                //   1) Registered recruiter (most common):
+                                //      name arriba + email full abajo.
+                                //   2) Pending signup (invitedEmail set,
+                                //      invitedUser null because they
+                                //      haven't signed up yet): email
+                                //      arriba con break-all + chip
+                                //      "pending sign-up" para que se
+                                //      entienda que no es un nombre raro.
+                                //   3) Firm-level legacy / post-cleanup
+                                //      (invitedUser null + invitedEmail
+                                //      null): mostramos "No specific
+                                //      recruiter on record" en gris.
+                                //      Sirve para los engagements de la
+                                //      era pre-person-level o los que
+                                //      limpiamos por el bug aburak.
                                 const recruiterName = eng.invitedUser?.name || null;
                                 const recruiterEmail =
                                   eng.invitedUser?.email || eng.invitedEmail || null;
-                                const isPending = !recruiterName;
-                                const topLabel = recruiterName || recruiterEmail || "Recruiter";
-                                const initial = (recruiterName || recruiterEmail || "?")
-                                  .trim()
-                                  .split(/\s+/)
-                                  .map((w: string) => w[0])
-                                  .join("")
-                                  .slice(0, 2)
-                                  .toUpperCase() || "?";
+                                const isFirmLevel = !recruiterName && !recruiterEmail;
+                                const isPending = !recruiterName && !isFirmLevel;
+                                const topLabel = isFirmLevel
+                                  ? "No specific recruiter on record"
+                                  : recruiterName || recruiterEmail || "Recruiter";
+                                const initial = isFirmLevel
+                                  ? (group.firm.name || "?")
+                                      .trim()
+                                      .split(/\s+/)
+                                      .map((w: string) => w[0])
+                                      .join("")
+                                      .slice(0, 2)
+                                      .toUpperCase() || "?"
+                                  : (recruiterName || recruiterEmail || "?")
+                                      .trim()
+                                      .split(/\s+/)
+                                      .map((w: string) => w[0])
+                                      .join("")
+                                      .slice(0, 2)
+                                      .toUpperCase() || "?";
                                 return (
                                   <div
                                     key={eng.id}
@@ -1676,13 +1693,18 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                       </div>
                                       <div className="min-w-0 flex-1">
                                         <p
-                                          className={`text-xs font-medium text-gray-800 ${isPending ? "break-all" : "truncate"}`}
+                                          className={`text-xs font-medium ${isFirmLevel ? "text-gray-500 italic" : "text-gray-800"} ${isPending ? "break-all" : "truncate"}`}
                                           title={topLabel}
                                         >
                                           {topLabel}
                                           {isPending && (
                                             <span className="ml-2 text-[9px] font-normal text-amber-600 align-middle">
                                               pending sign-up
+                                            </span>
+                                          )}
+                                          {isFirmLevel && (
+                                            <span className="ml-2 text-[9px] font-normal text-gray-400 align-middle not-italic">
+                                              firm-level
                                             </span>
                                           )}
                                         </p>
