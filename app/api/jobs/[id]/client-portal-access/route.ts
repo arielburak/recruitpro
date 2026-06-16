@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendClientJobAccessGrantedEmail } from "@/lib/email";
+import { canAccessJob } from "@/lib/job-access";
 
 // Agency-side management of who, on the hiring company's portal, can
 // see a specific Job. The flow on the client portal side
@@ -21,15 +22,6 @@ import { sendClientJobAccessGrantedEmail } from "@/lib/email";
 //     pin the creator to the members list.
 //   · IDs are filtered against the mirror's clientId + active flag so
 //     a hand-crafted payload can't grant cross-Client access.
-
-async function canAccessJob(jobId: string, organizationId: string, userId: string) {
-  const job = await prisma.job.findFirst({
-    where: { id: jobId, organizationId },
-    select: { assignments: { where: { userId }, select: { userId: true } } },
-  });
-  if (!job) return false;
-  return job.assignments.length > 0;
-}
 
 export async function PUT(
   request: Request,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { canAccessJob } from "@/lib/job-access";
 
 // Documents que la agencia eligio compartir con el cliente para esta
 // submission especifica.
@@ -22,8 +23,16 @@ async function loadSubmission(id: string, organizationId: string) {
     select: {
       id: true,
       candidateId: true,
+      // jobId + candidate.ownerId feed the same gate as PATCH/DELETE
+      // in /api/submissions/[id]: only users assigned to the job OR
+      // the candidate's owner can mutate what the client sees. Without
+      // it a recruiter not on the job could re-write the shared docs
+      // list and the client would suddenly see things the agency
+      // never intended (or stop seeing things they did).
+      jobId: true,
       candidate: {
         select: {
+          ownerId: true,
           documents: {
             select: {
               id: true,
@@ -86,6 +95,20 @@ export async function PUT(
 
     const submission = await loadSubmission(id, ctx.organizationId);
     if (!submission) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Same gate as PATCH/DELETE en /api/submissions/[id]: solo el
+    // recruiter asignado al job O el owner del candidato pueden
+    // mutar lo que ve el cliente. Sin este check, cualquier user
+    // del mismo org podia re-escribir el set de docs compartidos.
+    const isAssigned = await canAccessJob(
+      submission.jobId,
+      ctx.organizationId,
+      ctx.userId
+    );
+    const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
+    if (!isAssigned && !isCandidateOwner) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

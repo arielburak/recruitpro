@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { requireAdminResponse } from "@/lib/permissions";
 
 export async function DELETE(
   _request: Request,
@@ -8,6 +9,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // Verify the client user belongs to a Client this agency is
