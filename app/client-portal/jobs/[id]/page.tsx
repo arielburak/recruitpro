@@ -1852,103 +1852,34 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Recruiter email</label>
-                  <Input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="name@firm.com"
-                    className="text-sm"
-                    autoComplete="off"
-                  />
-                </div>
+                {/* ─── Single input que hace todo: autocomplete por
+                    name/email/firm + lookup en vivo de mails crudos.
+                    Diseño rehecho 2026-06-10 (#18 del roadmap): el
+                    dropdown separado de "Previously engaged firms" se
+                    reemplazo por chips horizontales que filtran in-
+                    place, y los 3 banners pastel apilados (lookup +
+                    suggestions empty + status pills múltiples) se
+                    consolidaron en una sola lista con una row destacada
+                    "send signup invite to X" cuando aplica. */}
+                <Input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="Search by name, email, or firm…"
+                  className="text-sm"
+                  autoComplete="off"
+                />
 
-                {/* Live resolution for a freshly-typed email that isn't
-                    in the suggestions list. Tells the user upfront
-                    whether we'll be routing to an existing recruiter or
-                    sending a signup email, and flags when this exact
-                    email is already on this job. */}
                 {(() => {
-                  if (lookupPending) {
-                    return (
-                      <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Checking…
-                      </p>
-                    );
-                  }
-                  if (!inviteLookup || inviteLookup.shape !== "valid") return null;
-                  if (inviteLookup.alreadyOnThisJob) {
-                    const s = inviteLookup.alreadyOnThisJobStatus;
-                    const label =
-                      s === "accepted"
-                        ? "already accepted this job"
-                        : s === "declined"
-                        ? "already declined this job"
-                        : "already invited to this job";
-                    return (
-                      <div className="rounded-md border border-indigo-200 bg-indigo-50/70 px-2.5 py-2 text-xs text-indigo-700 flex items-start gap-2">
-                        <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        <span className="break-words">{inviteLookup.email} — {label}</span>
-                      </div>
-                    );
-                  }
-                  if (inviteLookup.onPlatform) {
-                    return (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-xs text-emerald-800 flex items-start gap-2">
-                        <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        <span className="break-words">
-                          <span className="font-medium">{inviteLookup.name || inviteLookup.email}</span>
-                          {inviteLookup.firmName ? <span className="text-emerald-700/80"> · {inviteLookup.firmName}</span> : null}
-                          <span className="text-emerald-700/80"> — on Recruiting ATS</span>
-                        </span>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-start gap-2">
-                      <Mail className="h-3.5 w-3.5 shrink-0 mt-0.5 text-gray-400" />
-                      <span className="break-words">
-                        We&apos;ll send a signup link to{" "}
-                        <span className="font-medium text-gray-700">{inviteLookup.email}</span>{" "}
-                        so they can join Recruiting ATS and accept.
-                      </span>
-                    </div>
-                  );
-                })()}
-
-                {/* Your recruiter contacts — always-visible book of
-                    people this client has invited before, across all
-                    jobs. Grouped by firm when long, filtered as the
-                    user types in the email input. Sourced purely from
-                    this client's own past invites — never from the
-                    firm's internal user roster, which would leak the
-                    agency's team. */}
-                {(() => {
-                  if (inviteSuggestions.length === 0) {
-                    return (
-                      <p className="text-[11px] text-gray-400 leading-relaxed">
-                        You haven&apos;t invited anyone from this client yet.
-                        The first recruiter you invite shows up here for one-
-                        click reuse on future jobs.
-                      </p>
-                    );
-                  }
-
-                  // Build the "firms previously engaged" list from
-                  // every suggestion (person-level + firm-only legacy).
-                  // The dropdown surfaces each firm + how many real
-                  // contacts you have at that firm, so picking one
-                  // narrows the recruiter list below. Firms with zero
-                  // real contacts are filtered out — surfacing
-                  // "Morabits · no saved contacts" only confused users
-                  // because there's nothing to click after picking it.
+                  // Construimos el modelo una sola vez: lista de firmas
+                  // con conteo de contactos, lista filtrada de contacts
+                  // según query + chip seleccionado, y el "row virtual"
+                  // del lookup en vivo cuando el user tipeó un mail
+                  // completo que no está en sugerencias.
                   type FirmSummary = { name: string; contactCount: number };
                   const firmMap = new Map<string, FirmSummary>();
                   for (const s of inviteSuggestions) {
-                    if (!s.firmName) continue;
-                    if (s.firmOnly) continue;
+                    if (!s.firmName || s.firmOnly) continue;
                     const existing = firmMap.get(s.firmName) || {
                       name: s.firmName,
                       contactCount: 0,
@@ -1960,25 +1891,6 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     a.name.localeCompare(b.name)
                   );
 
-                  // If we have inviteSuggestions but none with a real
-                  // contact behind a firm, the dropdown would be empty
-                  // — fall back to the "no saved contacts" empty state
-                  // shown when the suggestions list itself is empty.
-                  if (firmOptions.length === 0) {
-                    return (
-                      <p className="text-[11px] text-gray-400 leading-relaxed">
-                        You haven&apos;t invited anyone from this client yet.
-                        The first recruiter you invite shows up here for one-
-                        click reuse on future jobs.
-                      </p>
-                    );
-                  }
-
-                  // Filter the person-level contact list by:
-                  //   1. Selected firm (if any) — gates first.
-                  //   2. Free-text query from the email input.
-                  // firm-only legacy rows never show up here — they're
-                  // surfaced only via the dropdown.
                   const q = inviteEmail.trim().toLowerCase();
                   const filteredContacts = inviteSuggestions.filter((s) => {
                     if (s.firmOnly) return false;
@@ -1991,140 +1903,166 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                     );
                   });
 
-                  const statusPill: Record<InviteStatus, { label: string; className: string }> = {
-                    accepted: { label: "accepted elsewhere", className: "bg-green-50 text-green-700" },
-                    pending: { label: "pending elsewhere", className: "bg-amber-50 text-amber-700" },
-                    email_sent: { label: "awaiting signup", className: "bg-gray-100 text-gray-600" },
-                    declined: { label: "declined before", className: "bg-rose-50 text-rose-700" },
-                  };
+                  // Live-lookup virtual row: solo se renderea cuando el
+                  // user tipeó un mail completo que NO está en las
+                  // sugerencias (sino el row aparece dos veces). El
+                  // visual del row matchea exactamente el formato de
+                  // los demás — la única diferencia es el icono Mail
+                  // a la izquierda + el label "Send signup invite".
+                  const typedEmailMatchesSuggestion = inviteSuggestions.some(
+                    (s) => s.email && s.email === q,
+                  );
+                  const showLookupRow =
+                    !typedEmailMatchesSuggestion &&
+                    !!inviteLookup &&
+                    inviteLookup.shape === "valid";
 
-                  const selectedFirmInfo = selectedFirm
-                    ? firmMap.get(selectedFirm) || null
-                    : null;
+                  // Visibility del bloque entero: si no hay sugerencias
+                  // posibles Y no hay query, no mostramos nada (el
+                  // modal queda compacto). Si hay sugerencias o el
+                  // user ya tipeó, mostramos.
+                  const hasSomethingToShow =
+                    filteredContacts.length > 0 || showLookupRow || lookupPending;
+                  if (!hasSomethingToShow && firmOptions.length === 0) {
+                    return null;
+                  }
 
                   return (
                     <div className="space-y-2">
-                      {/* Firms dropdown — every agency this client
-                          has engaged before. Picking one filters the
-                          recruiter contacts below. */}
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1 block">
-                          Previously engaged firms ({firmOptions.length})
-                        </label>
-                        <select
-                          value={selectedFirm || ""}
-                          onChange={(e) => setSelectedFirm(e.target.value || null)}
-                          className="w-full h-9 px-2.5 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                        >
-                          <option value="">Select a firm…</option>
+                      {/* Chips de firmas previamente engaged — solo si
+                          hay 2+. Toggle filter, click en uno selecciona,
+                          segundo click o click en "All" lo limpia. */}
+                      {firmOptions.length >= 2 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFirm(null)}
+                            className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                              !selectedFirm
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                            }`}
+                          >
+                            All firms
+                          </button>
                           {firmOptions.map((f) => (
-                            <option key={f.name} value={f.name}>
-                              {f.name} · {f.contactCount} contact{f.contactCount === 1 ? "" : "s"}
-                            </option>
+                            <button
+                              key={f.name}
+                              type="button"
+                              onClick={() =>
+                                setSelectedFirm(selectedFirm === f.name ? null : f.name)
+                              }
+                              className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                                selectedFirm === f.name
+                                  ? "bg-indigo-600 text-white border-indigo-600"
+                                  : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                              }`}
+                            >
+                              {f.name}
+                            </button>
                           ))}
-                        </select>
-                      </div>
+                        </div>
+                      )}
 
-                      {/* Recruiter contacts — surfaced in two modes:
-                          (a) firm picked from the dropdown → list of
-                              that firm's contacts, filtered by query.
-                          (b) user types ≥2 chars in the email input
-                              before picking a firm → live autocomplete
-                              across ALL firms by name / email / firm.
-                          Default state (no firm + no query) shows
-                          nothing so the modal opens compact. */}
-                      {(selectedFirm || q.length >= 2) && (
-                        filteredContacts.length === 0 ? (
-                          // When the user picked a firm and nothing
-                          // matches their query, tell them. When NO
-                          // firm is picked, the inviteLookup block
-                          // above already handles the "we'll email a
-                          // signup link" case — repeating it here just
-                          // doubles a pastel-gray banner and reads as
-                          // two warnings about something that isn't
-                          // an error.
-                          selectedFirmInfo ? (
-                            <p className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-md p-2.5">
-                              No contacts at {selectedFirmInfo.name} match &ldquo;{q}&rdquo;.
-                            </p>
-                          ) : null
-                        ) : (
-                          <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
-                            {filteredContacts.map((s) => {
-                              const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
-                              return (
-                                <button
-                                  key={s.key}
-                                  type="button"
-                                  disabled={s.alreadyOnThisJob}
-                                  onClick={() => {
-                                    if (s.alreadyOnThisJob) return;
-                                    setInviteEmail(s.email || "");
-                                  }}
-                                  className={`w-full text-left px-2.5 py-2 transition-colors ${
-                                    s.alreadyOnThisJob
-                                      ? "opacity-60 cursor-not-allowed"
-                                      : selected
-                                      ? "bg-indigo-50"
-                                      : "hover:bg-indigo-50/70"
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0 flex-1">
-                                      <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                        {s.name || s.email}
-                                      </p>
-                                      {(() => {
-                                        // Compose the subtitle: email
-                                        // (when we have a name as the
-                                        // title) + firm name (only when
-                                        // searching across all firms,
-                                        // since selecting a firm makes
-                                        // the firm name redundant).
-                                        const showEmailSubtitle = !!s.name;
-                                        const showFirmSubtitle =
-                                          !selectedFirm && !!s.firmName;
-                                        if (!showEmailSubtitle && !showFirmSubtitle) return null;
-                                        return (
-                                          <p className="text-[11px] text-gray-500 break-all">
-                                            {showEmailSubtitle && s.email}
-                                            {showEmailSubtitle && showFirmSubtitle && (
-                                              <span className="text-gray-400"> · </span>
-                                            )}
-                                            {showFirmSubtitle && <span>{s.firmName}</span>}
-                                          </p>
-                                        );
-                                      })()}
-                                    </div>
-                                    {(() => {
-                                      // Pill policy: only render when there's something
-                                      // the user actually needs to know. "accepted" is
-                                      // the default state for anyone who's worked with
-                                      // this client (we just filtered them in), so a
-                                      // pill there is noise. Pending / declined /
-                                      // awaiting-signup / on-this-job all stay because
-                                      // they change the action the user should take.
-                                      if (s.alreadyOnThisJob) {
-                                        return (
-                                          <span className="text-[10px] font-medium text-indigo-600 shrink-0 mt-0.5">
-                                            on this job
-                                          </span>
-                                        );
-                                      }
-                                      if (s.status === "accepted") return null;
-                                      const p = statusPill[s.status];
-                                      return (
-                                        <span className={`text-[10px] font-medium shrink-0 mt-0.5 px-1.5 py-0.5 rounded ${p.className}`}>
-                                          {p.label}
-                                        </span>
-                                      );
-                                    })()}
+                      {/* Lista unificada: sugerencias matched + opcional
+                          row del lookup arriba del todo. Si la lista
+                          quedó vacía y hay un query, no rendereamos
+                          nada (el lookup row sí o sí cubre el caso
+                          "send signup link"). */}
+                      {(filteredContacts.length > 0 || showLookupRow || lookupPending) && (
+                        <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+                          {lookupPending && (
+                            <div className="px-2.5 py-2 text-[11px] text-gray-400 flex items-center gap-1.5">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Checking…
+                            </div>
+                          )}
+                          {showLookupRow && inviteLookup && (
+                            <div className="px-2.5 py-2 bg-gray-50/60">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-gray-800 break-words flex items-center gap-1.5">
+                                    {inviteLookup.alreadyOnThisJob ? (
+                                      <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                    ) : inviteLookup.onPlatform ? (
+                                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                    ) : (
+                                      <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                    )}
+                                    {inviteLookup.name || inviteLookup.email}
+                                  </p>
+                                  <p className="text-[11px] text-gray-500 break-all mt-0.5">
+                                    {inviteLookup.email}
+                                    {inviteLookup.firmName ? (
+                                      <span className="text-gray-400"> · {inviteLookup.firmName}</span>
+                                    ) : null}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] font-medium text-gray-500 shrink-0 mt-0.5 whitespace-nowrap">
+                                  {inviteLookup.alreadyOnThisJob
+                                    ? "Already on this job"
+                                    : inviteLookup.onPlatform
+                                    ? "On Recruiting ATS"
+                                    : "New — we'll send a signup link"}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          {filteredContacts.map((s) => {
+                            const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
+                            // Pill simplificado (#18): un solo "Already
+                            // engaged elsewhere" gris para los casos
+                            // pending/declined/email-sent (la diferencia
+                            // fina no le aporta al cliente). Solo
+                            // separamos visualmente "on this job"
+                            // porque cambia la acción (disable click).
+                            const showElsewherePill =
+                              !s.alreadyOnThisJob &&
+                              s.status !== "accepted";
+                            return (
+                              <button
+                                key={s.key}
+                                type="button"
+                                disabled={s.alreadyOnThisJob}
+                                onClick={() => {
+                                  if (s.alreadyOnThisJob) return;
+                                  setInviteEmail(s.email || "");
+                                }}
+                                className={`w-full text-left px-2.5 py-2 transition-colors ${
+                                  s.alreadyOnThisJob
+                                    ? "opacity-60 cursor-not-allowed"
+                                    : selected
+                                    ? "bg-indigo-50"
+                                    : "hover:bg-indigo-50/70"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                      {s.name || s.email}
+                                    </p>
+                                    <p className="text-[11px] text-gray-500 break-all mt-0.5">
+                                      {s.name ? s.email : null}
+                                      {s.name && !selectedFirm && s.firmName && (
+                                        <span className="text-gray-400"> · </span>
+                                      )}
+                                      {!selectedFirm && s.firmName && <span>{s.firmName}</span>}
+                                    </p>
                                   </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )
+                                  {s.alreadyOnThisJob ? (
+                                    <span className="text-[10px] font-medium text-indigo-600 shrink-0 mt-0.5 whitespace-nowrap">
+                                      On this job
+                                    </span>
+                                  ) : showElsewherePill ? (
+                                    <span className="text-[10px] font-medium text-gray-500 shrink-0 mt-0.5 whitespace-nowrap">
+                                      Already engaged
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   );
@@ -2139,14 +2077,46 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                 />
 
                 {(() => {
-                  // Block send if we know (via suggestion OR live lookup)
-                  // that this exact email is already on this job. Lets
-                  // us give a clearer affordance than a 400 on submit.
+                  // Botón smart: el copy refleja la acción REAL que se
+                  // va a disparar, no un genérico "Send Invitation".
+                  //   · Sin email → "Send invitation" (disabled)
+                  //   · Ya en este job → "Already on this job" (disabled)
+                  //   · Match con recruiter on-platform → "Invite {first}"
+                  //   · Mail crudo no en plataforma → "Send signup invite"
                   const emailNow = inviteEmail.trim().toLowerCase();
-                  const matchingSuggestion = inviteSuggestions.find((s) => s.email && s.email === emailNow);
+                  const matchingSuggestion = inviteSuggestions.find(
+                    (s) => s.email && s.email === emailNow,
+                  );
                   const blocked =
                     matchingSuggestion?.alreadyOnThisJob === true ||
                     inviteLookup?.alreadyOnThisJob === true;
+
+                  let label = "Send invitation";
+                  if (inviting) {
+                    label = "Sending…";
+                  } else if (blocked) {
+                    label = "Already on this job";
+                  } else if (emailNow) {
+                    // Preferimos el nombre del suggestion si lo tenemos,
+                    // sino el del lookup, sino fallback al email.
+                    const nameFromSuggestion = matchingSuggestion?.name;
+                    const nameFromLookup =
+                      inviteLookup?.shape === "valid" ? inviteLookup.name : null;
+                    const displayName = nameFromSuggestion || nameFromLookup;
+                    const onPlatform =
+                      matchingSuggestion ||
+                      (inviteLookup?.shape === "valid" && inviteLookup.onPlatform);
+                    if (onPlatform && displayName) {
+                      // "Invite Pedro"
+                      const first = displayName.trim().split(/\s+/)[0];
+                      label = `Invite ${first}`;
+                    } else if (onPlatform) {
+                      label = "Send invitation";
+                    } else {
+                      label = "Send signup invite";
+                    }
+                  }
+
                   return (
                     <Button
                       size="sm"
@@ -2155,7 +2125,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       onClick={() => inviteFirm()}
                     >
                       <Send className="h-3.5 w-3.5" />
-                      {inviting ? "Sending..." : blocked ? "Already on this job" : "Send Invitation"}
+                      {label}
                     </Button>
                   );
                 })()}
