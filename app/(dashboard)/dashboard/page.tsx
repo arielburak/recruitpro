@@ -339,28 +339,11 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-gray-500">
-              Welcome back, {session?.user?.name}
-            </p>
-          </div>
-          {/* Team chip — visibilidad rapida del tamaño del equipo + atajo
-              al flujo de invitar. Pensado como growth trigger: cada vez
-              que el usuario ve el dashboard, ve el conteo y un + para
-              sumar. El "+" abre /settings/team que en su empty state
-              también empuja a invitar mas. */}
-          <Link
-            href="/settings/team"
-            className="group ml-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-indigo-300 hover:text-indigo-700 transition-colors"
-            title={`${teamSize} active member${teamSize === 1 ? "" : "s"} — click to manage your team`}
-          >
-            <UserPlus className="h-3 w-3" />
-            <span>Team: {teamSize}</span>
-            <span className="text-gray-300 group-hover:text-indigo-400">·</span>
-            <span className="text-indigo-600 font-semibold">+</span>
-          </Link>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-gray-500">
+            Welcome back, {session?.user?.name}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/candidates/new">
