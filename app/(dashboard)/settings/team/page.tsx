@@ -157,17 +157,13 @@ export default function AdminUsersPage() {
   }
 
   async function resendInvite(email: string, role: string, inviteId: string, name?: string) {
-    // Cancel old invite and send a new one
-    await fetch("/api/admin/invites", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inviteId }),
-    });
-
-    const res = await fetch("/api/admin/invites", {
+    // Resend dedicado — re-envía el mail sin borrar / recrear el invite.
+    // Endpoint abierto a cualquier org member (decisión 2026-06-17).
+    // Mantenemos los args (email/role/name) sin uso para no romper el
+    // call site existente.
+    void email; void role; void name;
+    const res = await fetch(`/api/admin/invites/${inviteId}/resend`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role, name }),
     });
 
     if (res.ok) {
@@ -425,27 +421,28 @@ export default function AdminUsersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{inv.role === "ADMIN" ? "Admin" : "User"}</Badge>
+                        {/* Resend abierto a cualquier org member — no es
+                            destructivo. Cancel sigue ADMIN-only porque
+                            revoca el invite. */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            resendInvite(inv.email, inv.role, inv.id, inv.name)
+                          }
+                          title="Resend invite"
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
                         {isAdmin && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                resendInvite(inv.email, inv.role, inv.id, inv.name)
-                              }
-                              title="Resend invite"
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => cancelInvite(inv.id)}
-                              title="Cancel invite"
-                            >
-                              <XCircle className="h-4 w-4 text-red-400" />
-                            </Button>
-                          </>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => cancelInvite(inv.id)}
+                            title="Cancel invite"
+                          >
+                            <XCircle className="h-4 w-4 text-red-400" />
+                          </Button>
                         )}
                       </div>
                     </CardContent>
