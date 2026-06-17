@@ -5,6 +5,7 @@ import { randomBytes } from "crypto";
 import { sendClientTeamInviteEmail } from "@/lib/email";
 import { roleForNewClientUser } from "@/lib/client-portal-roles";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // List all team members for this client
 export async function GET() {
@@ -34,7 +35,7 @@ export async function GET() {
 
     return NextResponse.json(sanitized);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -150,6 +151,6 @@ export async function POST(request: Request) {
       emailSent: true,
     }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — list all pipeline stages for this client (ordered).
 //
@@ -26,6 +27,6 @@ export async function GET() {
 
     return NextResponse.json(stages);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

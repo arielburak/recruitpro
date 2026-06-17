@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Search users for @mention autocomplete in the client portal.
 // scope=internal → only ClientUser of the caller's client
@@ -190,6 +191,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(results);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

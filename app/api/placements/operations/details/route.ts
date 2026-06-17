@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Drill-down rows for the /placements operations strip. Mirrors the
 // predicates in /api/placements/operations exactly so the lists
@@ -121,6 +122,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ error: "Unknown tile" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { sendEmailVerificationEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Resend the verification email. Two callers:
 //
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to resend" },
+      { error: safeErrorMessage(error) || "Failed to resend" },
       { status: 500 },
     );
   }

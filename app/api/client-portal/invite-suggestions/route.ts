@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { isInvitedUserVisible, isUserVisible } from "@/lib/firm-engagement-visibility";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 type Status = "accepted" | "pending" | "declined" | "email_sent";
 
@@ -305,6 +306,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json(suggestions);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

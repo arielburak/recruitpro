@@ -31,6 +31,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { showToast } from "@/components/ui/toast";
 
 type SettingsTab = "profile" | "organization";
 
@@ -240,7 +241,7 @@ export default function ClientPortalSettingsPage() {
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to remove");
+      showToast(data.error || "Failed to remove");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -251,7 +252,7 @@ export default function ClientPortalSettingsPage() {
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to cancel invite");
+      showToast(data.error || "Failed to cancel invite");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -263,12 +264,12 @@ export default function ClientPortalSettingsPage() {
       const res = await fetch(`/api/client-portal/team/${memberId}/resend`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to resend invite");
+        showToast(data.error || "Failed to resend invite");
       } else {
-        alert(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
+        showToast(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
       }
     } catch {
-      alert("Something went wrong");
+      showToast("Something went wrong");
     }
     setResendingId(null);
     setMemberMenu(null);
@@ -282,7 +283,7 @@ export default function ClientPortalSettingsPage() {
     });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to change role");
+      showToast(data.error || "Failed to change role");
     }
     setMemberMenu(null);
     fetchTeam();

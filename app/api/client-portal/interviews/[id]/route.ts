@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function PUT(
   request: Request,
@@ -83,6 +84,6 @@ export async function PUT(
       interviewers: updated.interviewers.map((a: any) => a.user.name),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

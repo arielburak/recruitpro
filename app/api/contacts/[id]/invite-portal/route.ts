@@ -6,6 +6,7 @@ import { sendClientSetPasswordEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
 import { roleForNewClientUser } from "@/lib/client-portal-roles";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Invite a Contact to the client portal, or resend the invite if they
 // were already invited but never redeemed the token. State machine:
@@ -238,6 +239,6 @@ export async function POST(
       { status: mode === "invited" ? 201 : 200 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — stream a candidate document to the client portal user.
 //
@@ -81,7 +82,7 @@ export async function GET(
   } catch (error: any) {
     console.error("[client-portal candidate doc] download error:", error);
     return NextResponse.json(
-      { error: error.message || "Download failed" },
+      { error: safeErrorMessage(error) || "Download failed" },
       { status: 500 }
     );
   }

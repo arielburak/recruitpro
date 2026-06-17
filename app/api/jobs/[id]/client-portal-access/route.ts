@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendClientJobAccessGrantedEmail } from "@/lib/email";
 import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Agency-side management of who, on the hiring company's portal, can
 // see a specific Job. The flow on the client portal side
@@ -143,6 +144,6 @@ export async function PUT(
       notified: newlyAdded.length,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

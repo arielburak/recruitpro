@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Checks an email against the agency-owned Contacts list for this
 // client. Used by the team-invite form to pre-fill name/title when
@@ -41,6 +42,6 @@ export async function GET(request: Request) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

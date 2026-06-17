@@ -11,6 +11,7 @@ import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-r
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -514,7 +515,7 @@ export default function JobsPage() {
       if (!res.ok) throw new Error("Failed");
     } catch {
       setJobs(previous);
-      alert("Couldn't update status. Try again.");
+      showToast("Couldn't update status. Try again.");
     }
   }
 

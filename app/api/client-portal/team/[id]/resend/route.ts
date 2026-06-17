@@ -4,6 +4,7 @@ import { getClientContext } from "@/lib/tenant";
 import { randomBytes } from "crypto";
 import { sendClientTeamInviteEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(
   _request: Request,
@@ -70,6 +71,6 @@ export async function POST(
 
     return NextResponse.json({ inviteLink, emailSent });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

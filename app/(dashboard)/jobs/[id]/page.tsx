@@ -30,6 +30,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ChatNotes } from "@/components/chat-notes";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 type TeamMember = { id: string; name: string; email: string };
 
@@ -362,13 +363,13 @@ export default function JobDetailPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to save");
+        showToast(data.error || "Failed to save");
       } else {
         setEditing(false);
         fetchJob();
       }
     } catch {
-      alert("Failed to save");
+      showToast("Failed to save");
     } finally {
       setSaving(false);
     }
@@ -851,16 +852,16 @@ export default function JobDetailPage() {
       const res = await fetch(`/api/jobs/${params.id}/documents`, { method: "POST", body: formData });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Upload failed");
+        showToast(data.error || "Upload failed");
       } else {
         const data = await res.json();
         if (category === "JOB_DESCRIPTION") {
           if (data.parsed) {
             // Text was extracted successfully
           } else if (data.parseError) {
-            alert(`Document uploaded but text extraction failed: ${data.parseError}`);
+            showToast(`Document uploaded but text extraction failed: ${data.parseError}`);
           } else {
-            alert("Document uploaded but no text could be extracted from the file.");
+            showToast("Document uploaded but no text could be extracted from the file.");
           }
         }
         const fresh = await fetchJob();
@@ -877,7 +878,7 @@ export default function JobDetailPage() {
         }
       }
     } catch {
-      alert("Upload failed");
+      showToast("Upload failed");
     } finally {
       setUploading(false);
     }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { validateClientPortalToken } from "@/lib/tokens";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Token-scoped document download for the (legacy) shareable-link client
 // portal flow. Same shape as the session-auth candidate doc route: we
@@ -62,7 +63,7 @@ export async function GET(
   } catch (error: any) {
     console.error("[client-portal doc] download error:", error);
     return NextResponse.json(
-      { error: error.message || "Download failed" },
+      { error: safeErrorMessage(error) || "Download failed" },
       { status: 500 }
     );
   }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendJobAssignedEmail } from "@/lib/email";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -26,7 +27,7 @@ export async function GET(
 
     return NextResponse.json(assignments);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -121,7 +122,7 @@ export async function POST(
     if (error.code === "P2002") {
       return NextResponse.json({ error: "User is already assigned to this job" }, { status: 409 });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -156,6 +157,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

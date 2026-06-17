@@ -4,6 +4,7 @@ import { getClientContext } from "@/lib/tenant";
 import { canAccessClientJob } from "@/lib/client-job-access";
 import { sendClientJobAccessGrantedEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Manage which ClientUsers can see a given ClientJob.
 //
@@ -54,7 +55,7 @@ export async function GET(
       members: members.map((m) => m.clientUser),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -200,6 +201,6 @@ export async function PUT(
       notified: newlyAddedIds.length,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET - fetch available jobs (not already assigned)
 //
@@ -45,7 +46,7 @@ export async function GET(
 
     return NextResponse.json(availableJobs);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -140,6 +141,6 @@ export async function POST(
       { status: 201 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { parseSpreadsheetFile } from "@/lib/parse-spreadsheet";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Bump the serverless-function timeout for this route. Default is
 // 10s on Vercel Hobby / 60s on Pro; importing 500 rows per chunk
@@ -572,7 +573,7 @@ export async function POST(request: Request) {
       errors,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 

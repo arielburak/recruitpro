@@ -7,6 +7,7 @@ import { CLIENT_VISIBLE_STAGE_SET } from "@/lib/constants";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { requireAdminResponse } from "@/lib/permissions";
 import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function PATCH(
   request: Request,
@@ -401,7 +402,7 @@ export async function PATCH(
     });
   } catch (error: any) {
     console.error("[submissions PATCH]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -443,6 +444,6 @@ export async function DELETE(
     await prisma.candidateSubmission.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

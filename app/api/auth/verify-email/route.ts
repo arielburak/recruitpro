@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Marks the user as verified when the token from the verification
 // email is presented. Public endpoint — the only auth required is
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Verification failed" },
+      { error: safeErrorMessage(error) || "Verification failed" },
       { status: 500 },
     );
   }

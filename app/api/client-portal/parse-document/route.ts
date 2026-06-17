@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
 import { extractJobFields } from "@/lib/extract-job-fields";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +28,6 @@ export async function POST(request: Request) {
       });
     }
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

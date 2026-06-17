@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Bulk-delete clients = bulk disengage. Shared-Client model: the
 // Client row itself stays (other agencies may also be engaged with
@@ -36,6 +37,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ disengaged: res.count });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

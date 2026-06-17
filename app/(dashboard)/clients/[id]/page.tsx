@@ -28,6 +28,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 export default function ClientDetailPage() {
   const params = useParams();
@@ -120,14 +121,14 @@ export default function ClientDetailPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to save");
+        showToast(data.error || "Failed to save");
       } else {
         setEditingClient(false);
         const updated = await fetch(`/api/clients/${clientId}`).then((r) => r.json());
         setClient(updated);
       }
     } catch {
-      alert("Failed to save");
+      showToast("Failed to save");
     } finally {
       setSavingClient(false);
     }
@@ -257,10 +258,10 @@ export default function ClientDetailPage() {
       if (res.ok) {
         router.push("/clients");
       } else {
-        alert("Failed to remove client.");
+        showToast("Failed to remove client.");
       }
     } catch {
-      alert("Failed to remove client.");
+      showToast("Failed to remove client.");
     }
   }
 

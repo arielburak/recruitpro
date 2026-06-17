@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 // Standalone page for the client team — surfaced as a first-class
 // nav item ("My Team") rather than buried in /settings. The flow is
@@ -172,7 +173,7 @@ export default function MyTeamPage() {
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to remove");
+      showToast(data.error || "Failed to remove");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -182,7 +183,7 @@ export default function MyTeamPage() {
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to cancel invite");
+      showToast(data.error || "Failed to cancel invite");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -196,16 +197,16 @@ export default function MyTeamPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to resend invite");
+        showToast(data.error || "Failed to resend invite");
       } else {
-        alert(
+        showToast(
           data.emailSent
             ? "Invite resent."
             : "Invite link refreshed (email delivery failed — copy the link manually)."
         );
       }
     } catch {
-      alert("Something went wrong");
+      showToast("Something went wrong");
     }
     setResendingId(null);
     setMemberMenu(null);
@@ -219,7 +220,7 @@ export default function MyTeamPage() {
     });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to change role");
+      showToast(data.error || "Failed to change role");
     }
     setMemberMenu(null);
     fetchTeam();

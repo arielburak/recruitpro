@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Single calendar event CRUD. Same per-user scope as the list endpoint:
 // only the creator can read / edit / delete their own events. No admin
@@ -34,7 +35,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(event);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -124,7 +125,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error("Calendar event update error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -137,6 +138,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     await prisma.calendarEvent.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { findSimilarClients } from "@/lib/client-dedup";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 function phoneDigits(value: string): string {
   return value.replace(/\D/g, "");
@@ -134,6 +135,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ matches: unique.slice(0, 5) });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

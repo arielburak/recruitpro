@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Agency-side autocomplete for the "Invite Client to Portal" dialog on
 // a Job page. Busca dos cosas en paralelo y las junta:
@@ -128,6 +129,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json([...userResults, ...contactResults]);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

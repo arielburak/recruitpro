@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   request: NextRequest,
@@ -26,7 +27,7 @@ export async function GET(
 
     return NextResponse.json(feedback);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -70,6 +71,6 @@ export async function POST(
 
     return NextResponse.json(feedback, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

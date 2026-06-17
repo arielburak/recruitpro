@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { clientSchema } from "@/lib/validations/client";
 import { clientAccessWhere } from "@/lib/client-access";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -28,7 +29,7 @@ export async function GET(
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(client);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -53,7 +54,7 @@ export async function PUT(
     await prisma.client.update({ where: { id }, data });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -77,6 +78,6 @@ export async function DELETE(
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

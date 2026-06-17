@@ -41,6 +41,7 @@ import { OfferNotesPrompt } from "@/components/pipeline/offer-notes-prompt";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
 import { InterviewsList } from "@/components/interviews/interviews-list";
 import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
+import { showToast } from "@/components/ui/toast";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -221,7 +222,7 @@ export default function CandidateDetailPage() {
     const res = await fetch(`/api/candidates/${params.id}${qs}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data?.error || "Couldn't delete the candidate");
+      showToast(data?.error || "Couldn't delete the candidate");
       return;
     }
     router.push("/candidates");
@@ -297,12 +298,12 @@ export default function CandidateDetailPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to change stage");
+        showToast(data.error || "Failed to change stage");
         return;
       }
       await fetchCandidate();
     } catch {
-      alert("Failed to change stage");
+      showToast("Failed to change stage");
     }
   }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendEmailVerificationEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Re-issue a fresh verification token for a portal user who hasn't
 // clicked the original yet. Public on purpose — the login page hits
@@ -48,6 +49,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

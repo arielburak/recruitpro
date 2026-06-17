@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -22,7 +23,7 @@ export async function GET(
     if (!contact) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(contact);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -84,7 +85,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -125,6 +126,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

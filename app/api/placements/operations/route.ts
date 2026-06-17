@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Operations strip for /placements. Surfaces the four cash-flow /
 // risk signals an agency wants in front of them when they open the
@@ -120,6 +121,6 @@ export async function GET() {
       mrrEndingWindowEnd: mrrEndingWindowEnd.toISOString(),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

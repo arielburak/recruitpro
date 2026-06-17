@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // DELETE — cancel a pending email invite that was sent to someone who
 // hadn't yet registered on the platform. Same contract as withdrawing a
@@ -30,6 +31,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

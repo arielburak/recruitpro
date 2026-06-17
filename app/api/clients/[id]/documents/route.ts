@@ -3,6 +3,7 @@ import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([
@@ -44,7 +45,7 @@ export async function GET(
     });
     return NextResponse.json(documents);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -127,7 +128,7 @@ export async function POST(
   } catch (error: any) {
     console.error("Client attachment upload error:", error);
     return NextResponse.json(
-      { error: error.message || "Upload failed" },
+      { error: safeErrorMessage(error) || "Upload failed" },
       { status: 500 }
     );
   }

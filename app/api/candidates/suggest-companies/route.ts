@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 /**
  * Suggest existing `currentCompany` values from the org's candidates so the UI
@@ -37,6 +38,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ suggestions });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

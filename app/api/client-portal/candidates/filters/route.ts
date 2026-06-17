@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Returns filter options for the candidates page:
 // - jobs the client has that have at least one shared candidate
@@ -65,6 +66,6 @@ export async function GET() {
       stages: clientStages,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

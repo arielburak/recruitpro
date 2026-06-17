@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -117,6 +118,6 @@ export async function GET() {
       })),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

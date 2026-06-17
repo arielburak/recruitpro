@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Resolve an agency-side jobId to a concrete deep-link target for the
 // client portal. Used by:
@@ -52,6 +53,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ path: "/client-portal/dashboard" });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

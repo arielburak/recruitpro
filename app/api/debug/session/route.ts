@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { cookies } from "next/headers";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -26,7 +27,7 @@ export async function GET() {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message, stack: error.stack?.split("\n").slice(0, 3) },
+      { error: safeErrorMessage(error), stack: error.stack?.split("\n").slice(0, 3) },
       { status: 500 }
     );
   }

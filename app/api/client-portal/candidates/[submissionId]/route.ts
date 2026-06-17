@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET candidate detail for a specific submission.
 // Only accessible if the submission is shared with the calling client user's client.
@@ -192,6 +193,6 @@ export async function GET(
       comments,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

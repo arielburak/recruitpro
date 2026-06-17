@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   request: Request,
@@ -55,7 +56,7 @@ export async function GET(
   } catch (error: any) {
     console.error("[document download] error:", error);
     return NextResponse.json(
-      { error: error.message || "Download failed" },
+      { error: safeErrorMessage(error) || "Download failed" },
       { status: 500 }
     );
   }
@@ -122,7 +123,7 @@ export async function DELETE(
   } catch (error: any) {
     console.error("Document delete error:", error);
     return NextResponse.json(
-      { error: error.message || "Delete failed" },
+      { error: safeErrorMessage(error) || "Delete failed" },
       { status: 500 }
     );
   }

@@ -58,6 +58,7 @@ import { ReadOnlyPipeline } from "@/components/client-portal/read-only-pipeline"
 import { formatDate } from "@/lib/utils";
 import { isInvitedUserVisible } from "@/lib/firm-engagement-visibility";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 type InviteStatus = "accepted" | "pending" | "declined" | "email_sent";
 
@@ -459,7 +460,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Upload failed");
+        showToast(data.error || "Upload failed");
       } else {
         fetchDocuments();
         // If it was a JD, refresh the job to get the newly parsed description
@@ -468,7 +469,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
         }
       }
     } catch {
-      alert("Upload failed");
+      showToast("Upload failed");
     } finally {
       setUploading(false);
     }
@@ -672,7 +673,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       fetchJob();
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "Could not withdraw invitation");
+      showToast(data.error || "Could not withdraw invitation");
     }
   }
 
@@ -684,7 +685,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
       fetchJob();
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || "Could not cancel invitation");
+      showToast(data.error || "Could not cancel invitation");
     }
   }
 

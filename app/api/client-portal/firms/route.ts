@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // List all firms engaged with this client's jobs
 export async function GET() {
@@ -30,6 +31,6 @@ export async function GET() {
 
     return NextResponse.json(Array.from(firmMap.values()));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

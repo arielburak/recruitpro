@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { Resend } from "resend";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(firms);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -236,6 +237,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(engagement, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

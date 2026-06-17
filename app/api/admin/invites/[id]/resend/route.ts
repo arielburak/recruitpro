@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { sendTeamInviteEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // POST — re-enviar un invite pendiente sin borrar ni regenerar token.
 // Decisión 2026-06-17: Resend NO es destructivo (no borra ni cambia
@@ -88,6 +89,6 @@ export async function POST(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

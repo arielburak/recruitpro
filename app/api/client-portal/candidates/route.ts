@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // List candidates shared with this client
 //
@@ -235,6 +236,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(Array.from(candidateMap.values()));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

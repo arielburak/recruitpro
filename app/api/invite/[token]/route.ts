@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET - validate invite and return info
 export async function GET(
@@ -54,7 +55,7 @@ export async function GET(
       organizationName: org?.name || "Unknown",
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -240,6 +241,6 @@ export async function POST(
       { status: 201 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

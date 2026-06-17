@@ -5,6 +5,7 @@ import { jobSchema } from "@/lib/validations/job";
 import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
 import { requireAdminResponse } from "@/lib/permissions";
 import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -227,7 +228,7 @@ export async function GET(
 
     return NextResponse.json(payload);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -252,7 +253,7 @@ export async function PUT(
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -274,7 +275,7 @@ export async function DELETE(
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -358,6 +359,6 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

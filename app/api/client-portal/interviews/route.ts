@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -162,6 +163,6 @@ export async function POST(request: Request) {
     return NextResponse.json(interview, { status: 201 });
   } catch (error: any) {
     console.error("[client-portal/interviews] Create error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

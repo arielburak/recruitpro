@@ -5,6 +5,7 @@ import { sendClientPortalShareEmail, sendClientSetPasswordEmail } from "@/lib/em
 import { DEFAULT_STAGES } from "@/lib/constants";
 import crypto from "crypto";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -406,6 +407,6 @@ export async function POST(request: Request) {
     }, { status: 201 });
   } catch (error: any) {
     console.error("[invite] Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

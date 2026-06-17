@@ -7,6 +7,7 @@ import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
 import { sendWelcomeEmail, sendEmailVerificationEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -146,7 +147,7 @@ export async function POST(request: Request) {
     }
     console.error("Registration error:", error);
     return NextResponse.json(
-      { error: error.message || "Registration failed" },
+      { error: safeErrorMessage(error) || "Registration failed" },
       { status: 500 }
     );
   }

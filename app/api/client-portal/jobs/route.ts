@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { clientJobAccessWhere } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -180,7 +181,7 @@ export async function GET() {
 
     return NextResponse.json(enriched);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -233,6 +234,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(job, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

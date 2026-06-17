@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { sendClientPortalWelcomeEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — used by the set-password page to know whether to show the
 // "complete your company info" fields. When the underlying Client was
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
       currentUserTitle: clientUser?.title || "",
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -195,6 +196,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

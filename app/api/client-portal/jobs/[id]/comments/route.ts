@@ -7,6 +7,7 @@ import {
   notifyOnNewJobComment,
 } from "@/lib/chat-notifications";
 import { validateCommentScope } from "@/lib/comment-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Chat-style notes thread on the client-portal job page. Accepts two
 // scopes mirroring the agency side:
@@ -173,6 +174,6 @@ export async function POST(
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

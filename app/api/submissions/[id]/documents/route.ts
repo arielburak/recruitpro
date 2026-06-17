@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Documents que la agencia eligio compartir con el cliente para esta
 // submission especifica.
@@ -75,7 +76,7 @@ export async function GET(
     );
     return NextResponse.json({ documents });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -155,6 +156,6 @@ export async function PUT(
 
     return NextResponse.json({ success: true, count: wantedIds.length });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

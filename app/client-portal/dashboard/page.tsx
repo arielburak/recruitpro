@@ -169,8 +169,12 @@ export default function ClientDashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        const debugInfo = data.debug ? ` [session: ${JSON.stringify(data.debug)}]` : "";
-        setInviteResult({ type: "error", message: (data.error || "Failed to invite") + debugInfo });
+        // Sin debug info al user — si el backend manda data.debug se
+        // logea para Sentry pero no se filtra al UI.
+        if (data.debug) {
+          console.error("[invite] backend debug:", data.debug);
+        }
+        setInviteResult({ type: "error", message: data.error || "Failed to invite" });
       } else {
         setInviteResult({
           type: "success",

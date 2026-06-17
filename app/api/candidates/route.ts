@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ candidates, total, page, limit });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -171,6 +172,6 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

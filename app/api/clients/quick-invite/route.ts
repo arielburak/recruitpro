@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { sendClientSetPasswordEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Turn "jane@acme-corp.com" → "Acme Corp". The hiring manager will
 // overwrite this on first login, so we just want something readable
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
     );
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message },
+      { error: safeErrorMessage(error) },
       { status: error.message?.startsWith("Unauthorized") ? 401 : 500 }
     );
   }

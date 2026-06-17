@@ -8,6 +8,7 @@ import {
 } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
 import { validateCommentScope } from "@/lib/comment-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -173,6 +174,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

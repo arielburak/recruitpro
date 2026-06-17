@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Returns the unique list of recruiting firms (Organizations) that
 // have at least one ACCEPTED engagement with this client, plus the
@@ -267,6 +268,6 @@ export async function GET() {
 
     return NextResponse.json({ firms, pending, declined });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

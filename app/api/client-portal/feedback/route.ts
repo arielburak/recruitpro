@@ -4,6 +4,7 @@ import { getClientContext } from "@/lib/tenant";
 import { validateClientPortalToken } from "@/lib/tokens";
 import { sendCandidateFeedbackEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -104,6 +105,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

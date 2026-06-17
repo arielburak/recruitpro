@@ -5,6 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { requireActiveSubscription, SubscriptionError } from "@/lib/subscription-guard";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { sendEngagementAcceptedEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function PUT(
   request: Request,
@@ -272,6 +273,6 @@ export async function PUT(
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
