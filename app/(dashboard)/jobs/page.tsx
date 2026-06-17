@@ -758,8 +758,16 @@ export default function JobsPage() {
           <p className="text-gray-500 text-sm">
             {search || activeFilters.length > 0
               ? "No jobs match your filters"
-              : "No jobs yet. Create your first job order."}
+              : "No jobs yet — create your first search."}
           </p>
+          {!search && activeFilters.length === 0 && (
+            <Link href="/jobs/new" className="inline-block mt-4">
+              <Button size="sm" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Create job
+              </Button>
+            </Link>
+          )}
           {(search || activeFilters.length > 0) && (
             <button onClick={() => { clearAllFilters(); setSearch(""); }} className="text-indigo-600 text-sm mt-2 hover:underline">
               Clear all filters

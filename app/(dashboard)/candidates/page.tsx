@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ArrowUpDown,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
@@ -565,8 +566,24 @@ export default function CandidatesPage() {
           <p className="text-gray-500 text-sm">
             {search || activeFilters.length > 0
               ? "No candidates match your filters"
-              : "No candidates yet. Add your first candidate to get started."}
+              : "No candidates yet — start building your pipeline."}
           </p>
+          {!search && activeFilters.length === 0 && (
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Link href="/candidates/new">
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add candidate
+                </Button>
+              </Link>
+              <Link href="/import">
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <Upload className="h-3.5 w-3.5" />
+                  Import from CSV
+                </Button>
+              </Link>
+            </div>
+          )}
           {(search || activeFilters.length > 0) && (
             <button
               onClick={() => {

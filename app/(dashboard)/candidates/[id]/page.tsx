@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -246,9 +247,11 @@ export default function CandidateDetailPage() {
     const leavingPlaced =
       submission.stage?.name === "Placed" && newStage?.name !== "Placed";
     if (leavingPlaced && submission.placement) {
-      const ok = window.confirm(
-        `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
-      );
+      const ok = await confirmDialog({
+        title: `Move out of "Placed"?`,
+        description: `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms).`,
+        confirmLabel: "Yes, move out",
+      });
       if (!ok) return;
     }
 

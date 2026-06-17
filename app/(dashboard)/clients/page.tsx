@@ -190,8 +190,16 @@ export default function ClientsPage() {
         <div className="text-center py-16">
           <Building2 className="h-10 w-10 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">
-            {search ? "No clients match your search" : "No clients yet. Add your first client company."}
+            {search ? "No clients match your search" : "No clients yet — add the first company you work with."}
           </p>
+          {!search && (
+            <Link href="/clients/new" className="inline-block mt-4">
+              <Button size="sm" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Add client
+              </Button>
+            </Link>
+          )}
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">

@@ -332,12 +332,22 @@ export async function POST(request: Request) {
       },
     });
 
+    // Hardening del contador de Interviews (#9 del roadmap): siempre
+    // stampear submissionId + interviewId en metadata. La dedup del
+    // dashboard usa estos campos — sin ellos, si el candidato se borra
+    // (cascade arrastra Activity), las metricas de Interviews de
+    // periodos viejos pueden contar de menos por ambiguedad.
     await logActivity({
       action: "interview.scheduled",
       description: `${ctx.userName} scheduled interview "${title}" with ${interview.candidate.firstName} ${interview.candidate.lastName} for ${interview.job.title}`,
       userId: ctx.userId,
       candidateId,
       organizationId: ctx.organizationId,
+      metadata: {
+        interviewId: interview.id,
+        submissionId: submissionId || null,
+        jobId,
+      },
     });
 
     // Send invite emails — gated on notifyAttendees so the kanban

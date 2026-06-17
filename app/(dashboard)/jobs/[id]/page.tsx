@@ -30,6 +30,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ChatNotes } from "@/components/chat-notes";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { showToast } from "@/components/ui/toast";
 
 type TeamMember = { id: string; name: string; email: string };
@@ -208,9 +209,11 @@ export default function JobDetailPage() {
   // cancelled, so the diff / notification logic on the server stays
   // in one place.
   async function cancelPortalInvite(clientUserId: string, label: string) {
-    const ok = confirm(
-      `Cancel the portal invite for ${label}? They'll lose access to this search.`,
-    );
+    const ok = await confirmDialog({
+      title: `Cancel invite for ${label}?`,
+      description: "They'll lose access to this search.",
+      confirmLabel: "Yes, cancel",
+    });
     if (!ok) return;
     const mirror = job?.clientJobMirror;
     if (!mirror) return;
@@ -633,9 +636,11 @@ export default function JobDetailPage() {
     // recruiter first since the placement carries salary / fee /
     // payment terms data they may not want to lose silently.
     if (leavingPlaced && submission?.placement) {
-      const ok = window.confirm(
-        `This candidate has a placement record. Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
-      );
+      const ok = await confirmDialog({
+        title: `Move out of "Placed"?`,
+        description: `This candidate has a placement record. Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms).`,
+        confirmLabel: "Yes, move out",
+      });
       if (!ok) return;
     }
 
@@ -2151,15 +2156,21 @@ export default function JobDetailPage() {
                             type="file"
                             className="hidden"
                             accept=".pdf,.doc,.docx,.txt"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
+                              const input = e.target;
                               if (!file) return;
-                              if (!confirm("Re-parsing will replace the description, and update Location / Work Arrangement if found in the new file. Continue?")) {
-                                e.target.value = "";
+                              const ok = await confirmDialog({
+                                title: "Re-parse this JD?",
+                                description: "We'll replace the description, and update Location / Work Arrangement if found in the new file.",
+                                confirmLabel: "Yes, re-parse",
+                              });
+                              if (!ok) {
+                                input.value = "";
                                 return;
                               }
                               uploadJobDocument(file, "JOB_DESCRIPTION");
-                              e.target.value = "";
+                              input.value = "";
                             }}
                           />
                         </label>

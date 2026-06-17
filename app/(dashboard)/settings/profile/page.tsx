@@ -11,6 +11,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Badge } from "@/components/ui/badge";
 import { User, Building2, Users, Shield, KeyRound, Check, AlertCircle, Mail, Calendar, Plug, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function StaffingProfilePage() {
   const { data: session, update: updateSession } = useSession();
@@ -45,7 +46,12 @@ export default function StaffingProfilePage() {
   }
 
   async function disconnectGoogle() {
-    if (!confirm("Disconnect your Google account? You'll need to reconnect to create Meet links.")) return;
+    const ok = await confirmDialog({
+      title: "Disconnect Google?",
+      description: "You'll need to reconnect to create Meet links.",
+      confirmLabel: "Yes, disconnect",
+    });
+    if (!ok) return;
     setDisconnectingGoogle(true);
     try {
       await fetch("/api/integrations/google/status", { method: "DELETE" });

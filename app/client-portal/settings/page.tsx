@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 
 type SettingsTab = "profile" | "organization";
 
@@ -237,7 +238,12 @@ export default function ClientPortalSettingsPage() {
   }
 
   async function removeMember(memberId: string) {
-    if (!confirm("Remove this team member? This cannot be undone.")) return;
+    const ok = await confirmDialog({
+      title: "Remove team member?",
+      description: "This cannot be undone.",
+      confirmLabel: "Yes, remove",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
@@ -248,7 +254,12 @@ export default function ClientPortalSettingsPage() {
   }
 
   async function cancelInvite(memberId: string, email: string) {
-    if (!confirm(`Cancel invite for ${email}? They won't be able to use any previously sent link.`)) return;
+    const ok = await confirmDialog({
+      title: `Cancel invite for ${email}?`,
+      description: "They won't be able to use any previously sent link.",
+      confirmLabel: "Yes, cancel",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
