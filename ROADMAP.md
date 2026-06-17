@@ -17,7 +17,7 @@ Aplican a cualquier feature nueva o existente:
 - `- [ ]` pendiente / nuevo
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-06-10
+**Última actualización**: 2026-06-17
 
 ---
 
@@ -54,8 +54,16 @@ Aplican a cualquier feature nueva o existente:
 
 ### Grandes (sesión completa cada uno)
 
-- [ ] **#7 — Revisar copys de todos los mails transaccionales**. Auditoría + reescritura.
-- [ ] **#18 — Rehacer UX del invite a Recruiter**. Repensar y simplificar el flujo (solo UX/UI).
+- [~] **#7 — Revisar copys de todos los mails transaccionales**. Auditoría + reescritura estructural de las 18 sendX helpers en `lib/email.ts`. Shell unificada `wrapTemplate`, sender único `Recruiting ATS <noreply@…>` con `replyTo` cuando aplica (interview invites, mentions, candidate shared) para que el reply caiga al humano y no a noreply. Copy tightening pasada en todos los templates. Commit `1361690`.
+- [~] **#18 — Rehacer UX del invite a Recruiter**. Repensar y simplificar el flujo. Pasó por 3 iteraciones: (a) dropdown separado de firms → chips horizontales filtrando in-place; (b) input single-select → multi-select tipo Outlook con chips de recipients arriba + Enter/coma/Backspace; (c) copy neutral "Send invitations" (antes "Invite recruiters"). Cada suggestion ahora tiene checkbox visible. Lista con max-h scroll. Send hace N POSTs en paralelo. Commits `aa8b33f` + `c330068` + `bc3fa7e`.
+
+### Sprint 14-17 jun (post-10-jun sweep)
+
+- [~] **Rename "Active Recruiters" → "Recruiting Firms"** en el dashboard del client portal. La métrica medía firmas únicas, no personas, y el label confundía. Commit `4a254b4`.
+- [~] **Client portal candidates list: multi-search rows alineados**. Cuando un candidato esta en 2+ jobs, los sub-rows ahora siguen las columnas del header (job + status + activity) en vez de un layout flat que se desalineaba en mobile. Fix de raíz, no curita visual. Commits `6fc1366` + `20948ac`.
+- [~] **Assigned Firms: stats + cards + empty-state usan el mismo filter**. Antes una firma con invitedUser inactivo podía contar para "2 Active" pero no renderizar la card. Single source aplicado al inicio del card. Commit `ce4f891`. Después extendido para filtrar soft-released — `99b8123`.
+- [~] **QA P1 — `isInvitedUserVisible` single source en server + client**. El dropdown del Invite Recruiter mostraba recruiters soft-released aunque la card de Assigned Firms los ocultaba. Extraído a `lib/firm-engagement-visibility.ts` y reusado en (a) Assigned Firms component, (b) `/api/client-portal/invite-suggestions`, (c) chat tabs "Shared with X". Single source of truth. Commits `be9aa5a` + `71d422d`.
+- [~] **QA P2/P3/P4 — chat tab consistency, USER readonly status, no-op activity, screen-reader title**. (a) Chat tabs ya no muestran firms con invitedUser oculto; (b) status select en /jobs list es Badge readonly para USER (antes alertaba 403); (c) activity log skip si stage nuevo === stage actual (no más "Submitted → Submitted"); (d) DeleteConfirmDialog fallback "Confirm deletion" cuando itemLabel vacío (antes leía "Delete ?" en a11y tree). Commit `71d422d`.
 
 ### En staging — verificá y pasa a `[x]`
 
