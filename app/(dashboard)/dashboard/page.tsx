@@ -51,16 +51,25 @@ export default async function DashboardPage() {
   // "Active Searches" tile from surfacing work the user can't open.
   const jobAccessFilter = { assignments: { some: { userId } } };
 
-  // Org age drives the first-week migration banner (see MigrateBanner).
-  // We fetch this outside the Promise.all so the banner can render
-  // even if any of the dashboard stat queries fail — it's a hint, not
-  // a hard dependency.
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: { createdAt: true },
-  });
-  const daysSinceSignup = org
-    ? Math.floor((now.getTime() - new Date(org.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+  // First-week banners ahora se basan en la edad del USER, no del org.
+  // Antes (commit eafa844 + previos) usabamos org.createdAt — eso dejaba
+  // sin banners de onboarding a los users invitados a un org existente.
+  // Reportado 2026-06-17: "invité a otro mail mio como teammate y no me
+  // aparecieron los carteles que deberían aparecer cuando alguien se
+  // loguea por primera vez". El onboarding es personal de cada user, no
+  // del workspace.
+  //
+  // Edge case: si userId no está en la session por alguna razon, usamos
+  // Infinity para que isWithinFirstWeek sea false y los banners se
+  // escondan en vez de aparecer indefinidamente.
+  const user = userId
+    ? await prisma.user.findUnique({
+        where: { id: userId },
+        select: { createdAt: true },
+      })
+    : null;
+  const daysSinceSignup = user
+    ? Math.floor((now.getTime() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
     : Infinity;
   const isWithinFirstWeek = daysSinceSignup <= 7;
 
@@ -436,21 +445,29 @@ export default async function DashboardPage() {
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
-      {/* Invite teammate banner — primera semana, solo si el usuario
-          esta solo (count === 1). Apenas invita a alguien o pasa la
-          semana, desaparece. Mismo formato que el migrate banner
-          pero en violeta para diferenciar. */}
-      {isWithinFirstWeek && teamSize === 1 && (
+      {/* Invite teammate banner — visible toda la primera semana del
+          USER (no del org). El copy se adapta segun teamSize:
+          · teamSize === 1 → "Working alone? Pull your team in" (founder)
+          · teamSize > 1  → "Bring more people in" (invitee que llego a
+                            un org ya armado, igual le queremos sugerir
+                            que sume contactos)
+          Apenas pasa la semana, desaparece. */}
+      {isWithinFirstWeek && (
         <div className="bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 border border-violet-200 rounded-2xl p-5">
           <div className="flex items-start gap-4 pr-6">
             <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
               <UserPlus className="w-5 h-5 text-violet-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-violet-900">Working alone? Pull your team in.</p>
+              <p className="font-semibold text-violet-900">
+                {teamSize === 1
+                  ? "Working alone? Pull your team in."
+                  : "Welcome to the team — bring more people in."}
+              </p>
               <p className="text-sm text-violet-800/80 mt-0.5">
-                Recruiting works better with backup — invite a teammate so you can split searches,
-                share candidates, and chat with clients together. Free during your trial.
+                {teamSize === 1
+                  ? "Recruiting works better with backup — invite a teammate so you can split searches, share candidates, and chat with clients together. Free during your trial."
+                  : "You can invite teammates yourself — anyone you add joins the same workspace and shares jobs, candidates, and client chats with you."}
               </p>
               <div className="flex items-center gap-3 mt-3">
                 <Link
