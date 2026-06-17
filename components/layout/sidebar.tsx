@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
+  Users2,
   Briefcase,
   Building2,
   Trophy,
@@ -33,6 +34,11 @@ const mainNavItems = [
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Import", href: "/import", icon: Upload },
   { label: "Engagements", href: "/engagements", icon: Inbox },
+  // Atajo directo al team — paridad con la nav del client portal, donde
+  // "My Team" vive al mismo nivel que las navs principales. Sigue siendo
+  // la tab Team de /settings (no hay duplicación de página), solo
+  // exponemos el deep-link aca para que el usuario llegue en 1 click.
+  { label: "My Team", href: "/settings/team", icon: Users2 },
 ];
 
 // Profile + team + integrations + org settings all live under /settings
@@ -48,13 +54,24 @@ function NavLink({
   item,
   pathname,
   onClick,
+  excludePrefixes,
 }: {
   item: { label: string; href: string; icon: React.ElementType };
   pathname: string;
   onClick?: () => void;
+  // Subrutas que pertenecen a OTRO item más específico del nav y por
+  // ende NO deberían encender este item como activo. Ejemplo: el item
+  // "Settings" (href /settings) NO debe quedar activo cuando estamos
+  // en /settings/team, porque ese path es el deep-link del item
+  // "My Team". Sin esto los dos items se prenderian a la vez.
+  excludePrefixes?: string[];
 }) {
-  const isActive =
+  const matches =
     pathname === item.href || pathname.startsWith(item.href + "/");
+  const excluded =
+    !!excludePrefixes &&
+    excludePrefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const isActive = matches && !excluded;
 
   return (
     <Link
@@ -250,11 +267,14 @@ export function Sidebar() {
         ))}
 
         {/* Single unified Settings entry — profile, team, integrations,
-            organization, billing all live behind tabs on /settings */}
+            organization, billing all live behind tabs on /settings.
+            Excluimos /settings/team del match porque ese path es el deep-
+            link del item "My Team" del main nav. */}
         <div className="!my-4 mx-0 border-t border-white/[0.06]" />
         <NavLink
           item={settingsNavItem}
           pathname={pathname}
+          excludePrefixes={["/settings/team"]}
           onClick={() => setMobileOpen(false)}
         />
       </nav>
