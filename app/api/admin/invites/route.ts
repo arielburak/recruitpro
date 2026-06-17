@@ -11,14 +11,16 @@ export async function POST(request: Request) {
 
     const ctx = await getOrgContext();
 
-    // Only admins can invite
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-    }
-
     const body = await request.json();
     const email = body.email;
-    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+    // Cualquier miembro del org puede invitar a un teammate. Decisión 2026-06-17:
+    // los invites NO son destructivos y abrirlos a USER baja la fricción del
+    // onboarding cuando el admin no esta cerca. La unica restriccion: si quien
+    // invita es USER, el invite se crea forzosamente como USER — no puede
+    // elevar privilegios a ADMIN. ADMIN sigue siendo el unico que puede
+    // sembrar otro ADMIN (y el unico que puede borrar / revocar invites).
+    const requestedRole: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+    const role: "ADMIN" | "USER" = ctx.role === "ADMIN" ? requestedRole : "USER";
     const name = typeof body.name === "string" ? body.name.trim() : null;
 
     if (!email) {

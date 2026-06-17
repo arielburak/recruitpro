@@ -189,11 +189,15 @@ export default function AdminUsersPage() {
           {activeUsers.length !== 1 ? "s" : ""} &middot; $
           {activeUsers.length * 10}/mo
         </p>
-        {isAdmin && (
-          <Button onClick={() => setShowInvite(true)}>
-            <Mail className="mr-2 h-4 w-4" /> Invite Team Member
-          </Button>
-        )}
+        {/* Invite teammate accesible para todos los miembros del org.
+            Decisión 2026-06-17: el invite no es destructivo; ADMIN sigue
+            siendo el unico que puede borrar/revocar invites + sembrar
+            roles ADMIN. Para USER, el dialog esconde el selector de role
+            y manda role=USER hardcodeado al backend (que ademas re-fuerza
+            esa regla server-side). */}
+        <Button onClick={() => setShowInvite(true)}>
+          <Mail className="mr-2 h-4 w-4" /> Invite Team Member
+        </Button>
       </div>
 
       {/* Notifications */}
@@ -219,7 +223,32 @@ export default function AdminUsersPage() {
               An email invitation will be sent. They can create their own
               account using the link.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            {/* Solo ADMIN puede elegir role al invitar; para USER el form
+                tiene un campo name a full width y se envia role=USER fijo. */}
+            {isAdmin ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Full Name</Label>
+                  <Input
+                    name="name"
+                    type="text"
+                    placeholder="e.g. María López"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <select
+                    name="role"
+                    className="w-full border rounded-md px-3 py-2 text-sm h-9"
+                    defaultValue="USER"
+                  >
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
               <div className="space-y-2">
                 <Label>Full Name</Label>
                 <Input
@@ -228,19 +257,9 @@ export default function AdminUsersPage() {
                   placeholder="e.g. María López"
                   required
                 />
+                <input type="hidden" name="role" value="USER" />
               </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <select
-                  name="role"
-                  className="w-full border rounded-md px-3 py-2 text-sm h-9"
-                  defaultValue="USER"
-                >
-                  <option value="USER">User</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
-              </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input
