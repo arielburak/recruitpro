@@ -93,6 +93,11 @@ export default async function DashboardPage() {
     // esta dentro de los primeros 7 dias, le destacamos el CTA para
     // sumar al equipo. Cualquier invite hecho saca el banner.
     teamSize,
+    // recientes invites aceptados (< 24h) que ESTE user mando. Empuja
+    // un banner "🎉 X joined" para que el inviter vea momentum y mande
+    // mas invites. Si invitedById es null (filas pre-2026-06-17) no
+    // entran porque el filtro busca match exacto con userId.
+    recentlyAcceptedInvites,
   ] = await Promise.all([
     prisma.job.count({
       where: {
@@ -180,6 +185,16 @@ export default async function DashboardPage() {
     }),
     prisma.user.count({
       where: { organizationId: orgId, isActive: true },
+    }),
+    prisma.userInvite.findMany({
+      where: {
+        organizationId: orgId,
+        invitedById: userId,
+        usedAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+      },
+      select: { email: true, name: true, usedAt: true },
+      orderBy: { usedAt: "desc" },
+      take: 3,
     }),
   ]);
 
@@ -324,11 +339,28 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-gray-500">
-            Welcome back, {session?.user?.name}
-          </p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-gray-500">
+              Welcome back, {session?.user?.name}
+            </p>
+          </div>
+          {/* Team chip — visibilidad rapida del tamaño del equipo + atajo
+              al flujo de invitar. Pensado como growth trigger: cada vez
+              que el usuario ve el dashboard, ve el conteo y un + para
+              sumar. El "+" abre /settings/team que en su empty state
+              también empuja a invitar mas. */}
+          <Link
+            href="/settings/team"
+            className="group ml-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-indigo-300 hover:text-indigo-700 transition-colors"
+            title={`${teamSize} active member${teamSize === 1 ? "" : "s"} — click to manage your team`}
+          >
+            <UserPlus className="h-3 w-3" />
+            <span>Team: {teamSize}</span>
+            <span className="text-gray-300 group-hover:text-indigo-400">·</span>
+            <span className="text-indigo-600 font-semibold">+</span>
+          </Link>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/candidates/new">
@@ -405,6 +437,47 @@ export default async function DashboardPage() {
                 <ArrowRight className="w-4 h-4 opacity-50 shrink-0 mt-1" />
               </Link>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Celebracion top-of-dashboard cuando un invite mio fue aceptado
+          en las ultimas 24h. Muestra el momentum y empuja a sumar mas
+          gente — el botón apunta a /settings/team. Sin dismiss: se
+          autoexpira porque la query filtra usedAt < 24h. */}
+      {recentlyAcceptedInvites.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-50 via-green-50 to-teal-50 border border-emerald-200 rounded-2xl p-5">
+          <div className="flex items-start gap-4 pr-6">
+            <div className="p-2.5 bg-emerald-100 rounded-xl shrink-0">
+              <span className="text-xl leading-none">🎉</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-emerald-900">
+                {recentlyAcceptedInvites.length === 1
+                  ? `${recentlyAcceptedInvites[0].name || recentlyAcceptedInvites[0].email} joined your team`
+                  : `${recentlyAcceptedInvites.length} new teammates joined`}
+              </p>
+              <p className="text-sm text-emerald-800/80 mt-0.5">
+                {recentlyAcceptedInvites.length === 1
+                  ? "They can now collaborate with you on searches, candidates and clients. Want to keep growing the team?"
+                  : "Your workspace just got bigger. Want to keep growing the team?"}
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <Link
+                  href="/settings/team"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Invite more
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+                <Link
+                  href="/settings/team"
+                  className="text-[11px] font-medium text-emerald-700/80 hover:text-emerald-800"
+                >
+                  View My Team →
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       )}

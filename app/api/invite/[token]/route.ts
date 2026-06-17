@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
+import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 
 // GET - validate invite and return info
 export async function GET(
@@ -171,6 +171,47 @@ export async function POST(
       }).catch((err) =>
         console.error("[invite accept] welcome mail failed:", err),
       );
+
+      // Notif al inviter — cierre del loop "le mande un invite, ¿se
+      // subió?". (a) in-app UserNotification para que vea el toque de
+      // campana al instante; (b) email para que se entere aunque no
+      // este logueado. Skipeable: invites pre-2026-06-17 no tienen
+      // invitedById, en ese caso no hay a quien avisar.
+      if (invite.invitedById) {
+        const inviter = await prisma.user.findUnique({
+          where: { id: invite.invitedById },
+          select: { id: true, email: true, name: true, isActive: true },
+        });
+        if (inviter?.isActive) {
+          // In-app notif. type "team_member_joined" es nuevo — el bell
+          // ya renderea cualquier UserNotification con title + body
+          // sin gate por type, asi no hay UI extra.
+          await prisma.userNotification
+            .create({
+              data: {
+                userId: inviter.id,
+                type: "team_member_joined",
+                title: `${name} joined your team`,
+                body: `${invite.email} accepted your invitation to ${org?.name || "the team"}.`,
+                link: "/settings/team",
+              },
+            })
+            .catch((err) =>
+              console.error("[invite accept] inviter notif failed:", err),
+            );
+          // Email al inviter.
+          sendInviteAcceptedEmail({
+            to: inviter.email,
+            inviterName: inviter.name,
+            newMemberName: name,
+            newMemberEmail: invite.email,
+            organizationName: org?.name || "your workspace",
+            teamUrl: `${origin}/settings/team`,
+          }).catch((err) =>
+            console.error("[invite accept] inviter email failed:", err),
+          );
+        }
+      }
     } catch (err) {
       console.error("[invite accept] welcome mail dispatch failed:", err);
     }

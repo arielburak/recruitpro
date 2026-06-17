@@ -116,6 +116,7 @@ model User {
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
   createdCalendarEvents CalendarEvent[]       @relation("CalendarEventCreator")
   attributedPlacements  Placement[]           @relation("PlacementRecruiter")
+  sentUserInvites       UserInvite[]          @relation("UserInvitesSent")
 
   @@index([organizationId])
   @@index([accountId])
@@ -1091,12 +1092,21 @@ model UserInvite {
   token          String   @unique @default(cuid())
   role           UserRole @default(USER)
   organizationId String
+  // invitedById queda nullable para no romper las filas viejas (los
+  // invites pre-2026-06-17 no guardaban esto). En las filas nuevas
+  // siempre se setea el id del User que disparo el POST. Lo usamos
+  // para (a) notificarle al inviter cuando el invitee acepta y (b)
+  // poder identificar al "owner" del invite si alguna vez se permite
+  // que un USER revoque su propio invite (hoy revoke sigue ADMIN-only).
+  invitedById    String?
+  invitedBy      User?    @relation("UserInvitesSent", fields: [invitedById], references: [id], onDelete: SetNull)
   expiresAt      DateTime
   usedAt         DateTime?
   createdAt      DateTime @default(now())
 
   @@index([token])
   @@index([organizationId])
+  @@index([invitedById])
 }
 
 // ─── CALENDAR EVENTS ───

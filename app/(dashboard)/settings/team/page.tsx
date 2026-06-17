@@ -30,6 +30,8 @@ import {
   Trash2,
   Send,
   XCircle,
+  UserPlus,
+  ArrowRight,
 } from "lucide-react";
 
 export default function AdminUsersPage() {
@@ -288,6 +290,44 @@ export default function AdminUsersPage() {
         </div>
       ) : (
         <>
+          {/* CTA persistente de growth. Vive arriba de la lista para que
+              cada vez que el usuario abre My Team vea el incentivo de
+              sumar mas gente. El boton dispara el mismo dialog que el
+              boton del header — no duplicamos UI, solo damos otro punto
+              de entrada visualmente destacado. */}
+          <div className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 p-5">
+            <div className="flex items-start gap-4">
+              <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
+                <UserPlus className="w-5 h-5 text-violet-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-violet-900">
+                  {users.length === 1
+                    ? "Add another seat — your team gets stronger with each search you split."
+                    : "Keep growing your team."}
+                </p>
+                <p className="text-sm text-violet-800/80 mt-0.5">
+                  Anyone you add joins this workspace and starts seeing the searches you assign them to.
+                  More hands means more candidates moving and faster placements.
+                </p>
+                <div className="flex items-center gap-3 mt-3">
+                  <Button
+                    onClick={() => setShowInvite(true)}
+                    size="sm"
+                    className="gap-1.5 bg-violet-600 hover:bg-violet-700"
+                  >
+                    Invite teammates
+                    <ArrowRight className="h-3 w-3" />
+                  </Button>
+                  <span className="text-[11px] font-medium text-violet-700/70">
+                    {activeUsers.length} active member{activeUsers.length === 1 ? "" : "s"}
+                    {invites.length > 0 ? ` · ${invites.length} pending` : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Active Users */}
           <div className="space-y-2">
             {users.map((u) => (

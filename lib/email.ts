@@ -690,6 +690,39 @@ export async function sendCandidateSharedEmail({
   });
 }
 
+export async function sendInviteAcceptedEmail({
+  to,
+  inviterName,
+  newMemberName,
+  newMemberEmail,
+  organizationName,
+  teamUrl,
+}: {
+  to: string;
+  inviterName: string;
+  newMemberName: string;
+  newMemberEmail: string;
+  organizationName: string;
+  teamUrl: string;
+}) {
+  // Sent al inviter cuando el invitee acepta — cierra el loop "le mande
+  // un invite, ¿se subió?". Empuja al inviter a sumar mas gente
+  // (growth loop: cada invitee que acepta es revenue nuevo + un user
+  // mas que puede invitar).
+  const subject = `${newMemberName} joined ${organizationName}`;
+  const html = wrapTemplate(
+    `🎉 ${newMemberName} accepted your invite`,
+    `${greeting(inviterName)}
+     <p><strong>${newMemberName}</strong> (${newMemberEmail}) just joined <strong>${organizationName}</strong> on ${appName}.</p>
+     <p>They can now see the searches they're assigned to and collaborate with you on candidates and clients.</p>
+     <p>Want to keep growing the team? Send another invite from <a href="${teamUrl}">My Team</a>.</p>`,
+    teamUrl,
+    "Open My Team",
+  );
+
+  return sendEmail({ to, subject, html });
+}
+
 export async function sendStaffingMemberWelcomeEmail({
   to,
   recipientName,

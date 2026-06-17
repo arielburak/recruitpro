@@ -54,13 +54,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create invite
+    // Create invite. invitedById nos permite notificarle al inviter
+    // cuando el invitee acepta. Para invites pre-2026-06-17 el campo es
+    // null — no romper backward compat, solo trackeamos hacia adelante.
     const invite = await prisma.userInvite.create({
       data: {
         email,
         role,
         name: name || null,
         organizationId: ctx.organizationId,
+        invitedById: ctx.userId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
