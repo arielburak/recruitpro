@@ -225,6 +225,31 @@ export const authOptions: NextAuthOptions = {
 
       if (existingUser) return true;
 
+      // ✋ Antes de tratarlo como signup nuevo, chequear si hay un
+      // UserInvite pendiente para este email. Si lo hay, procesarlo
+      // (mismo efecto que POST /api/invite/[token]: crea User en la
+      // org del invite, marca usedAt, dispara welcome + notif al
+      // inviter). Sin esto, el invitado que hace Sign in with Google
+      // termina en una org vacía nueva — el invite queda huérfano y
+      // el inviter nunca recibe el "X joined". Reportado 2026-06-17
+      // con el flow cuello.nico@gmail.com invitado a Morabits.
+      const { findPendingStaffingInviteByOAuthEmail, acceptStaffingInviteOnOAuth } =
+        await import("./oauth-accept-staffing-invite");
+      const pendingInvite = await findPendingStaffingInviteByOAuthEmail(user.email);
+      if (pendingInvite) {
+        const accepted = await acceptStaffingInviteOnOAuth(pendingInvite, {
+          email: user.email,
+          name: user.name || null,
+        });
+        if (accepted) {
+          // Sign-in continúa; el jwt callback va a encontrar el User
+          // recién creado via findStaffingUserByOAuthEmail.
+          return true;
+        }
+        // Si falló el accept (race / FK / etc), caemos al auto-create
+        // como antes — mejor que bloquear el sign-in.
+      }
+
       // Auto-create org + user for new OAuth sign-ups.
       // Org name is a placeholder — user is forced through /onboarding
       // to set the real company name before accessing the app.
