@@ -1924,11 +1924,11 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
           <Dialog open={showInvite} onOpenChange={setShowInvite}>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Invite recruiters</DialogTitle>
+                <DialogTitle>Send invitations</DialogTitle>
                 <DialogDescription>
                   Invite by email. Each invitation reaches only that specific
-                  person — not their whole firm — so you can pick exact HMs
-                  or POCs. Add as many as you need before sending.
+                  person — not their whole firm — so you can pick exact
+                  contacts. Add as many as you need before sending.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -2333,7 +2333,7 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                       label = "Send signup invite";
                     }
                   } else {
-                    label = `Invite ${effectiveCount} recruiters`;
+                    label = `Send ${effectiveCount} invitations`;
                   }
 
                   return (
