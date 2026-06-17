@@ -110,7 +110,6 @@ Aplican a cualquier feature nueva o existente:
 
 ### P1 / P2
 
-- [ ] Currency con API real-time server-side + cachear en DB (hoy `/placements` usa open.er-api.com client-side con localStorage cache).
 - [ ] Salario Bruto/Neto en Argentina (~17% aporte) cuando cliente AR (detectar por currency ARS o flag).
 - [ ] Email verification gate más profundo (hoy auto-login sin verificar)
 - [ ] Phone prefix por geo-IP (AR → +54, US → +1)
@@ -122,7 +121,6 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Reporting serio: revenue esperado, placements timeline, cashflow, comisiones, performance
 - [ ] Chrome extension para LinkedIn (1-click add candidate)
 - [ ] Import desde LinkedIn, Indeed, otros portales
-- [ ] Gmail / Outlook sync real
 - [ ] Copilot alerts: "Búsqueda X sin candidatos hace Y días"
 - [ ] Shareable public link a shortlist (cliente read-only sin cuenta)
 - [ ] Per-JO member access (hoy el team es global)
@@ -130,9 +128,16 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Upload PDFs/archivos a Events (Interviews ya soportan; falta `Document.calendarEventId` + UI)
 - [ ] Parser mejorado para JDs formato "Close Up" (pendiente: ejemplo para tunear)
 - [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
-- [ ] Calendly-like: candidato elige slot del calendar del recruiter
 - [ ] Loom onboarding autoplay
-- [ ] Microsoft Teams integration (ON HOLD esperando tenant Microsoft propio)
+
+### 🗑️ Bajado del scope (2026-06-17)
+
+Items que estaban en el primer roadmap y se bajaron en sesiones posteriores. Si vuelven a aparecer como pedido, los traemos de vuelta:
+
+- ~~Currency con API real-time server-side~~ — bajado: el MVP trata todo como USD, no es bloqueante
+- ~~Calendly-like: candidato elige slot~~ — bajado: feature grande post-MVP
+- ~~Gmail / Outlook sync real~~ — bajado: solo el OAuth setup queda en place
+- ~~Microsoft Teams integration~~ — bajado: ON HOLD esperando tenant propio
 
 ### Housekeeping
 
