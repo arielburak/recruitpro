@@ -22,11 +22,22 @@ export async function GET(
       );
     }
 
+    const org = await prisma.organization.findUnique({
+      where: { id: invite.organizationId },
+      select: { name: true },
+    });
+
+    // Si ya fue usado: NO es error — el caso natural es "ya acepté
+    // antes y vuelvo al link viejo". Devolvemos 200 con
+    // alreadyAccepted=true para que el frontend redirija al login con
+    // el email pre-cargado y un toast amigable, en vez del dead-end
+    // "Invalid Invitation".
     if (invite.usedAt) {
-      return NextResponse.json(
-        { error: "This invitation has already been used" },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        alreadyAccepted: true,
+        email: invite.email,
+        organizationName: org?.name || "the team",
+      });
     }
 
     if (invite.expiresAt < new Date()) {
@@ -35,12 +46,6 @@ export async function GET(
         { status: 400 }
       );
     }
-
-    // Get org name
-    const org = await prisma.organization.findUnique({
-      where: { id: invite.organizationId },
-      select: { name: true },
-    });
 
     return NextResponse.json({
       email: invite.email,

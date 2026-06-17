@@ -25,12 +25,26 @@ export default function InvitePage({
     fetch(`/api/invite/${token}`)
       .then((res) => res.json())
       .then((data) => {
+        // Caso "ya acepté antes y volví a clickear el mail": el link
+        // tiene que seguir siendo util en vez de un dead-end. Redirect
+        // al login con email precargado + flag para mostrar banner
+        // amigable. Reemplazamos en history para que el back del browser
+        // no devuelva al invite ya usado.
+        if (data.alreadyAccepted) {
+          const qs = new URLSearchParams({
+            portal: "agency",
+            email: data.email || "",
+            from: "invite-used",
+          });
+          router.replace(`/login?${qs.toString()}`);
+          return;
+        }
         if (data.error) setError(data.error);
         else setInvite(data);
       })
       .catch(() => setError("Failed to load invitation"))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, router]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

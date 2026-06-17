@@ -28,8 +28,15 @@ function LoginContent() {
   // fresh registration) skips it. Client-portal selection redirects out
   // to /client-portal/login so each side keeps its own dedicated form.
   const portalParam = searchParams.get("portal");
+  // Soporte de invite link reusado: cuando un user vuelve a clickear su
+  // link de invite despues de haber aceptado, /invite/[token] redirige
+  // aca con ?email=…&from=invite-used. Mostramos banner verde + skip
+  // del portal selector + email precargado, asi el flow termina en
+  // "tipear password y entrar".
+  const prefillEmail = searchParams.get("email") || "";
+  const fromInviteUsed = searchParams.get("from") === "invite-used";
   const [step, setStep] = useState<"select" | "agency">(
-    portalParam === "agency" || registered ? "agency" : "select"
+    portalParam === "agency" || registered || fromInviteUsed ? "agency" : "select"
   );
 
   // If a staffing user is already signed in, go to dashboard
@@ -244,6 +251,11 @@ function LoginContent() {
                 Account created! Please sign in.
               </div>
             )}
+            {fromInviteUsed && (
+              <div className="bg-green-50 text-green-700 text-sm p-3 rounded-lg border border-green-200">
+                Looks like you&apos;ve already accepted that invitation. Sign in below to continue.
+              </div>
+            )}
             {error && (
               <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">
                 {error}
@@ -325,6 +337,7 @@ function LoginContent() {
                 type="email"
                 placeholder="john@acmerecruiting.com"
                 className="focus-visible:ring-indigo-500"
+                defaultValue={prefillEmail}
                 required
               />
             </div>
