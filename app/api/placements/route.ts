@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET() {
   try {
@@ -118,6 +119,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Submission not found" }, { status: 404 });
       }
 
+      // SECURITY 2026-06-17: tambien gateamos la rama submission-anchored.
+      // El submissionId lo arma el cliente — un USER sin acceso al Job
+      // podia mandarle el id de una submission ajena y crear el Placement.
+      const allowedSub = await canAccessJob(submission.job.id, ctx.organizationId, ctx.userId);
+      if (!allowedSub) {
+        return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+      }
+
       const existing = await prisma.placement.findUnique({ where: { submissionId } });
       if (existing) {
         return NextResponse.json(
@@ -153,6 +162,14 @@ export async function POST(request: Request) {
           { error: "Job does not belong to the given client" },
           { status: 400 }
         );
+      }
+      // SECURITY 2026-06-17: en la rama manual el caller arma el body
+      // con rawJobId arbitrario — sin canAccessJob, un USER sin
+      // assignment al Job podia crear un Placement (y de paso un
+      // CandidateSubmission "Placed") en un job ajeno.
+      const allowed = await canAccessJob(job.id, ctx.organizationId, ctx.userId);
+      if (!allowed) {
+        return NextResponse.json({ error: "Job not found" }, { status: 404 });
       }
 
       jobId = job.id;

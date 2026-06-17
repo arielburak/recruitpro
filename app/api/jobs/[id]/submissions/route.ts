@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function POST(
   request: Request,
@@ -32,6 +33,15 @@ export async function POST(
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
     if (!candidate) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
     if (job.stages.length === 0) return NextResponse.json({ error: "No pipeline stages" }, { status: 400 });
+
+    // SECURITY 2026-06-17: aplicar canAccessJob para que un USER sin
+    // assignment al job no pueda agregarle candidatos via POST directo.
+    // 404 (no 403) sigue el mismo patron del #3 critico para no leakear
+    // existencia.
+    const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId);
+    if (!allowed) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
 
     // Check if already submitted
     const existing = await prisma.candidateSubmission.findUnique({

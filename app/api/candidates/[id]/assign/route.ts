@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { canAccessJob } from "@/lib/job-access";
 
 // GET - fetch available jobs (not already assigned)
+//
+// SECURITY 2026-06-17: la lista solo incluye Jobs a los que ESTE user
+// esta asignado. Antes devolviamos todos los Jobs OPEN/ACTIVE del org,
+// y un USER sin acceso a un Job podia agregarle candidatos via la UI
+// del "Assign to Job" dialog. Mismo patron del #3 critico (canAccessJob
+// para PATCH/DELETE de submissions) — aca lo aplicamos al CREATE side.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -19,12 +26,15 @@ export async function GET(
     });
     const existingJobIds = existingSubmissions.map((s) => s.jobId);
 
-    // Get open/active jobs not yet assigned
+    // Get open/active jobs not yet assigned AND a los que el user tiene
+    // acceso. JobAssignment.some lleva el filtro al nivel de Postgres
+    // sin necesidad de iterar in-memory.
     const availableJobs = await prisma.job.findMany({
       where: {
         organizationId: ctx.organizationId,
         status: { in: ["OPEN", "ACTIVE"] },
         id: { notIn: existingJobIds },
+        assignments: { some: { userId: ctx.userId } },
       },
       include: {
         client: { select: { name: true } },
@@ -40,6 +50,13 @@ export async function GET(
 }
 
 // POST - assign candidate to multiple jobs
+//
+// SECURITY 2026-06-17: cada jobId del array se valida con canAccessJob
+// antes de crear la submission. Si el user no tiene acceso a alguno, lo
+// saltamos (no devolvemos 403 — esa lista solo incluiria jobs propios
+// si el frontend uso el GET sano arriba). El count devuelto refleja
+// solo las submissions efectivamente creadas. Anti-IDOR para el caso
+// del client que arma el body a mano con un jobId arbitrario.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -64,7 +81,17 @@ export async function POST(
 
     // For each job, get the first pipeline stage and create submission
     const results = [];
+    const blockedJobIds: string[] = [];
     for (const jobId of jobIds) {
+      // Anti-IDOR: validar acceso por cada jobId del body. Antes la
+      // unica defensa era el filtro del GET, que un cliente custom
+      // podia saltearse mandando un POST directo.
+      const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId);
+      if (!allowed) {
+        blockedJobIds.push(jobId);
+        continue;
+      }
+
       const firstStage = await prisma.pipelineStage.findFirst({
         where: { jobId },
         orderBy: { order: "asc" },
@@ -97,7 +124,21 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ created: results.length }, { status: 201 });
+    // Si TODOS los jobIds fueron rechazados por permisos, devolvemos
+    // 403 explicito — sino el cliente piensa que "0 created" fue por
+    // duplicado y muestra mensaje confuso. Si fue mixto (algunos OK,
+    // algunos bloqueados), devolvemos el count + lista de bloqueados.
+    if (results.length === 0 && blockedJobIds.length === jobIds.length) {
+      return NextResponse.json(
+        { error: "You don't have access to any of the selected jobs." },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.json(
+      { created: results.length, blocked: blockedJobIds.length || undefined },
+      { status: 201 }
+    );
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
