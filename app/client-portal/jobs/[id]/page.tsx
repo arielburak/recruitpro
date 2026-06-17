@@ -101,7 +101,16 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   // copy. Wired from the X icon next to a pending member chip.
   const [cancellingMemberInvite, setCancellingMemberInvite] = useState<{ id: string; label: string } | null>(null);
   const [showInvite, setShowInvite] = useState(false);
+  // `inviteEmail` ahora es solo el texto VIVO del input — el draft del que
+  // tipea el user mientras filtra o lookup-ea. Los recipients que ya
+  // confirmo (click en suggestion o Enter en mail crudo) van al array
+  // `inviteRecipients` y se renderean como chips arriba del input, estilo
+  // Outlook. Permite invitar a varios en un solo Send sin tener que
+  // reabrir el dialog para cada uno.
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRecipients, setInviteRecipients] = useState<
+    { email: string; name?: string | null; firmName?: string | null }[]
+  >([]);
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
@@ -122,12 +131,36 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   useEffect(() => {
     if (!showInvite) {
       setInviteEmail("");
+      setInviteRecipients([]);
       setInviteMessage("");
       setInviteSuccess("");
       setInviteLookup(null);
       setSelectedFirm(null);
     }
   }, [showInvite]);
+
+  // Helpers para mantener inviteRecipients sano. addRecipient hace un
+  // toggle: si ya esta en la lista no duplica (vuelve idempotente el
+  // click en el mismo suggestion dos veces).
+  function addRecipient(r: { email: string; name?: string | null; firmName?: string | null }) {
+    const email = r.email.trim().toLowerCase();
+    if (!email) return;
+    setInviteRecipients((prev) => {
+      if (prev.some((x) => x.email === email)) return prev;
+      return [...prev, { ...r, email }];
+    });
+    setInviteEmail("");
+    setInviteLookup(null);
+  }
+  function removeRecipient(email: string) {
+    const lower = email.trim().toLowerCase();
+    setInviteRecipients((prev) => prev.filter((x) => x.email !== lower));
+  }
+  function isRecipient(email: string | null | undefined) {
+    if (!email) return false;
+    const lower = email.trim().toLowerCase();
+    return inviteRecipients.some((x) => x.email === lower);
+  }
 
   // Expand/collapse por firma en Assigned Firms. Click en el header
   // de cada Card togglea ver los recruiters individualmente. State
@@ -538,33 +571,90 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
   }
 
   async function inviteFirm() {
+    // Resolvemos la lista efectiva de emails a invitar. Prioridad:
+    //   1. recipients ya cargados como chip (multi-select tipo Outlook)
+    //   2. fallback: el draft del input si todavia no fue convertido a chip
+    //      pero parece un mail valido (atrapa el caso "tipeo y le doy
+    //      Send sin presionar Enter primero").
+    const draft = inviteEmail.trim().toLowerCase();
+    const draftIsValidEmail =
+      !!draft && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft);
+    const inferredFromDraft =
+      draftIsValidEmail &&
+      !inviteRecipients.some((r) => r.email === draft)
+        ? [
+            {
+              email: draft,
+              name:
+                inviteSuggestions.find((s) => s.email === draft)?.name ||
+                (inviteLookup?.shape === "valid" ? inviteLookup.name : null),
+              firmName:
+                inviteSuggestions.find((s) => s.email === draft)?.firmName ||
+                (inviteLookup?.shape === "valid" ? inviteLookup.firmName : null),
+            },
+          ]
+        : [];
+    const targets = [...inviteRecipients, ...inferredFromDraft];
+    if (targets.length === 0) return;
+
     setInviting(true);
     setInviteSuccess("");
     try {
-      const res = await fetch("/api/client-portal/invite-firm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientJobId: id,
-          email: inviteEmail,
-          message: inviteMessage || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setInviteSuccess(data.error || "Failed to invite");
-      } else {
+      // Mandamos los invites en paralelo — cada uno es un POST distinto al
+      // mismo endpoint. Asi un fallo en uno no bloquea al resto. Tracking
+      // por email para poder armar un resumen del tipo "2 sent · 1 failed".
+      const results = await Promise.all(
+        targets.map(async (r) => {
+          try {
+            const res = await fetch("/api/client-portal/invite-firm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientJobId: id,
+                email: r.email,
+                message: inviteMessage || undefined,
+              }),
+            });
+            const data = await res.json();
+            return { email: r.email, ok: res.ok, pending: !!data?.pending, error: !res.ok ? data?.error : null };
+          } catch {
+            return { email: r.email, ok: false, pending: false, error: "Network error" };
+          }
+        })
+      );
+
+      const okCount = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      const anyPending = results.some((r) => r.ok && r.pending);
+
+      if (okCount > 0 && failed.length === 0) {
+        // Happy path. Mensaje refleja singular vs plural y si hay signup.
+        if (okCount === 1) {
+          setInviteSuccess(
+            anyPending
+              ? "Signup email sent — they'll join and see this job on first login."
+              : "Invitation sent by email and in-app. Waiting for their response."
+          );
+        } else {
+          setInviteSuccess(
+            `${okCount} invitations sent${anyPending ? " (some include signup links)" : ""}.`
+          );
+        }
+      } else if (okCount > 0 && failed.length > 0) {
         setInviteSuccess(
-          data.pending
-            ? "Signup email sent — they'll join and see this job on first login."
-            : "Invitation sent by email and in-app. Waiting for their response."
+          `${okCount} sent, ${failed.length} failed: ${failed.map((f) => f.email).join(", ")}`
         );
+      } else {
+        // Todos fallaron — surfaceamos el primer error textual asi el user
+        // sabe que pasa (e.g. "Already on this job", "Invalid email").
+        setInviteSuccess(failed[0]?.error || "Failed to invite");
+      }
+
+      if (okCount > 0) {
+        setInviteRecipients([]);
         setInviteEmail("");
         setInviteMessage("");
         setInviteLookup(null);
-        // Pull the fresh job (so the new row appears in Assigned Firms)
-        // AND the updated suggestions book (so the person you just
-        // invited shows up for reuse on the next job).
         fetchJob();
         loadInviteSuggestions();
       }
@@ -1832,32 +1922,91 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
               which looked off — it competed for column width with
               the firm list right above it and felt half-hidden). */}
           <Dialog open={showInvite} onOpenChange={setShowInvite}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Invite a Recruiter</DialogTitle>
+                <DialogTitle>Invite recruiters</DialogTitle>
                 <DialogDescription>
-                  Invite by email. The invitation reaches only that person — not
-                  their whole firm — so you can pick a specific HM or POC.
+                  Invite by email. Each invitation reaches only that specific
+                  person — not their whole firm — so you can pick exact HMs
+                  or POCs. Add as many as you need before sending.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-3">
-                {/* ─── Single input que hace todo: autocomplete por
-                    name/email/firm + lookup en vivo de mails crudos.
-                    Diseño rehecho 2026-06-10 (#18 del roadmap): el
-                    dropdown separado de "Previously engaged firms" se
-                    reemplazo por chips horizontales que filtran in-
-                    place, y los 3 banners pastel apilados (lookup +
-                    suggestions empty + status pills múltiples) se
-                    consolidaron en una sola lista con una row destacada
-                    "send signup invite to X" cuando aplica. */}
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="Search by name, email, or firm…"
-                  className="text-sm"
-                  autoComplete="off"
-                />
+              <div className="space-y-4">
+                {/* ─── Recipients box estilo Outlook: chips arriba + input
+                    inline para tipear/filtrar. Diseño multi-select
+                    rehecho 2026-06-17: el componente paso de manejar un
+                    solo email (input crudo + click suggestion sobrescribia)
+                    a una lista. Cada click en suggestion / Enter en email
+                    crudo agrega un chip; el Send manda N POSTs en
+                    paralelo. */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                    To{inviteRecipients.length > 0 ? ` · ${inviteRecipients.length}` : ""}
+                  </label>
+                  <div className="min-h-[42px] rounded-md border border-gray-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 px-2 py-1.5 flex flex-wrap gap-1.5 items-center bg-white transition-shadow">
+                    {inviteRecipients.map((r) => (
+                      <span
+                        key={r.email}
+                        className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 rounded-full pl-2.5 pr-1 py-0.5 text-xs border border-indigo-100"
+                        title={r.firmName ? `${r.email} · ${r.firmName}` : r.email}
+                      >
+                        <span className="font-medium max-w-[180px] truncate">
+                          {r.name || r.email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeRecipient(r.email)}
+                          className="hover:bg-indigo-100 rounded-full p-0.5 transition-colors"
+                          aria-label={`Remove ${r.email}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter convierte el draft en chip si es un mail
+                        // valido. Si no es valido, no hace nada (deja al
+                        // user seguir tipeando). Comma tambien convierte
+                        // — convencion comun en pickers de email.
+                        if ((e.key === "Enter" || e.key === ",") && inviteEmail.trim()) {
+                          const draft = inviteEmail.trim().toLowerCase();
+                          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft)) {
+                            e.preventDefault();
+                            const fromSuggestion = inviteSuggestions.find((s) => s.email === draft);
+                            const fromLookup =
+                              inviteLookup?.shape === "valid" && inviteLookup.email === draft
+                                ? inviteLookup
+                                : null;
+                            addRecipient({
+                              email: draft,
+                              name: fromSuggestion?.name || fromLookup?.name || null,
+                              firmName: fromSuggestion?.firmName || fromLookup?.firmName || null,
+                            });
+                          }
+                        } else if (
+                          e.key === "Backspace" &&
+                          !inviteEmail &&
+                          inviteRecipients.length > 0
+                        ) {
+                          // Backspace en input vacio quita el ultimo chip,
+                          // como en Outlook / Gmail / Linear.
+                          removeRecipient(inviteRecipients[inviteRecipients.length - 1].email);
+                        }
+                      }}
+                      placeholder={
+                        inviteRecipients.length === 0
+                          ? "Search by name, email, or firm…"
+                          : "Add another recipient…"
+                      }
+                      className="flex-1 min-w-[160px] border-0 outline-none text-sm bg-transparent placeholder:text-gray-400 py-0.5"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
 
                 {(() => {
                   // Construimos el modelo una sola vez: lista de firmas
@@ -1917,39 +2066,44 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                   }
 
                   return (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {/* Chips de firmas previamente engaged — solo si
                           hay 2+. Toggle filter, click en uno selecciona,
                           segundo click o click en "All" lo limpia. */}
                       {firmOptions.length >= 2 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedFirm(null)}
-                            className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
-                              !selectedFirm
-                                ? "bg-indigo-600 text-white border-indigo-600"
-                                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
-                            }`}
-                          >
-                            All firms
-                          </button>
-                          {firmOptions.map((f) => (
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                            Filter by firm
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
                             <button
-                              key={f.name}
                               type="button"
-                              onClick={() =>
-                                setSelectedFirm(selectedFirm === f.name ? null : f.name)
-                              }
-                              className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
-                                selectedFirm === f.name
+                              onClick={() => setSelectedFirm(null)}
+                              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                                !selectedFirm
                                   ? "bg-indigo-600 text-white border-indigo-600"
                                   : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
                               }`}
                             >
-                              {f.name}
+                              All firms
                             </button>
-                          ))}
+                            {firmOptions.map((f) => (
+                              <button
+                                key={f.name}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedFirm(selectedFirm === f.name ? null : f.name)
+                                }
+                                className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                                  selectedFirm === f.name
+                                    ? "bg-indigo-600 text-white border-indigo-600"
+                                    : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                                }`}
+                              >
+                                {f.name}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -1959,46 +2113,89 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                           nada (el lookup row sí o sí cubre el caso
                           "send signup link"). */}
                       {(filteredContacts.length > 0 || showLookupRow || lookupPending) && (
-                        <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                            Suggestions{selectedFirm ? ` · ${selectedFirm}` : ""}
+                          </label>
+                          <div className="rounded-md border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden max-h-[260px] overflow-y-auto">
                           {lookupPending && (
                             <div className="px-2.5 py-2 text-[11px] text-gray-400 flex items-center gap-1.5">
                               <Loader2 className="h-3 w-3 animate-spin" />
                               Checking…
                             </div>
                           )}
-                          {showLookupRow && inviteLookup && (
-                            <div className="px-2.5 py-2 bg-gray-50/60">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-gray-800 break-words flex items-center gap-1.5">
-                                    {inviteLookup.alreadyOnThisJob ? (
-                                      <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                                    ) : inviteLookup.onPlatform ? (
-                                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                                    ) : (
-                                      <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                    )}
-                                    {inviteLookup.name || inviteLookup.email}
-                                  </p>
-                                  <p className="text-[11px] text-gray-500 break-all mt-0.5">
-                                    {inviteLookup.email}
-                                    {inviteLookup.firmName ? (
-                                      <span className="text-gray-400"> · {inviteLookup.firmName}</span>
-                                    ) : null}
-                                  </p>
+                          {showLookupRow && inviteLookup && (() => {
+                            const lookupSelected = isRecipient(inviteLookup.email);
+                            return (
+                              <button
+                                type="button"
+                                disabled={inviteLookup.alreadyOnThisJob}
+                                onClick={() => {
+                                  if (inviteLookup.alreadyOnThisJob) return;
+                                  if (lookupSelected) {
+                                    removeRecipient(inviteLookup.email);
+                                  } else {
+                                    addRecipient({
+                                      email: inviteLookup.email,
+                                      name: inviteLookup.name,
+                                      firmName: inviteLookup.firmName,
+                                    });
+                                  }
+                                }}
+                                className={`w-full text-left px-2.5 py-2 transition-colors ${
+                                  inviteLookup.alreadyOnThisJob
+                                    ? "opacity-60 cursor-not-allowed bg-gray-50/60"
+                                    : lookupSelected
+                                    ? "bg-indigo-50"
+                                    : "bg-gray-50/40 hover:bg-indigo-50/70"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                                    {/* Checkbox de selección */}
+                                    <div
+                                      className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                        lookupSelected
+                                          ? "bg-indigo-600 border-indigo-600"
+                                          : "bg-white border-gray-300"
+                                      }`}
+                                    >
+                                      {lookupSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-sm font-medium break-words flex items-center gap-1.5 ${lookupSelected ? "text-indigo-700" : "text-gray-800"}`}>
+                                        {inviteLookup.alreadyOnThisJob ? (
+                                          <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                        ) : inviteLookup.onPlatform ? (
+                                          <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                        ) : (
+                                          <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                        )}
+                                        {inviteLookup.name || inviteLookup.email}
+                                      </p>
+                                      <p className="text-[11px] text-gray-500 break-all mt-0.5">
+                                        {inviteLookup.email}
+                                        {inviteLookup.firmName ? (
+                                          <span className="text-gray-400"> · {inviteLookup.firmName}</span>
+                                        ) : null}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] font-medium text-gray-500 shrink-0 mt-0.5 whitespace-nowrap">
+                                    {inviteLookup.alreadyOnThisJob
+                                      ? "Already on this job"
+                                      : inviteLookup.onPlatform
+                                      ? "On Recruiting ATS"
+                                      : "New — we'll send a signup link"}
+                                  </span>
                                 </div>
-                                <span className="text-[10px] font-medium text-gray-500 shrink-0 mt-0.5 whitespace-nowrap">
-                                  {inviteLookup.alreadyOnThisJob
-                                    ? "Already on this job"
-                                    : inviteLookup.onPlatform
-                                    ? "On Recruiting ATS"
-                                    : "New — we'll send a signup link"}
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                              </button>
+                            );
+                          })()}
                           {filteredContacts.map((s) => {
-                            const selected = !!s.email && inviteEmail.trim().toLowerCase() === s.email;
+                            // Multi-select: selected = email ya en
+                            // inviteRecipients. Click toggle add/remove.
+                            const selected = isRecipient(s.email);
                             // Pill simplificado (#18): un solo "Already
                             // engaged elsewhere" gris para los casos
                             // pending/declined/email-sent (la diferencia
@@ -2015,7 +2212,15 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                 disabled={s.alreadyOnThisJob}
                                 onClick={() => {
                                   if (s.alreadyOnThisJob) return;
-                                  setInviteEmail(s.email || "");
+                                  if (selected) {
+                                    removeRecipient(s.email || "");
+                                  } else {
+                                    addRecipient({
+                                      email: s.email || "",
+                                      name: s.name,
+                                      firmName: s.firmName,
+                                    });
+                                  }
                                 }}
                                 className={`w-full text-left px-2.5 py-2 transition-colors ${
                                   s.alreadyOnThisJob
@@ -2026,17 +2231,29 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                                 }`}
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
-                                      {s.name || s.email}
-                                    </p>
-                                    <p className="text-[11px] text-gray-500 break-all mt-0.5">
-                                      {s.name ? s.email : null}
-                                      {s.name && !selectedFirm && s.firmName && (
-                                        <span className="text-gray-400"> · </span>
-                                      )}
-                                      {!selectedFirm && s.firmName && <span>{s.firmName}</span>}
-                                    </p>
+                                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                                    {/* Checkbox de selección — feedback visual claro de multi-select */}
+                                    <div
+                                      className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                        selected
+                                          ? "bg-indigo-600 border-indigo-600"
+                                          : "bg-white border-gray-300"
+                                      }`}
+                                    >
+                                      {selected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-sm font-medium break-words ${selected ? "text-indigo-700" : "text-gray-800"}`}>
+                                        {s.name || s.email}
+                                      </p>
+                                      <p className="text-[11px] text-gray-500 break-all mt-0.5">
+                                        {s.name ? s.email : null}
+                                        {s.name && !selectedFirm && s.firmName && (
+                                          <span className="text-gray-400"> · </span>
+                                        )}
+                                        {!selectedFirm && s.firmName && <span>{s.firmName}</span>}
+                                      </p>
+                                    </div>
                                   </div>
                                   {s.alreadyOnThisJob ? (
                                     <span className="text-[10px] font-medium text-indigo-600 shrink-0 mt-0.5 whitespace-nowrap">
@@ -2051,66 +2268,79 @@ export default function ClientJobDetailPage({ params }: { params: Promise<{ id: 
                               </button>
                             );
                           })}
+                          </div>
                         </div>
                       )}
                     </div>
                   );
                 })()}
 
-                <Textarea
-                  value={inviteMessage}
-                  onChange={(e) => setInviteMessage(e.target.value)}
-                  placeholder="Add a message (optional)"
-                  rows={2}
-                  className="text-sm"
-                />
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                    Message (optional)
+                  </label>
+                  <Textarea
+                    value={inviteMessage}
+                    onChange={(e) => setInviteMessage(e.target.value)}
+                    placeholder="Add a short note — sent with every invitation in this batch."
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
 
                 {(() => {
-                  // Botón smart: el copy refleja la acción REAL que se
-                  // va a disparar, no un genérico "Send Invitation".
-                  //   · Sin email → "Send invitation" (disabled)
-                  //   · Ya en este job → "Already on this job" (disabled)
-                  //   · Match con recruiter on-platform → "Invite {first}"
-                  //   · Mail crudo no en plataforma → "Send signup invite"
-                  const emailNow = inviteEmail.trim().toLowerCase();
-                  const matchingSuggestion = inviteSuggestions.find(
-                    (s) => s.email && s.email === emailNow,
-                  );
-                  const blocked =
-                    matchingSuggestion?.alreadyOnThisJob === true ||
-                    inviteLookup?.alreadyOnThisJob === true;
+                  // Botón smart, ahora consciente del multi-select. Copy
+                  // refleja la acción REAL:
+                  //   · 0 recipients y sin draft → "Send invitations" (disabled)
+                  //   · 1 recipient con nombre → "Invite {first}"
+                  //   · 1 recipient sin nombre → "Send invitation"
+                  //   · N>1 recipients → "Invite N recruiters"
+                  //   · 0 recipients pero draft con mail valido → tratamos
+                  //     el draft como recipient implicito y mostramos copy
+                  //     coherente.
+                  const draftLower = inviteEmail.trim().toLowerCase();
+                  const draftLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftLower);
+                  const effectiveCount =
+                    inviteRecipients.length +
+                    (draftLooksValid && !inviteRecipients.some((r) => r.email === draftLower) ? 1 : 0);
 
-                  let label = "Send invitation";
+                  let label = "Send invitations";
                   if (inviting) {
                     label = "Sending…";
-                  } else if (blocked) {
-                    label = "Already on this job";
-                  } else if (emailNow) {
-                    // Preferimos el nombre del suggestion si lo tenemos,
-                    // sino el del lookup, sino fallback al email.
-                    const nameFromSuggestion = matchingSuggestion?.name;
-                    const nameFromLookup =
-                      inviteLookup?.shape === "valid" ? inviteLookup.name : null;
-                    const displayName = nameFromSuggestion || nameFromLookup;
+                  } else if (effectiveCount === 0) {
+                    label = "Send invitations";
+                  } else if (effectiveCount === 1) {
+                    // Resolvemos el unico recipient para personalizar copy.
+                    const only =
+                      inviteRecipients[0] ||
+                      (draftLooksValid
+                        ? {
+                            email: draftLower,
+                            name:
+                              inviteSuggestions.find((s) => s.email === draftLower)?.name ||
+                              (inviteLookup?.shape === "valid" ? inviteLookup.name : null),
+                          }
+                        : null);
                     const onPlatform =
-                      matchingSuggestion ||
+                      inviteSuggestions.some((s) => s.email === only?.email) ||
                       (inviteLookup?.shape === "valid" && inviteLookup.onPlatform);
-                    if (onPlatform && displayName) {
-                      // "Invite Pedro"
-                      const first = displayName.trim().split(/\s+/)[0];
+                    if (only?.name) {
+                      const first = only.name.trim().split(/\s+/)[0];
                       label = `Invite ${first}`;
                     } else if (onPlatform) {
                       label = "Send invitation";
                     } else {
                       label = "Send signup invite";
                     }
+                  } else {
+                    label = `Invite ${effectiveCount} recruiters`;
                   }
 
                   return (
                     <Button
                       size="sm"
                       className="w-full bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                      disabled={inviting || !inviteEmail || blocked}
+                      disabled={inviting || effectiveCount === 0}
                       onClick={() => inviteFirm()}
                     >
                       <Send className="h-3.5 w-3.5" />
