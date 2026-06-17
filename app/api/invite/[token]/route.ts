@@ -151,6 +151,20 @@ export async function POST(
       // Subscription may not exist yet — non-fatal
     }
 
+    // Memoria total (2026-06-17): si el mismo email tambien recibio un
+    // PendingFirmInvite (un cliente lo invito a una busqueda especifica
+    // del lado client portal), materializarlo a FirmEngagement ahora.
+    // Sin esto, el invited terminaba en la org del UserInvite pero las
+    // engagement del cliente quedaban huerfanas, y solo se materializaban
+    // si el user entraba a /engagements (red de seguridad). El sistema
+    // tiene que tener memoria sin importar que flow uses para entrar.
+    try {
+      const { processPendingInvites } = await import("@/lib/process-pending-invites");
+      await processPendingInvites(invite.email, invite.organizationId, user.id);
+    } catch (err) {
+      console.error("[invite accept] processPendingInvites failed:", err);
+    }
+
     // Welcome mail — symmetric to the client-portal set-password
     // flow. The invite mail asked the member to click and pick a
     // password; this one closes the loop with "your account is

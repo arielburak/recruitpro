@@ -138,6 +138,24 @@ export async function acceptStaffingInviteOnOAuth(
     // Subscription puede no existir (org sin Stripe wired) — no es fatal
   }
 
+  // Memoria total (2026-06-17): si ademas del UserInvite el mismo email
+  // tiene un PendingFirmInvite (un cliente lo invito a una busqueda),
+  // materializarlo a FirmEngagement aca mismo. El callback de signIn ya
+  // hace processPendingInvites en el branch auto-create — pero el
+  // branch invite-accept (este) tambien tiene que disparar, sino los
+  // engagement del cliente quedan huerfanos hasta que el user entre a
+  // /engagements.
+  try {
+    const { processPendingInvites } = await import("./process-pending-invites");
+    await processPendingInvites(
+      googleProfile.email,
+      invite.organizationId,
+      createdUserId,
+    );
+  } catch (err) {
+    console.error("[oauth invite accept] processPendingInvites failed:", err);
+  }
+
   // Welcome mail + notif al inviter (mismo flow que POST /api/invite/[token]).
   // Fire-and-forget para no bloquear el sign-in si Resend hace timeout.
   void dispatchPostAcceptSideEffects(invite, googleProfile, name);
