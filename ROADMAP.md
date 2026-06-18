@@ -130,6 +130,18 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
 - [ ] Loom onboarding autoplay
 
+### 🧰 Standby — gstack commands (revisar post-launch)
+
+Decisión 2026-06-17: instalamos selectivo 4 commands de [gstack](https://github.com/garrytan/gstack) que ya están activos (`/review`, `/qa`, `/cso`, `/ship`). El resto queda standby para evaluar cuando salgan a producción y haya volumen real de releases / clientes.
+
+A traer post-launch si suma:
+- [ ] `/document-release` — sincronizar README/ARCHITECTURE con cada release
+- [ ] `/office-hours` + `/plan-ceo-review` — solo si arman rituales fijos de planning
+- [ ] `/design-shotgun` — solo si necesitan iterar UI con prompts visuales
+- [ ] Los otros ~14 commands de gstack — ver cuáles aplican cuando aparezcan los casos de uso reales
+
+Cuándo revisar: post-launch + cuando sumen developer o aumente volumen de cambios.
+
 ### 🗑️ Bajado del scope (2026-06-17)
 
 Items que estaban en el primer roadmap y se bajaron en sesiones posteriores. Si vuelven a aparecer como pedido, los traemos de vuelta:
