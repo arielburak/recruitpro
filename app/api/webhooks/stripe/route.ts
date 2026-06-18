@@ -29,7 +29,32 @@ export async function POST(request: Request) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = session.metadata?.organizationId;
-      if (orgId && session.subscription) {
+      const customerId =
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id;
+
+      // Cross-validation contra el row de Subscription: el metadata
+      // organizationId viene del checkout que iniciamos nosotros, pero
+      // si alguna vez el flow se compromete (e.g. middleware hijack),
+      // un atacante podria activar suscripcion de otra org. Antes de
+      // marcar ACTIVE confirmamos que el stripeCustomerId del session
+      // matchea con el cliente que ya guardamos para ese org.
+      if (orgId && session.subscription && customerId) {
+        const existing = await prisma.subscription.findUnique({
+          where: { organizationId: orgId },
+          select: { stripeCustomerId: true },
+        });
+        if (!existing || existing.stripeCustomerId !== customerId) {
+          // Anomalia — el customer del checkout NO matchea el customer
+          // que guardamos cuando se creo la suscripcion. No tocamos
+          // nada y dejamos en Sentry para investigar.
+          console.error(
+            "[stripe webhook] checkout.session.completed customer mismatch:",
+            { orgId, sessionCustomer: customerId, dbCustomer: existing?.stripeCustomerId },
+          );
+          break;
+        }
         await prisma.subscription.update({
           where: { organizationId: orgId },
           data: {
