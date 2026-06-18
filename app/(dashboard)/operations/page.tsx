@@ -109,9 +109,9 @@ export default async function OperationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">🎯 Centro de Operaciones</h1>
+        <h1 className="text-2xl font-bold tracking-tight">🎯 Operations Center</h1>
         <p className="text-gray-500">
-          Panel ejecutivo · solo founders · datos en vivo.
+          Executive panel · founders only · live data.
         </p>
       </div>
       <OperationsTabs data={data} userEmail={email || ""} />

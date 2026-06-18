@@ -107,29 +107,29 @@ export function OperationsTabs({
       <TabsContent value="ceo" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Kpi
-            label="Agencies totales"
+            label="Total agencies"
             value={data.ceo.totalAgencies}
-            hint={`${data.ceo.activeAgencies} con actividad última 30d`}
+            hint={`${data.ceo.activeAgencies} active in last 30d`}
           />
           <Kpi
-            label="Subscripciones activas"
+            label="Active subscriptions"
             value={data.ceo.activeSubscriptions}
             hint={
               data.ceo.pastDueSubscriptions > 0
                 ? `${data.ceo.pastDueSubscriptions} past due`
-                : "todo al día"
+                : "all paid"
             }
             accent={data.ceo.pastDueSubscriptions > 0 ? "warn" : "good"}
           />
           <Kpi
-            label="Seats vendidos"
+            label="Seats sold"
             value={data.ceo.totalSeats}
-            hint="total seats facturados"
+            hint="total billed seats"
           />
           <Kpi
-            label="Signups últimos 30d"
+            label="Signups last 30d"
             value={data.ceo.recentSignups}
-            hint="agencies nuevas"
+            hint="new agencies"
             accent={data.ceo.recentSignups > 0 ? "good" : undefined}
           />
         </div>
@@ -146,33 +146,33 @@ export function OperationsTabs({
           <Kpi
             label="Agency users"
             value={data.coo.totalAgencyUsers}
-            hint="recruiters activos"
+            hint="active recruiters"
           />
           <Kpi
             label="Client users"
             value={data.coo.totalClientUsers}
-            hint="usuarios del client portal"
+            hint="client portal users"
           />
           <Kpi
-            label="Jobs abiertos"
+            label="Open jobs"
             value={data.coo.activeJobs}
             hint="OPEN / ACTIVE"
           />
           <Kpi
             label="Candidates"
             value={data.coo.totalCandidates}
-            hint="totales en la plataforma"
+            hint="total in platform"
           />
           <Kpi
-            label="Placements del mes"
+            label="Placements this month"
             value={data.coo.placementsThisMonth}
-            hint="cierres reales"
+            hint="real closes"
             accent={data.coo.placementsThisMonth > 0 ? "good" : undefined}
           />
           <Kpi
-            label="Agencies silenciosas"
+            label="Silent agencies"
             value={data.coo.silentAgencies}
-            hint="sin actividad última semana"
+            hint="no activity in last week"
             accent={data.coo.silentAgencies > 0 ? "warn" : "good"}
           />
         </div>
@@ -182,33 +182,33 @@ export function OperationsTabs({
       <TabsContent value="tech" className="space-y-4 mt-4">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <Kpi
-            label="Actividad últimas 24h"
+            label="Activity last 24h"
             value={data.tech.activitiesLast24h}
-            hint="eventos en la plataforma"
+            hint="events on the platform"
           />
           <Kpi
-            label="Invites pendientes"
+            label="Pending invites"
             value={data.tech.pendingInvites}
-            hint="esperando aceptación"
+            hint="waiting for accept"
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <PanelLink
             href="https://recruiting-ats.sentry.io/issues/"
-            label="🐛 Sentry — Errores en vivo"
-            sub="Cualquier error real que pasen los users"
+            label="🐛 Sentry — Live errors"
+            sub="Any real error users hit"
           />
           <PanelLink
             href="https://vercel.com/dashboard"
             label="🚀 Vercel — Deploys"
-            sub="Status del último deploy + env vars"
+            sub="Latest deploy status + env vars"
           />
         </div>
       </TabsContent>
 
       <div className="text-xs text-gray-400 mt-6">
-        Logueado como <span className="font-mono">{userEmail}</span> · Datos en vivo desde la DB
+        Logged in as <span className="font-mono">{userEmail}</span> · Live data from DB
       </div>
     </Tabs>
   );

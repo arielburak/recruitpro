@@ -135,6 +135,8 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Parser mejorado para JDs formato "Close Up" (pendiente: ejemplo para tunear)
 - [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
 - [ ] Loom onboarding autoplay
+- [ ] **Rate limiting** en endpoints sensibles (`/api/auth/forgot-password`, `/api/auth/register`, `/api/invite/[token]`). CSO audit lo marcó MEDIUM. Vercel ya tiene DDoS básico pero conviene throttle dedicado pre-tráfico real. Usar `@vercel/kv` Ratelimit o middleware.
+- [ ] **Layout founder separado**: hoy `/operations` vive dentro del agency portal con su sidebar normal. Mover a `app/(founder)/operations/` con su propio layout minimalista (sin sidebar de agency, sin contexto Morabits). P2 post-launch — cuando duela porque sumemos un 3er founder o advisor.
 
 ### 🧰 Standby — gstack commands (revisar post-launch)
 
