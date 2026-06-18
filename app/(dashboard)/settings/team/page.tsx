@@ -32,6 +32,7 @@ import {
   UserPlus,
   ArrowRight,
 } from "lucide-react";
+import { DeactivateUserDialog } from "@/components/settings/deactivate-user-dialog";
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
@@ -43,6 +44,11 @@ export default function AdminUsersPage() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // Deactivate dialog state: target user + open flag. El dialog
+  // hace su propio fetch del impact al abrirse.
+  const [deactivateTarget, setDeactivateTarget] = useState<
+    { id: string; name: string } | null
+  >(null);
 
   useEffect(() => {
     fetchData();
@@ -90,13 +96,29 @@ export default function AdminUsersPage() {
     fetchData();
   }
 
-  async function toggleUserActive(userId: string, currentlyActive: boolean) {
+  async function toggleUserActive(
+    userId: string,
+    currentlyActive: boolean,
+    userName: string,
+  ) {
+    // Deactivate (currentlyActive=true): abrir el dialog con resumen
+    // de impacto + opciones para interviews futuras. El click NO toca
+    // nada hasta que el admin confirme. Sin esto, un click silencioso
+    // dejaba interviews zombie sin nadie atrás.
+    if (currentlyActive) {
+      setDeactivateTarget({ id: userId, name: userName });
+      return;
+    }
+    // Reactivate (currentlyActive=false): no necesita confirmación,
+    // es no-destructivo. Endpoint genérico PATCH.
     const res = await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, isActive: !currentlyActive }),
+      body: JSON.stringify({ userId, isActive: true }),
     });
     if (res.ok) {
+      setSuccess(`${userName} reactivated`);
+      setTimeout(() => setSuccess(""), 3000);
       fetchData();
     } else {
       const body = await res.json();
@@ -392,7 +414,7 @@ export default function AdminUsersPage() {
                           )}
                           <DropdownMenuItem
                             onClick={() =>
-                              toggleUserActive(u.id, u.isActive)
+                              toggleUserActive(u.id, u.isActive, u.name)
                             }
                             className={u.isActive ? "text-red-600" : undefined}
                           >
@@ -473,6 +495,30 @@ export default function AdminUsersPage() {
           )}
         </>
       )}
+
+      {/* Deactivation flow: en lugar de toggle silencioso, abrimos el
+          dialog que muestra qué tiene el user en la cancha (assignments,
+          owned candidates, active submissions, upcoming interviews) y
+          pide qué hacer con las reuniones futuras antes de confirmar. */}
+      <DeactivateUserDialog
+        userId={deactivateTarget?.id ?? null}
+        userName={deactivateTarget?.name ?? ""}
+        open={!!deactivateTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeactivateTarget(null);
+        }}
+        onDeactivated={(summary) => {
+          const suffix =
+            summary.interviewsHandled > 0
+              ? ` (${summary.interviewsHandled} interview${
+                  summary.interviewsHandled === 1 ? "" : "s"
+                } ${summary.choice === "cancel" ? "cancelled" : "reassigned"})`
+              : "";
+          setSuccess(`${deactivateTarget?.name ?? "User"} deactivated${suffix}`);
+          setTimeout(() => setSuccess(""), 3500);
+          fetchData();
+        }}
+      />
     </div>
   );
 }

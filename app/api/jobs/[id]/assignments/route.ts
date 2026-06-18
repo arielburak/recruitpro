@@ -5,6 +5,7 @@ import { sendJobAssignedEmail } from "@/lib/email";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { canAccessJob } from "@/lib/job-access";
+import { notifyUserIfActive } from "@/lib/notify-user";
 
 export async function GET(
   _request: Request,
@@ -21,8 +22,14 @@ export async function GET(
     });
     if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Filtramos assignments cuyo user fue desactivado. La row se
+    // preserva en la DB para reactivación / historial, pero NO debe
+    // aparecer en la lista "Team on this job" — sino el admin
+    // queja "por qué sigue figurando si lo desactivé?". Si más
+    // adelante hace falta ver ex-members del job, lo metemos
+    // detrás de un toggle "Show inactive".
     const assignments = await prisma.jobAssignment.findMany({
-      where: { jobId: id },
+      where: { jobId: id, user: { isActive: true } },
       include: { user: { select: { id: true, name: true, email: true, role: true } } },
     });
 
@@ -67,12 +74,14 @@ export async function POST(
     });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-    // Verify user belongs to same org
+    // Verify user belongs to same org + está activo. Si está
+    // desactivado no debería poder ser asignado a nuevos jobs (su
+    // historial sigue, pero NO sumamos work futuro).
     const user = await prisma.user.findFirst({
-      where: { id: userId, organizationId: ctx.organizationId },
+      where: { id: userId, organizationId: ctx.organizationId, isActive: true },
       select: { id: true, name: true, email: true, title: true },
     });
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!user) return NextResponse.json({ error: "User not found or inactive" }, { status: 404 });
 
     const assignment = await prisma.jobAssignment.create({
       data: { jobId: id, userId },
@@ -92,36 +101,29 @@ export async function POST(
         .filter(Boolean)
         .join(" · ");
 
-      void (async () => {
-        try {
-          await prisma.userNotification.create({
-            data: {
-              userId,
-              type: "job_assigned",
-              title: `${ctx.userName || "A teammate"} added you to ${job.title}`,
-              body: contextLine || null,
-              link: `/jobs/${id}`,
-            },
+      // notifyUserIfActive centraliza el re-check de isActive. Aunque
+      // el user lookup arriba ya filtra isActive, esto cubre la race
+      // teórica donde el admin desactiva entre el lookup y el envío.
+      // Doble defensa, costo nulo.
+      void notifyUserIfActive(userId, {
+        notification: {
+          type: "job_assigned",
+          title: `${ctx.userName || "A teammate"} added you to ${job.title}`,
+          body: contextLine || null,
+          link: `/jobs/${id}`,
+        },
+        email: async (recipient) => {
+          await sendJobAssignedEmail({
+            to: recipient.email,
+            recipientName: recipient.name || "",
+            assignerName: ctx.userName || "A teammate",
+            jobTitle: job.title,
+            clientName: job.client?.name || null,
+            role: user.title || null,
+            jobUrl,
           });
-        } catch (e) {
-          console.error("[assignments POST] in-app notification failed:", e);
-        }
-        if (user.email) {
-          try {
-            await sendJobAssignedEmail({
-              to: user.email,
-              recipientName: user.name || "",
-              assignerName: ctx.userName || "A teammate",
-              jobTitle: job.title,
-              clientName: job.client?.name || null,
-              role: user.title || null,
-              jobUrl,
-            });
-          } catch (e) {
-            console.error("[assignments POST] email failed:", e);
-          }
-        }
-      })();
+        },
+      });
     }
 
     return NextResponse.json(assignment, { status: 201 });
