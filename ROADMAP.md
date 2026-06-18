@@ -91,13 +91,19 @@ Aplican a cualquier feature nueva o existente:
 
 ---
 
+## 🎯 Foco del negocio (recordatorio)
+
+**El ATS es para AGENCIAS DE RECLUTAMIENTO** (el que paga). Las hiring companies lo usan para ver candidatos pero no son el target. Confirmado 2026-06-18.
+
+- Roadmap + mantenimiento giran alrededor del agency recruiter
+- Nicolás y Ari son founders — NO users del producto, no son user representativo
+- Cualquier feature/fix se evalúa contra "¿esto le sirve a un agency recruiter haciendo 5+ búsquedas con clientes presionando?"
+
 ## ⚠️ Decisiones pendientes (charlar con Ari)
 
-- [ ] Qué métricas mostrar primero en reporting
-- [ ] Definición completa de qué campos cambian entre Staff Aug y Recruiting
-- [ ] **¿Cobrar a las hiring companies también?** → si sí, habilitar Billing tab en client portal
-- [ ] Referral scheme: qué incentivo damos (crédito sub / cash / otro)
-- [ ] **Set final de JobStatus**: hoy DB tiene 5 (`OPEN`, `ACTIVE`, `ON_HOLD`, `FILLED`, `CLOSED`) pero en la práctica se usan 2. Decidir entre mergear OPEN+ACTIVE, agregar DRAFT/CANCELLED/LOST, y si hacer transiciones automáticas (Placement → FILLED, etc).
+- [ ] **¿Activar Billing tab en client portal?** → decidir si cobrar a hiring companies o solo a las agencies. Alineado con el foco, probablemente NO se cobra al cliente → no se activa el tab.
+
+> Las otras 4 decisiones del roadmap original (métricas reporting, Staff Aug fields, referral scheme, JobStatus enum) fueron tratadas o ya no aplican al foco actual.
 
 ---
 
