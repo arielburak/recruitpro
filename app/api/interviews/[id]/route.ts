@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   _request: Request,
@@ -57,6 +58,17 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Job-level RBAC con owner-bypass: el creador puede seguir
+    // editando su interview aunque ya no esté asignado al job (mismo
+    // patrón que submissions PATCH). Cualquier otro user necesita
+    // estar assigned al job.
+    if (
+      existing.createdBy !== ctx.userId &&
+      !(await canAccessJob(existing.jobId, ctx.organizationId, ctx.userId))
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Update interview fields

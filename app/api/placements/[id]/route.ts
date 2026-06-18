@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   _request: Request,
@@ -45,6 +46,23 @@ export async function PUT(
     const ctx = await getOrgContext();
     const { id } = await params;
     const body = await request.json();
+
+    // Job-level RBAC: editar terms financieros de un placement (fee,
+    // dates, invoice status) es SOLO para recruiters assigned al job.
+    // Sin owner-bypass acá porque los placements representan plata real
+    // — un recruiter random no debería poder tocar el fee de un deal
+    // que no es suyo. Si el creador fue removido del job, perdió ese
+    // permiso por decisión consciente del admin.
+    const placementForGate = await prisma.placement.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { jobId: true },
+    });
+    if (!placementForGate) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!(await canAccessJob(placementForGate.jobId, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const {
       estimatedStartDate,

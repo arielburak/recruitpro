@@ -138,6 +138,19 @@ Aplican a cualquier feature nueva o existente:
 - [ ] **Rate limiting** en endpoints sensibles (`/api/auth/forgot-password`, `/api/auth/register`, `/api/invite/[token]`). CSO audit lo marcó MEDIUM. Vercel ya tiene DDoS básico pero conviene throttle dedicado pre-tráfico real. Usar `@vercel/kv` Ratelimit o middleware.
 - [ ] **Layout founder separado**: hoy `/operations` vive dentro del agency portal con su sidebar normal. Mover a `app/(founder)/operations/` con su propio layout minimalista (sin sidebar de agency, sin contexto Morabits). P2 post-launch — cuando duela porque sumemos un 3er founder o advisor.
 
+### 🔧 Pendientes del QA integral 2026-06-18 (no bloqueaban reunión Ari)
+
+QA con 6 agentes en paralelo encontró estos. Lo crítico (RBAC gaps + email case-sensitive) ya cayó. Lo demás queda anotado:
+
+- [ ] **Stripe webhook — status "canceled" en customer.subscription.updated**: `app/api/webhooks/stripe/route.ts:118` solo mapea "active" y "past_due". Si Stripe manda un update (no delete) con status="canceled", la sub queda como ACTIVE en la DB. No bloquea porque el evento `deleted` sí se maneja, pero deja un edge case. Agregar branch para canceled.
+- [ ] **Sentry beforeSend hook**: `sentry.server.config.ts` + `sentry.edge.config.ts` no filtran PII antes de mandar a Sentry. Si cae un error con un email/userId en el stack, llega tal cual. Agregar `beforeSend` que sanitice email, phone, password en breadcrumbs.
+- [ ] **Onboarding sin retry**: `app/(auth)/onboarding/page.tsx` no tiene error state + botón retry si el POST falla. Si Resend o la DB tienen un blip, el user queda trabado sin saber qué hacer.
+- [ ] **bcrypt cost estandarizar**: `/api/auth/register` y `/api/invite/[token]` usan cost 12; `/api/auth/reset-password:30` usa cost 10. Subir reset a 12 para uniformidad.
+- [ ] **Stripe checkout fire-and-forget huérfano**: `/api/admin/billing/checkout` si `createStripeCustomer` falla, queda un row de subscription con `stripeCustomerId: "pending_xxx"` corrupto. Agregar retry o cleanup en el catch.
+- [ ] **Multi-client leak teórico en allRatings**: `app/api/client-portal/candidates/[submissionId]/route.ts:134` + `.../feedback/route.ts:134` traen todas las ratings de la submission sin scopear por `clientUser.clientId`. En la práctica el schema previene cross-client porque un email no puede estar en 2 Clients distintos, pero defensa en profundidad amerita scope explícito.
+- [ ] **UX papercuts del QA**: (a) loading skeletons genéricos (`animate-pulse` gris uniforme en todas las pantallas — deberían matchear el shape real); (b) dashboard empty "No submissions yet" / "No activity yet" con bajo contraste (gray-400 sobre blanco); (c) DialogContent base no tiene `max-h-[90vh]` explícito en mobile; (d) `showToast` default a "error" si no le pasás tipo — cambiar a "success" o requerir tipo explícito; (e) invite expiry hardcoded a 7 días sin config visible.
+- [ ] **Comentario en castellano en lib/email.ts:709**: papercut de consistencia. El resto del archivo está en inglés.
+
 ### 🧰 Standby — gstack commands (revisar post-launch)
 
 Decisión 2026-06-17: instalamos selectivo 4 commands de [gstack](https://github.com/garrytan/gstack) que ya están activos (`/review`, `/qa`, `/cso`, `/ship`). El resto queda standby para evaluar cuando salgan a producción y haya volumen real de releases / clientes.

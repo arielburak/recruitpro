@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { sendJobAssignedEmail } from "@/lib/email";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   _request: Request,
@@ -39,8 +40,15 @@ export async function POST(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Any authenticated org user can assign recruiters to jobs
-    // (role-based restriction removed; simplified to Admin/User model)
+    // Job-level RBAC: SOLO recruiters ya asignados al job pueden
+    // sumar a otros. Sin esto, cualquier USER del org podía agregar
+    // gente a jobs que ni siquiera ve — y como DELETE acá es ADMIN-only,
+    // generaba el escenario raro "USER agrega, después solo ADMIN saca".
+    // El patrón coherente: si el job no lo ves, no podés modificar su
+    // equipo. ADMIN bypass NO aplica (regla universal del proyecto).
+    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { userId } = await request.json();
     if (!userId) {

@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { canAccessJob } from "@/lib/job-access";
 import { getValidAccessToken, createGoogleCalendarEvent } from "@/lib/google-calendar";
 import {
   getValidAccessToken as getMsAccessToken,
@@ -116,6 +117,15 @@ export async function POST(request: Request) {
 
     if (!submission) {
       return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+    }
+
+    // Job-level RBAC: solo recruiters asignados al job pueden agendar
+    // interviews. Sin esto, cualquier USER puede crear interviews en
+    // jobs que ni siquiera ve en su lista — incoherente con el resto
+    // del sistema (submissions, comments) donde canAccessJob es
+    // estrictamente assignment-based.
+    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const interviewTz = timezone || "America/Argentina/Buenos_Aires";
