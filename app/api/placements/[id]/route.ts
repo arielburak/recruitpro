@@ -248,6 +248,13 @@ export async function DELETE(
 
     if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Job-level RBAC también para ADMIN. Borrar un placement es
+    // destructivo Y sensible (rollback del stage del candidate, plata
+    // involucrada). ADMIN no es bypass del assignment.
+    if (!(await canAccessJob(placement.jobId, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     if (placement.submissionId) {
       const submission = await prisma.candidateSubmission.findUnique({
         where: { id: placement.submissionId },

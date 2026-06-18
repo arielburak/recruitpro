@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   request: Request,
@@ -87,11 +88,24 @@ export async function DELETE(
         candidate: { select: { firstName: true, lastName: true, id: true } },
         job: { select: { title: true, id: true } },
         client: { select: { name: true, id: true } },
+        interview: { select: { jobId: true } },
       },
     });
 
     if (!document) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Job-level RBAC también para ADMIN cuando el documento vive bajo
+    // un job (o un interview, que siempre tiene jobId). Documentos de
+    // candidate-pool o de cliente quedan ORG-level (no atados a un job
+    // específico). El interview puede tener documents que son del
+    // calendar event, ahí el jobId es el del interview.
+    const documentJobId = document.job?.id ?? document.interview?.jobId ?? null;
+    if (documentJobId) {
+      if (!(await canAccessJob(documentJobId, ctx.organizationId, ctx.userId))) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     // Best-effort delete from blob storage

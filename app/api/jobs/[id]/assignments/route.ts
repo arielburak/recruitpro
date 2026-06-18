@@ -144,8 +144,14 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    // Any authenticated org user can remove assignments
-    // (role-based restriction removed; simplified to Admin/User model)
+    // Job-level RBAC también para ADMIN: la regla del proyecto es
+    // visibility/interaction estrictamente assignment-based para TODOS
+    // los roles. Ser ADMIN da permisos extra (delete destructivo) PERO
+    // no bypassea el assignment al job. Sin esto, un admin podía sacar
+    // gente de jobs que ni siquiera ve en su lista.
+    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { userId } = await request.json();
     if (!userId) {

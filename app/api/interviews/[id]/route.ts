@@ -156,13 +156,20 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    const deleted = await prisma.interview.deleteMany({
+    // Job-level RBAC también para ADMIN. Pulleo el jobId primero para
+    // gateär: ser admin no es bypass del assignment al job.
+    const interview = await prisma.interview.findFirst({
       where: { id, organizationId: ctx.organizationId },
+      select: { jobId: true },
     });
-
-    if (deleted.count === 0) {
+    if (!interview) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (!(await canAccessJob(interview.jobId, ctx.organizationId, ctx.userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.interview.delete({ where: { id } });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
