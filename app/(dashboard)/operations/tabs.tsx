@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Briefcase, Building2, Users, DollarSign, AlertTriangle, Activity, TrendingUp, CheckCircle, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 type OpsData = {
   ceo: {
@@ -29,7 +29,17 @@ type OpsData = {
   };
 };
 
-function Kpi({ label, value, hint, accent }: { label: string; value: string | number; hint?: string; accent?: "good" | "warn" | "bad" }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  accent?: "good" | "warn" | "bad";
+}) {
   const accentClass =
     accent === "good"
       ? "text-emerald-600"
@@ -41,7 +51,9 @@ function Kpi({ label, value, hint, accent }: { label: string; value: string | nu
   return (
     <Card>
       <CardContent className="p-5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">{label}</p>
+        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+          {label}
+        </p>
         <p className={`text-2xl font-bold mt-1 ${accentClass}`}>{value}</p>
         {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
       </CardContent>
@@ -49,7 +61,15 @@ function Kpi({ label, value, hint, accent }: { label: string; value: string | nu
   );
 }
 
-function PanelLink({ href, label, sub }: { href: string; label: string; sub: string }) {
+function PanelLink({
+  href,
+  label,
+  sub,
+}: {
+  href: string;
+  label: string;
+  sub: string;
+}) {
   return (
     <a
       href={href}
@@ -66,7 +86,13 @@ function PanelLink({ href, label, sub }: { href: string; label: string; sub: str
   );
 }
 
-export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: string }) {
+export function OperationsTabs({
+  data,
+  userEmail,
+}: {
+  data: OpsData;
+  userEmail: string;
+}) {
   const [tab, setTab] = useState<"ceo" | "coo" | "tech">("ceo");
 
   return (
@@ -79,8 +105,6 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
 
       {/* ───── CEO ───── */}
       <TabsContent value="ceo" className="space-y-4 mt-4">
-        <p className="text-sm text-gray-500">Foco estratégico — números del negocio.</p>
-
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Kpi
             label="Agencies totales"
@@ -90,7 +114,11 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
           <Kpi
             label="Subscripciones activas"
             value={data.ceo.activeSubscriptions}
-            hint={data.ceo.pastDueSubscriptions > 0 ? `${data.ceo.pastDueSubscriptions} past due ⚠️` : "todo al día"}
+            hint={
+              data.ceo.pastDueSubscriptions > 0
+                ? `${data.ceo.pastDueSubscriptions} past due`
+                : "todo al día"
+            }
             accent={data.ceo.pastDueSubscriptions > 0 ? "warn" : "good"}
           />
           <Kpi
@@ -105,24 +133,10 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
             accent={data.ceo.recentSignups > 0 ? "good" : undefined}
           />
         </div>
-
-        <Card>
-          <CardContent className="p-5 space-y-3">
-            <p className="text-sm font-semibold text-gray-900">📋 Para reuniones con Ari</p>
-            <ul className="text-sm text-gray-600 space-y-1.5 list-disc list-inside">
-              <li>Sprint Notion (9 jun) cerrado 100%</li>
-              <li>Pre-launch: queda decisión de billing client portal</li>
-              <li>Foco: agency-first, hiring co lo recibe gratis (revisar a 6 meses)</li>
-              <li>Documentos: <a href="/roadmap" className="text-indigo-600 hover:underline">ROADMAP</a></li>
-            </ul>
-          </CardContent>
-        </Card>
       </TabsContent>
 
       {/* ───── COO ───── */}
       <TabsContent value="coo" className="space-y-4 mt-4">
-        <p className="text-sm text-gray-500">Operaciones — día a día del producto.</p>
-
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Kpi
             label="Client orgs"
@@ -162,23 +176,10 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
             accent={data.coo.silentAgencies > 0 ? "warn" : "good"}
           />
         </div>
-
-        <Card>
-          <CardContent className="p-5 space-y-3">
-            <p className="text-sm font-semibold text-gray-900">🎯 Customer success — esta semana</p>
-            <ul className="text-sm text-gray-600 space-y-1.5 list-disc list-inside">
-              <li>Revisar las {data.coo.silentAgencies} agencies silenciosas → mail proactivo</li>
-              <li>Pulse-check con los primeros 3 clientes (NPS / qué mejorar)</li>
-              <li>Mirar jobs con 14+ días sin candidates nuevos</li>
-            </ul>
-          </CardContent>
-        </Card>
       </TabsContent>
 
       {/* ───── Tech ───── */}
       <TabsContent value="tech" className="space-y-4 mt-4">
-        <p className="text-sm text-gray-500">Salud del sistema — observabilidad.</p>
-
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <Kpi
             label="Actividad últimas 24h"
@@ -190,7 +191,6 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
             value={data.tech.pendingInvites}
             hint="esperando aceptación"
           />
-          <Kpi label="Errores Sentry" value="—" hint="ver en panel externo →" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -205,18 +205,6 @@ export function OperationsTabs({ data, userEmail }: { data: OpsData; userEmail: 
             sub="Status del último deploy + env vars"
           />
         </div>
-
-        <Card>
-          <CardContent className="p-5 space-y-3">
-            <p className="text-sm font-semibold text-gray-900">🔔 Rutina diaria — 5 min</p>
-            <ol className="text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
-              <li>Abrir Sentry. ¿Hay issues nuevos hoy?</li>
-              <li>Real → Copialo y mandáselo a Claude</li>
-              <li>Ruido → click "Resolve"</li>
-              <li>Vercel → último deploy "Ready"</li>
-            </ol>
-          </CardContent>
-        </Card>
       </TabsContent>
 
       <div className="text-xs text-gray-400 mt-6">
