@@ -755,23 +755,46 @@ export default function JobsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <Briefcase className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">
-            {search || activeFilters.length > 0
-              ? "No jobs match your filters"
-              : "No jobs yet — create your first search."}
-          </p>
-          {!search && activeFilters.length === 0 && (
-            <Link href="/jobs/new" className="inline-block mt-4">
-              <Button size="sm" className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Create job
-              </Button>
-            </Link>
-          )}
-          {(search || activeFilters.length > 0) && (
-            <button onClick={() => { clearAllFilters(); setSearch(""); }} className="text-indigo-600 text-sm mt-2 hover:underline">
-              Clear all filters
-            </button>
+          {/* Empty-state copy depende del role + si hay filtros activos.
+              - USER sin assignments (jobs.length === 0, sin filtros):
+                aclara que no tiene acceso aún, no que "no hay jobs".
+                Sin esto, el USER creía que el ATS estaba vacío cuando
+                en realidad había búsquedas a las que no estaba asignado.
+              - ADMIN sin jobs reales: CTA "Create job".
+              - Cualquiera con filtros activos: CTA "Clear filters". */}
+          {search || activeFilters.length > 0 ? (
+            <>
+              <p className="text-gray-500 text-sm">No jobs match your filters</p>
+              <button
+                onClick={() => { clearAllFilters(); setSearch(""); }}
+                className="text-indigo-600 text-sm mt-2 hover:underline"
+              >
+                Clear all filters
+              </button>
+            </>
+          ) : !isAdmin && jobs.length === 0 ? (
+            <>
+              <p className="text-gray-700 text-sm font-medium">
+                You haven&apos;t been assigned to any jobs yet
+              </p>
+              <p className="text-gray-500 text-xs mt-1 max-w-sm mx-auto">
+                Job visibility is strictly assignment-based. Ask an admin
+                of your workspace to add you to a job so you can start
+                working on it.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-500 text-sm">
+                No jobs yet — create your first search.
+              </p>
+              <Link href="/jobs/new" className="inline-block mt-4">
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Create job
+                </Button>
+              </Link>
+            </>
           )}
         </div>
       ) : (

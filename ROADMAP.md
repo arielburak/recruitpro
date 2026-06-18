@@ -151,6 +151,19 @@ QA con 6 agentes en paralelo encontró estos. Lo crítico (RBAC gaps + email cas
 - [ ] **UX papercuts del QA**: (a) loading skeletons genéricos (`animate-pulse` gris uniforme en todas las pantallas — deberían matchear el shape real); (b) dashboard empty "No submissions yet" / "No activity yet" con bajo contraste (gray-400 sobre blanco); (c) DialogContent base no tiene `max-h-[90vh]` explícito en mobile; (d) `showToast` default a "error" si no le pasás tipo — cambiar a "success" o requerir tipo explícito; (e) invite expiry hardcoded a 7 días sin config visible.
 - [ ] **Comentario en castellano en lib/email.ts:709**: papercut de consistencia. El resto del archivo está en inglés.
 
+### 🔧 Pendientes del flow audit MVP 2026-06-18 (post-fixes)
+
+Flow audit con 3 agentes (agency E2E, client portal E2E, edge cases). Lo crítico ya cayó (hard-delete → soft, layout isActive gate, USER empty state /jobs, banner deactivated). Resto:
+
+- [ ] **Candidate sin email = interview invite falla silente**: el recruiter cree que el invite salió pero al candidate sin email no le llega nada. Opciones: validar email-or-phone obligatorio al crear candidate, o forzar warning con CTA "Add email" en el flow de interview si el candidate no tiene. P1 — afecta flow real con users reales.
+- [ ] **Recruiter desactivado sigue figurando como `sharedBy` en client portal sin indicador**: el cliente ve "shared by John" cuando John ya no está. Sumar label "(no longer at firm)" o equivalente. P2 — UX.
+- [ ] **@menciones a users inactivos sin marca visual**: idem anterior. P2.
+- [ ] **Token de invite expirado sin guidance**: "ask admin to resend" copy. P3.
+- [ ] **Multi-agency comments cross-firm en mismo ClientJob**: teórico (necesita 2+ agencies activas en el mismo job). Anotado para cuando haya 2 agencies reales. P2.
+- [ ] **Optimistic locking en concurrent edits**: 2 recruiters editan el mismo candidate al mismo tiempo, last-write-wins sin warning. Teórico hasta que aparezca. P3.
+- [ ] **Race condition en set-password client portal**: 2 POST simultáneos pueden inconsistir. Teórico, requiere actor malicioso o doble-click muy rápido. P3.
+- [ ] **Cliente layout sin gate isActive server-side**: el agency layout ya está gateado. El client portal usa `useSession` (client-side). Los endpoints sí cierran via `getClientContext()` pero el user desactivado puede ver UI shell + data 401. Refactor del layout para server-component con guard. P2.
+
 ### 🧰 Standby — gstack commands (revisar post-launch)
 
 Decisión 2026-06-17: instalamos selectivo 4 commands de [gstack](https://github.com/garrytan/gstack) que ya están activos (`/review`, `/qa`, `/cso`, `/ship`). El resto queda standby para evaluar cuando salgan a producción y haya volumen real de releases / clientes.

@@ -22,8 +22,17 @@ export default async function DashboardLayout({
   if (userId) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, emailVerifiedAt: true, name: true, title: true },
+      select: { email: true, emailVerifiedAt: true, name: true, title: true, isActive: true },
     });
+    // Soft-deactivated users: cerrar el agujero UX donde su sesión JWT
+    // seguía válida pero todos los endpoints les devolvían 401. El
+    // layout antes los dejaba ver la shell del dashboard con data
+    // vacía. Ahora directo al login con un mensaje claro. Endpoints
+    // ya validan isActive en getOrgContext() — esto es la primera
+    // línea para que NO vean nada en lugar de ver UI rota.
+    if (user && !user.isActive) {
+      redirect("/login?error=deactivated");
+    }
     if (user && !user.emailVerifiedAt) {
       unverifiedEmail = user.email;
     }

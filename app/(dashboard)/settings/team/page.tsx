@@ -27,7 +27,6 @@ import {
   Mail,
   Clock,
   UserMinus,
-  Trash2,
   Send,
   XCircle,
   UserPlus,
@@ -123,29 +122,16 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function removeUser(userId: string, userName: string) {
-    if (
-      !confirm(
-        `Are you sure you want to permanently remove ${userName}? This cannot be undone.`
-      )
-    )
-      return;
-
-    const res = await fetch("/api/admin/users", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    if (res.ok) {
-      setSuccess("User removed");
-      setTimeout(() => setSuccess(""), 3000);
-      fetchData();
-    } else {
-      const body = await res.json();
-      setError(body.error || "Failed to remove user");
-      setTimeout(() => setError(""), 3000);
-    }
-  }
+  // "Remove permanently" fue removido del UI a propósito en MVP. La
+  // distancia entre "Deactivate" (soft, preservaba historial) y
+  // "Remove permanently" (hard-delete con cascada que se llevaba
+  // JobAssignments, submissions, comments, interviews) era invisible
+  // en el dropdown — un click de más mataba el trabajo de un recruiter
+  // entero. Para MVP usamos solo Deactivate; si algún día necesitamos
+  // hard-delete genuino (GDPR right-to-be-forgotten, por ejemplo) lo
+  // ponemos detrás de un flow específico con doble confirmación + lista
+  // explícita de qué se va a borrar. El endpoint /api/admin/users DELETE
+  // sigue disponible vía API direct para esos casos puntuales.
 
   async function cancelInvite(inviteId: string) {
     const res = await fetch("/api/admin/invites", {
@@ -408,16 +394,10 @@ export default function AdminUsersPage() {
                             onClick={() =>
                               toggleUserActive(u.id, u.isActive)
                             }
+                            className={u.isActive ? "text-red-600" : undefined}
                           >
                             <UserMinus className="mr-2 h-4 w-4" />
                             {u.isActive ? "Deactivate" : "Reactivate"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => removeUser(u.id, u.name)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Remove permanently
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
