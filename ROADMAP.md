@@ -17,9 +17,25 @@ Aplican a cualquier feature nueva o existente:
 - `- [ ]` pendiente / nuevo
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-06-17
+**Última actualización**: 2026-06-19
 
 ---
+
+## 💳 Próximo sprint — Stripe live (post deploys actuales)
+
+Decisión 2026-06-19: después de cerrar el bloque actual de deploys (los 7 items del feedback de testing + el rework del job header), activar pagos reales con Stripe. Hasta hoy el código de billing existe pero ningún user puede ser cobrado (env vars test, no live; trial nunca expira en la práctica).
+
+Pasos en orden:
+
+- [ ] **Definir pricing**. Decisión vos + Ari: precio por seat, mensual vs anual, si hay tier SOLO vs TEAM diferenciados (el código ya soporta los dos), descuento por anual. Mientras no haya número definido, no se puede crear product en Stripe.
+- [ ] **Crear products + prices en Stripe dashboard** (live mode, no test). Anotar los `price_id` que devuelva Stripe.
+- [ ] **Setear env vars en Vercel production**: `STRIPE_SECRET_KEY` (live), `STRIPE_PUBLISHABLE_KEY` (live), `STRIPE_PRICE_ID_SOLO`, `STRIPE_PRICE_ID_TEAM`, `STRIPE_WEBHOOK_SECRET` (del endpoint live, NO del CLI test).
+- [ ] **Configurar webhook en Stripe dashboard** → URL `https://recruitingats.com/api/webhooks/stripe` (o el dominio real de producción), eventos suscriptos: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`, `invoice.payment_failed`.
+- [ ] **Wirear `requireActiveSubscription` en endpoints sensibles**. Hoy el guard existe (`lib/subscription-guard.ts`) pero solo se usa en `/api/engagements/[id]`. Falta agregarlo a: POST `/api/candidates`, POST `/api/jobs`, POST `/api/submissions`, POST `/api/interviews`, POST `/api/placements`. Sin esto, trial vencido = sigue usando todo gratis = nunca cobramos. Probable mejor approach: middleware o helper que envuelva los handlers para no duplicar el check.
+- [ ] **Fixear webhook `customer.subscription.updated` con status="canceled"** (gap del audit anterior). Hoy solo mapea active/past_due → si Stripe manda update con canceled la sub queda como ACTIVE.
+- [ ] **Test E2E con cuenta real**: crear cuenta nueva → dejar pasar el trial (o hacerlo expirar manualmente) → upgrade desde `/settings/billing` → pagar con tarjeta test→ cancelar desde Customer Portal → re-activar. Confirmar que en cada paso el state de la `Subscription` row matchea lo que muestra Stripe dashboard.
+- [ ] **Configurar Stripe Customer Portal** desde el dashboard de Stripe: branding (logo, color), qué pueden hacer los customers (cambiar payment method, ver invoices, cancelar, downgrade). Sin esto el botón "Manage billing" del ATS lleva a un portal con defaults sin marca.
+- [ ] **Tax handling**: definir si Stripe Tax se prende (USA = nexus, EU = VAT). Si target es US-only, en MVP queda OFF; revisar cuando aparezca primer customer fuera de US.
 
 ## 🚨 Crítico
 
