@@ -157,11 +157,16 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // ADMIN bypass (decisión 2026-06-19 con Nicolás + Ari): el admin
+    // del org ve y muta cualquier job. No necesita estar en el
+    // assignment list para abrir el detalle.
+    const isAdminBypass = ctx.role === "ADMIN";
     const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
 
     // Fallback access paths for when assignment alone would 404. Both
     // consulted only on the deny path so the happy path stays one
-    // query.
+    // query. Skipeados directamente si el caller es ADMIN — ya tiene
+    // acceso, no hace falta el lookup extra.
     //
     //   1. Mention-based: if the recruiter was arrobado in any
     //      comment on this job, let them read it. Otherwise the
@@ -178,7 +183,7 @@ export async function GET(
     //      /engagements/[clientId] dead-ends in 404.
     let mentioned = false;
     let engaged = false;
-    if (!isAssigned) {
+    if (!isAdminBypass && !isAssigned) {
       const [m, e] = await Promise.all([
         prisma.comment.findFirst({
           where: { jobId: id, mentions: { has: ctx.userId } },
@@ -193,7 +198,7 @@ export async function GET(
       engaged = !!e;
     }
 
-    const hasAccess = isAssigned || mentioned || engaged;
+    const hasAccess = isAdminBypass || isAssigned || mentioned || engaged;
     if (!hasAccess) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
