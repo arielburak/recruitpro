@@ -2,17 +2,20 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { sendSubscriptionEndedEmail } from "@/lib/email";
 import Stripe from "stripe";
 
-// Decisión 2026-06-19 con Nicolás: los emails de billing/subscription
-// los manda Stripe directamente desde su Customer Portal (configurado
-// en Dashboard → Configuración → Correos electrónicos del cliente).
-// Sacamos los emails custom del ATS para no duplicar / confundir al
-// usuario con dos remitentes para lo mismo. Los senders de
-// lib/email.ts (sendSubscriptionActivatedEmail, etc.) quedan
-// declarados pero sin uso por si queremos reactivarlos eventualmente.
-// El handler sigue actualizando la DB (status / cancelAtPeriodEnd /
-// seats / currentPeriodEnd) porque la UI y el guard dependen de eso.
+// Decisión 2026-06-19 con Nicolás: la mayoría de los emails de billing
+// los manda Stripe directo desde Customer Portal (Dashboard → Settings
+// → Customer emails) — recibos, payment failed. Sacamos los emails
+// custom del ATS para no duplicar.
+//
+// Excepción única: cuando la sub realmente termina (subscription.deleted)
+// queremos mandar nuestro propio email con CTA "Resubscribe" porque el
+// email genérico de Stripe ("tu sub se canceló") no invita a volver.
+// Para evitar duplicado el toggle "Send canceled subscription emails"
+// de Stripe DEBE quedar DESACTIVADO. Los demás senders en lib/email.ts
+// quedan declarados pero sin uso.
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -105,10 +108,52 @@ export async function POST(request: Request) {
 
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
+
+      // Lookup del admin antes del update para mandar el email
+      // "Your subscription has ended → come back" con CTA Resubscribe.
+      // Es el único email custom que sobrevive — Stripe puede mandar
+      // "tu sub se canceló" pero sin CTA fuerte de re-suscribirse,
+      // y este es el momento clave para invitar al cliente a volver.
+      const sub = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        include: {
+          organization: {
+            include: {
+              users: {
+                where: { role: "ADMIN", isActive: true },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { name: true, email: true },
+              },
+            },
+          },
+        },
+      });
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: { status: "CANCELED", cancelAtPeriodEnd: false },
       });
+
+      try {
+        const admin = sub?.organization?.users?.[0];
+        if (admin?.email && sub) {
+          const baseUrl =
+            process.env.NEXTAUTH_URL ||
+            process.env.NEXT_PUBLIC_APP_URL ||
+            "https://recruitingats.com";
+          await sendSubscriptionEndedEmail({
+            to: admin.email,
+            recipientName: admin.name || "",
+            organizationName: sub.organization.name,
+            resubscribeUrl: `${baseUrl}/settings/billing`,
+          });
+        }
+      } catch (emailErr) {
+        // No bloqueamos el webhook si el email falla — la sub ya
+        // está CANCELED en DB, eso es lo importante.
+        console.error("[stripe webhook] subscription_ended email failed:", emailErr);
+      }
       break;
     }
 
