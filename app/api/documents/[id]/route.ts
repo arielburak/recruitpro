@@ -103,7 +103,7 @@ export async function DELETE(
     // calendar event, ahí el jobId es el del interview.
     const documentJobId = document.job?.id ?? document.interview?.jobId ?? null;
     if (documentJobId) {
-      if (!(await canAccessJob(documentJobId, ctx.organizationId, ctx.userId))) {
+      if (!(await canAccessJob(documentJobId, ctx.organizationId, ctx.userId, ctx.role))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

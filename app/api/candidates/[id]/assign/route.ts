@@ -28,14 +28,18 @@ export async function GET(
     const existingJobIds = existingSubmissions.map((s) => s.jobId);
 
     // Get open/active jobs not yet assigned AND a los que el user tiene
-    // acceso. JobAssignment.some lleva el filtro al nivel de Postgres
-    // sin necesidad de iterar in-memory.
+    // acceso. Visibilidad:
+    // - ADMIN: ve todos los jobs OPEN/ACTIVE del org no asignados al
+    //   candidato. (Decisión 2026-06-19 con Nicolás + Ari).
+    // - USER: solo los jobs donde figura como JobAssignment.
     const availableJobs = await prisma.job.findMany({
       where: {
         organizationId: ctx.organizationId,
         status: { in: ["OPEN", "ACTIVE"] },
         id: { notIn: existingJobIds },
-        assignments: { some: { userId: ctx.userId } },
+        ...(ctx.role !== "ADMIN" && {
+          assignments: { some: { userId: ctx.userId } },
+        }),
       },
       include: {
         client: { select: { name: true } },
@@ -87,7 +91,7 @@ export async function POST(
       // Anti-IDOR: validar acceso por cada jobId del body. Antes la
       // unica defensa era el filtro del GET, que un cliente custom
       // podia saltearse mandando un POST directo.
-      const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId);
+      const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId, ctx.role);
       if (!allowed) {
         blockedJobIds.push(jobId);
         continue;

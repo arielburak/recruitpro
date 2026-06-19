@@ -90,15 +90,14 @@ export async function GET(request: Request) {
       name: { contains: q, mode: "insensitive" },
     };
     if (scopedJob) {
-      const isPrivate = scopedJob.invitedUserIds.length > 0;
+      // Decisión 2026-06-19 con Nicolás + Ari: ADMIN ve y muta TODOS
+      // los jobs del org. Entonces siempre puede ser mencionado, sin
+      // importar si el job es private o no. Sumamos ADMINs al set en
+      // ambas ramas (antes ADMIN solo entraba en non-private).
       const allowedIds = Array.from(
         new Set<string>([...scopedJob.assigneeIds, ...scopedJob.invitedUserIds]),
       );
-      if (isPrivate) {
-        userWhere.id = { in: allowedIds };
-      } else {
-        userWhere.OR = [{ role: "ADMIN" }, { id: { in: allowedIds } }];
-      }
+      userWhere.OR = [{ role: "ADMIN" }, { id: { in: allowedIds } }];
     }
 
     const users = await prisma.user.findMany({

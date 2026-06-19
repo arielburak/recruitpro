@@ -45,11 +45,14 @@ export default async function DashboardPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-  // Strict assignment-based visibility — admins included. Mirrors the
-  // rule in /api/jobs and lib/.../canAccessJob: if the user isn't on
-  // the job's assignment list, the job doesn't count here. Stops the
-  // "Active Searches" tile from surfacing work the user can't open.
-  const jobAccessFilter = { assignments: { some: { userId } } };
+  // Visibility de jobs en KPIs del dashboard (decisión 2026-06-19 con
+  // Nicolás + Ari):
+  // - ADMIN: ve los KPIs sobre todos los jobs del org.
+  // - USER: estrictamente assignment-based, igual que /api/jobs y
+  //   canAccessJob.
+  const role = (session?.user as any)?.role as "ADMIN" | "USER" | undefined;
+  const jobAccessFilter =
+    role === "ADMIN" ? {} : { assignments: { some: { userId } } };
 
   // First-week banners ahora se basan en la edad del USER, no del org.
   // Antes (commit eafa844 + previos) usabamos org.createdAt — eso dejaba

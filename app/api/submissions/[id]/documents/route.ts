@@ -106,7 +106,8 @@ export async function PUT(
     const isAssigned = await canAccessJob(
       submission.jobId,
       ctx.organizationId,
-      ctx.userId
+      ctx.userId,
+      ctx.role,
     );
     const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
     if (!isAssigned && !isCandidateOwner) {

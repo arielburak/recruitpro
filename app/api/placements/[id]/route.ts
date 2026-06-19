@@ -47,12 +47,12 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Job-level RBAC: editar terms financieros de un placement (fee,
-    // dates, invoice status) es SOLO para recruiters assigned al job.
-    // Sin owner-bypass acá porque los placements representan plata real
-    // — un recruiter random no debería poder tocar el fee de un deal
-    // que no es suyo. Si el creador fue removido del job, perdió ese
-    // permiso por decisión consciente del admin.
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total — puede editar terms de cualquier placement.
+    // - USER: solo si está assigned al job. SIN owner-bypass — los
+    //   placements son plata real, un recruiter random sacado del job
+    //   no debería seguir tocando el fee. Si el creador fue removido,
+    //   perdió el permiso por decisión consciente del admin.
     const placementForGate = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
       select: { jobId: true },
@@ -60,7 +60,7 @@ export async function PUT(
     if (!placementForGate) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (!(await canAccessJob(placementForGate.jobId, ctx.organizationId, ctx.userId))) {
+    if (!(await canAccessJob(placementForGate.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -248,10 +248,12 @@ export async function DELETE(
 
     if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // Job-level RBAC también para ADMIN. Borrar un placement es
-    // destructivo Y sensible (rollback del stage del candidate, plata
-    // involucrada). ADMIN no es bypass del assignment.
-    if (!(await canAccessJob(placement.jobId, ctx.organizationId, ctx.userId))) {
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total — puede borrar cualquier placement del org.
+    // - USER: solo si está assigned al job. requireAdminResponse arriba
+    //   ya filtró USER (bulk delete es admin-only), pero acá dejamos el
+    //   gate igual por defensa en profundidad.
+    if (!(await canAccessJob(placement.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

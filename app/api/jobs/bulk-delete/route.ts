@@ -5,18 +5,17 @@ import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
 
-// Job-level RBAC también para bulk delete: la regla universal es
-// strictly assignment-based, incluso para ADMIN. Filtramos los ids al
-// subset al que el caller TIENE assignment. Lo que no le toca, no se
-// borra y se reporta en `skipped` para que el frontend pueda mostrar
-// "borraste 3 de 5; los otros 2 no están asignados a vos".
-
 // Bulk-delete jobs. Body: { ids: string[] }.
 //
-// Same scoping pattern as the candidate bulk-delete: filter ids by
-// ctx.organizationId before the delete, return the actual deleted
-// count. Job cascade fans through to pipeline stages, submissions,
-// interviews, documents, firm engagements, etc.
+// RBAC (decisión 2026-06-19 con Nicolás + Ari):
+// - Acceso al endpoint: ADMIN-only (requireAdminResponse).
+// - Como ADMIN ahora tiene bypass total a todos los jobs del org, no
+//   filtramos por assignment. Cualquier job del org en la lista de
+//   ids se borra. Único filter: org match para no permitir cross-org
+//   delete via id arbitrario.
+//
+// Cascade: el delete fans a pipeline stages, submissions, interviews,
+// documents, firm engagements, etc.
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
@@ -30,14 +29,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ deleted: 0 });
     }
 
-    // Doble gate: (a) job pertenece al org, (b) el caller tiene
-    // assignment en ese job. Sin (b), un ADMIN podía borrar en bulk
-    // jobs en los que ni siquiera estaba — el bypass clásico.
     const accessible = await prisma.job.findMany({
       where: {
         id: { in: ids },
         organizationId: ctx.organizationId,
-        assignments: { some: { userId: ctx.userId } },
       },
       select: { id: true },
     });

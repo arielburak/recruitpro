@@ -32,7 +32,7 @@ export async function PUT(
     const ctx = await getOrgContext();
     const { id: jobId } = await params;
 
-    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId))) {
+    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 

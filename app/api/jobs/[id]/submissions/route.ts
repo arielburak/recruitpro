@@ -39,7 +39,7 @@ export async function POST(
     // assignment al job no pueda agregarle candidatos via POST directo.
     // 404 (no 403) sigue el mismo patron del #3 critico para no leakear
     // existencia.
-    const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId);
+    const allowed = await canAccessJob(jobId, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }

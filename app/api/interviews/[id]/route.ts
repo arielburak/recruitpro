@@ -60,13 +60,14 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Job-level RBAC con owner-bypass: el creador puede seguir
-    // editando su interview aunque ya no esté asignado al job (mismo
-    // patrón que submissions PATCH). Cualquier otro user necesita
-    // estar assigned al job.
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total a través de canAccessJob(role=ADMIN).
+    // - USER: estar assigned al job, O ser el creator de la interview
+    //   (mismo patrón owner-bypass que submissions PATCH para no
+    //   romperle el flow al creador si lo sacan del job).
     if (
       existing.createdBy !== ctx.userId &&
-      !(await canAccessJob(existing.jobId, ctx.organizationId, ctx.userId))
+      !(await canAccessJob(existing.jobId, ctx.organizationId, ctx.userId, ctx.role))
     ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -156,8 +157,10 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    // Job-level RBAC también para ADMIN. Pulleo el jobId primero para
-    // gateär: ser admin no es bypass del assignment al job.
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total via canAccessJob(role=ADMIN).
+    // - USER: estar assigned al job.
+    // Pulleo jobId primero para pasarlo al gate.
     const interview = await prisma.interview.findFirst({
       where: { id, organizationId: ctx.organizationId },
       select: { jobId: true },
@@ -165,7 +168,7 @@ export async function DELETE(
     if (!interview) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (!(await canAccessJob(interview.jobId, ctx.organizationId, ctx.userId))) {
+    if (!(await canAccessJob(interview.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

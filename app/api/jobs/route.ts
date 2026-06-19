@@ -18,12 +18,15 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Everyone — admin or not — sees only the jobs they're explicitly
-    // assigned to. Admins no longer get an org-wide bypass: if a search
-    // matters to an admin they have to be added to it. Job creators
-    // are auto-assigned at POST time so they keep access to anything
-    // they spin up themselves.
-    where.assignments = { some: { userId: ctx.userId } };
+    // Visibility (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: ve TODOS los jobs del org. Dueño del workspace, no
+    //   necesita estar en cada assignment para tener visibilidad.
+    // - USER: estrictamente assignment-based. Solo ve los jobs en los
+    //   que figura como JobAssignment. Job creators son auto-asignados
+    //   en POST así que mantienen acceso a lo que crean.
+    if (ctx.role !== "ADMIN") {
+      where.assignments = { some: { userId: ctx.userId } };
+    }
 
     if (status) where.status = status;
     if (search) {

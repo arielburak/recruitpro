@@ -119,12 +119,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Submission not found" }, { status: 404 });
     }
 
-    // Job-level RBAC: solo recruiters asignados al job pueden agendar
-    // interviews. Sin esto, cualquier USER puede crear interviews en
-    // jobs que ni siquiera ve en su lista — incoherente con el resto
-    // del sistema (submissions, comments) donde canAccessJob es
-    // estrictamente assignment-based.
-    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId))) {
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total, puede agendar en cualquier job del org.
+    // - USER: solo en jobs en los que figura como JobAssignment.
+    // canAccessJob recibe ctx.role para aplicar la regla nueva.
+    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

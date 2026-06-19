@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       // SECURITY 2026-06-17: tambien gateamos la rama submission-anchored.
       // El submissionId lo arma el cliente — un USER sin acceso al Job
       // podia mandarle el id de una submission ajena y crear el Placement.
-      const allowedSub = await canAccessJob(submission.job.id, ctx.organizationId, ctx.userId);
+      const allowedSub = await canAccessJob(submission.job.id, ctx.organizationId, ctx.userId, ctx.role);
       if (!allowedSub) {
         return NextResponse.json({ error: "Submission not found" }, { status: 404 });
       }
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
       // con rawJobId arbitrario — sin canAccessJob, un USER sin
       // assignment al Job podia crear un Placement (y de paso un
       // CandidateSubmission "Placed") en un job ajeno.
-      const allowed = await canAccessJob(job.id, ctx.organizationId, ctx.userId);
+      const allowed = await canAccessJob(job.id, ctx.organizationId, ctx.userId, ctx.role);
       if (!allowed) {
         return NextResponse.json({ error: "Job not found" }, { status: 404 });
       }

@@ -45,7 +45,8 @@ export async function PATCH(
     const isAssigned = await canAccessJob(
       submission.job.id,
       ctx.organizationId,
-      ctx.userId
+      ctx.userId,
+      ctx.role,
     );
     const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
     if (!isAssigned && !isCandidateOwner) {
@@ -428,13 +429,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Same gate semantics as the PATCH above: assigned to the job OR
-    // owner of the candidate. Admins included — no role bypass on
-    // the visibility rule (see lib/job-access.ts).
+    // Same gate semantics as the PATCH above: ADMIN bypass via
+    // canAccessJob(role) + owner-bypass para el sourcer del candidato
+    // (mismo patrón que PATCH). USER sin assignment Y sin ownership
+    // del candidato no puede.
     const isAssigned = await canAccessJob(
       submission.job.id,
       ctx.organizationId,
-      ctx.userId
+      ctx.userId,
+      ctx.role,
     );
     const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
     if (!isAssigned && !isCandidateOwner) {

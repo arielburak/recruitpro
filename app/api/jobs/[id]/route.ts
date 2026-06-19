@@ -242,7 +242,7 @@ export async function PUT(
     const body = await request.json();
     const data = jobSchema.parse(body);
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const updated = await prisma.job.updateMany({
@@ -267,7 +267,7 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.job.deleteMany({
@@ -306,7 +306,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId);
+    const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const data: any = {};

@@ -47,13 +47,11 @@ export async function POST(
     const ctx = await getOrgContext();
     const { id } = await params;
 
-    // Job-level RBAC: SOLO recruiters ya asignados al job pueden
-    // sumar a otros. Sin esto, cualquier USER del org podía agregar
-    // gente a jobs que ni siquiera ve — y como DELETE acá es ADMIN-only,
-    // generaba el escenario raro "USER agrega, después solo ADMIN saca".
-    // El patrón coherente: si el job no lo ves, no podés modificar su
-    // equipo. ADMIN bypass NO aplica (regla universal del proyecto).
-    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId))) {
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total — puede sumar gente a cualquier job del org.
+    // - USER: solo a jobs en los que está assigned. Si no ve el job,
+    //   no debería poder modificarle el equipo.
+    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -146,12 +144,11 @@ export async function DELETE(
     if (forbidden) return forbidden;
     const { id } = await params;
 
-    // Job-level RBAC también para ADMIN: la regla del proyecto es
-    // visibility/interaction estrictamente assignment-based para TODOS
-    // los roles. Ser ADMIN da permisos extra (delete destructivo) PERO
-    // no bypassea el assignment al job. Sin esto, un admin podía sacar
-    // gente de jobs que ni siquiera ve en su lista.
-    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId))) {
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total. Puede sacar gente de cualquier job del
+    //   org. requireAdminResponse arriba ya gateó al USER.
+    // - USER: no llega acá (DELETE es ADMIN-only).
+    if (!(await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
