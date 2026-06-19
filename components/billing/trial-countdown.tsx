@@ -17,15 +17,17 @@ const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 
 // Modal popup que se muestra al cargar el dashboard si el workspace
 // está en trial. Estilo overlay para que sea bien prominente — el
-// admin lo ve apenas entra. Usa sessionStorage (NO localStorage)
-// para que la sesión browser fresh siempre lo dispare: si el user
-// cierra el browser y se loguea de nuevo, el modal vuelve a aparecer.
-// Dentro de la misma sesión, "Remind me later" lo silencia hasta
-// el próximo login.
+// admin lo ve apenas entra.
+//
+// Decisión 2026-06-19 con Nicolás: aparece SIEMPRE cada vez que se
+// monta el componente (cada login / refresh). No persiste dismiss en
+// storage. El user puede cerrarlo con X / click afuera para usar el
+// ATS, pero al refresh / próximo login reaparece. La idea es que sea
+// imposible olvidarse del trial.
 //
 // Visual escalado por urgencia:
-//   · 7d+ → indigo (gentle reminder, dismissible)
-//   · 3-6d → amber (heads up, dismissible)
+//   · 7d+ → indigo (gentle reminder, dismissible esta carga)
+//   · 3-6d → amber (heads up, dismissible esta carga)
 //   · 0-2d → red (urgent, no dismissible — solo el CTA)
 
 type Subscription = {
@@ -34,8 +36,6 @@ type Subscription = {
   isComp: boolean;
   stripeSubscriptionId: string | null;
 };
-
-const SESSION_DISMISS_KEY = "trial-popup-dismissed";
 
 export function TrialCountdown() {
   const { data: session } = useSession();
@@ -58,13 +58,9 @@ export function TrialCountdown() {
     if (subscription.isComp) return;
     if (!subscription.trialEndsAt) return;
 
-    // Si en esta MISMA sesión ya lo cerró, no insistir hasta el
-    // próximo login (cuando sessionStorage se resetea).
-    if (typeof window !== "undefined") {
-      const dismissed = sessionStorage.getItem(SESSION_DISMISS_KEY) === "true";
-      if (dismissed) return;
-    }
-
+    // Sin persistencia de dismiss: abre cada vez que el componente
+    // se monta (cada login / refresh). User puede cerrar para usar
+    // el ATS, pero al recargar reaparece.
     setOpen(true);
   }, [loaded, subscription]);
 
@@ -114,9 +110,8 @@ export function TrialCountdown() {
 
   function handleDismiss() {
     if (isUrgent) return; // urgent no se puede dismissar
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(SESSION_DISMISS_KEY, "true");
-    }
+    // Cierre transitorio solamente — no persistimos nada. Al refresh
+    // o próximo login el modal reaparece.
     setOpen(false);
   }
 
@@ -159,18 +154,6 @@ export function TrialCountdown() {
           <ArrowRight className="h-4 w-4" />
         </Link>
 
-        {/* Footer secondary */}
-        {!isUrgent && (
-          <div className="flex justify-center mt-1">
-            <button
-              type="button"
-              onClick={handleDismiss}
-              className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1"
-            >
-              Remind me at next login
-            </button>
-          </div>
-        )}
         {isUrgent && (
           <p className="text-xs text-red-600 text-center mt-2">
             We'll keep showing this until you subscribe to avoid losing access.
