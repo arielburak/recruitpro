@@ -123,7 +123,7 @@ function RegisterContent() {
               { icon: UserPlus, label: "Unlimited candidates & job postings" },
               { icon: Globe, label: "Built-in client portal" },
               { icon: Users, label: "Team collaboration & permissions" },
-              { icon: Sparkles, label: "5-day trial, cancel any time" },
+              { icon: Sparkles, label: "7-day trial — no credit card required" },
             ].map(({ icon: Icon, label }) => (
               <div key={label} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
@@ -174,7 +174,7 @@ function RegisterContent() {
               {isFirmInvite ? "Set up your firm" : "Start your free trial"}
             </h2>
             <p className="text-gray-500 mt-1">
-              5 days free. Credit card required. Cancel anytime before the trial ends.
+              7 days free. No credit card required. Cancel anytime before the trial ends.
             </p>
           </div>
 

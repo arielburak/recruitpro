@@ -3,10 +3,12 @@
 // para seguir creando data.
 export const TRIAL_DAYS = 7;
 
-// Tiered per-seat pricing (monthly, in cents).
-// Solo covers the independent recruiter; Team kicks in at the second seat.
-export const SOLO_PRICE_PER_SEAT_CENTS = 1500; // $15
-export const TEAM_PRICE_PER_SEAT_CENTS = 1900; // $19
+// Pricing: $20/seat/mes flat (decisión 2026-06-19 con Nicolás + Ari).
+// Mantenemos la estructura de "tiers" SOLO vs TEAM por backwards
+// compat con el código existente, pero ambas valen lo mismo. Si en
+// el futuro queremos volume discount, ajustamos TEAM_PRICE_PER_SEAT_CENTS.
+export const SOLO_PRICE_PER_SEAT_CENTS = 2000; // $20
+export const TEAM_PRICE_PER_SEAT_CENTS = 2000; // $20
 
 export const SOLO_MAX_SEATS = 1;
 export const TEAM_MIN_SEATS = 2;

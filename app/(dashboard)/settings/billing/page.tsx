@@ -147,10 +147,9 @@ function BillingContent() {
             <CardContent className="p-6">
               <h3 className="font-semibold mb-2">Pricing</h3>
               <p className="text-gray-600 text-sm">
-                Solo: ${dollars(SOLO_PRICE_PER_SEAT_CENTS)}/seat/month (1 seat).{" "}
-                Team: ${dollars(TEAM_PRICE_PER_SEAT_CENTS)}/seat/month ({`2–${TEAM_MAX_SEATS}`} seats).{" "}
-                5-day trial included (credit card required). Add or remove seats any time from the Team page —
-                crossing from 1 to 2 seats moves you to the Team plan automatically.
+                ${dollars(SOLO_PRICE_PER_SEAT_CENTS)}/seat/month.{" "}
+                7-day free trial included — no credit card required.
+                Add or remove seats any time from the Team page.
               </p>
             </CardContent>
           </Card>
