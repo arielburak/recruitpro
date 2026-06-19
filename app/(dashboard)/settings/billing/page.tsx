@@ -126,6 +126,16 @@ function BillingContent() {
   const TRIAL_TOTAL_DAYS = 7;
   const trialDaysUsed = Math.max(0, TRIAL_TOTAL_DAYS - trialDaysLeft);
   const trialProgress = Math.min(100, (trialDaysUsed / TRIAL_TOTAL_DAYS) * 100);
+  // Trial expirado: status sigue siendo TRIALING en DB hasta que Stripe
+  // mande el webhook (que puede no llegar nunca si el user no subscribió
+  // y no hay sub en Stripe). El SubscriptionGate del layout ya bloqueó
+  // todo lo demás del ATS, pero billing/ es la excepción y necesita
+  // mostrar copy rojo prominente "Trial expired".
+  const trialExpired =
+    !isComp &&
+    status === "TRIALING" &&
+    trialEnd &&
+    trialEnd.getTime() <= now.getTime();
 
   // Estado visual del hero card.
   const heroPalette = isComp
@@ -136,6 +146,16 @@ function BillingContent() {
         border: "border-emerald-200",
         label: "Complimentary",
         labelTone: "All features unlocked, no billing required.",
+      }
+    : trialExpired
+    ? {
+        bg: "bg-red-50",
+        accent: "text-red-700",
+        accentSoft: "bg-red-100",
+        border: "border-red-200",
+        label: "Trial expired",
+        labelTone:
+          "Subscribe now to keep your team working. Your candidates, jobs and pipeline are safe.",
       }
     : status === "ACTIVE" && scheduledToCancel
     ? {
@@ -218,6 +238,8 @@ function BillingContent() {
               >
                 {status === "ACTIVE" || isComp ? (
                   <CheckCircle className="h-3.5 w-3.5" />
+                ) : trialExpired ? (
+                  <AlertTriangle className="h-3.5 w-3.5" />
                 ) : status === "TRIALING" ? (
                   <Sparkles className="h-3.5 w-3.5" />
                 ) : (
@@ -260,11 +282,13 @@ function BillingContent() {
                   size="lg"
                   onClick={handleCheckout}
                   disabled={actionLoading}
-                  className="w-full sm:w-auto"
+                  className={`w-full sm:w-auto ${trialExpired ? "bg-red-600 hover:bg-red-700" : ""}`}
                 >
                   <Sparkles className="h-4 w-4 mr-1.5" />
                   {actionLoading
                     ? "Loading…"
+                    : trialExpired
+                    ? "Subscribe now"
                     : status === "TRIALING"
                     ? "Add payment method"
                     : "Subscribe now"}
@@ -286,8 +310,8 @@ function BillingContent() {
           )}
         </div>
 
-        {/* Trial progress bar — solo cuando TRIALING */}
-        {status === "TRIALING" && trialEnd && !isComp && (
+        {/* Trial progress bar — solo cuando TRIALING activo (no expirado) */}
+        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && (
           <div className="mt-6 space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-600">
               <span>Trial progress</span>
