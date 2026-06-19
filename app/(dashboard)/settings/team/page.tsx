@@ -34,6 +34,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { DeactivateUserDialog } from "@/components/settings/deactivate-user-dialog";
+import { ConfirmAddSeatDialog } from "@/components/billing/confirm-add-seat-dialog";
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
@@ -51,36 +52,80 @@ export default function AdminUsersPage() {
     { id: string; name: string } | null
   >(null);
 
+  // Estado del billing — necesario para decidir si mostrar el
+  // confirm-add-seat dialog al invitar. Solo se interrumpe el flow
+  // si el workspace ya está paying (ACTIVE, no comp, no trial).
+  const [subscription, setSubscription] = useState<{
+    status?: string;
+    isComp?: boolean;
+  } | null>(null);
+
+  // Confirm-add-seat dialog state. Cuando admin clickea "Send
+  // invite" Y la org está ACTIVE, no submiteamos directo — guardamos
+  // los form values y mostramos el dialog. Si confirma, ahí
+  // disparamos el POST. Si cancela, cerramos el dialog sin enviar.
+  const [pendingInvite, setPendingInvite] = useState<{
+    name: string;
+    email: string;
+    role: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchData();
   }, []);
 
   async function fetchData() {
-    const [usersRes, invitesRes] = await Promise.all([
+    const [usersRes, invitesRes, subRes] = await Promise.all([
       fetch("/api/admin/users"),
       fetch("/api/admin/invites"),
+      fetch("/api/admin/subscription"),
     ]);
     const usersData = await usersRes.json();
     const invitesData = await invitesRes.json();
+    const subData = await subRes.json().catch(() => null);
     setUsers(Array.isArray(usersData) ? usersData : []);
     setInvites(Array.isArray(invitesData) ? invitesData : []);
+    setSubscription(subData);
     setLoading(false);
   }
 
-  async function sendInvite(e: React.FormEvent<HTMLFormElement>) {
+  function sendInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setInviteLoading(true);
     setError("");
 
     const fd = new FormData(e.currentTarget);
+    const inviteData = {
+      name: String(fd.get("name") || ""),
+      email: String(fd.get("email") || ""),
+      role: String(fd.get("role") || "USER"),
+    };
+
+    // Si la org está ACTIVE (paying) y no es comp → interrumpir flow
+    // para mostrar el dialog con desglose del impacto. El dialog
+    // confirma o cancela. Trial / comp → submit directo sin fricción.
+    const isActivePaying =
+      subscription?.status === "ACTIVE" && !subscription?.isComp;
+    if (isActivePaying) {
+      setPendingInvite(inviteData);
+      return;
+    }
+
+    void submitInvite(inviteData);
+  }
+
+  // Submit real al endpoint. Llamado por sendInvite directo (trial /
+  // comp) o por el confirm del seat dialog (ACTIVE paying).
+  async function submitInvite(inviteData: {
+    name: string;
+    email: string;
+    role: string;
+  }) {
+    setInviteLoading(true);
+    setError("");
     const res = await fetch("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: fd.get("name"),
-        email: fd.get("email"),
-        role: fd.get("role"),
-      }),
+      body: JSON.stringify(inviteData),
     });
 
     if (!res.ok) {
@@ -91,6 +136,7 @@ export default function AdminUsersPage() {
     }
 
     setShowInvite(false);
+    setPendingInvite(null);
     setInviteLoading(false);
     setSuccess("Invitation sent!");
     setTimeout(() => setSuccess(""), 3000);
@@ -518,6 +564,25 @@ export default function AdminUsersPage() {
           setSuccess(`${deactivateTarget?.name ?? "User"} deactivated${suffix}`);
           setTimeout(() => setSuccess(""), 3500);
           fetchData();
+        }}
+      />
+
+      {/* Confirm seat dialog — visible solo cuando el workspace ya
+          está paying (ACTIVE, no comp). Muestra desglose del costo
+          actual + nuevo + diferencia con nota de prorrateo. Si el
+          admin confirma, dispara el POST del invite. Cancela = nada. */}
+      <ConfirmAddSeatDialog
+        open={!!pendingInvite}
+        onOpenChange={(open) => {
+          if (!open) setPendingInvite(null);
+        }}
+        currentSeats={activeUsers.length}
+        newTeammateName={pendingInvite?.name || undefined}
+        loading={inviteLoading}
+        onConfirm={() => {
+          if (pendingInvite) {
+            void submitInvite(pendingInvite);
+          }
         }}
       />
     </div>
