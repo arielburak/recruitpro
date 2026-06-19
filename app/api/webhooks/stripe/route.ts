@@ -65,11 +65,39 @@ export async function POST(request: Request) {
           );
           break;
         }
+        // Fetch full subscription details from Stripe so we set
+        // current_period_end y seats correctamente en el primer
+        // update — sin depender de que después llegue invoice.paid
+        // o subscription.updated. Si esos eventos se demoran o se
+        // pierden, el UI muestra "Next billing: —" hasta el próximo
+        // ciclo. Una llamada API extra acá lo evita.
+        let periodEnd: Date | undefined;
+        let quantity = 1;
+        try {
+          const stripe = getStripeClient();
+          const stripeSub = (await stripe.subscriptions.retrieve(
+            session.subscription as string,
+          )) as any;
+          if (stripeSub.current_period_end) {
+            periodEnd = new Date(stripeSub.current_period_end * 1000);
+          }
+          quantity = stripeSub.items?.data?.[0]?.quantity || 1;
+        } catch (retrieveErr) {
+          // Si Stripe falla, igual marcamos ACTIVE — el fix queda
+          // para cuando llegue el subscription.updated.
+          console.error(
+            "[stripe webhook] failed to retrieve sub on checkout:",
+            retrieveErr,
+          );
+        }
+
         await prisma.subscription.update({
           where: { organizationId: orgId },
           data: {
             stripeSubscriptionId: session.subscription as string,
             status: "ACTIVE",
+            seats: quantity,
+            ...(periodEnd && { currentPeriodEnd: periodEnd }),
           },
         });
       }
