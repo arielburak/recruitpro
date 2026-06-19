@@ -9,6 +9,9 @@ type NotifyArgs = {
   authorKind: "staffing" | "client";
   authorId: string;
   authorName: string;
+  // Optional sender email for wiring Reply-To on mention/new-message
+  // mails so replies land in a real inbox instead of noreply@.
+  authorEmail?: string;
 };
 
 // Centralized notification logic for new comments posted in a candidate chat.
@@ -25,7 +28,7 @@ type NotifyArgs = {
 //     → in-app ClientNotification + email for mentioned client users
 //     → NO staffing-side notification
 export async function notifyOnNewComment(args: NotifyArgs) {
-  const { submissionId, commentType, content, mentions, authorKind, authorId, authorName } = args;
+  const { submissionId, commentType, content, mentions, authorKind, authorId, authorName, authorEmail } = args;
 
   const submission = await prisma.candidateSubmission.findUnique({
     where: { id: submissionId },
@@ -40,6 +43,10 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           title: true,
           clientId: true,
           organizationId: true,
+          // Cliente para identificar la busqueda en el mail: "Senior
+          // Engineer @ Acme" en vez de "Senior Engineer" suelto.
+          // Mismo motivo que en notifyOnNewJobComment.
+          client: { select: { name: true } },
           assignments: {
             select: { userId: true, user: { select: { id: true, email: true, name: true } } },
           },
@@ -51,7 +58,9 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   if (!submission) return;
 
   const candidateName = `${submission.candidate.firstName} ${submission.candidate.lastName}`.trim();
-  const jobTitle = submission.job.title;
+  const jobTitle = submission.job.client?.name
+    ? `${submission.job.title} @ ${submission.job.client.name}`
+    : submission.job.title;
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
   const staffingUrl = `${baseUrl}/candidates/${submission.candidateId}?submissionId=${submissionId}`;
   const clientUrl = `${baseUrl}/client-portal/candidates/${submissionId}`;
@@ -101,6 +110,8 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               jobTitle,
               preview,
               url: staffingUrl,
+              recipientName: u.name || undefined,
+              senderEmail: authorEmail || undefined,
             });
           } catch (e) {
             console.error("[chat-notify] mention email (staffing) failed:", e);
@@ -136,6 +147,8 @@ export async function notifyOnNewComment(args: NotifyArgs) {
               jobTitle,
               preview,
               url: clientUrl,
+              recipientName: cu.name || undefined,
+              senderEmail: authorEmail || undefined,
             });
           } catch (e) {
             console.error("[chat-notify] mention email (client) failed:", e);
@@ -151,16 +164,41 @@ export async function notifyOnNewComment(args: NotifyArgs) {
   if (commentType === "CLIENT_VISIBLE") {
     try {
       if (authorKind === "staffing") {
-        // Staffing → Client: per-user ClientNotification for all active client users + emails
+        // Staffing → Client. WhatsApp-group rule: notify only
+        // ClientUsers who are members of the ClientJob backing this
+        // submission's Job. A hiring contact who wasn't invited to
+        // this search shouldn't get a ping (and clicking the notif
+        // would 404 them anyway — the portal gates by membership).
         if (submission.job.clientId) {
-          const activeClientUsers = await prisma.clientUser.findMany({
-            where: { clientId: submission.job.clientId, isActive: true },
-            select: { id: true, email: true, role: true },
+          const engagement = await prisma.firmEngagement.findFirst({
+            where: { jobId: submission.job.id, status: "ACCEPTED" },
+            select: { clientJobId: true },
           });
+
+          // Audience: members of the ClientJob if we have one,
+          // otherwise the full active client roster (legacy Jobs
+          // created directly without a ClientJob mirror — keeps
+          // notifications working in those flows).
+          const audience = engagement
+            ? (
+                await prisma.clientJobMember.findMany({
+                  where: {
+                    clientJobId: engagement.clientJobId,
+                    clientUser: { isActive: true, clientId: submission.job.clientId },
+                  },
+                  select: {
+                    clientUser: { select: { id: true, email: true, role: true } },
+                  },
+                })
+              ).map((m) => m.clientUser)
+            : await prisma.clientUser.findMany({
+                where: { clientId: submission.job.clientId, isActive: true },
+                select: { id: true, email: true, role: true },
+              });
 
           const mentionSet = new Set(mentions); // Skip users already notified via mention
 
-          for (const cu of activeClientUsers) {
+          for (const cu of audience) {
             if (mentionSet.has(cu.id)) continue; // already got mention notification
             try {
               await prisma.clientNotification.create({
@@ -179,31 +217,12 @@ export async function notifyOnNewComment(args: NotifyArgs) {
             }
           }
 
-          // Emails: hiring manager + admins (not regular users to avoid noise)
-          const client = await prisma.client.findUnique({
-            where: { id: submission.job.clientId },
-            select: { contactEmail: true },
-          });
-          const recipients = new Set<string>();
-          if (client?.contactEmail) recipients.add(client.contactEmail.toLowerCase());
-          for (const cu of activeClientUsers) {
-            if (cu.role === "ADMIN") recipients.add(cu.email.toLowerCase());
-          }
-          for (const to of recipients) {
-            try {
-              await sendNewMessageEmail({
-                to,
-                fromName: authorName,
-                fromRole: "recruiter",
-                candidateName,
-                jobTitle,
-                preview,
-                portalUrl: clientUrl,
-              });
-            } catch (e) {
-              console.error("[chat-notify] CLIENT_VISIBLE staffing->client email failed:", e);
-            }
-          }
+          // No emails on the audience path — only mentions trigger
+          // a mail (handled above). The user feedback was clear:
+          // "que me avise por mail únicamente cuando alguien me
+          // arroba (no cuando responden el chat)". The bell on the
+          // portal still gets a notification, which is enough for
+          // catch-up.
         }
       } else {
         // Client → Staffing: UserNotification for each assigned recruiter + emails
@@ -232,22 +251,13 @@ export async function notifyOnNewComment(args: NotifyArgs) {
           }
         }
 
-        // Emails
-        for (const to of recipients) {
-          try {
-            await sendNewMessageEmail({
-              to,
-              fromName: authorName,
-              fromRole: "client",
-              candidateName,
-              jobTitle,
-              preview,
-              portalUrl: staffingUrl,
-            });
-          } catch (e) {
-            console.error("[chat-notify] CLIENT_VISIBLE client->staffing email failed:", e);
-          }
-        }
+        // No emails on the audience path — mentions are the only
+        // mail trigger (see staffing→client side above for the
+        // same rule). recipients is kept built only to drive the
+        // in-app loop; if a future feature wants opt-in mail for
+        // replies, hang it off a per-user preference instead of
+        // blasting the whole audience.
+        void recipients;
       }
     } catch (e) {
       console.error("[chat-notify] CLIENT_VISIBLE audience notifications failed:", e);
@@ -272,8 +282,9 @@ export async function notifyOnNewCandidateComment(args: {
   mentions: string[]; // staffing user IDs
   authorId: string;
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { candidateId, content, mentions, authorId, authorName } = args;
+  const { candidateId, content, mentions, authorId, authorName, authorEmail } = args;
 
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -317,6 +328,9 @@ export async function notifyOnNewCandidateComment(args: {
     } catch (e) {
       console.error("[chat-notify] candidate notification in-app failed:", e);
     }
+    // Email solo cuando hay @-mention. Los owners se enteran por el
+    // bell — la regla de producto es: mail unicamente al ser arroba.
+    if (!isMention) continue;
     try {
       await sendMentionEmail({
         to: u.email,
@@ -325,6 +339,8 @@ export async function notifyOnNewCandidateComment(args: {
         jobTitle: "candidate-level note",
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] candidate notification email failed:", e);
@@ -346,8 +362,9 @@ export async function notifyOnNewJobComment(args: {
   mentions: string[]; // staffing user IDs
   authorId: string;
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { jobId, content, mentions, authorId, authorName } = args;
+  const { jobId, content, mentions, authorId, authorName, authorEmail } = args;
 
   const job = await prisma.job.findUnique({
     where: { id: jobId },
@@ -355,6 +372,11 @@ export async function notifyOnNewJobComment(args: {
       id: true,
       title: true,
       assignments: { select: { userId: true } },
+      // Cliente para identificar la busqueda en la notificacion:
+      // "Mentioned you in Senior FE Engineer @ Acme" es mas util que
+      // "Mentioned you in Senior FE Engineer" suelto cuando hay 5
+      // jobs con el mismo titulo en distintos clientes.
+      client: { select: { name: true } },
     },
   });
   if (!job) return;
@@ -362,6 +384,7 @@ export async function notifyOnNewJobComment(args: {
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "";
   const url = `${baseUrl}/jobs/${job.id}`;
   const preview = stripMarkup(content);
+  const jobLabel = job.client?.name ? `${job.title} @ ${job.client.name}` : job.title;
 
   const recipientIds = new Set<string>(mentions);
   for (const a of job.assignments) recipientIds.add(a.userId);
@@ -382,8 +405,8 @@ export async function notifyOnNewJobComment(args: {
           userId: u.id,
           type: isMention ? "mention" : "comment_posted",
           title: isMention
-            ? `${authorName} mentioned you in ${job.title}`
-            : `${authorName} commented on ${job.title}`,
+            ? `${authorName} mentioned you in ${jobLabel}`
+            : `${authorName} commented on ${jobLabel}`,
           body: truncate(preview, 140),
           link: `/jobs/${job.id}`,
         },
@@ -391,14 +414,24 @@ export async function notifyOnNewJobComment(args: {
     } catch (e) {
       console.error("[chat-notify] job notification in-app failed:", e);
     }
+    // Email solo cuando hay @-mention. Los asignados al job se
+    // enteran por el bell — la regla de producto es: mail unicamente
+    // al ser arroba.
+    if (!isMention) continue;
     try {
       await sendMentionEmail({
         to: u.email,
         mentionedBy: authorName,
-        candidateName: job.title,
-        jobTitle: "job-level note",
+        // jobLabel ya combina "Senior Engineer @ Acme" cuando hay
+        // cliente — sin esto el email decia solo el titulo del job
+        // y con 5 jobs llamados "Senior Engineer" en distintos
+        // clientes nadie sabia cual era.
+        candidateName: jobLabel,
+        jobTitle: "Job notes",
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] job notification email failed:", e);
@@ -416,8 +449,9 @@ export async function notifyOnNewClientJobComment(args: {
   mentions: string[]; // ClientUser IDs
   authorId: string; // ClientUser ID of the poster
   authorName: string;
+  authorEmail?: string;
 }) {
-  const { clientJobId, content, mentions, authorId, authorName } = args;
+  const { clientJobId, content, mentions, authorId, authorName, authorEmail } = args;
   if (mentions.length === 0) return;
 
   const job = await prisma.clientJob.findUnique({
@@ -437,6 +471,7 @@ export async function notifyOnNewClientJobComment(args: {
 
   for (const u of mentioned) {
     if (u.id === authorId) continue;
+
     try {
       await prisma.clientNotification.create({
         data: {
@@ -459,6 +494,8 @@ export async function notifyOnNewClientJobComment(args: {
         jobTitle: job.title,
         preview,
         url,
+        recipientName: u.name || undefined,
+        senderEmail: authorEmail || undefined,
       });
     } catch (e) {
       console.error("[chat-notify] client-job mention email failed:", e);

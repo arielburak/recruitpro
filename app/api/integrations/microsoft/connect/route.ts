@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/tenant";
 import { getMicrosoftCalendarAuthUrl } from "@/lib/microsoft-calendar";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +17,6 @@ export async function GET(request: NextRequest) {
     const authUrl = getMicrosoftCalendarAuthUrl(redirectUri, state);
     return NextResponse.redirect(authUrl);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

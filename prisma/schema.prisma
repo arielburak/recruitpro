@@ -104,6 +104,7 @@ model User {
   organization          Organization          @relation(fields: [organizationId], references: [id])
   candidates            Candidate[]
   submissions           CandidateSubmission[] @relation("SubmittedBy")
+  submissionDocsAdded   SubmissionDocument[]  @relation("SubmissionDocsAdded")
   comments              Comment[]
   activities            Activity[]
   jobAssignments        JobAssignment[]
@@ -115,6 +116,7 @@ model User {
   firmEngagements       FirmEngagement[]      @relation("InvitedUser")
   createdCalendarEvents CalendarEvent[]       @relation("CalendarEventCreator")
   attributedPlacements  Placement[]           @relation("PlacementRecruiter")
+  sentUserInvites       UserInvite[]          @relation("UserInvitesSent")
 
   @@index([organizationId])
   @@index([accountId])
@@ -560,10 +562,39 @@ model CandidateSubmission {
   ratings    CandidateRating[]
   placement  Placement?
   interviews Interview[]
+  // Documents seleccionados por la agencia para este envio especifico.
+  // Distinto de todos los Documents del Candidate: el cliente ve
+  // unicamente los que estan en esta tabla pivot. Editable post-share
+  // via PATCH /api/submissions/[id] o el endpoint dedicado.
+  sharedDocuments SubmissionDocument[]
 
   @@unique([candidateId, jobId])
   @@index([jobId, stageId])
   @@index([clientStageId])
+}
+
+// Pivot que controla que Documents del Candidate son visibles para el
+// cliente en cada submission especifica. Antes de este modelo el
+// cliente veia TODOS los docs del candidato (filtrado solo por
+// candidateId), lo que mezclaba CVs viejos, drafts internos, etc.
+// Ahora la agencia elige uno o varios al hacer Share with Client y
+// puede ajustar despues sin desherrar.
+model SubmissionDocument {
+  id           String   @id @default(cuid())
+  submissionId String
+  documentId   String
+  // Quien agrego este doc al share. Util para audit trail. Nullable
+  // para que el cleanup de Users no rompa shares historicos.
+  addedById    String?
+  addedAt      DateTime @default(now())
+
+  submission CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  document   Document            @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  addedBy    User?               @relation("SubmissionDocsAdded", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([submissionId, documentId])
+  @@index([submissionId])
+  @@index([documentId])
 }
 
 model CandidateRating {
@@ -755,6 +786,10 @@ model Document {
   clientJob ClientJob? @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
   client    Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   interview Interview? @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  // Submissions donde este doc fue elegido para compartir con el
+  // cliente. Cuando esta vacio (relacion sin rows), el cliente no
+  // ve este Document en ningun candidate detail.
+  submissionShares SubmissionDocument[]
 
   @@index([candidateId])
   @@index([jobId])
@@ -776,7 +811,15 @@ model Activity {
   createdAt      DateTime @default(now())
 
   user         User?        @relation(fields: [userId], references: [id])
-  candidate    Candidate?   @relation("CandidateActivities", fields: [candidateId], references: [id])
+  // Cascade so deleting a candidate also wipes their activity history.
+  // Intent: "if I deleted them, I don't want their metrics any more"
+  // — the dashboard's Recruiter Performance bucket recounts cleanly
+  // because there are no orphan rows with candidateId=null to
+  // half-credit. Was SetNull (Prisma default for nullable relations);
+  // the SetNull behaviour also caused dedup ambiguity in the
+  // Interviews counter when many candidates were hard-deleted on
+  // the same job.
+  candidate    Candidate?   @relation("CandidateActivities", fields: [candidateId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, createdAt(sort: Desc)])
@@ -1049,12 +1092,21 @@ model UserInvite {
   token          String   @unique @default(cuid())
   role           UserRole @default(USER)
   organizationId String
+  // invitedById queda nullable para no romper las filas viejas (los
+  // invites pre-2026-06-17 no guardaban esto). En las filas nuevas
+  // siempre se setea el id del User que disparo el POST. Lo usamos
+  // para (a) notificarle al inviter cuando el invitee acepta y (b)
+  // poder identificar al "owner" del invite si alguna vez se permite
+  // que un USER revoque su propio invite (hoy revoke sigue ADMIN-only).
+  invitedById    String?
+  invitedBy      User?    @relation("UserInvitesSent", fields: [invitedById], references: [id], onDelete: SetNull)
   expiresAt      DateTime
   usedAt         DateTime?
   createdAt      DateTime @default(now())
 
   @@index([token])
   @@index([organizationId])
+  @@index([invitedById])
 }
 
 // ─── CALENDAR EVENTS ───

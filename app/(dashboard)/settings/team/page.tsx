@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,12 +27,16 @@ import {
   Mail,
   Clock,
   UserMinus,
-  Trash2,
   Send,
   XCircle,
+  UserPlus,
+  ArrowRight,
 } from "lucide-react";
+import { DeactivateUserDialog } from "@/components/settings/deactivate-user-dialog";
 
 export default function AdminUsersPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [users, setUsers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +44,11 @@ export default function AdminUsersPage() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // Deactivate dialog state: target user + open flag. El dialog
+  // hace su propio fetch del impact al abrirse.
+  const [deactivateTarget, setDeactivateTarget] = useState<
+    { id: string; name: string } | null
+  >(null);
 
   useEffect(() => {
     fetchData();
@@ -86,13 +96,29 @@ export default function AdminUsersPage() {
     fetchData();
   }
 
-  async function toggleUserActive(userId: string, currentlyActive: boolean) {
+  async function toggleUserActive(
+    userId: string,
+    currentlyActive: boolean,
+    userName: string,
+  ) {
+    // Deactivate (currentlyActive=true): abrir el dialog con resumen
+    // de impacto + opciones para interviews futuras. El click NO toca
+    // nada hasta que el admin confirme. Sin esto, un click silencioso
+    // dejaba interviews zombie sin nadie atrás.
+    if (currentlyActive) {
+      setDeactivateTarget({ id: userId, name: userName });
+      return;
+    }
+    // Reactivate (currentlyActive=false): no necesita confirmación,
+    // es no-destructivo. Endpoint genérico PATCH.
     const res = await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, isActive: !currentlyActive }),
+      body: JSON.stringify({ userId, isActive: true }),
     });
     if (res.ok) {
+      setSuccess(`${userName} reactivated`);
+      setTimeout(() => setSuccess(""), 3000);
       fetchData();
     } else {
       const body = await res.json();
@@ -118,29 +144,16 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function removeUser(userId: string, userName: string) {
-    if (
-      !confirm(
-        `Are you sure you want to permanently remove ${userName}? This cannot be undone.`
-      )
-    )
-      return;
-
-    const res = await fetch("/api/admin/users", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    if (res.ok) {
-      setSuccess("User removed");
-      setTimeout(() => setSuccess(""), 3000);
-      fetchData();
-    } else {
-      const body = await res.json();
-      setError(body.error || "Failed to remove user");
-      setTimeout(() => setError(""), 3000);
-    }
-  }
+  // "Remove permanently" fue removido del UI a propósito en MVP. La
+  // distancia entre "Deactivate" (soft, preservaba historial) y
+  // "Remove permanently" (hard-delete con cascada que se llevaba
+  // JobAssignments, submissions, comments, interviews) era invisible
+  // en el dropdown — un click de más mataba el trabajo de un recruiter
+  // entero. Para MVP usamos solo Deactivate; si algún día necesitamos
+  // hard-delete genuino (GDPR right-to-be-forgotten, por ejemplo) lo
+  // ponemos detrás de un flow específico con doble confirmación + lista
+  // explícita de qué se va a borrar. El endpoint /api/admin/users DELETE
+  // sigue disponible vía API direct para esos casos puntuales.
 
   async function cancelInvite(inviteId: string) {
     const res = await fetch("/api/admin/invites", {
@@ -154,17 +167,13 @@ export default function AdminUsersPage() {
   }
 
   async function resendInvite(email: string, role: string, inviteId: string, name?: string) {
-    // Cancel old invite and send a new one
-    await fetch("/api/admin/invites", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inviteId }),
-    });
-
-    const res = await fetch("/api/admin/invites", {
+    // Resend dedicado — re-envía el mail sin borrar / recrear el invite.
+    // Endpoint abierto a cualquier org member (decisión 2026-06-17).
+    // Mantenemos los args (email/role/name) sin uso para no romper el
+    // call site existente.
+    void email; void role; void name;
+    const res = await fetch(`/api/admin/invites/${inviteId}/resend`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role, name }),
     });
 
     if (res.ok) {
@@ -186,6 +195,12 @@ export default function AdminUsersPage() {
           {activeUsers.length !== 1 ? "s" : ""} &middot; $
           {activeUsers.length * 10}/mo
         </p>
+        {/* Invite teammate accesible para todos los miembros del org.
+            Decisión 2026-06-17: el invite no es destructivo; ADMIN sigue
+            siendo el unico que puede borrar/revocar invites + sembrar
+            roles ADMIN. Para USER, el dialog esconde el selector de role
+            y manda role=USER hardcodeado al backend (que ademas re-fuerza
+            esa regla server-side). */}
         <Button onClick={() => setShowInvite(true)}>
           <Mail className="mr-2 h-4 w-4" /> Invite Team Member
         </Button>
@@ -214,7 +229,32 @@ export default function AdminUsersPage() {
               An email invitation will be sent. They can create their own
               account using the link.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            {/* Solo ADMIN puede elegir role al invitar; para USER el form
+                tiene un campo name a full width y se envia role=USER fijo. */}
+            {isAdmin ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Full Name</Label>
+                  <Input
+                    name="name"
+                    type="text"
+                    placeholder="e.g. María López"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <select
+                    name="role"
+                    className="w-full border rounded-md px-3 py-2 text-sm h-9"
+                    defaultValue="USER"
+                  >
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
               <div className="space-y-2">
                 <Label>Full Name</Label>
                 <Input
@@ -223,19 +263,9 @@ export default function AdminUsersPage() {
                   placeholder="e.g. María López"
                   required
                 />
+                <input type="hidden" name="role" value="USER" />
               </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <select
-                  name="role"
-                  className="w-full border rounded-md px-3 py-2 text-sm h-9"
-                  defaultValue="USER"
-                >
-                  <option value="USER">User</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
-              </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input
@@ -268,6 +298,44 @@ export default function AdminUsersPage() {
         </div>
       ) : (
         <>
+          {/* CTA persistente de growth. Vive arriba de la lista para que
+              cada vez que el usuario abre My Team vea el incentivo de
+              sumar mas gente. El boton dispara el mismo dialog que el
+              boton del header — no duplicamos UI, solo damos otro punto
+              de entrada visualmente destacado. */}
+          <div className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 p-5">
+            <div className="flex items-start gap-4">
+              <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
+                <UserPlus className="w-5 h-5 text-violet-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-violet-900">
+                  {users.length === 1
+                    ? "Add another seat — your team gets stronger with each search you split."
+                    : "Keep growing your team."}
+                </p>
+                <p className="text-sm text-violet-800/80 mt-0.5">
+                  Anyone you add joins this workspace and starts seeing the searches you assign them to.
+                  More hands means more candidates moving and faster placements.
+                </p>
+                <div className="flex items-center gap-3 mt-3">
+                  <Button
+                    onClick={() => setShowInvite(true)}
+                    size="sm"
+                    className="gap-1.5 bg-violet-600 hover:bg-violet-700"
+                  >
+                    Invite teammates
+                    <ArrowRight className="h-3 w-3" />
+                  </Button>
+                  <span className="text-[11px] font-medium text-violet-700/70">
+                    {activeUsers.length} active member{activeUsers.length === 1 ? "" : "s"}
+                    {invites.length > 0 ? ` · ${invites.length} pending` : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Active Users */}
           <div className="space-y-2">
             {users.map((u) => (
@@ -317,49 +385,45 @@ export default function AdminUsersPage() {
                     <span className="text-xs text-gray-400">
                       {u._count.candidates} candidates
                     </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {u.role === "USER" ? (
-                          <DropdownMenuItem
-                            onClick={() => changeUserRole(u.id, "ADMIN")}
+                    {isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                           >
-                            <Shield className="mr-2 h-4 w-4" />
-                            Promote to Admin
-                          </DropdownMenuItem>
-                        ) : (
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {u.role === "USER" ? (
+                            <DropdownMenuItem
+                              onClick={() => changeUserRole(u.id, "ADMIN")}
+                            >
+                              <Shield className="mr-2 h-4 w-4" />
+                              Promote to Admin
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => changeUserRole(u.id, "USER")}
+                            >
+                              <User className="mr-2 h-4 w-4" />
+                              Demote to User
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
-                            onClick={() => changeUserRole(u.id, "USER")}
+                            onClick={() =>
+                              toggleUserActive(u.id, u.isActive, u.name)
+                            }
+                            className={u.isActive ? "text-red-600" : undefined}
                           >
-                            <User className="mr-2 h-4 w-4" />
-                            Demote to User
+                            <UserMinus className="mr-2 h-4 w-4" />
+                            {u.isActive ? "Deactivate" : "Reactivate"}
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={() =>
-                            toggleUserActive(u.id, u.isActive)
-                          }
-                        >
-                          <UserMinus className="mr-2 h-4 w-4" />
-                          {u.isActive ? "Deactivate" : "Reactivate"}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600"
-                          onClick={() => removeUser(u.id, u.name)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Remove permanently
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -399,6 +463,9 @@ export default function AdminUsersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{inv.role === "ADMIN" ? "Admin" : "User"}</Badge>
+                        {/* Resend abierto a cualquier org member — no es
+                            destructivo. Cancel sigue ADMIN-only porque
+                            revoca el invite. */}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -409,14 +476,16 @@ export default function AdminUsersPage() {
                         >
                           <Send className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => cancelInvite(inv.id)}
-                          title="Cancel invite"
-                        >
-                          <XCircle className="h-4 w-4 text-red-400" />
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => cancelInvite(inv.id)}
+                            title="Cancel invite"
+                          >
+                            <XCircle className="h-4 w-4 text-red-400" />
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -426,6 +495,30 @@ export default function AdminUsersPage() {
           )}
         </>
       )}
+
+      {/* Deactivation flow: en lugar de toggle silencioso, abrimos el
+          dialog que muestra qué tiene el user en la cancha (assignments,
+          owned candidates, active submissions, upcoming interviews) y
+          pide qué hacer con las reuniones futuras antes de confirmar. */}
+      <DeactivateUserDialog
+        userId={deactivateTarget?.id ?? null}
+        userName={deactivateTarget?.name ?? ""}
+        open={!!deactivateTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeactivateTarget(null);
+        }}
+        onDeactivated={(summary) => {
+          const suffix =
+            summary.interviewsHandled > 0
+              ? ` (${summary.interviewsHandled} interview${
+                  summary.interviewsHandled === 1 ? "" : "s"
+                } ${summary.choice === "cancel" ? "cancelled" : "reassigned"})`
+              : "";
+          setSuccess(`${deactivateTarget?.name ?? "User"} deactivated${suffix}`);
+          setTimeout(() => setSuccess(""), 3500);
+          fetchData();
+        }}
+      />
     </div>
   );
 }

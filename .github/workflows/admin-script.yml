@@ -1,0 +1,93 @@
+# Manual admin script runner.
+#
+# Lets a maintainer (or Claude on a maintainer's behalf) run a one-off
+# script from `scripts/` against a connected database WITHOUT pasting
+# credentials anywhere — the secret lives in GitHub Actions, the script
+# inherits it as env, the run leaves an audit trail in the Actions tab.
+#
+# Adding a script: add the file name (without `.ts`) to both the
+# `script` choice list AND the case statement in the Run step. The
+# whitelist is on purpose: workflow_dispatch is callable from the
+# Actions UI by anyone with write access to the repo, so we don't
+# want to expose arbitrary script execution.
+#
+# Trigger from the GitHub UI: Actions tab → "Admin script" → Run
+# workflow → pick a script + args → Run.
+
+name: Admin script
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Which script to run"
+        required: true
+        type: choice
+        options:
+          - delete-test-account
+          - wipe-tenant-data
+          - audit-email
+          - check-mail-config
+      args:
+        description: "Arguments passed to the script (e.g. an email address)"
+        required: false
+        type: string
+        default: ""
+      environment:
+        description: "Which DB to target"
+        required: true
+        type: choice
+        default: staging
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # GitHub Environment gate. The 'production' env can be configured
+    # to require a manual approval before the job starts; staging is
+    # free-flowing. Both pull DATABASE_URL from their respective
+    # env-level secret.
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run script
+        env:
+          # DATABASE_URL viene del environment-scoped secret (staging
+          # o production segun inputs.environment). Si el secret no
+          # esta seteado, el step falla con error claro abajo.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for environment '${{ inputs.environment }}'. Add it under Settings → Environments → ${{ inputs.environment }} → Add secret."
+            exit 1
+          fi
+
+          case "${{ inputs.script }}" in
+            delete-test-account|wipe-tenant-data|audit-email|check-mail-config)
+              echo "Running scripts/${{ inputs.script }}.ts with args: ${{ inputs.args }}"
+              npx tsx "scripts/${{ inputs.script }}.ts" ${{ inputs.args }}
+              ;;
+            *)
+              echo "::error::Script '${{ inputs.script }}' not in allowlist."
+              exit 1
+              ;;
+          esac

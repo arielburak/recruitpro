@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Lock, Globe, Send, AtSign, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,11 @@ type CandidateChatProps = {
   submissionId: string;
   comments: Comment[];
   onCommentAdded: () => void;
+  // Name of the firm that shared this candidate. Drives the "Shared
+  // with [firm]" tab + composer labels, same way the client-portal
+  // Job chat names its agency-side tabs. Falls back to "the
+  // recruiter" when missing.
+  firmName?: string | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -101,26 +107,55 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function renderMentions(text: string) {
+// Clickable mention chip — mirror del helper en components/chat-notes.tsx.
+// Click togglea un highlight visual (sin navegacion). State local por
+// chip; cada uno se ocupa del suyo.
+function MentionChip({ label, onDark }: { label: string; onDark?: boolean }) {
+  const [selected, setSelected] = useState(false);
+  const base = onDark
+    ? "bg-white/25 text-white"
+    : "bg-indigo-100 text-indigo-700";
+  const activeCls = onDark
+    ? "bg-white/40 text-white ring-1 ring-white/60"
+    : "bg-indigo-300 text-indigo-900 ring-1 ring-indigo-500";
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelected((v) => !v);
+      }}
+      className={`font-semibold px-1.5 py-px rounded transition-colors cursor-pointer ${
+        selected ? activeCls : base
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
   // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
+  //
+  // Estilo "Outlook chip" clickeable — mirror del helper en
+  // components/chat-notes.tsx.
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
-      return (
-        <span key={i} className="text-emerald-700 font-medium bg-emerald-50 px-0.5 rounded">
-          {part}
-        </span>
-      );
+      return <MentionChip key={i} label={part} onDark={opts.onDark} />;
     }
     return part;
   });
 }
 
-export function CandidateChat({ submissionId, comments, onCommentAdded }: CandidateChatProps) {
+export function CandidateChat({ submissionId, comments, onCommentAdded, firmName }: CandidateChatProps) {
+  const firmLabel = firmName?.trim() || "the recruiter";
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
   const [activeTab, setActiveTab] = useState<"CLIENT_INTERNAL" | "CLIENT_VISIBLE">("CLIENT_VISIBLE");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -252,8 +287,10 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
               : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
           )}
         >
-          <Globe className="h-3.5 w-3.5" />
-          Shared with Recruiter
+          <Globe className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate" title={`Shared with ${firmLabel}`}>
+            Shared with {firmLabel}
+          </span>
           {sharedCount > 0 && (
             <span
               className={cn(
@@ -286,7 +323,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
         ) : (
           <>
             <Globe className="h-3 w-3" />
-            Visible to both your team and the recruiting firm.
+            Visible to your team and {firmLabel}.
           </>
         )}
       </div>
@@ -294,7 +331,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
       {/* Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[480px] min-h-[200px]"
+        className="flex-1 overflow-y-auto p-4 space-y-1 max-h-[480px] min-h-[200px]"
       >
         {tabComments.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-center">
@@ -317,13 +354,26 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
               const isStaffing = !!c.user?.name && !c.clientUser?.name;
               const authorName = c.user?.name || c.clientUser?.name || "Unknown";
               const authorTitle = c.clientUser?.title;
+              // Mirror exacto de chat-notes.tsx: lados POR EQUIPO, no
+              // por usuario individual. Desde el client portal, mi
+              // equipo (cliente) va a la derecha con bubble emerald;
+              // la agencia a la izquierda con bubble indigo. Colores
+              // por equipo son los mismos que del lado agencia,
+              // sides invertidos.
+              const isMyOrg = !isStaffing;
+              const isCurrentUser = !!currentUserId && c.clientUser?.id === currentUserId;
               // Day separator before the first message of each calendar day.
               const prev = idx > 0 ? sorted[idx - 1] : null;
               const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
+              const prevSameAuthor = prev && (
+                (prev.user?.id && prev.user.id === c.user?.id) ||
+                (prev.clientUser?.id && prev.clientUser.id === c.clientUser?.id)
+              );
+              const showHeader = !prev || !prevSameAuthor || !sameDay(prev.createdAt, c.createdAt);
               return (
                 <Fragment key={c.id}>
                   {showDaySeparator && (
-                    <div className="flex items-center gap-2 my-2" aria-hidden="true">
+                    <div className="flex items-center gap-2 my-3" aria-hidden="true">
                       <div className="flex-1 h-px bg-gray-200" />
                       <span className="text-[11px] font-medium text-gray-500 px-2 py-0.5 bg-gray-100 rounded-full">
                         {dayLabel(c.createdAt)}
@@ -331,45 +381,86 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
                       <div className="flex-1 h-px bg-gray-200" />
                     </div>
                   )}
-                  <div className="flex items-start gap-2.5">
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
-                        isStaffing
-                          ? "bg-gradient-to-br from-indigo-500 to-violet-600"
-                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
-                      )}
-                    >
-                      {initials(authorName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-900">{authorName}</p>
-                        <Badge
-                          variant="secondary"
+                  <div
+                    className={cn(
+                      "flex",
+                      isMyOrg ? "justify-end" : "justify-start",
+                      showHeader ? "mt-3" : "mt-0.5"
+                    )}
+                  >
+                    <div className={cn("flex gap-2 max-w-[80%]", isMyOrg && "flex-row-reverse")}>
+                      {/* Avatar — solido para "vos" y para la agencia
+                          (matchea el color del bubble). Teammates del
+                          mismo cliente van con la version clara, asi
+                          te distinguis del resto del equipo igual. */}
+                      {showHeader ? (
+                        <div
                           className={cn(
-                            "text-[9px] h-4 px-1.5",
-                            isStaffing
-                              ? "bg-indigo-50 text-indigo-700"
-                              : "bg-emerald-50 text-emerald-700"
+                            "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0",
+                            isMyOrg
+                              ? isCurrentUser
+                                ? "bg-emerald-600 text-white"
+                                : "bg-emerald-100 text-emerald-700"
+                              : "bg-indigo-600 text-white"
                           )}
                         >
-                          {isStaffing ? "Recruiter" : "Team"}
-                        </Badge>
-                        {authorTitle && !isStaffing && (
-                          <span className="text-[11px] text-gray-500">{authorTitle}</span>
+                          {initials(authorName)}
+                        </div>
+                      ) : (
+                        <div className="w-8 shrink-0" />
+                      )}
+
+                      {/* Message body */}
+                      <div className={isMyOrg ? "text-right" : ""}>
+                        {showHeader && (
+                          <div className={cn("flex items-center gap-2 mb-0.5 flex-wrap", isMyOrg && "justify-end")}>
+                            <span className="text-xs font-semibold text-gray-700">{authorName}</span>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "text-[9px] h-4 px-1.5",
+                                isStaffing
+                                  ? "bg-indigo-50 text-indigo-700"
+                                  : "bg-emerald-50 text-emerald-700"
+                              )}
+                            >
+                              {isStaffing ? "Recruiter" : "Team"}
+                            </Badge>
+                            {authorTitle && !isStaffing && (
+                              <span className="text-[11px] text-gray-500">{authorTitle}</span>
+                            )}
+                            <span className="text-[11px] text-gray-400">{relativeTime(c.createdAt)}</span>
+                          </div>
                         )}
-                        <span className="text-[10px] text-gray-400">{relativeTime(c.createdAt)}</span>
-                        <span
-                          className="text-[10px] text-gray-400"
-                          title={fullTimestamp(c.createdAt)}
-                        >
-                          · {clockTime(c.createdAt)}
-                        </span>
+
+                        {/* Bubble: lo MIO destaca con color saturado,
+                            lo recibido va en gris callado. Mirror del
+                            criterio en chat-notes.tsx (agency side):
+                            ahi el cliente se ve en gris; aca la
+                            agencia se ve en gris. Mismo patron en
+                            ambos portales: tu voz dominante, la del
+                            otro como info secundaria. */}
+                        {c.content && (
+                          <div className={cn("flex items-end gap-1.5", isMyOrg && "flex-row-reverse")}>
+                            <div
+                              className={cn(
+                                "inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap",
+                                isMyOrg
+                                  ? "bg-emerald-600 text-white rounded-tr-md"
+                                  : "bg-gray-100 text-gray-800 rounded-tl-md"
+                              )}
+                            >
+                              {isMyOrg ? renderMentions(c.content, { onDark: true }) : renderMentions(c.content)}
+                            </div>
+                            <span
+                              className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
+                              title={fullTimestamp(c.createdAt)}
+                            >
+                              {clockTime(c.createdAt)}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap mt-0.5">
-                        {renderMentions(c.content)}
-                      </p>
                     </div>
                   </div>
                 </Fragment>
@@ -384,32 +475,46 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
         {/* Mention autocomplete */}
         {mentionQuery !== null && mentionResults.length > 0 && (
           <div className="absolute bottom-full left-4 mb-2 w-72 bg-white border rounded-lg shadow-lg max-h-56 overflow-y-auto z-10">
-            {mentionResults.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => pickMention(u)}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
-              >
-                <div
-                  className={cn(
-                    "w-7 h-7 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0",
-                    u.kind === "staffing"
-                      ? "bg-gradient-to-br from-indigo-500 to-violet-600"
-                      : "bg-gradient-to-br from-emerald-500 to-teal-600"
-                  )}
+            {mentionResults.map((u) => {
+              const isStaffing = u.kind === "staffing";
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => pickMention(u)}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
                 >
-                  {initials(u.name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">{u.name}</p>
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {u.title ? `${u.title} · ` : ""}
-                    {u.kind === "staffing" ? "Recruiter" : "Team"}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  <div
+                    className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+                      isStaffing
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    )}
+                  >
+                    {initials(u.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-gray-900 truncate">{u.name}</p>
+                      <span
+                        className={cn(
+                          "text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded shrink-0",
+                          isStaffing
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "bg-emerald-50 text-emerald-700"
+                        )}
+                      >
+                        {isStaffing ? "Recruiter" : "Team"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {u.title ? u.title : isStaffing ? "Agency" : "Client team"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -427,7 +532,7 @@ export function CandidateChat({ submissionId, comments, onCommentAdded }: Candid
             placeholder={
               activeTab === "CLIENT_INTERNAL"
                 ? "Internal note for your team... use @ to mention"
-                : "Message the recruiter... use @ to mention"
+                : `Message ${firmLabel}... use @ to mention`
             }
             rows={1}
             className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px] max-h-32"

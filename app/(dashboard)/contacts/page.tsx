@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserRound, Search, Building2, Shield, KeyRound, Trash2, Send, MailPlus } from "lucide-react";
+import { UserRound, Search, Building2, Shield, KeyRound, Trash2, Send, MailPlus, ChevronDown, ChevronRight } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type PortalStatus = "none" | "pending" | "active";
 
@@ -89,6 +91,9 @@ function StatusPill({ status }: { status: PortalStatus }) {
 }
 
 export default function ContactsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [contacts, setContacts] = useState<UnifiedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -104,6 +109,12 @@ export default function ContactsPage() {
   // history, and we don't want to nuke that from a multi-select.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  // Per-client collapse state. Click on the company header toggles it;
+  // we keep state in-memory only (no localStorage) because the filter
+  // bar already changes which groups exist, and stale persisted ids
+  // would silently hide groups after a filter change.
+  const [collapsedClientIds, setCollapsedClientIds] = useState<Set<string>>(new Set());
 
   // Per-row invite state. The action button can either invite (none →
   // pending) or resend (pending → fresh token + mail), both via the
@@ -171,8 +182,6 @@ export default function ContactsPage() {
 
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} contact${n === 1 ? "" : "s"}? Cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/contacts/bulk-delete", {
@@ -377,25 +386,51 @@ export default function ContactsPage() {
               </button>
               <div className="ml-auto flex items-center gap-2">
                 <ExportCsvButton type="contacts" ids={Array.from(selectedIds)} variant="subtle" />
-                <button
-                  type="button"
-                  onClick={bulkDelete}
-                  disabled={bulkDeleting}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {bulkDeleting ? "Deleting…" : "Delete"}
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkDelete(true)}
+                    disabled={bulkDeleting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {bulkDeleting ? "Deleting…" : "Delete"}
+                  </button>
+                )}
               </div>
             </div>
           )}
           <div className="space-y-4">
-          {groupedByClient.map((group) => (
+          {groupedByClient.map((group) => {
+          const isCollapsed = collapsedClientIds.has(group.clientId);
+          const toggleCollapse = () => {
+            setCollapsedClientIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(group.clientId)) next.delete(group.clientId);
+              else next.add(group.clientId);
+              return next;
+            });
+          };
+          return (
           <Card key={group.clientId}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60">
+            <div
+              className="flex items-center justify-between px-4 py-1.5 border-b bg-gray-50/60 cursor-pointer hover:bg-gray-100 transition-colors"
+              onClick={toggleCollapse}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleCollapse();
+                }
+              }}
+              aria-expanded={!isCollapsed}
+              aria-label={`${isCollapsed ? "Expand" : "Collapse"} contacts for ${group.clientName}`}
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <Link
                   href={`/clients/${group.clientId}`}
+                  onClick={(e) => e.stopPropagation()}
                   className="text-sm font-semibold text-gray-800 hover:text-indigo-600 truncate"
                 >
                   {group.clientName}
@@ -404,7 +439,15 @@ export default function ContactsPage() {
                   · {group.rows.length} contact{group.rows.length === 1 ? "" : "s"}
                 </span>
               </div>
+              {/* Chevron a la derecha (patron accordion) — balancea el
+                  vacio del lado derecho y aprieta el header arriba. */}
+              {isCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+              )}
             </div>
+            {!isCollapsed && (
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
@@ -559,11 +602,22 @@ export default function ContactsPage() {
                 </TableBody>
               </Table>
             </CardContent>
+            )}
           </Card>
-          ))}
+          );
+          })}
           </div>
         </>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} contact${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "contact" : undefined}
+        onConfirm={bulkDelete}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

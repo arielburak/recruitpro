@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Lightweight feed for the manual placement dialog. Returns just enough per
 // job to pre-fill the form (commercial terms come from the client; fee
@@ -64,6 +65,6 @@ export async function GET() {
 
     return NextResponse.json(options);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

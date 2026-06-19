@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -16,7 +17,7 @@ export async function GET() {
       {
         status: "error",
         database: "disconnected",
-        error: error.message,
+        error: safeErrorMessage(error),
         timestamp: new Date().toISOString(),
       },
       { status: 500 }

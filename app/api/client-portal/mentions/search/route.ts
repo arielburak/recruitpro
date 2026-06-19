@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Search users for @mention autocomplete in the client portal.
 // scope=internal → only ClientUser of the caller's client
@@ -20,6 +21,11 @@ export async function GET(request: NextRequest) {
     const q = (params.get("q") || "").trim();
     const submissionId = params.get("submissionId") || "";
     const clientJobId = params.get("clientJobId") || "";
+    // Optional: when the ClientJob has multiple accepted engagements,
+    // the chat tab the user is on knows which agency-side Job is the
+    // target. Passing it here scopes the staffing-side mentions to
+    // that firm's assignees only.
+    const agencyJobIdParam = params.get("agencyJobId") || "";
 
     const results: Array<{ id: string; name: string; email: string; kind: "client" | "staffing"; title?: string | null }> = [];
 
@@ -76,22 +82,93 @@ export async function GET(request: NextRequest) {
       if (results.length >= 8) break;
     }
 
-    if (scope === "shared" && submissionId) {
-      // Verify submission belongs to this client and is shared
-      const sub = await prisma.candidateSubmission.findFirst({
-        where: {
-          id: submissionId,
-          isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
-        },
-        select: { job: { select: { organizationId: true } } },
-      });
+    if (scope === "shared") {
+      // The "Shared with agency" chat needs to surface recruiters
+      // working on this search alongside the client team. Two
+      // resolution paths depending on what context the caller has:
+      //
+      //   · submissionId → from a candidate/submission chat: read
+      //     the submission's job to know which agency org owns it.
+      //   · clientJobId  → from a ClientJob notes chat: walk the
+      //     accepted FirmEngagement to find the agency org + Job,
+      //     and prefer the assignees on that Job so the picker
+      //     doesn't list every recruiter at the firm.
+      //
+      // No-context shared scope returns no staffing users.
+      let staffingOrgId: string | null = null;
+      let staffingUserIdScope: string[] | null = null;
+      if (submissionId) {
+        // Multi-firm gate: firmEngagements ACCEPTED en un ClientJob
+        // accesible. Ademas, pull las assignments del job — el picker
+        // NO debe listar a todos los recruiters de la agencia, solo a
+        // los asignados a esta busqueda. Mirror del scope del path
+        // clientJobId (line 109-137).
+        const sub = await prisma.candidateSubmission.findFirst({
+          where: {
+            id: submissionId,
+            isSharedWithClient: true,
+            job: {
+              firmEngagements: {
+                some: {
+                  status: "ACCEPTED",
+                  clientJob: { clientId: ctx.clientId },
+                },
+              },
+            },
+          },
+          select: {
+            job: {
+              select: {
+                organizationId: true,
+                assignments: { select: { userId: true } },
+              },
+            },
+          },
+        });
+        if (sub) {
+          staffingOrgId = sub.job.organizationId;
+          // Siempre scopeamos a los assignees, incluso si la lista es
+          // vacia. ROADMAP #21: no queremos leakear a TODOS los
+          // recruiters del firm cuando un job no tiene assignments
+          // formales — fail closed, no abierto.
+          staffingUserIdScope = (sub.job.assignments ?? []).map((a) => a.userId);
+        }
+      } else if (clientJobId) {
+        // If the chat tab knows which firm is targeted, scope the
+        // engagement lookup to that specific Job. Otherwise fall
+        // back to the first accepted engagement (the JO has only
+        // one — the multi-firm case is handled by the caller
+        // passing agencyJobId explicitly).
+        const engagement = await prisma.firmEngagement.findFirst({
+          where: {
+            clientJobId,
+            status: "ACCEPTED",
+            jobId: agencyJobIdParam ? agencyJobIdParam : { not: null },
+          },
+          select: {
+            organizationId: true,
+            job: {
+              select: {
+                assignments: { select: { userId: true } },
+              },
+            },
+          },
+        });
+        if (engagement) {
+          staffingOrgId = engagement.organizationId;
+          const assignees = engagement.job?.assignments ?? [];
+          if (assignees.length > 0) {
+            staffingUserIdScope = assignees.map((a) => a.userId);
+          }
+        }
+      }
 
-      if (sub) {
+      if (staffingOrgId) {
         const staffingUsers = await prisma.user.findMany({
           where: {
-            organizationId: sub.job.organizationId,
+            organizationId: staffingOrgId,
             isActive: true,
+            ...(staffingUserIdScope ? { id: { in: staffingUserIdScope } } : {}),
             ...(q
               ? {
                   OR: [
@@ -114,6 +191,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(results);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

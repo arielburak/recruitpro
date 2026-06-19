@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function PUT(
   request: Request,
@@ -11,9 +13,14 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Verify interview belongs to a job owned by this client
+    // Multi-firm gate: jobId IN visibleAgencyJobIds en vez de
+    // job.clientId === ctx.clientId. Ver candidates/route.ts.
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
     const existing = await (prisma.interview as any).findFirst({
-      where: { id, job: { clientId: ctx.clientId } },
+      where: {
+        id,
+        jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
+      },
     });
 
     if (!existing) {
@@ -77,6 +84,6 @@ export async function PUT(
       interviewers: updated.interviewers.map((a: any) => a.user.name),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

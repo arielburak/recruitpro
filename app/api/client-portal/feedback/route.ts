@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { validateClientPortalToken } from "@/lib/tokens";
 import { sendCandidateFeedbackEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -14,6 +16,12 @@ export async function POST(request: Request) {
     // Try authenticated client user first
     try {
       const ctx = await getClientContext();
+      // Logged-in ClientUser → must have verified the email
+      // before notifying the agency. The token-public path
+      // below is exempt: that flow runs off a one-shot share
+      // link, no account state involved.
+      const guard = await requireVerifiedEmail();
+      if (guard) return guard;
       clientUserId = ctx.clientUserId;
     } catch {
       // Token-based access — validate the token
@@ -73,8 +81,10 @@ export async function POST(request: Request) {
           });
           if (!submission?.candidate?.owner?.email) return;
 
+          // NEXTAUTH_URL primero (canonical). Ver comentario en
+          // /api/auth/register.
           const origin =
-            request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+            process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
 
           await sendCandidateFeedbackEmail({
             to: submission.candidate.owner.email,
@@ -95,6 +105,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

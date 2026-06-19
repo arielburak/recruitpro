@@ -2,13 +2,16 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown, Upload } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 // ─── Notion-style Multi-Select Filter ───
 
@@ -316,6 +319,9 @@ function ViewSwitcher({
 // ─── Main Page ───
 
 export default function JobsPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -325,6 +331,8 @@ export default function JobsPage() {
   // doesn't leave dangling ids.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [deletingJob, setDeletingJob] = useState<{ id: string; title: string } | null>(null);
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -343,8 +351,6 @@ export default function JobsPage() {
   }
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} job${n === 1 ? "" : "s"}? This removes their pipeline, submissions, interviews, and history. Cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/jobs/bulk-delete", {
@@ -489,10 +495,7 @@ export default function JobsPage() {
       });
   }, []);
 
-  async function deleteJob(id: string, title: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Delete "${title}"? This will remove all pipeline data. This cannot be undone.`)) return;
+  async function deleteJob(id: string) {
     await fetch(`/api/jobs/${id}`, { method: "DELETE" });
     setJobs(jobs.filter((j) => j.id !== id));
   }
@@ -512,7 +515,7 @@ export default function JobsPage() {
       if (!res.ok) throw new Error("Failed");
     } catch {
       setJobs(previous);
-      alert("Couldn't update status. Try again.");
+      showToast("Couldn't update status. Try again.");
     }
   }
 
@@ -615,6 +618,11 @@ export default function JobsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="jobs" disabled={jobs.length === 0} />
+          <Link href="/import?type=jobs">
+            <Button size="sm" variant="outline">
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+            </Button>
+          </Link>
           <Link href="/jobs/new">
             <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
           </Link>
@@ -728,15 +736,17 @@ export default function JobsPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <ExportCsvButton type="jobs" ids={Array.from(selectedIds)} variant="subtle" />
-            <button
-              type="button"
-              onClick={bulkDelete}
-              disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkDeleting ? "Deleting…" : "Delete"}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "Deleting…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -750,15 +760,46 @@ export default function JobsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <Briefcase className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">
-            {search || activeFilters.length > 0
-              ? "No jobs match your filters"
-              : "No jobs yet. Create your first job order."}
-          </p>
-          {(search || activeFilters.length > 0) && (
-            <button onClick={() => { clearAllFilters(); setSearch(""); }} className="text-indigo-600 text-sm mt-2 hover:underline">
-              Clear all filters
-            </button>
+          {/* Empty-state copy depende del role + si hay filtros activos.
+              - USER sin assignments (jobs.length === 0, sin filtros):
+                aclara que no tiene acceso aún, no que "no hay jobs".
+                Sin esto, el USER creía que el ATS estaba vacío cuando
+                en realidad había búsquedas a las que no estaba asignado.
+              - ADMIN sin jobs reales: CTA "Create job".
+              - Cualquiera con filtros activos: CTA "Clear filters". */}
+          {search || activeFilters.length > 0 ? (
+            <>
+              <p className="text-gray-500 text-sm">No jobs match your filters</p>
+              <button
+                onClick={() => { clearAllFilters(); setSearch(""); }}
+                className="text-indigo-600 text-sm mt-2 hover:underline"
+              >
+                Clear all filters
+              </button>
+            </>
+          ) : !isAdmin && jobs.length === 0 ? (
+            <>
+              <p className="text-gray-700 text-sm font-medium">
+                You haven&apos;t been assigned to any jobs yet
+              </p>
+              <p className="text-gray-500 text-xs mt-1 max-w-sm mx-auto">
+                Job visibility is strictly assignment-based. Ask an admin
+                of your workspace to add you to a job so you can start
+                working on it.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-500 text-sm">
+                No jobs yet — create your first search.
+              </p>
+              <Link href="/jobs/new" className="inline-block mt-4">
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Create job
+                </Button>
+              </Link>
+            </>
           )}
         </div>
       ) : (
@@ -810,28 +851,43 @@ export default function JobsPage() {
                       list still scans like before, but you can change
                       it without leaving the page. preventDefault +
                       stopPropagation so the row Link doesn't fire when
-                      the recruiter clicks the dropdown. */}
-                  <select
-                    value={j.status}
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                    onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
-                    className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
-                    aria-label={`Status for ${j.title}`}
-                  >
-                    {JOB_STATUS_SELECTABLE.map((value) => (
-                      <option key={value} value={value} className="bg-white text-gray-900">
-                        {JOB_STATUS_LABELS[value]}
-                      </option>
-                    ))}
-                    {/* Render the legacy CLOSED option only when this
-                        specific row still has it — otherwise it stays
-                        out of the picker. Once you flip it, it's gone. */}
-                    {j.status === "CLOSED" && (
-                      <option value="CLOSED" className="bg-white text-gray-900">
-                        {JOB_STATUS_LABELS.CLOSED}
-                      </option>
-                    )}
-                  </select>
+                      the recruiter clicks the dropdown.
+
+                      QA P2 (2026-06-16): el endpoint /api/jobs/[id] PUT
+                      esta gateado a ADMIN. Para USER mostrabamos el
+                      select pero al cambiarlo daba 403 con alert UX
+                      dead-end. Para no-admin renderizamos badge readonly
+                      con el mismo color para que la lista siga
+                      escaneando igual. */}
+                  {isAdmin ? (
+                    <select
+                      value={j.status}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      onChange={(e) => { e.stopPropagation(); changeStatus(j.id, e.target.value); }}
+                      className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer ${JOB_STATUS_COLORS[j.status]}`}
+                      aria-label={`Status for ${j.title}`}
+                    >
+                      {JOB_STATUS_SELECTABLE.map((value) => (
+                        <option key={value} value={value} className="bg-white text-gray-900">
+                          {JOB_STATUS_LABELS[value]}
+                        </option>
+                      ))}
+                      {/* Render the legacy CLOSED option only when this
+                          specific row still has it — otherwise it stays
+                          out of the picker. Once you flip it, it's gone. */}
+                      {j.status === "CLOSED" && (
+                        <option value="CLOSED" className="bg-white text-gray-900">
+                          {JOB_STATUS_LABELS.CLOSED}
+                        </option>
+                      )}
+                    </select>
+                  ) : (
+                    <span
+                      className={`inline-block text-[10px] font-semibold rounded px-1.5 py-0.5 ${JOB_STATUS_COLORS[j.status]}`}
+                    >
+                      {JOB_STATUS_LABELS[j.status] || j.status}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <Badge className={`${WORK_ARRANGEMENT_COLORS[j.workMode] || "bg-gray-100 text-gray-800"} text-[10px] px-1.5 py-0`}>
@@ -856,19 +912,56 @@ export default function JobsPage() {
                   ) : (
                     <span className="text-xs text-gray-300">—</span>
                   )}
-                  <button
-                    onClick={(e) => deleteJob(j.id, j.title, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
-                    title="Delete job"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeletingJob({ id: j.id, title: j.title });
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-0.5 rounded ml-1"
+                      title="Delete job"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </Link>
             </div>
           ))}
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} job${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "job" : undefined}
+        consequences={[
+          "The full candidate pipeline",
+          "Submissions, interviews and history",
+          "Linked documents",
+        ]}
+        onConfirm={bulkDelete}
+        confirmLabel="Yes, delete"
+      />
+
+      <DeleteConfirmDialog
+        open={!!deletingJob}
+        onOpenChange={(open) => { if (!open) setDeletingJob(null); }}
+        itemLabel={deletingJob?.title || ""}
+        itemKind="job"
+        consequences={[
+          "The full candidate pipeline",
+          "Submissions, interviews and history",
+          "Linked documents",
+        ]}
+        onConfirm={async () => {
+          if (deletingJob) await deleteJob(deletingJob.id);
+          setDeletingJob(null);
+        }}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

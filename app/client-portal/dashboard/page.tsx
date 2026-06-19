@@ -29,16 +29,22 @@ import {
   Copy,
   Check,
   UserX,
+  UserCheck,
   MoreHorizontal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { formatDate } from "@/lib/utils";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 export default function ClientDashboardPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [removingMember, setRemovingMember] = useState<{ id: string; name: string } | null>(null);
 
   // Team management state
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -50,6 +56,30 @@ export default function ClientDashboardPage() {
   const [inviteResult, setInviteResult] = useState<{ type: "success" | "error"; message: string; link?: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [teamMenuOpen, setTeamMenuOpen] = useState<string | null>(null);
+  // Mirror del lookup que ya viven en my-team y settings: si el email
+  // pegado ya es un Contact del cliente, lo avisamos + pre-llenamos
+  // name/title para que no haya duplicado de contacto al invitar.
+  const [contactMatch, setContactMatch] = useState<{
+    name: string;
+    title: string | null;
+    email: string;
+  } | null>(null);
+
+  // Reset the inline Invite-Teammate form when the panel collapses.
+  // Without this the user opens it, types something, closes it, and
+  // the next open still has the leftover input — reads as broken.
+  // inviteResult also clears here (the toggle button already cleared
+  // it for the toggle-on path, but ESC / close button / external
+  // setShowInvite(false) would have left it stale).
+  useEffect(() => {
+    if (!showInvite) {
+      setInviteName("");
+      setInviteTitle("");
+      setInviteEmail("");
+      setInviteResult(null);
+      setContactMatch(null);
+    }
+  }, [showInvite]);
 
   // Firms Engaged drawer
   const [firmsOpen, setFirmsOpen] = useState(false);
@@ -86,6 +116,32 @@ export default function ClientDashboardPage() {
     fetchTeam();
   }, []);
 
+  // Live contact lookup: si el email tipeado en el invite ya es un
+  // Contact del cliente (subido por la agencia), avisamos + pre-llenamos
+  // name/title para no duplicar. Mismo patron que en my-team/settings.
+  useEffect(() => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@") || !email.includes(".")) {
+      setContactMatch(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/client-portal/contact-lookup?email=${encodeURIComponent(email)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.match) {
+          setContactMatch(null);
+          return;
+        }
+        setContactMatch(data.match);
+        setInviteName((prev) => (prev.trim() ? prev : data.match.name));
+        setInviteTitle((prev) => (prev.trim() ? prev : data.match.title || ""));
+      } catch {}
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [inviteEmail]);
+
   async function fetchTeam() {
     try {
       const res = await fetch("/api/client-portal/team");
@@ -113,8 +169,12 @@ export default function ClientDashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        const debugInfo = data.debug ? ` [session: ${JSON.stringify(data.debug)}]` : "";
-        setInviteResult({ type: "error", message: (data.error || "Failed to invite") + debugInfo });
+        // Sin debug info al user — si el backend manda data.debug se
+        // logea para Sentry pero no se filtra al UI.
+        if (data.debug) {
+          console.error("[invite] backend debug:", data.debug);
+        }
+        setInviteResult({ type: "error", message: data.error || "Failed to invite" });
       } else {
         setInviteResult({
           type: "success",
@@ -124,6 +184,7 @@ export default function ClientDashboardPage() {
         setInviteName("");
         setInviteTitle("");
         setInviteEmail("");
+        setContactMatch(null);
         fetchTeam();
       }
     } catch {
@@ -143,7 +204,6 @@ export default function ClientDashboardPage() {
   }
 
   async function removeMember(id: string) {
-    if (!confirm("Remove this team member? This cannot be undone.")) return;
     await fetch(`/api/client-portal/team/${id}`, { method: "DELETE" });
     setTeamMenuOpen(null);
     fetchTeam();
@@ -214,7 +274,12 @@ export default function ClientDashboardPage() {
       href: "/client-portal/candidates",
     },
     {
-      label: "Active Recruiters",
+      // El stat cuenta FirmEngagements aceptadas, no recruiters
+      // individuales (una firm con 3 recruiters cuenta 1 vez). El
+      // label viejo "Active Recruiters" leía como "personas trabajando
+      // tus búsquedas" cuando en realidad es "firmas". Renombre 2026-
+      // 06-10 — el drawer al click ya se llama Firms Engaged.
+      label: "Recruiting Firms",
       value: activeRecruiters,
       icon: Handshake,
       gradient: "from-violet-500 to-purple-600",
@@ -306,7 +371,7 @@ export default function ClientDashboardPage() {
               <p className="font-semibold text-amber-900 text-sm">
                 {pendingEngagements} recruiting firm{pendingEngagements > 1 ? "s" : ""} waiting to respond
               </p>
-              <p className="text-xs text-amber-700">Check your job postings to see engagement status</p>
+              <p className="text-xs text-amber-700">Check your job postings to see firm status</p>
             </div>
             <ArrowRight className="h-5 w-5 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
           </div>
@@ -556,6 +621,20 @@ export default function ClientDashboardPage() {
                   <X className="h-4 w-4 text-gray-400" />
                 </button>
               </div>
+              {contactMatch && (
+                <div className="mb-3 flex items-start gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                  <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium">
+                      {contactMatch.name} is already a contact on file
+                      {contactMatch.title ? ` (${contactMatch.title})` : ""}.
+                    </p>
+                    <p className="text-blue-700/80 mt-0.5">
+                      We pre-filled their info. Submitting will give them portal access too.
+                    </p>
+                  </div>
+                </div>
+              )}
               <form onSubmit={inviteMember} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -668,12 +747,17 @@ export default function ClientDashboardPage() {
                             <CheckCircle className="h-3.5 w-3.5" /> Reactivate
                           </button>
                         )}
-                        <button
-                          onClick={() => removeMember(member.id)}
-                          className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                        >
-                          <X className="h-3.5 w-3.5" /> Remove
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setTeamMenuOpen(null);
+                              setRemovingMember({ id: member.id, name: member.name || member.email || "this team member" });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                          >
+                            <X className="h-3.5 w-3.5" /> Remove
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -706,12 +790,20 @@ export default function ClientDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {([
-                  { label: "Jobs Posted", value: totalJobs, max: Math.max(totalJobs, 10), color: "bg-emerald-500", href: "/client-portal/jobs" },
-                  { label: "Firms Engaged", value: activeRecruiters, max: Math.max(totalJobs * 3, 10), color: "bg-indigo-500", onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined },
-                  { label: "Candidates Shared", value: totalCandidates, max: Math.max(totalCandidates, 20), color: "bg-blue-500", href: "/client-portal/candidates" },
-                ] as Array<{ label: string; value: number; max: number; color: string; href?: string; onClick?: () => void }>).map((item) => {
-                  const pct = Math.min((item.value / item.max) * 100, 100);
+                {(() => {
+                  const items = [
+                    { label: "Jobs Posted", value: totalJobs, color: "bg-emerald-500", href: "/client-portal/jobs" as string | undefined, onClick: undefined as undefined | (() => void) },
+                    { label: "Firms Engaged", value: activeRecruiters, color: "bg-indigo-500", href: undefined as string | undefined, onClick: activeRecruiters > 0 ? openFirmsDrawer : undefined as undefined | (() => void) },
+                    { label: "Candidates Shared", value: totalCandidates, color: "bg-blue-500", href: "/client-portal/candidates" as string | undefined, onClick: undefined as undefined | (() => void) },
+                  ];
+                  // Max compartido entre las 3 barras — sino valores
+                  // iguales rendean anchos distintos (cada item tenia
+                  // su propio max calculado distinto). Floor de 10
+                  // para que cuando todo es 0 o 1 las barras no se
+                  // vean comicamente vacias.
+                  const sharedMax = Math.max(10, ...items.map((i) => i.value));
+                  return items.map((item) => {
+                    const pct = Math.min((item.value / sharedMax) * 100, 100);
                   const interactive = !!item.href || !!item.onClick;
                   const Row = (
                     <div className="space-y-1.5">
@@ -751,7 +843,8 @@ export default function ClientDashboardPage() {
                     );
                   }
                   return <div key={item.label}>{Row}</div>;
-                })}
+                });
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -852,6 +945,17 @@ export default function ClientDashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={!!removingMember}
+        onOpenChange={(open) => { if (!open) setRemovingMember(null); }}
+        itemLabel={removingMember?.name || ""}
+        onConfirm={async () => {
+          if (removingMember) await removeMember(removingMember.id);
+          setRemovingMember(null);
+        }}
+        confirmLabel="Yes, remove from team"
+      />
     </div>
   );
 }

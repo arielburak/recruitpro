@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Bulk-delete candidates. Body: { ids: string[] }.
 //
@@ -12,6 +14,8 @@ import { logActivity } from "@/lib/activity";
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const body = await request.json();
     const ids: string[] = Array.isArray(body?.ids)
       ? body.ids.filter((x: unknown): x is string => typeof x === "string")
@@ -46,6 +50,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ deleted: res.count });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

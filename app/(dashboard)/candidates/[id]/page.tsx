@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatNotes } from "@/components/chat-notes";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import {
   Edit,
   Mail,
@@ -26,6 +30,7 @@ import {
   CheckCircle2,
   MessageSquare,
   Star,
+  UserCircle,
 } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { formatDate, formatCurrency } from "@/lib/utils";
@@ -37,6 +42,7 @@ import { OfferNotesPrompt } from "@/components/pipeline/offer-notes-prompt";
 import { InterviewDialog } from "@/components/interviews/interview-dialog";
 import { InterviewsList } from "@/components/interviews/interviews-list";
 import { InterviewsCalendar } from "@/components/interviews/interviews-calendar";
+import { showToast } from "@/components/ui/toast";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -46,6 +52,89 @@ export default function CandidateDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  // Tracks which submission's "Shared" chip the user clicked. The
+  // confirm dialog reads this; null when no dialog is open. Stop-
+  // sharing is destructive from the client's perspective (they lose
+  // access instantly), so it goes through the universal confirm rule.
+  const [unsharingSubmission, setUnsharingSubmission] = useState<{
+    id: string;
+    candidateName: string;
+    clientName: string;
+    jobTitle: string;
+  } | null>(null);
+  // Confirm-dialog state for the per-submission X (remove from this
+  // job) and for deleting an uploaded document — both are destructive
+  // single-click actions, so they follow the universal confirm rule.
+  const [removingSubmission, setRemovingSubmission] = useState<{
+    id: string;
+    jobTitle: string;
+  } | null>(null);
+  const [deletingDocument, setDeletingDocument] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  // Role gate: only ADMIN can delete entities of shared org data. The
+  // server already enforces this (returns 403 to non-admins), but
+  // hiding the button up front avoids a confusing 403 toast and
+  // respects the UX agreement (cf. /lib/permissions.ts).
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const currentUserId = (session?.user as any)?.id as string | undefined;
+  // Inline Owner picker on the Owner card. Loads the workspace
+  // roster once on mount so the dropdown is instant when the user
+  // clicks "Change".
+  type TeamMember = { id: string; name: string; email: string };
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [editingOwner, setEditingOwner] = useState(false);
+  const [savingOwner, setSavingOwner] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Save handler: PUTs the whole candidate row with the new ownerId
+  // (the schema requires firstName + lastName so we can't PATCH a
+  // partial). The endpoint validates ownerId against the org before
+  // writing — see /api/candidates/[id]/route.ts.
+  async function changeOwner(newOwnerId: string) {
+    if (!candidate || !newOwnerId || newOwnerId === candidate.ownerId) {
+      setEditingOwner(false);
+      return;
+    }
+    setSavingOwner(true);
+    try {
+      const payload = {
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email || "",
+        phone: candidate.phone || "",
+        linkedIn: candidate.linkedIn || "",
+        location: candidate.location || "",
+        currentTitle: candidate.currentTitle || "",
+        currentCompany: candidate.currentCompany || "",
+        currentSalary: candidate.currentSalary,
+        desiredSalary: candidate.desiredSalary,
+        salaryCurrency: candidate.salaryCurrency || "USD",
+        skills: candidate.skills || [],
+        summary: candidate.summary || "",
+        source: candidate.source || "",
+        ownerId: newOwnerId,
+      };
+      const res = await fetch(`/api/candidates/${candidate.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) await fetchCandidate();
+    } finally {
+      setSavingOwner(false);
+      setEditingOwner(false);
+    }
+  }
   // Deep-link support: ?tab=notes&sub={submissionId} jumps straight
   // into the Notes tab with that submission's per-job chat selected.
   // Used by the message-icon shortcuts on /jobs/[id] kanban cards
@@ -122,9 +211,21 @@ export default function CandidateDetailPage() {
     return perJob + candidateLevel;
   }
 
-  async function deleteCandidate() {
-    if (!confirm("Delete this candidate? This cannot be undone.")) return;
-    await fetch(`/api/candidates/${params.id}`, { method: "DELETE" });
+  // Submit handler called from the DeleteConfirmDialog. The dialog's
+  // "También borrar sus métricas históricas" checkbox is the extra
+  // toggle — when checked (default), the API cascade-deletes the
+  // Activity rows. When unchecked, we pass keepMetrics=true so the
+  // server orphans them first and the dashboard keeps crediting the
+  // candidate's past activity.
+  async function deleteCandidate(deleteMetricsAlso?: boolean) {
+    const keepMetrics = deleteMetricsAlso === false;
+    const qs = keepMetrics ? "?keepMetrics=true" : "";
+    const res = await fetch(`/api/candidates/${params.id}${qs}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data?.error || "Couldn't delete the candidate");
+      return;
+    }
     router.push("/candidates");
   }
 
@@ -146,9 +247,11 @@ export default function CandidateDetailPage() {
     const leavingPlaced =
       submission.stage?.name === "Placed" && newStage?.name !== "Placed";
     if (leavingPlaced && submission.placement) {
-      const ok = window.confirm(
-        `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
-      );
+      const ok = await confirmDialog({
+        title: `Move out of "Placed"?`,
+        description: `This candidate has a placement on "${submission.job.title}". Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms).`,
+        confirmLabel: "Yes, move out",
+      });
       if (!ok) return;
     }
 
@@ -198,12 +301,12 @@ export default function CandidateDetailPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to change stage");
+        showToast(data.error || "Failed to change stage");
         return;
       }
       await fetchCandidate();
     } catch {
-      alert("Failed to change stage");
+      showToast("Failed to change stage");
     }
   }
 
@@ -221,7 +324,6 @@ export default function CandidateDetailPage() {
   }
 
   async function removeSubmissionFromJob(submissionId: string) {
-    if (!confirm("Remove this candidate from the pipeline?")) return;
     await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
     await fetchCandidate();
   }
@@ -247,7 +349,6 @@ export default function CandidateDetailPage() {
   }
 
   async function deleteDocument(id: string) {
-    if (!confirm("Delete this document?")) return;
     await fetch(`/api/documents/${id}`, { method: "DELETE" });
     fetchCandidate();
   }
@@ -301,16 +402,108 @@ export default function CandidateDetailPage() {
           >
             <Plus className="h-4 w-4 mr-1" /> Assign to Jobs
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={deleteCandidate}
-            className="text-red-600 hover:text-red-700"
-          >
-            <Trash2 className="h-4 w-4 mr-1" /> Delete
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDelete(true)}
+              className="text-red-600 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Confirmation dialog. The extra toggle lets the admin decide
+          if the candidate's past metric events go with them or stay
+          orphaned (credited but un-attributable). Default checked =
+          same as cascade: everything goes. */}
+      <DeleteConfirmDialog
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        itemLabel={candidate ? `${candidate.firstName} ${candidate.lastName}` : "this candidate"}
+        itemKind="candidate"
+        consequences={(() => {
+          // Only list count buckets that actually have something —
+          // surfacing "0 submissions" reads as noise and confuses the
+          // user about whether anything will happen. Empty list → the
+          // dialog skips the red box entirely.
+          const subs = (candidate?.submissions || []).length;
+          const ivs = (candidate?.interviews || []).length;
+          const docs = (candidate?.documents || []).length;
+          const out: string[] = [];
+          if (subs > 0) out.push(`${subs} job submission${subs === 1 ? "" : "s"}`);
+          if (ivs > 0) out.push(`${ivs} logged interview${ivs === 1 ? "" : "s"}`);
+          if (docs > 0) out.push(`${docs} attached document${docs === 1 ? "" : "s"}`);
+          return out;
+        })()}
+        extraToggle={{
+          label: "Also remove their historical metrics",
+          description:
+            "Checked: their history events (interviews, stage transitions, etc.) are removed too and past dashboard metrics drop. Unchecked: the candidate is removed but their past activity still counts in reporting.",
+          defaultChecked: true,
+        }}
+        onConfirm={deleteCandidate}
+        confirmLabel="Yes, delete candidate"
+      />
+
+      {/* Stop-sharing confirm. Wired via setUnsharingSubmission from
+          the green "Shared" chip on each submission row. The client
+          loses access the instant the PATCH lands, so we follow the
+          universal "confirm any destructive single-click action"
+          rule (cf. memory feedback-confirm-destructive-clicks). */}
+      <DeleteConfirmDialog
+        open={!!unsharingSubmission}
+        onOpenChange={(open) => { if (!open) setUnsharingSubmission(null); }}
+        itemLabel={unsharingSubmission?.candidateName || ""}
+        title={
+          unsharingSubmission
+            ? `Stop sharing ${unsharingSubmission.candidateName} with ${unsharingSubmission.clientName}?`
+            : undefined
+        }
+        description={
+          unsharingSubmission
+            ? `${unsharingSubmission.clientName} will lose access to this submission for "${unsharingSubmission.jobTitle}" immediately. You can re-share later, but any client-side feedback or stage tracking on this submission won't be visible to them until you do.`
+            : undefined
+        }
+        onConfirm={async () => {
+          if (!unsharingSubmission) return;
+          await toggleSubmissionShare(unsharingSubmission.id, false);
+        }}
+        confirmLabel="Yes, stop sharing"
+      />
+
+      {/* Remove-from-job confirm. Wired via setRemovingSubmission from
+          the X icon on each submission row in the Jobs tab. */}
+      <DeleteConfirmDialog
+        open={!!removingSubmission}
+        onOpenChange={(open) => { if (!open) setRemovingSubmission(null); }}
+        itemLabel={removingSubmission?.jobTitle || ""}
+        title={
+          removingSubmission
+            ? `Remove this candidate from "${removingSubmission.jobTitle}"?`
+            : undefined
+        }
+        description="The submission and any per-job notes / activity tied to it will be removed. The candidate stays on file and on every other job they're assigned to."
+        onConfirm={async () => {
+          if (removingSubmission) await removeSubmissionFromJob(removingSubmission.id);
+        }}
+        confirmLabel="Yes, remove"
+      />
+
+      {/* Document delete confirm. Wired via setDeletingDocument from
+          the X icon on each document row in the Documents tab. */}
+      <DeleteConfirmDialog
+        open={!!deletingDocument}
+        onOpenChange={(open) => { if (!open) setDeletingDocument(null); }}
+        itemLabel={deletingDocument?.name || ""}
+        itemKind="document"
+        onConfirm={async () => {
+          if (deletingDocument) await deleteDocument(deletingDocument.id);
+        }}
+        confirmLabel="Yes, delete"
+      />
 
       <Tabs defaultValue={initialTab}>
         <TabsList>
@@ -373,6 +566,73 @@ export default function CandidateDetailPage() {
                     >
                       LinkedIn Profile
                     </a>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Owner — surfaces the agency-side recruiter who owns
+                this candidate. Editable from the candidate's Edit
+                page; changes are forward-looking only (past
+                placements keep their own recruiterId). */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Owner
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {editingOwner ? (
+                  <div className="space-y-2">
+                    <SearchableSelect
+                      value={candidate.ownerId || ""}
+                      onChange={(v) => changeOwner(v)}
+                      includeAll={false}
+                      placeholder={
+                        teamMembers.length === 0 ? "Loading…" : "Select an owner"
+                      }
+                      searchPlaceholder="Search teammates…"
+                      minWidth={0}
+                      className="w-full"
+                      options={teamMembers.map<SearchableSelectOption>((m) => ({
+                        value: m.id,
+                        label: m.name || m.email,
+                        meta: m.name && m.email ? m.email : undefined,
+                      }))}
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setEditingOwner(false)}
+                        disabled={savingOwner}
+                        className="text-xs text-gray-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm min-w-0">
+                      <UserCircle className="h-4 w-4 text-gray-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-gray-900 truncate">
+                          {candidate.owner?.name || candidate.owner?.email || "Unassigned"}
+                        </p>
+                        {candidate.owner?.name && candidate.owner?.email && (
+                          <p className="text-xs text-gray-400 truncate">
+                            {candidate.owner.email}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditingOwner(true)}
+                      className="text-xs text-indigo-600 hover:underline shrink-0"
+                    >
+                      Change
+                    </button>
                   </div>
                 )}
               </CardContent>
@@ -502,82 +762,120 @@ export default function CandidateDetailPage() {
                         </div>
                       )}
 
-                      {/* Share state. "Shared" is a green chip with the
-                          client's stage (when present); "Share" is a
-                          neutral button that flips the flag. The full
-                          share dialog still triggers when the recruiter
-                          *moves* the candidate to Submitted via the
-                          stage selector — this control just toggles an
-                          already-existing submission's visibility. */}
-                      {isShared ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleSubmissionShare(sub.id, false)}
-                          className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors"
-                          title={
-                            (sub.sharedAt ? `Shared on ${new Date(sub.sharedAt).toLocaleString()}` : "Shared with client") +
-                            (sub.clientStage ? ` · Client sees: ${sub.clientStage.name}` : "") +
-                            "\nClick to stop sharing"
-                          }
+                      {/* ROADMAP.md #3 — defense in depth. Hide the
+                          stage select / share toggle / remove button
+                          when the user can't act on this submission.
+                          Two paths grant edit access (decision 10 jun
+                          2026): they're assigned to the underlying
+                          job, OR they're the candidate's owner. The
+                          server enforces the same rule in
+                          /api/submissions/[id] (PATCH + DELETE) — this
+                          just stops the UI from offering a control
+                          that would 404. Read-only fallback shows the
+                          current stage as a static badge so the
+                          recruiter still sees where the candidate is,
+                          just can't move them. */}
+                      {((sub.job?.assignments || []).length === 0 && candidate.ownerId !== currentUserId) ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border bg-gray-50"
+                          style={{ borderColor: sub.stage.color + "55", color: sub.stage.color }}
+                          title="You don't have access to this job — view only"
                         >
-                          <CheckCircle2 className="h-3 w-3" />
-                          Shared
-                          {sub.clientStage && (
-                            <span
-                              className="ml-1 text-[10px] font-semibold"
-                              style={{ color: sub.clientStage.color }}
-                            >
-                              · {sub.clientStage.name}
-                            </span>
-                          )}
-                        </button>
+                          {sub.stage.name}
+                          <span className="text-[10px] text-gray-400">· view only</span>
+                        </span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => toggleSubmissionShare(sub.id, true)}
-                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
-                          title="Share with client"
-                        >
-                          <Share2 className="h-3 w-3" />
-                          Share
-                        </button>
+                        <>
+                          {/* Share state. "Shared" is a green chip with
+                              the client's stage (when present); "Share"
+                              is a neutral button that flips the flag. */}
+                          {isShared ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setUnsharingSubmission({
+                                  id: sub.id,
+                                  candidateName: candidate
+                                    ? `${candidate.firstName} ${candidate.lastName}`
+                                    : "this candidate",
+                                  clientName: sub.job?.client?.name || "the client",
+                                  jobTitle: sub.job?.title || "this job",
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 font-medium border border-emerald-100 hover:border-emerald-200 hover:bg-emerald-100 transition-colors group"
+                              title={
+                                sub.sharedAt
+                                  ? `Shared on ${new Date(sub.sharedAt).toLocaleString()} — click to stop sharing`
+                                  : "Shared with client — click to stop sharing"
+                              }
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              <span>Shared</span>
+                              {sub.clientStage && (
+                                <span className="text-[10px] text-emerald-600/80 font-normal border-l border-emerald-200 pl-1.5">
+                                  Client sees: {sub.clientStage.name}
+                                </span>
+                              )}
+                              <X className="h-3 w-3 ml-0.5 text-emerald-500/60 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleSubmissionShare(sub.id, true)}
+                              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                              title="Submit to client"
+                            >
+                              <Share2 className="h-3 w-3" />
+                              Submit
+                            </button>
+                          )}
+
+                          {/* Inline stage selector. Coloured to match
+                              the active stage so it reads like a badge
+                              at a glance, but stays a real <select> so
+                              the keyboard / a11y story is the same as
+                              the list view. */}
+                          <select
+                            value={sub.stageId}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              void changeSubmissionStage(sub, e.target.value);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
+                            aria-label={`Stage for ${sub.job.title}`}
+                          >
+                            {(sub.job.stages || []).map((st: any) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Remove from this job. Symmetric with the
+                              list view's trash icon — deletes the
+                              submission (and any placement attached via
+                              the API's existing guard) without leaving
+                              the page. ADMIN-gated and routed through
+                              the universal confirm dialog. */}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRemovingSubmission({
+                                  id: sub.id,
+                                  jobTitle: sub.job?.title || "this job",
+                                })
+                              }
+                              className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              title="Remove from this job"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </>
                       )}
-
-                      {/* Inline stage selector. Coloured to match the
-                          active stage so it reads like a badge at a
-                          glance, but stays a real <select> so the
-                          keyboard / a11y story is the same as the
-                          list view. */}
-                      <select
-                        value={sub.stageId}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          void changeSubmissionStage(sub, e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs font-medium border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                        style={{ color: sub.stage.color, borderColor: sub.stage.color + "55" }}
-                        aria-label={`Stage for ${sub.job.title}`}
-                      >
-                        {(sub.job.stages || []).map((st: any) => (
-                          <option key={st.id} value={st.id}>
-                            {st.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Remove from this job. Symmetric with the list
-                          view's trash icon — deletes the submission
-                          (and any placement attached via the API's
-                          existing guard) without leaving the page. */}
-                      <button
-                        type="button"
-                        onClick={() => removeSubmissionFromJob(sub.id)}
-                        className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        title="Remove from this job"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   </CardContent>
                 </Card>
@@ -655,13 +953,17 @@ export default function CandidateDetailPage() {
                     >
                       <Download className="h-4 w-4" />
                     </a>
-                    <button
-                      onClick={() => deleteDocument(doc.id)}
-                      className="p-2 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"
-                      title="Delete"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() =>
+                          setDeletingDocument({ id: doc.id, name: doc.name })
+                        }
+                        className="p-2 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"
+                        title="Delete"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -766,13 +1068,27 @@ export default function CandidateDetailPage() {
                 );
               })()}
 
-              {/* Chat */}
-              <ChatNotes
-                key={selectedSubmissionId || candidate.submissions[0]?.id}
-                comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
-                submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
-                onCommentAdded={fetchCandidate}
-              />
+              {/* Chat. We lock CLIENT_VISIBLE until the candidate
+                  has been shared — sending a client-visible note
+                  before the client can see the candidate is
+                  confusing and the notif would land on a 404. */}
+              {(() => {
+                const activeSub = candidate.submissions.find(
+                  (s: any) =>
+                    s.id ===
+                    (selectedSubmissionId || candidate.submissions[0]?.id),
+                );
+                return (
+                  <ChatNotes
+                    key={selectedSubmissionId || candidate.submissions[0]?.id}
+                    comments={getSubmissionComments(selectedSubmissionId || candidate.submissions[0]?.id)}
+                    submissionId={selectedSubmissionId || candidate.submissions[0]?.id}
+                    clientChatLocked={!activeSub?.isSharedWithClient}
+                    clientName={activeSub?.job?.client?.name}
+                    onCommentAdded={fetchCandidate}
+                  />
+                );
+              })()}
             </div>
           )}
         </TabsContent>
@@ -896,6 +1212,7 @@ export default function CandidateDetailPage() {
             if (!open) setPendingPlacement(null);
           }}
           submissionId={pendingPlacement.submission.id}
+          candidateId={candidate.id}
           candidateName={`${candidate.firstName} ${candidate.lastName}`}
           jobTitle={pendingPlacement.submission.job.title}
           clientName={pendingPlacement.submission.job.client?.name}

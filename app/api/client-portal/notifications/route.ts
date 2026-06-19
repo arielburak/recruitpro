@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — list notifications + unread count for the logged-in client user.
 // Returns rows where clientUserId = me OR clientUserId is null (company-wide).
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ notifications, unreadCount });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -76,6 +77,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Nothing to mark" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

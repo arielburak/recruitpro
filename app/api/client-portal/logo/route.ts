@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ url: `/api/client-portal/logo/image?v=${v}` });
   } catch (error: any) {
     console.error("[client logo upload] error:", error);
-    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) || "Upload failed" }, { status: 500 });
   }
 }
 
@@ -85,7 +86,7 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -105,6 +106,6 @@ export async function GET() {
 
     return NextResponse.json({ logo: imageUrl, name: client?.name || null });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

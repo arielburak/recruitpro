@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone } from "lucide-react";
+import { Plus, Share2, Check, Mail, Trash2, Send, Users, X, Upload, FileText, Download, Pencil, ExternalLink, Phone, Copy } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { formatDate } from "@/lib/utils";
@@ -27,10 +28,20 @@ import { InterviewsCalendar } from "@/components/interviews/interviews-calendar"
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { ChatNotes } from "@/components/chat-notes";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
+import { showToast } from "@/components/ui/toast";
+
+type TeamMember = { id: string; name: string; email: string };
 
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id || "";
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
@@ -38,6 +49,13 @@ export default function JobDetailPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Delete-confirm dialog state. One state slot per kind of destructive
+  // action — they each open a separate dialog with their own copy.
+  const [showDeleteJob, setShowDeleteJob] = useState(false);
+  const [removingSubmission, setRemovingSubmission] = useState<{ id: string; label: string } | null>(null);
+  const [removingAssignment, setRemovingAssignment] = useState<{ userId: string; name: string } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<{ id: string; name: string; isJD?: boolean } | null>(null);
 
   // "Add Candidate" dialog — inline create mode
   const [addMode, setAddMode] = useState<"search" | "create">("search");
@@ -51,10 +69,31 @@ export default function JobDetailPage() {
     linkedIn: "",
     currentTitle: "",
     currentCompany: "",
+    ownerId: "",
   };
   const [newCandidate, setNewCandidate] = useState(emptyNewCandidate);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  // Team picker for the Owner field on the inline "Create new" tab.
+  // Hits the same endpoint /candidates/new uses, with no jobId scope
+  // so the picker shows every workspace member (a candidate's owner
+  // is org-level, not job-level). Loaded once on mount.
+  useEffect(() => {
+    fetch("/api/users/search?q=")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((data) => setTeamMembers(Array.isArray(data.users) ? data.users : []))
+      .catch(() => setTeamMembers([]));
+  }, []);
+
+  // Default Owner = whoever is logged in. We only set it once and
+  // only when empty so a re-open of the modal doesn't blow away a
+  // value the user picked manually before closing.
+  useEffect(() => {
+    if (!newCandidate.ownerId && currentUserId) {
+      setNewCandidate((prev) => ({ ...prev, ownerId: currentUserId }));
+    }
+  }, [currentUserId, newCandidate.ownerId]);
 
   // Duplicate detection for the inline "Create new" tab — mirrors the
   // /candidates/new page so recruiters get the same heads-up in both
@@ -155,6 +194,44 @@ export default function JobDetailPage() {
   const [shareSuccess, setShareSuccess] = useState("");
   const [shareError, setShareError] = useState("");
 
+  // Client portal access editor — manages who on the hiring company
+  // side can see this Job in their portal. Independent per Job; no
+  // special creator handling (the agency just shares with whoever
+  // needs to see it).
+  const [editingPortalAccess, setEditingPortalAccess] = useState(false);
+  const [accessSelectedIds, setAccessSelectedIds] = useState<Set<string>>(new Set());
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+
+  // Cancel a portal invite from the inline pending chip × button.
+  // Reuses the same PUT /client-portal-access endpoint as the Manage
+  // editor — we just send the current member ids minus the one being
+  // cancelled, so the diff / notification logic on the server stays
+  // in one place.
+  async function cancelPortalInvite(clientUserId: string, label: string) {
+    const ok = await confirmDialog({
+      title: `Cancel invite for ${label}?`,
+      description: "They'll lose access to this search.",
+      confirmLabel: "Yes, cancel",
+    });
+    if (!ok) return;
+    const mirror = job?.clientJobMirror;
+    if (!mirror) return;
+    const memberUsers = (mirror.members || [])
+      .map((m: any) => m.clientUser)
+      .filter(Boolean);
+    const currentIds = memberUsers.map((u: any) => u.id);
+    const nextIds = currentIds.filter((x: string) => x !== clientUserId);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/client-portal-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberIds: nextIds }),
+      });
+      if (res.ok) await fetchJob();
+    } catch {}
+  }
+
   // Autocomplete for the share-with-client dialog. As the recruiter
   // types, surface every ClientUser the agency already has on file so
   // they can pick "Nick Cuello · Lion Point" instead of re-typing a
@@ -168,12 +245,23 @@ export default function JobDetailPage() {
     clientName: string;
     hasPassword: boolean;
     onCurrentClient: boolean;
+    // "clientUser" = portal user existente. "contact" = Contact cargado
+    // en /clients/[id]/contacts que todavia no tiene portal access; al
+    // mandar la invite se crea el ClientUser automaticamente.
+    source?: "clientUser" | "contact";
     // Contacts at OTHER Clients of this agency are listed but can't be
     // picked — the email-uniqueness rule prevents reusing them here.
     available: boolean;
   };
   const [shareSuggestions, setShareSuggestions] = useState<ContactSuggestion[]>([]);
   const [shareSuggestOpen, setShareSuggestOpen] = useState(false);
+  // Flag that the next change to shareEmail came from picking a
+  // suggestion, not the user typing. Without it the debounce effect
+  // below would re-fetch and re-open the dropdown right after the
+  // pick, eating the click — the user reported needing two clicks
+  // because the first one closed the dropdown and the effect
+  // immediately reopened it with the same suggestion.
+  const sharePickedRef = useRef(false);
   const [shareSuggestLoading, setShareSuggestLoading] = useState(false);
 
   // Assign recruiters dialog state
@@ -181,6 +269,39 @@ export default function JobDetailPage() {
   const [assignSearch, setAssignSearch] = useState("");
   const [assignResults, setAssignResults] = useState<any[]>([]);
   const [assignSearching, setAssignSearching] = useState(false);
+  // Pending selection bucket: click on a search row toggles the user
+  // here instead of firing assignRecruiter immediately. Keeps a record
+  // of name (for the chip label) alongside id so we can render without
+  // re-querying the search results. A separate confirm button at the
+  // dialog footer commits the batch. Avoids the old "tap a name → row
+  // disappears, did it actually save?" footgun.
+  const [pendingAssignSelections, setPendingAssignSelections] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [assigningBatch, setAssigningBatch] = useState(false);
+
+  // Reset form state whenever the Invite-Client-to-Portal dialog
+  // closes (ESC, backdrop, X). Without this the user reopens it and
+  // sees their previous half-finished attempt, which reads as broken.
+  useEffect(() => {
+    if (!showShareDialog) {
+      setShareEmail("");
+      setShareName("");
+      setShareSuccess("");
+      setShareError("");
+    }
+  }, [showShareDialog]);
+
+  // Same hygiene for the Assign Team Members dialog. Stale
+  // assignResults from a previous query would render results that no
+  // longer correspond to the visible search box.
+  useEffect(() => {
+    if (!showAssignDialog) {
+      setAssignSearch("");
+      setAssignResults([]);
+      setPendingAssignSelections([]);
+    }
+  }, [showAssignDialog]);
 
   // Document upload state
   const [uploadingJD, setUploadingJD] = useState(false);
@@ -245,13 +366,13 @@ export default function JobDetailPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Failed to save");
+        showToast(data.error || "Failed to save");
       } else {
         setEditing(false);
         fetchJob();
       }
     } catch {
-      alert("Failed to save");
+      showToast("Failed to save");
     } finally {
       setSaving(false);
     }
@@ -515,9 +636,11 @@ export default function JobDetailPage() {
     // recruiter first since the placement carries salary / fee /
     // payment terms data they may not want to lose silently.
     if (leavingPlaced && submission?.placement) {
-      const ok = window.confirm(
-        `This candidate has a placement record. Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms). Continue?`
-      );
+      const ok = await confirmDialog({
+        title: `Move out of "Placed"?`,
+        description: `This candidate has a placement record. Moving out of "Placed" will permanently delete the placement (salary, fee, payment terms).`,
+        confirmLabel: "Yes, move out",
+      });
       if (!ok) return;
     }
 
@@ -541,9 +664,14 @@ export default function JobDetailPage() {
 
   // Debounced contact lookup while the recruiter types in the share
   // dialog. Skipped when the input doesn't look like a search yet
-  // (< 2 chars) or when the dialog is closed.
+  // (< 2 chars), when the dialog is closed, or when the email just
+  // changed because the user picked a suggestion (sharePickedRef).
   useEffect(() => {
     if (!showShareDialog) return;
+    if (sharePickedRef.current) {
+      sharePickedRef.current = false;
+      return;
+    }
     const q = shareEmail.trim();
     if (q.length < 2) {
       setShareSuggestions([]);
@@ -569,8 +697,10 @@ export default function JobDetailPage() {
 
   function pickShareSuggestion(s: ContactSuggestion) {
     if (!s.available) return; // see ContactSuggestion.available
+    sharePickedRef.current = true;
     setShareEmail(s.email);
     setShareName(s.name || "");
+    setShareSuggestions([]);
     setShareSuggestOpen(false);
     setShareError("");
   }
@@ -616,14 +746,22 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
+  async function requestRemoveSubmission(submissionId: string) {
+    // Look up the submission so the dialog can show the candidate's name.
+    // Returns a resolved promise so the prop type (Promise<void>) is happy.
+    const sub = job?.submissions?.find((s: any) => s.id === submissionId);
+    const label = sub
+      ? `${sub.candidate?.firstName || ""} ${sub.candidate?.lastName || ""}`.trim() || "this candidate"
+      : "this candidate";
+    setRemovingSubmission({ id: submissionId, label });
+  }
+
   async function removeSubmission(submissionId: string) {
-    if (!confirm("Remove this candidate from the pipeline?")) return;
     await fetch(`/api/submissions/${submissionId}`, { method: "DELETE" });
     fetchJob();
   }
 
   async function deleteJob() {
-    if (!confirm(`Delete "${job.title}"? This will remove all candidates from its pipeline. This cannot be undone.`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/jobs/${params.id}`, { method: "DELETE" });
@@ -660,6 +798,46 @@ export default function JobDetailPage() {
     fetchJob();
   }
 
+  // Toggle a teammate in/out of the pending-selection bucket. Same row
+  // tapped twice deselects. Searching for another name keeps existing
+  // picks in the chips strip above so the recruiter can build up a
+  // batch across multiple queries.
+  function togglePendingAssignSelection(user: { id: string; name: string }) {
+    setPendingAssignSelections((prev) => {
+      if (prev.some((p) => p.id === user.id)) {
+        return prev.filter((p) => p.id !== user.id);
+      }
+      return [...prev, { id: user.id, name: user.name || "Teammate" }];
+    });
+  }
+
+  // Confirm-button handler: fires one POST per selected user in
+  // parallel and clears the bucket on success. We keep the dialog
+  // open and refresh the job so the new chips render in
+  // "Currently Assigned" — the user sees the result land before
+  // closing manually, which matches the rest of the app's
+  // commit-feedback pattern.
+  async function commitPendingAssignSelections() {
+    if (pendingAssignSelections.length === 0 || assigningBatch) return;
+    setAssigningBatch(true);
+    try {
+      await Promise.all(
+        pendingAssignSelections.map((u) =>
+          fetch(`/api/jobs/${params.id}/assignments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: u.id }),
+          }),
+        ),
+      );
+      setPendingAssignSelections([]);
+      setAssignSearch("");
+      setAssignResults([]);
+      await fetchJob();
+    } catch {}
+    setAssigningBatch(false);
+  }
+
   async function removeAssignment(userId: string) {
     await fetch(`/api/jobs/${params.id}/assignments`, {
       method: "DELETE",
@@ -679,16 +857,16 @@ export default function JobDetailPage() {
       const res = await fetch(`/api/jobs/${params.id}/documents`, { method: "POST", body: formData });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Upload failed");
+        showToast(data.error || "Upload failed");
       } else {
         const data = await res.json();
         if (category === "JOB_DESCRIPTION") {
           if (data.parsed) {
             // Text was extracted successfully
           } else if (data.parseError) {
-            alert(`Document uploaded but text extraction failed: ${data.parseError}`);
+            showToast(`Document uploaded but text extraction failed: ${data.parseError}`);
           } else {
-            alert("Document uploaded but no text could be extracted from the file.");
+            showToast("Document uploaded but no text could be extracted from the file.");
           }
         }
         const fresh = await fetchJob();
@@ -705,14 +883,13 @@ export default function JobDetailPage() {
         }
       }
     } catch {
-      alert("Upload failed");
+      showToast("Upload failed");
     } finally {
       setUploading(false);
     }
   }
 
   async function deleteJobDocument(docId: string, isJD?: boolean) {
-    if (!confirm("Delete this document?")) return;
     await fetch(`/api/documents/${docId}`, { method: "DELETE" });
     if (isJD) {
       await fetch(`/api/jobs/${params.id}`, {
@@ -771,12 +948,92 @@ export default function JobDetailPage() {
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
+          {/* Duplicate solo cuando el job esta cerrado (cancelado o
+              filled cerrado): el caso es "tuvimos que cancelar y
+              arrancar de cero" o "mismo cliente vuelve a buscar lo
+              mismo". Lleva al form de create con ?fromJobId que
+              pre-llena title/desc/location/workMode/currency/salary/fee. */}
+          {(job.status === "CANCELLED" || job.status === "CLOSED") && (
+            <Link href={`/jobs/new?fromJobId=${job.id}`}>
+              <Button variant="outline">
+                <Copy className="mr-2 h-4 w-4" /> Duplicate
+              </Button>
+            </Link>
+          )}
           <Button
             variant="outline"
             onClick={() => setShowAssignDialog(true)}
           >
             <Users className="mr-2 h-4 w-4" /> Assign Team
           </Button>
+          {/* Client portal access preview — muestra a vuelo de pájaro
+              quién del cliente puede ver este job. Reusa el mismo
+              dataset que la sección detallada de /details (mirror.members
+              o fallback "todos los ClientUsers del cliente"). Click →
+              scroll suave a la sección completa donde el admin puede
+              gestionar el acceso. Sin esto el recruiter no veía a
+              quién había invitado al portal a menos que abriera
+              Details. */}
+          {(() => {
+            const mirror = job.clientJobMirror;
+            const members = (mirror?.members || [])
+              .map((m: any) => m.clientUser)
+              .filter(Boolean);
+            const allClientUsers = job.client?.clientUsers || [];
+            const visibleUsers = members.length > 0 ? members : allClientUsers;
+            if (!visibleUsers.length) return null;
+            const display = visibleUsers.slice(0, 3);
+            const extra = visibleUsers.length - display.length;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  // El access section vive en la tab "Details". Switch
+                  // de tab vía el state controller + scroll suave al
+                  // anchor en el siguiente paint para que el DOM ya
+                  // tenga la sección montada.
+                  setActiveTab("details");
+                  setTimeout(() => {
+                    const el = document.getElementById("client-portal-access-section");
+                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 60);
+                }}
+                title={`Client access: ${visibleUsers.map((u: any) => u.name || u.email).join(", ")}`}
+                className="inline-flex items-center gap-1.5 h-9 px-2 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex -space-x-1.5">
+                  {display.map((u: any) => {
+                    const initials = (u.name || u.email || "?")
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((p: string) => p[0]?.toUpperCase() || "")
+                      .join("");
+                    return (
+                      <span
+                        key={u.id}
+                        className={`w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center text-[10px] font-semibold ${
+                          u.isPending
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {initials || "?"}
+                      </span>
+                    );
+                  })}
+                  {extra > 0 && (
+                    <span className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-100 text-gray-600 text-[10px] font-semibold flex items-center justify-center">
+                      +{extra}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-600 pr-1">
+                  {visibleUsers.length === 1 ? "1 has access" : `${visibleUsers.length} have access`}
+                </span>
+              </button>
+            );
+          })()}
           <Button
             variant="outline"
             onClick={() => {
@@ -790,14 +1047,16 @@ export default function JobDetailPage() {
           <Button onClick={() => setShowAddCandidate(true)}>
             <Plus className="mr-2 h-4 w-4" /> Add Candidate
           </Button>
-          <Button
-            variant="outline"
-            onClick={deleteJob}
-            disabled={deleting}
-            className="text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteJob(true)}
+              disabled={deleting}
+              className="text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
 
           {/* Invite Client Dialog */}
           <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
@@ -1226,6 +1485,28 @@ export default function JobDetailPage() {
                     </div>
                   </div>
 
+                  <div className="space-y-1.5">
+                    <Label htmlFor="newCandidateOwner">Owner</Label>
+                    <SearchableSelect
+                      value={newCandidate.ownerId}
+                      onChange={(v) => setNewCandidate({ ...newCandidate, ownerId: v })}
+                      includeAll={false}
+                      placeholder={
+                        teamMembers.length === 0 ? "Loading team…" : "Select an owner"
+                      }
+                      searchPlaceholder="Search teammates…"
+                      minWidth={0}
+                      className="w-full"
+                      options={teamMembers.map<SearchableSelectOption>((m) => ({
+                        value: m.id,
+                        label:
+                          (m.name || m.email) +
+                          (m.id === currentUserId ? " (you)" : ""),
+                        meta: m.name && m.email ? m.email : undefined,
+                      }))}
+                    />
+                  </div>
+
                   <div className="flex items-center justify-between pt-2">
                     <p className="text-xs text-gray-400">
                       The candidate will also appear in your Candidates list.
@@ -1285,7 +1566,7 @@ export default function JobDetailPage() {
               submissions={job.submissions}
               onMove={moveSubmission}
               onToggleShare={toggleShare}
-              onRemove={removeSubmission}
+              onRemove={isAdmin ? requestRemoveSubmission : undefined}
               clientName={job.client?.name}
               jobTitle={job.title}
             />
@@ -1295,7 +1576,7 @@ export default function JobDetailPage() {
               submissions={job.submissions}
               onMove={moveSubmission}
               onToggleShare={toggleShare}
-              onRemove={removeSubmission}
+              onRemove={isAdmin ? requestRemoveSubmission : undefined}
               clientName={job.client?.name}
               jobTitle={job.title}
             />
@@ -1334,6 +1615,7 @@ export default function JobDetailPage() {
                 if (!open) setPendingPlacement(null);
               }}
               submissionId={pendingPlacement.submission.id}
+              candidateId={pendingPlacement.submission.candidate.id}
               candidateName={`${pendingPlacement.submission.candidate.firstName} ${pendingPlacement.submission.candidate.lastName}`}
               jobTitle={job.title}
               clientName={job.client?.name}
@@ -1457,12 +1739,28 @@ export default function JobDetailPage() {
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             )}
             jobId={params.id as string}
+            clientName={job.client?.name}
             onCommentAdded={fetchJob}
           />
         </TabsContent>
 
         <TabsContent value="details" className="space-y-4">
-          <div className="border rounded-xl bg-white p-5 space-y-5">
+          <div className="border rounded-xl bg-white p-5 space-y-5 relative">
+              {/* Pencil shortcut — vive en la esquina top-right del
+                  bloque para que se pueda entrar a editar sin tener
+                  que scrollear arriba al boton Edit del header. Solo
+                  visible en modo lectura. */}
+              {!editing && (
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="absolute top-3 right-3 inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Edit job details"
+                  aria-label="Edit job details"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
               {!editing ? (
                 <>
                   {/* Key info — compact 2-column layout */}
@@ -1509,8 +1807,205 @@ export default function JobDetailPage() {
                       </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 col-span-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
-                      <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                          Assigned to
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowAssignDialog(true)}
+                          className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Manage
+                        </button>
+                      </div>
+                      {(() => {
+                        const team = job.assignments || [];
+                        if (team.length === 0) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Nobody assigned yet. Use{" "}
+                              <span className="font-medium text-gray-700">Manage</span>{" "}
+                              to add teammates.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1.5">
+                            {team.map((a: any) => {
+                              const initials = (a.user.name || a.user.email || "?")
+                                .split(/\s+/)
+                                .filter(Boolean)
+                                .slice(0, 2)
+                                .map((p: string) => p[0]?.toUpperCase() || "")
+                                .join("");
+                              return (
+                                <div
+                                  key={a.user.id || a.userId}
+                                  className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-0.5 border bg-white border-gray-200"
+                                  title={a.user.email || ""}
+                                >
+                                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold bg-indigo-100 text-indigo-700">
+                                    {initials || "?"}
+                                  </span>
+                                  <span className="text-xs font-medium text-gray-800">
+                                    {a.user.name || a.user.email}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    {/* Client portal access — quien del cliente puede
+                        ver el job en su portal. Editable: la agencia
+                        agrega o quita ClientUsers libremente (sin
+                        special-casing del creator — el recruiter
+                        comparte con quien necesite, no le importa quien
+                        creo la mirror del lado cliente). Si el mirror
+                        no existe todavia, pointer al flow de Invite
+                        Client. Si existe pero no hay members explicitos
+                        usamos la regla legacy "todos los ClientUsers
+                        activos ven" como display, pero el editor
+                        permite acotar. */}
+                    <div
+                      id="client-portal-access-section"
+                      className="bg-gray-50 rounded-lg p-3 col-span-2 lg:col-span-4 scroll-mt-24"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                          Client portal access
+                        </p>
+                        {job.clientJobMirror && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const memberUsers = (job.clientJobMirror?.members || [])
+                                .map((m: any) => m.clientUser)
+                                .filter(Boolean);
+                              setAccessSelectedIds(
+                                new Set(memberUsers.map((u: any) => u.id)),
+                              );
+                              setAccessError(null);
+                              setEditingPortalAccess(true);
+                            }}
+                            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Manage
+                          </button>
+                        )}
+                      </div>
+                      {(() => {
+                        const mirror = job.clientJobMirror;
+                        if (!mirror) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              No one from {job.client?.name || "the client"} has portal access to this search yet.
+                              Use <span className="font-medium text-gray-700">Invite Client</span> above to share it.
+                            </p>
+                          );
+                        }
+
+                        const allClientUsers = job.client?.clientUsers || [];
+                        // El editing del Client Portal Access vive en
+                        // un Dialog popout (ver más abajo en el JSX
+                        // del componente). Acá solo mostramos los
+                        // chips de lectura — mismo patrón que la
+                        // sección "Assigned to" más arriba. Sin esto
+                        // el inline tomaba toda la altura del card y
+                        // se sentía raro.
+
+                        const memberUsers = (mirror.members || [])
+                          .map((m: any) => m.clientUser)
+                          .filter(Boolean);
+                        const useFallback = memberUsers.length === 0;
+                        const visibleUsers = useFallback ? allClientUsers : memberUsers;
+                        if (visibleUsers.length === 0) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Search is mirrored on the client portal but nobody is registered yet.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="space-y-1.5">
+                            {useFallback && (
+                              <p className="text-[10px] text-gray-400 italic">
+                                No explicit members — everyone on the client team can see this search.
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              {visibleUsers.map((u: any) => {
+                                const initials = (u.name || u.email || "?")
+                                  .split(/\s+/)
+                                  .filter(Boolean)
+                                  .slice(0, 2)
+                                  .map((p: string) => p[0]?.toUpperCase() || "")
+                                  .join("");
+                                const isPending = !!u.isPending;
+                                return (
+                                  <div
+                                    key={u.id}
+                                    className={`inline-flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-0.5 border ${
+                                      isPending
+                                        ? "bg-amber-50 border-amber-300 border-dashed"
+                                        : "bg-white border-gray-200"
+                                    }`}
+                                    title={
+                                      isPending
+                                        ? `${u.email} · pending sign-up`
+                                        : u.email
+                                    }
+                                  >
+                                    <span
+                                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold ${
+                                        isPending
+                                          ? "bg-amber-100 text-amber-700"
+                                          : "bg-emerald-100 text-emerald-700"
+                                      }`}
+                                    >
+                                      {initials || "?"}
+                                    </span>
+                                    <span className="text-xs font-medium text-gray-800">
+                                      {u.name || u.email}
+                                    </span>
+                                    {isPending && (
+                                      <>
+                                        <span className="text-[9px] uppercase tracking-wider text-amber-700 font-medium">
+                                          pending
+                                        </span>
+                                        {/* Cancel × — only on pending
+                                            chips. The endpoint dedupes
+                                            id removal; if the user
+                                            already activated since the
+                                            page rendered the server
+                                            just keeps them. */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            cancelPortalInvite(
+                                              u.id,
+                                              u.name || u.email,
+                                            )
+                                          }
+                                          className="ml-0.5 text-amber-600 hover:text-rose-600"
+                                          title="Cancel invite"
+                                          aria-label={`Cancel invite for ${u.name || u.email}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1696,15 +2191,21 @@ export default function JobDetailPage() {
                             type="file"
                             className="hidden"
                             accept=".pdf,.doc,.docx,.txt"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
+                              const input = e.target;
                               if (!file) return;
-                              if (!confirm("Re-parsing will replace the description, and update Location / Work Arrangement if found in the new file. Continue?")) {
-                                e.target.value = "";
+                              const ok = await confirmDialog({
+                                title: "Re-parse this JD?",
+                                description: "We'll replace the description, and update Location / Work Arrangement if found in the new file.",
+                                confirmLabel: "Yes, re-parse",
+                              });
+                              if (!ok) {
+                                input.value = "";
                                 return;
                               }
                               uploadJobDocument(file, "JOB_DESCRIPTION");
-                              e.target.value = "";
+                              input.value = "";
                             }}
                           />
                         </label>
@@ -1749,9 +2250,11 @@ export default function JobDetailPage() {
                         <a href={`/api/documents/${jdDoc.id}?download=1`} download>
                           <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                         </a>
-                        <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(jdDoc.id, true)} className="text-red-400 hover:text-red-600">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {isAdmin && (
+                          <Button variant="ghost" size="sm" onClick={() => setDeletingDoc({ id: jdDoc.id, name: jdDoc.name, isJD: true })} className="text-red-400 hover:text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1798,9 +2301,11 @@ export default function JobDetailPage() {
                     <a href={`/api/documents/${doc.id}?download=1`} download>
                       <Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button>
                     </a>
-                    <Button variant="ghost" size="sm" onClick={() => deleteJobDocument(doc.id)} className="text-red-400 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="sm" onClick={() => setDeletingDoc({ id: doc.id, name: doc.name })} className="text-red-400 hover:text-red-600">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1859,6 +2364,148 @@ export default function JobDetailPage() {
         />
       )}
 
+      {/* Client Portal Access — Manage popout. Reemplaza el editing
+          inline que se montaba dentro de la sección Details (sucio
+          visualmente). Mismo form, pero contenido y prolijo en un
+          dialog. Suma un link al final "Invite a new contact" que
+          dispara el flow Invite Client existente para sumar a
+          alguien que todavía no figura como ClientUser. */}
+      <Dialog
+        open={editingPortalAccess}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingPortalAccess(false);
+            setAccessError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage client portal access</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500">
+            Tick the people who should see this search on the client
+            portal. Unchecking everyone reverts to the legacy
+            &quot;visible to the whole team&quot; state.
+          </p>
+          {(() => {
+            const allClientUsers = job?.client?.clientUsers || [];
+            if (allClientUsers.length === 0) {
+              return (
+                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
+                  Nobody on {job?.client?.name || "this client"} has a
+                  portal account yet. Invite one below to get started.
+                </p>
+              );
+            }
+            const toggleId = (uid: string) => {
+              setAccessSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(uid)) next.delete(uid);
+                else next.add(uid);
+                return next;
+              });
+            };
+            return (
+              <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-72 overflow-y-auto mt-2">
+                {allClientUsers.map((u: any) => {
+                  const checked = accessSelectedIds.has(u.id);
+                  return (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleId(u.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 truncate">
+                          {u.name || u.email}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate">
+                          {u.email}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Link "Invite a new contact" — abre el flow Invite Client
+              que ya existe. Cierra este dialog primero para que no
+              queden 2 modales encima. */}
+          <button
+            type="button"
+            onClick={() => {
+              setEditingPortalAccess(false);
+              setAccessError(null);
+              setShareSuccess("");
+              setShareError("");
+              setShowShareDialog(true);
+            }}
+            className="text-xs text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 mt-2"
+          >
+            <Plus className="h-3 w-3" />
+            Invite a new contact to the portal
+          </button>
+
+          {accessError && (
+            <p className="text-xs text-rose-600 mt-2">{accessError}</p>
+          )}
+
+          <div className="flex items-center gap-2 justify-end mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingPortalAccess(false);
+                setAccessError(null);
+              }}
+              disabled={savingAccess}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={async () => {
+                setSavingAccess(true);
+                setAccessError(null);
+                try {
+                  const res = await fetch(
+                    `/api/jobs/${job?.id}/client-portal-access`,
+                    {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        memberIds: Array.from(accessSelectedIds),
+                      }),
+                    },
+                  );
+                  if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    throw new Error(j.error || "Save failed");
+                  }
+                  setEditingPortalAccess(false);
+                  await fetchJob();
+                } catch (e: any) {
+                  setAccessError(e.message || "Save failed");
+                } finally {
+                  setSavingAccess(false);
+                }
+              }}
+              disabled={savingAccess}
+            >
+              {savingAccess ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Assign Recruiters Dialog */}
       <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
         <DialogContent>
@@ -1882,13 +2529,15 @@ export default function JobDetailPage() {
                         <p className="text-xs text-gray-400">{a.user.role || "Recruiter"}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeAssignment(a.user.id)}
-                      className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Remove"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setRemovingAssignment({ userId: a.user.id, name: a.user.name || "este recruiter" })}
+                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Remove"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1903,23 +2552,59 @@ export default function JobDetailPage() {
               value={assignSearch}
               onChange={(e) => searchRecruiters(e.target.value)}
             />
+            {/* Pending selections chips — los users que el usuario ya
+                tocö en la lista de resultados pero todavia no commiteo
+                con el boton Confirm. Sobreviven a cambios en el query
+                de busqueda asi se puede armar una batch tipeando varios
+                nombres uno tras otro. Click en la × deselecciona. */}
+            {pendingAssignSelections.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {pendingAssignSelections.map((u) => (
+                  <span
+                    key={u.id}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200"
+                  >
+                    {u.name}
+                    <button
+                      type="button"
+                      onClick={() => togglePendingAssignSelection(u)}
+                      className="hover:text-indigo-900"
+                      aria-label={`Remove ${u.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             {assignResults.length > 0 && (
               <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-100 rounded-md">
-                {assignResults.map((u: any) => (
-                  <button
-                    key={u.id}
-                    onClick={() => assignRecruiter(u.id)}
-                    className="w-full text-left p-2.5 hover:bg-indigo-50 flex items-center gap-2 transition-colors"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-semibold">
-                      {u.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{u.name}</p>
-                      <p className="text-xs text-gray-400">{u.role} · {u.email}</p>
-                    </div>
-                  </button>
-                ))}
+                {assignResults.map((u: any) => {
+                  const selected = pendingAssignSelections.some((p) => p.id === u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => togglePendingAssignSelection({ id: u.id, name: u.name })}
+                      className={`w-full text-left p-2.5 flex items-center gap-2 transition-colors ${
+                        selected ? "bg-indigo-50" : "hover:bg-indigo-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        readOnly
+                        className="rounded border-gray-300 pointer-events-none"
+                      />
+                      <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs font-semibold">
+                        {u.name?.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{u.name}</p>
+                        <p className="text-xs text-gray-400">{u.role} · {u.email}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
             {assignSearching && <p className="text-sm text-gray-400 p-2">Searching...</p>}
@@ -1927,8 +2612,98 @@ export default function JobDetailPage() {
               <p className="text-sm text-gray-400 p-2">No matching team members found</p>
             )}
           </div>
+
+          {/* Confirm bar — solo aparece cuando hay al menos un row
+              seleccionado. Sin pending selections el dialogo se ve
+              identico al anterior (la accion de cerrar la X o el ESC
+              alcanza). */}
+          {pendingAssignSelections.length > 0 && (
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+              <p className="text-xs text-gray-500">
+                {pendingAssignSelections.length} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPendingAssignSelections([])}
+                  disabled={assigningBatch}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={commitPendingAssignSelections}
+                  disabled={assigningBatch}
+                >
+                  {assigningBatch
+                    ? "Adding..."
+                    : `Add ${pendingAssignSelections.length} member${
+                        pendingAssignSelections.length === 1 ? "" : "s"
+                      }`}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={showDeleteJob}
+        onOpenChange={setShowDeleteJob}
+        itemLabel={job?.title || "this job"}
+        itemKind="job"
+        consequences={(() => {
+          // Hide bullets with zero data — surfacing "0 submissions"
+          // on a fresh / empty job reads as noise.
+          const subs = job?.submissions?.length || 0;
+          const ivs = job?.interviews?.length || 0;
+          const docs = job?.documents?.length || 0;
+          const out: string[] = [];
+          if (subs > 0) out.push(`${subs} pipeline submission${subs === 1 ? "" : "s"}`);
+          if (ivs > 0) out.push(`${ivs} interview${ivs === 1 ? "" : "s"} and their placements`);
+          if (docs > 0) out.push(`${docs} linked document${docs === 1 ? "" : "s"}`);
+          return out;
+        })()}
+        onConfirm={deleteJob}
+        confirmLabel="Yes, delete"
+      />
+
+      <DeleteConfirmDialog
+        open={!!removingSubmission}
+        onOpenChange={(open) => { if (!open) setRemovingSubmission(null); }}
+        itemLabel={removingSubmission?.label || ""}
+        onConfirm={async () => {
+          if (removingSubmission) await removeSubmission(removingSubmission.id);
+          setRemovingSubmission(null);
+        }}
+        confirmLabel="Yes, remove from pipeline"
+      />
+
+      <DeleteConfirmDialog
+        open={!!removingAssignment}
+        onOpenChange={(open) => { if (!open) setRemovingAssignment(null); }}
+        itemLabel={removingAssignment?.name || ""}
+        onConfirm={async () => {
+          if (removingAssignment) {
+            await removeAssignment(removingAssignment.userId);
+          }
+          setRemovingAssignment(null);
+        }}
+        confirmLabel="Yes, remove from job"
+      />
+
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
+        itemLabel={deletingDoc?.name || ""}
+        itemKind="document"
+        onConfirm={async () => {
+          if (deletingDoc) await deleteJobDocument(deletingDoc.id, deletingDoc.isJD);
+          setDeletingDoc(null);
+        }}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

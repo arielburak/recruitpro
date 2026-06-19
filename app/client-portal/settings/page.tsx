@@ -31,6 +31,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { showToast } from "@/components/ui/toast";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 
 type SettingsTab = "profile" | "organization";
 
@@ -236,22 +238,32 @@ export default function ClientPortalSettingsPage() {
   }
 
   async function removeMember(memberId: string) {
-    if (!confirm("Remove this team member? This cannot be undone.")) return;
+    const ok = await confirmDialog({
+      title: "Remove team member?",
+      description: "This cannot be undone.",
+      confirmLabel: "Yes, remove",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to remove");
+      showToast(data.error || "Failed to remove");
     }
     setMemberMenu(null);
     fetchTeam();
   }
 
   async function cancelInvite(memberId: string, email: string) {
-    if (!confirm(`Cancel invite for ${email}? They won't be able to use any previously sent link.`)) return;
+    const ok = await confirmDialog({
+      title: `Cancel invite for ${email}?`,
+      description: "They won't be able to use any previously sent link.",
+      confirmLabel: "Yes, cancel",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to cancel invite");
+      showToast(data.error || "Failed to cancel invite");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -263,12 +275,12 @@ export default function ClientPortalSettingsPage() {
       const res = await fetch(`/api/client-portal/team/${memberId}/resend`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to resend invite");
+        showToast(data.error || "Failed to resend invite");
       } else {
-        alert(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
+        showToast(data.emailSent ? "Invite resent." : "Invite link refreshed (email delivery failed — copy the link manually).");
       }
     } catch {
-      alert("Something went wrong");
+      showToast("Something went wrong");
     }
     setResendingId(null);
     setMemberMenu(null);
@@ -282,7 +294,7 @@ export default function ClientPortalSettingsPage() {
     });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to change role");
+      showToast(data.error || "Failed to change role");
     }
     setMemberMenu(null);
     fetchTeam();

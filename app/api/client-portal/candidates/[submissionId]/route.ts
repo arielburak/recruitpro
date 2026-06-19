@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET candidate detail for a specific submission.
 // Only accessible if the submission is shared with the calling client user's client.
@@ -19,11 +20,16 @@ export async function GET(
     // not a member of.
     const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
 
+    // Sin `job.clientId === ctx.clientId`: cuando 2 agencias engaged
+    // con el mismo ClientJob, cada una tiene su propio Client record
+    // (audit metadata, no authoritative). Filtrar por clientId solo
+    // matchea la agencia que originalmente invito al cliente. El gate
+    // correcto es `jobId IN visibleAgencyJobIds`, que viene de los
+    // FirmEngagements ACCEPTED en ClientJobs accesibles.
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
         jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: {
@@ -69,19 +75,45 @@ export async function GET(
       return NextResponse.json({ error: "Candidate not found or not shared" }, { status: 404 });
     }
 
-    // Fetch candidate documents (linked to candidate directly)
-    const documents = await prisma.document.findMany({
-      where: { candidateId: submission.candidate.id },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        size: true,
-        category: true,
-        createdAt: true,
+    // Fetch documents que la agencia eligio compartir EN ESTA
+    // submission especifica. Antes devolviamos todos los docs del
+    // candidate sin filtrar — el cliente veia CVs viejos, drafts
+    // internos, etc. Ahora solo los SubmissionDocument explicitos.
+    //
+    // Backwards-compat: si la submission no tiene SubmissionDocument
+    // rows (shares legacy pre-feature), caemos al comportamiento
+    // anterior asi no rompemos historicos. Shares nuevos siempre
+    // crean al menos una row al disparar el share.
+    const submissionDocs = await prisma.submissionDocument.findMany({
+      where: { submissionId: submission.id },
+      include: {
+        document: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            size: true,
+            category: true,
+            createdAt: true,
+          },
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { addedAt: "desc" },
     });
+    const documents = submissionDocs.length > 0
+      ? submissionDocs.map((s: { document: any }) => s.document)
+      : await prisma.document.findMany({
+          where: { candidateId: submission.candidate.id },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            size: true,
+            category: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+        });
 
     // My rating. The Prisma client generic for `candidateRating` has
     // grown deep enough that the inferred awaited type trips
@@ -129,8 +161,10 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    const scores = allRatings.map((r) => r.score).filter((s): s is number => typeof s === "number" && s > 0);
-    const avgRating = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    const scores = allRatings
+      .map((r: { score: number | null }) => r.score)
+      .filter((s: number | null): s is number => typeof s === "number" && s > 0);
+    const avgRating = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : null;
 
     return NextResponse.json({
       submissionId: submission.id,
@@ -159,6 +193,6 @@ export async function GET(
       comments,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

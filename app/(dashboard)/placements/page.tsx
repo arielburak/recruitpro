@@ -69,7 +69,13 @@ export default function PlacementsPage() {
   // and drills down to a specific Q only when asked.
   const today = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
-  const [selectedQuarter, setSelectedQuarter] = useState<"ALL" | 1 | 2 | 3 | 4>("ALL");
+  // "ALL" = full calendar year, 1-4 = specific quarter, "YTD" = Jan 1
+  // through today (clamps the period end to today even when the
+  // selected year is the current one). YTD is the common business
+  // reporting view — "how much did we book this year so far".
+  const [selectedQuarter, setSelectedQuarter] = useState<
+    "ALL" | "YTD" | 1 | 2 | 3 | 4
+  >("ALL");
 
   function reloadPlacements() {
     fetch("/api/placements")
@@ -105,15 +111,37 @@ export default function PlacementsPage() {
   // the recruiter sees one headline number across a mixed-currency
   // book. Per-currency amounts surface below as a sanity check so the
   // conversion is auditable at a glance.
-  // Date range resolves Year + Quarter; "ALL" means the full year.
+  // Date range resolves Year + Quarter.
+  //   · "ALL" → the full calendar year of selectedYear.
+  //   · "YTD" → Jan 1 of selectedYear through today (or Dec 31 if
+  //     the year is in the past — YTD on a closed year collapses
+  //     to the whole year, no future portion to clamp).
+  //   · 1-4  → the specific quarter.
   const periodStart =
-    selectedQuarter === "ALL"
+    selectedQuarter === "ALL" || selectedQuarter === "YTD"
       ? new Date(selectedYear, 0, 1)
       : new Date(selectedYear, (selectedQuarter - 1) * 3, 1);
-  const periodEnd =
+  const periodEnd = (() => {
+    if (selectedQuarter === "ALL") {
+      return new Date(selectedYear, 12, 0, 23, 59, 59);
+    }
+    if (selectedQuarter === "YTD") {
+      const yearEnd = new Date(selectedYear, 12, 0, 23, 59, 59);
+      // For the current (or any future) year, YTD clamps to today.
+      // For a past year, today is way after Dec 31 so the min is
+      // Dec 31 — i.e. the full closed year.
+      return today < yearEnd ? today : yearEnd;
+    }
+    return new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+  })();
+  // Short label used in the tile sub-headers and copy. Mirrors the
+  // value of selectedQuarter so YTD prints as "YTD" and Q1/2/3/4
+  // print as "Q1" etc.
+  const periodSuffix =
     selectedQuarter === "ALL"
-      ? new Date(selectedYear, 12, 0, 23, 59, 59)
-      : new Date(selectedYear, selectedQuarter * 3, 0, 23, 59, 59);
+      ? ""
+      : ` · ${selectedQuarter === "YTD" ? "YTD" : `Q${selectedQuarter}`}`;
+  const periodLabel = `${selectedYear}${periodSuffix}`;
 
   // The date a placement "belongs to" for revenue reporting. We anchor
   // on the actual start date when the candidate has already started,
@@ -122,10 +150,17 @@ export default function PlacementsPage() {
   // expects when they edit a placement's date — the row should move to
   // the right Q immediately, not stay pinned to whenever they happened
   // to click "New placement".
-  function placementDate(p: any): Date {
+  // Returns the date the placement anchors on for the period filter,
+  // or null when there isn't enough info. Rule: prefer the actual
+  // startDate; fall back to the estimated start when the deal hasn't
+  // begun yet; never fall back to createdAt (a row loaded in Q2 for
+  // a Q3 start was incorrectly bucketed under Q2's createdAt). A row
+  // with neither date stays excluded from period views until the
+  // recruiter fills one in.
+  function placementDate(p: any): Date | null {
     if (p.startDate) return new Date(p.startDate);
     if (p.estimatedStartDate) return new Date(p.estimatedStartDate);
-    return new Date(p.createdAt);
+    return null;
   }
 
   // Split the book by kind. HH (headhunting / contingent) is a flat
@@ -137,10 +172,12 @@ export default function PlacementsPage() {
   const hhPlacements = placements.filter((p) => (p.kind || "HH") === "HH");
   const osPlacements = placements.filter((p) => p.kind === "OS");
 
-  // HH placements that booked in the selected period (anchor on
-  // startDate / estimatedStartDate / createdAt, same as before).
+  // HH placements that booked in the selected period (anchored on
+  // startDate, falling back to estimatedStartDate when the firm date
+  // isn't set yet).
   const hhInPeriod = hhPlacements.filter((p) => {
     const d = placementDate(p);
+    if (!d) return false;
     return d >= periodStart && d <= periodEnd;
   });
 
@@ -148,6 +185,7 @@ export default function PlacementsPage() {
   // "Placements" count tile so the recruiter sees overall activity.
   const placementsInPeriod = placements.filter((p) => {
     const d = placementDate(p);
+    if (!d) return false;
     return d >= periodStart && d <= periodEnd;
   });
 
@@ -179,22 +217,32 @@ export default function PlacementsPage() {
     osRevenueInPeriod += m * (Number(p.monthlyFee) || 0);
   }
 
-  // Active MRR = sum of monthlyFee for OS placements whose endDate
-  // is null (or in the future). Matches the "Active" badge in the OS
-  // table below — a signed engagement counts as active even if
-  // billing hasn't started yet ("committed MRR"). Conflating it with
-  // a stricter started-and-not-ended predicate was the bug that made
-  // Karen's $6.5k/mo show as $0 the day before her start date.
+  // Active MRR + engagement count, respecting the selected period.
+  // The "as-of" date is the period end clamped to today: viewing a
+  // past quarter shows what was active at the end of that quarter,
+  // viewing the current quarter shows the live state, viewing a
+  // future quarter shows what's projected to be active by then.
+  //
+  // Active = started by the as-of date AND not ended by it. A row
+  // with no start anchor doesn't count under any period (same rule
+  // as the table below; it was the bug where a Q2-start placement
+  // showed up under Q1 via createdAt fallback).
   const todayMs = today.getTime();
+  const asOfMs = Math.min(periodEnd.getTime(), todayMs);
   let activeMrr = 0;
   let activeOsCount = 0;
   for (const p of osPlacements) {
-    const ended = p.endDate ? new Date(p.endDate).getTime() < todayMs : false;
-    if (!ended) {
-      activeMrr += Number(p.monthlyFee) || 0;
-      activeOsCount += 1;
-    }
+    const startD = placementDate(p);
+    if (!startD || startD.getTime() > asOfMs) continue;
+    const ended = p.endDate ? new Date(p.endDate).getTime() < asOfMs : false;
+    if (ended) continue;
+    activeMrr += Number(p.monthlyFee) || 0;
+    activeOsCount += 1;
   }
+  // Flag for the tile labels — "as of today" vs "as of end of Q?"
+  // are very different stories and we want the recruiter to know
+  // which one they're looking at.
+  const asOfIsToday = asOfMs >= todayMs;
 
   // OS engagements that intersect the selected period. An engagement
   // [engStart, engEnd-or-today] overlaps [periodStart, periodEnd] when
@@ -203,11 +251,11 @@ export default function PlacementsPage() {
   // which surfaced a Q2 engagement on a Q1 view — the user flagged
   // that as wrong.
   const osInPeriod = osPlacements.filter((p) => {
-    const start = p.startDate
-      ? new Date(p.startDate)
-      : p.estimatedStartDate
-        ? new Date(p.estimatedStartDate)
-        : new Date(p.createdAt);
+    const start = placementDate(p);
+    // No anchor → no period membership. Used to fall back to
+    // createdAt which produced the "Q2 deal shows up in Q1" bug
+    // when the row was loaded one quarter before it starts.
+    if (!start) return false;
     if (start > periodEnd) return false;
     if (p.endDate) {
       const end = new Date(p.endDate);
@@ -232,8 +280,16 @@ export default function PlacementsPage() {
   // happens to be empty) so the user can navigate to them and
   // confirm "yes, this year was empty" rather than wondering why
   // the dropdown skipped a gap.
-  const placementYearValues = placements.map((p) => placementDate(p).getFullYear());
+  const placementYearValues = placements
+    .map((p) => placementDate(p))
+    .filter((d): d is Date => d != null)
+    .map((d) => d.getFullYear());
   const currentYear = today.getFullYear();
+  // Year range derives from the data we actually have, plus the
+  // current year (so even an empty workspace has a usable option).
+  // No artificial floor: if every placement is from 2026, the only
+  // option is 2026. Agencies that import historical data expand
+  // the range backwards automatically.
   const earliestYear = placementYearValues.length > 0
     ? Math.min(...placementYearValues, currentYear)
     : currentYear;
@@ -350,12 +406,17 @@ export default function PlacementsPage() {
           value={selectedQuarter}
           onChange={(e) => {
             const v = e.target.value;
-            setSelectedQuarter(v === "ALL" ? "ALL" : (Number(v) as 1 | 2 | 3 | 4));
+            if (v === "ALL" || v === "YTD") {
+              setSelectedQuarter(v);
+            } else {
+              setSelectedQuarter(Number(v) as 1 | 2 | 3 | 4);
+            }
           }}
           className="h-7 px-2 rounded-md border border-gray-200 bg-white text-xs font-medium hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
           aria-label="Quarter"
         >
           <option value="ALL">All quarters</option>
+          <option value="YTD">YTD</option>
           <option value={1}>Q1</option>
           <option value={2}>Q2</option>
           <option value={3}>Q3</option>
@@ -376,7 +437,7 @@ export default function PlacementsPage() {
             </div>
             <p className="text-xs font-semibold text-indigo-900">Headhunting (HH)</p>
             <span className="text-[11px] text-indigo-700/70 ml-auto">
-              {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+              {periodLabel}
             </span>
           </div>
           <CardContent className="p-4">
@@ -420,7 +481,11 @@ export default function PlacementsPage() {
                 <p className="text-2xl font-semibold text-emerald-600 mt-1">
                   {formatCurrency(activeMrr, "USD")}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">today</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {asOfIsToday
+                    ? "today"
+                    : `end of ${periodLabel}`}
+                </p>
               </div>
               <div className="px-4">
                 <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -429,7 +494,11 @@ export default function PlacementsPage() {
                 <p className="text-2xl font-semibold text-gray-900 mt-1">
                   {activeOsCount}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-0.5">active now</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {asOfIsToday
+                    ? "active now"
+                    : `active at end of ${periodLabel}`}
+                </p>
               </div>
               <div className="pl-4">
                 <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -439,7 +508,7 @@ export default function PlacementsPage() {
                   {formatCurrency(osRevenueInPeriod, "USD")}
                 </p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {periodLabel}
                 </p>
               </div>
             </div>
@@ -465,7 +534,7 @@ export default function PlacementsPage() {
               <div>
                 <p className="text-xs font-semibold text-gray-700">HH Placements</p>
                 <p className="text-[11px] text-gray-400">
-                  {hhInPeriod.length} in {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {hhInPeriod.length} in {periodLabel}
                 </p>
               </div>
             </div>
@@ -604,7 +673,7 @@ export default function PlacementsPage() {
                 <p className="text-xs font-semibold text-gray-700">OS Engagements</p>
                 <p className="text-[11px] text-gray-400">
                   {activeOsInPeriod} active · {osInPeriod.length} in{" "}
-                  {selectedYear}{selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}
+                  {periodLabel}
                 </p>
               </div>
             </div>
@@ -615,7 +684,7 @@ export default function PlacementsPage() {
                   <p className="text-sm text-gray-500">
                     {osPlacements.length === 0
                       ? "No staff-aug engagements yet."
-                      : `No staff-aug engagements active in ${selectedYear}${selectedQuarter === "ALL" ? "" : ` · Q${selectedQuarter}`}.`}
+                      : `No staff-aug engagements active in ${periodLabel}.`}
                   </p>
                 </div>
               ) : (
@@ -638,7 +707,9 @@ export default function PlacementsPage() {
                         const aActive = !a.endDate || new Date(a.endDate).getTime() >= todayMs;
                         const bActive = !b.endDate || new Date(b.endDate).getTime() >= todayMs;
                         if (aActive !== bActive) return aActive ? -1 : 1;
-                        return placementDate(b).getTime() - placementDate(a).getTime();
+                        const aD = placementDate(a);
+                        const bD = placementDate(b);
+                        return (bD?.getTime() ?? 0) - (aD?.getTime() ?? 0);
                       })
                       .map((p) => {
                         const candidateName = p.submission?.candidate

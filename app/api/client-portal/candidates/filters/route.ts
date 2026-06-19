@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Returns filter options for the candidates page:
 // - jobs the client has that have at least one shared candidate
@@ -19,9 +20,11 @@ export async function GET() {
 
     const [submissions, clientStages] = await Promise.all([
       prisma.candidateSubmission.findMany({
+        // Multi-firm: sin job.clientId === ctx.clientId — el gate
+        // correcto es jobId IN visibleAgencyJobIds. Ver
+        // /api/client-portal/candidates/route.ts para el rationale.
         where: {
           isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
           jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
         },
         select: {
@@ -63,6 +66,6 @@ export async function GET() {
       stages: clientStages,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

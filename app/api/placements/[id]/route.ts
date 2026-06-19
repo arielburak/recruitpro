@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 
 export async function GET(
   _request: Request,
@@ -31,7 +35,7 @@ export async function GET(
     if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(placement);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -40,9 +44,26 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
+
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total — puede editar terms de cualquier placement.
+    // - USER: solo si está assigned al job. SIN owner-bypass — los
+    //   placements son plata real, un recruiter random sacado del job
+    //   no debería seguir tocando el fee. Si el creador fue removido,
+    //   perdió el permiso por decisión consciente del admin.
+    const placementForGate = await prisma.placement.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { jobId: true },
+    });
+    if (!placementForGate) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!(await canAccessJob(placementForGate.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const {
       estimatedStartDate,
@@ -160,16 +181,41 @@ export async function PUT(
 
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // Resolve candidate + job for the activity log. The recent activity
+    // strip surfaces this verbatim, so a raw cuid here ("Updated placement
+    // cmpx39us...") reads as noise. A human label keeps the feed scannable.
+    const placementForLog = await prisma.placement.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: {
+        submission: {
+          select: {
+            candidate: { select: { firstName: true, lastName: true } },
+          },
+        },
+        job: { select: { title: true } },
+      },
+    });
+    const candidateName = placementForLog?.submission?.candidate
+      ? `${placementForLog.submission.candidate.firstName} ${placementForLog.submission.candidate.lastName}`.trim()
+      : "";
+    const jobTitle = placementForLog?.job?.title || "";
+    const label =
+      candidateName && jobTitle
+        ? `${candidateName} · ${jobTitle}`
+        : candidateName || jobTitle || id;
+
     await logActivity({
       action: "PLACEMENT_UPDATED",
-      description: `Updated placement ${id}${invoiceStatus ? ` - invoice status: ${invoiceStatus}` : ""}`,
+      description: `Updated placement for ${label}${invoiceStatus ? ` — invoice status: ${invoiceStatus}` : ""}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -179,6 +225,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     // Pull the placement first — we need submissionId + jobId to roll
@@ -188,10 +236,29 @@ export async function DELETE(
     // losing one but not the other leaves an inconsistent UI.)
     const placement = await prisma.placement.findFirst({
       where: { id, organizationId: ctx.organizationId },
-      select: { id: true, submissionId: true, jobId: true },
+      select: {
+        id: true,
+        submissionId: true,
+        jobId: true,
+        submission: {
+          select: {
+            candidate: { select: { firstName: true, lastName: true } },
+          },
+        },
+        job: { select: { title: true } },
+      },
     });
 
     if (!placement) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total — puede borrar cualquier placement del org.
+    // - USER: solo si está assigned al job. requireAdminResponse arriba
+    //   ya filtró USER (bulk delete es admin-only), pero acá dejamos el
+    //   gate igual por defensa en profundidad.
+    if (!(await canAccessJob(placement.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     if (placement.submissionId) {
       const submission = await prisma.candidateSubmission.findUnique({
@@ -231,15 +298,24 @@ export async function DELETE(
 
     await prisma.placement.delete({ where: { id } });
 
+    const candidateName = placement.submission?.candidate
+      ? `${placement.submission.candidate.firstName} ${placement.submission.candidate.lastName}`.trim()
+      : "";
+    const jobTitle = placement.job?.title || "";
+    const label =
+      candidateName && jobTitle
+        ? `${candidateName} · ${jobTitle}`
+        : candidateName || jobTitle || id;
+
     await logActivity({
       action: "PLACEMENT_DELETED",
-      description: `Deleted placement ${id}`,
+      description: `Deleted placement for ${label}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

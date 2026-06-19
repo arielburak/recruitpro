@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { sendClientSetPasswordEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Turn "jane@acme-corp.com" → "Acme Corp". The hiring manager will
 // overwrite this on first login, so we just want something readable
@@ -40,6 +42,9 @@ function deriveCompanyNameFromEmail(email: string): string {
 //      engagement, send the set-password invite.
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const body = await request.json();
     const rawEmail =
@@ -178,11 +183,23 @@ export async function POST(request: Request) {
 
     const setPasswordUrl = `${baseUrl}/client-portal/set-password?token=${setPasswordToken}&email=${encodeURIComponent(rawEmail)}`;
 
+    // Pull the firm name para el greeting del email ("X has shared
+    // candidates with you" en vez del fallback "A recruiting firm").
+    let firmName: string | undefined = undefined;
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { name: true },
+      });
+      firmName = org?.name || undefined;
+    } catch {}
+
     try {
       await sendClientSetPasswordEmail({
         to: rawEmail,
         setPasswordUrl,
         clientName: clientUser.name,
+        firmName,
       });
     } catch (e) {
       console.error("[quick-invite] set-password email failed:", e);
@@ -194,7 +211,7 @@ export async function POST(request: Request) {
     );
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message },
+      { error: safeErrorMessage(error) },
       { status: error.message?.startsWith("Unauthorized") ? 401 : 500 }
     );
   }

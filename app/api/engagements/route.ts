@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { processPendingInvites } from "@/lib/process-pending-invites";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // List engagements visible to the current staffing user.
 //
@@ -120,6 +121,6 @@ export async function GET() {
 
     return NextResponse.json(enriched);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

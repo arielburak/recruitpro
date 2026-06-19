@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Generic personal calendar events that live alongside Interviews on
 // the /calendar grid. Outlook-style: follow-ups, reminders, internal
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(events);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -164,6 +165,6 @@ export async function POST(request: Request) {
     return NextResponse.json(event, { status: 201 });
   } catch (error: any) {
     console.error("Calendar event create error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

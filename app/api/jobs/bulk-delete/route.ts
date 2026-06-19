@@ -2,16 +2,25 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Bulk-delete jobs. Body: { ids: string[] }.
 //
-// Same scoping pattern as the candidate bulk-delete: filter ids by
-// ctx.organizationId before the delete, return the actual deleted
-// count. Job cascade fans through to pipeline stages, submissions,
-// interviews, documents, firm engagements, etc.
+// RBAC (decisión 2026-06-19 con Nicolás + Ari):
+// - Acceso al endpoint: ADMIN-only (requireAdminResponse).
+// - Como ADMIN ahora tiene bypass total a todos los jobs del org, no
+//   filtramos por assignment. Cualquier job del org en la lista de
+//   ids se borra. Único filter: org match para no permitir cross-org
+//   delete via id arbitrario.
+//
+// Cascade: el delete fans a pipeline stages, submissions, interviews,
+// documents, firm engagements, etc.
 export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const body = await request.json();
     const ids: string[] = Array.isArray(body?.ids)
       ? body.ids.filter((x: unknown): x is string => typeof x === "string")
@@ -20,18 +29,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ deleted: 0 });
     }
 
-    const owned = await prisma.job.findMany({
-      where: { id: { in: ids }, organizationId: ctx.organizationId },
+    const accessible = await prisma.job.findMany({
+      where: {
+        id: { in: ids },
+        organizationId: ctx.organizationId,
+      },
       select: { id: true },
     });
-    const ownedIds = owned.map((j) => j.id);
-    if (ownedIds.length === 0) {
-      return NextResponse.json({ deleted: 0 });
+    const accessibleIds = accessible.map((j) => j.id);
+    if (accessibleIds.length === 0) {
+      return NextResponse.json({ deleted: 0, skipped: ids.length });
     }
 
     const res = await prisma.job.deleteMany({
-      where: { id: { in: ownedIds } },
+      where: { id: { in: accessibleIds } },
     });
+    const skipped = ids.length - res.count;
 
     await logActivity({
       action: "job.bulk_deleted",
@@ -40,8 +53,8 @@ export async function POST(request: Request) {
       organizationId: ctx.organizationId,
     });
 
-    return NextResponse.json({ deleted: res.count });
+    return NextResponse.json({ deleted: res.count, skipped });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -22,6 +22,8 @@ import {
   UserCheck,
   MoreHorizontal,
 } from "lucide-react";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 // Standalone page for the client team — surfaced as a first-class
 // nav item ("My Team") rather than buried in /settings. The flow is
@@ -72,6 +74,8 @@ export default function MyTeamPage() {
     email: string;
   } | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [removingMember, setRemovingMember] = useState<{ id: string; name: string } | null>(null);
+  const [cancellingInvite, setCancellingInvite] = useState<{ id: string; email: string } | null>(null);
 
   async function fetchTeam() {
     try {
@@ -166,27 +170,20 @@ export default function MyTeamPage() {
   }
 
   async function removeMember(memberId: string) {
-    if (!confirm("Remove this team member? This cannot be undone.")) return;
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to remove");
+      showToast(data.error || "Failed to remove");
     }
     setMemberMenu(null);
     fetchTeam();
   }
 
-  async function cancelInvite(memberId: string, email: string) {
-    if (
-      !confirm(
-        `Cancel invite for ${email}? They won't be able to use any previously sent link.`
-      )
-    )
-      return;
+  async function cancelInvite(memberId: string) {
     const res = await fetch(`/api/client-portal/team/${memberId}`, { method: "DELETE" });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to cancel invite");
+      showToast(data.error || "Failed to cancel invite");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -200,16 +197,16 @@ export default function MyTeamPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to resend invite");
+        showToast(data.error || "Failed to resend invite");
       } else {
-        alert(
+        showToast(
           data.emailSent
             ? "Invite resent."
             : "Invite link refreshed (email delivery failed — copy the link manually)."
         );
       }
     } catch {
-      alert("Something went wrong");
+      showToast("Something went wrong");
     }
     setResendingId(null);
     setMemberMenu(null);
@@ -223,7 +220,7 @@ export default function MyTeamPage() {
     });
     if (!res.ok) {
       const data = await res.json();
-      alert(data.error || "Failed to change role");
+      showToast(data.error || "Failed to change role");
     }
     setMemberMenu(null);
     fetchTeam();
@@ -488,7 +485,10 @@ export default function MyTeamPage() {
                                         : "Resend invite"}
                                     </button>
                                     <button
-                                      onClick={() => cancelInvite(member.id, member.email)}
+                                      onClick={() => {
+                                        setMemberMenu(null);
+                                        setCancellingInvite({ id: member.id, email: member.email });
+                                      }}
                                       className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                     >
                                       <X className="h-3.5 w-3.5" /> Cancel invite
@@ -534,7 +534,10 @@ export default function MyTeamPage() {
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => removeMember(member.id)}
+                                      onClick={() => {
+                                        setMemberMenu(null);
+                                        setRemovingMember({ id: member.id, name: member.name || member.email || "this team member" });
+                                      }}
                                       className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                     >
                                       <X className="h-3.5 w-3.5" /> Remove
@@ -553,6 +556,28 @@ export default function MyTeamPage() {
           )}
         </CardContent>
       </Card>
+
+      <DeleteConfirmDialog
+        open={!!removingMember}
+        onOpenChange={(open) => { if (!open) setRemovingMember(null); }}
+        itemLabel={removingMember?.name || ""}
+        onConfirm={async () => {
+          if (removingMember) await removeMember(removingMember.id);
+          setRemovingMember(null);
+        }}
+        confirmLabel="Yes, remove from team"
+      />
+
+      <DeleteConfirmDialog
+        open={!!cancellingInvite}
+        onOpenChange={(open) => { if (!open) setCancellingInvite(null); }}
+        itemLabel={`the invitation to ${cancellingInvite?.email || ""}`}
+        onConfirm={async () => {
+          if (cancellingInvite) await cancelInvite(cancellingInvite.id);
+          setCancellingInvite(null);
+        }}
+        confirmLabel="Yes, cancel invitation"
+      />
     </div>
   );
 }

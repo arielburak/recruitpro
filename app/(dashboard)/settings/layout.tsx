@@ -16,7 +16,7 @@ type TabDef = {
 const TABS: TabDef[] = [
   { label: "Profile", href: "/settings/profile", icon: User },
   { label: "Integrations", href: "/settings/integrations", icon: Plug },
-  { label: "Team", href: "/settings/team", icon: Users, adminOnly: true },
+  { label: "Team", href: "/settings/team", icon: Users },
   { label: "Organization", href: "/settings/organization", icon: Building2, adminOnly: true },
   { label: "Billing", href: "/settings/billing", icon: CreditCard, adminOnly: true },
 ];

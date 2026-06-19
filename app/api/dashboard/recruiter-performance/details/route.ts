@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Per-recruiter drill-down for the Recruiter Performance widget.
 //
@@ -36,6 +37,10 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+    // Re-bind to a non-nullable local so the narrowing survives into
+    // the helper closure below — TS doesn't always carry control-flow
+    // narrowing across an `async function` declaration boundary.
+    const userId: string = recruiterId;
 
     const now = new Date();
     const from = fromParam ? new Date(fromParam) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -44,66 +49,118 @@ export async function GET(request: NextRequest) {
     // Confirm the recruiter belongs to the caller's org so a hand-
     // crafted request can't list activity from a different firm.
     const recruiter = await prisma.user.findFirst({
-      where: { id: recruiterId, organizationId: ctx.organizationId },
+      where: { id: userId, organizationId: ctx.organizationId },
       select: { id: true, name: true, email: true },
     });
     if (!recruiter) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (metric === "submissions") {
-      const rows = await prisma.candidateSubmission.findMany({
+      // Submissions list = the share-with-client events, not the raw
+      // CandidateSubmission rows. Each item is a moment the recruiter
+      // pushed a candidate to the client. We dedup by submissionId
+      // so a re-share inside the window only shows once (newest
+      // share kept since we sort desc). Legacy rows logged before
+      // the metric switched sources won't carry metadata
+      // submissionId — we fall back to the activity row id so they
+      // still appear, just without de-dup against potential
+      // re-shares of the same submission.
+      const rows = await prisma.activity.findMany({
         where: {
+          organizationId: ctx.organizationId,
+          action: "submission.shared",
           createdAt: { gte: from, lte: to },
-          candidate: { organizationId: ctx.organizationId, ownerId: recruiterId },
+          candidate: { ownerId: userId },
         },
         select: {
           id: true,
           createdAt: true,
-          isSharedWithClient: true,
+          description: true,
+          metadata: true,
           candidate: { select: { id: true, firstName: true, lastName: true } },
-          job: { select: { id: true, title: true, client: { select: { name: true } } } },
-          stage: { select: { name: true } },
         },
         orderBy: { createdAt: "desc" },
       });
-      return NextResponse.json({ metric, recruiter, items: rows });
-    }
 
-    if (metric === "interviews") {
-      const rows = await prisma.interview.findMany({
-        where: {
-          organizationId: ctx.organizationId,
-          startTime: { gte: from, lte: to },
-          candidate: { ownerId: recruiterId },
-        },
-        select: {
-          id: true,
-          title: true,
-          startTime: true,
-          status: true,
-          type: true,
-          candidate: { select: { id: true, firstName: true, lastName: true } },
-          job: { select: { id: true, title: true, client: { select: { name: true } } } },
-        },
-        orderBy: { startTime: "desc" },
+      // Resolve the related submission (job + stage) for each event.
+      // Rows logged before this switch don't carry submissionId; for
+      // those we surface what we can scrape from the description and
+      // leave job/stage blank rather than hitting the DB blindly.
+      const SHARE_TITLE_RX = / with (.+?)'s client$/;
+      const items = await Promise.all(
+        rows.map(async (a) => {
+          const meta = (a.metadata as { submissionId?: string } | null) || {};
+          let candidateSubmissionId: string | null = meta?.submissionId || null;
+          let jobInfo: { id: string; title: string; client: { name: string } | null } | null = null;
+          let stage: { name: string } | null = null;
+          let isSharedWithClient = true;
+          if (candidateSubmissionId) {
+            const sub = await prisma.candidateSubmission.findUnique({
+              where: { id: candidateSubmissionId },
+              select: {
+                isSharedWithClient: true,
+                stage: { select: { name: true } },
+                job: { select: { id: true, title: true, client: { select: { name: true } } } },
+              },
+            });
+            // Submission might have been deleted since the share — keep
+            // the row but degrade the metadata; the recruiter still
+            // gets credit for the share event.
+            jobInfo = sub?.job || null;
+            stage = sub?.stage || null;
+            // Note: we report isSharedWithClient = true because this
+            // list represents share events; the current toggle state
+            // is irrelevant to whether the share happened.
+            isSharedWithClient = true;
+          }
+          // Legacy fallback: scrape the job title from the canonical
+          // description shape. No clientName available without the
+          // submission row.
+          if (!jobInfo) {
+            const m = SHARE_TITLE_RX.exec(a.description || "");
+            const fallbackTitle = m?.[1] || "—";
+            jobInfo = { id: "", title: fallbackTitle, client: null };
+          }
+          return {
+            id: a.id,
+            createdAt: a.createdAt,
+            isSharedWithClient,
+            candidate: a.candidate,
+            job: jobInfo,
+            stage,
+            submissionId: candidateSubmissionId,
+          };
+        }),
+      );
+
+      // One row per submission — drop duplicate share events for the
+      // same submissionId (newer kept since we sorted desc). Legacy
+      // rows without submissionId stay as-is (keyed by activity id).
+      const seen = new Set<string>();
+      const deduped = items.filter((it) => {
+        const key = it.submissionId ? `s:${it.submissionId}` : `a:${it.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-      return NextResponse.json({ metric, recruiter, items: rows });
+
+      return NextResponse.json({ metric, recruiter, items: deduped });
     }
 
-    if (metric === "offers") {
-      // Mirror the aggregate's semantic: every move INTO Offered in
-      // the window counts, regardless of where the submission sits
-      // now. Pull the matching Activity rows + their candidates;
-      // legacy-compat with description-only logs is the same OR
-      // we use in the count query.
+    // Stage-transition drill-downs (Interviews + Offers). Both metrics
+    // count distinct submissions that entered a target stage in the
+    // window. Same query shape, same dedup logic — just the stage
+    // name differs. Pulled into a helper so the two endpoints stay
+    // in lock-step.
+    async function stageTransitionItems(toStage: string) {
       const rows = await prisma.activity.findMany({
         where: {
           organizationId: ctx.organizationId,
           action: "submission.stage_changed",
           createdAt: { gte: from, lte: to },
-          candidate: { ownerId: recruiterId },
+          candidate: { ownerId: userId },
           OR: [
-            { metadata: { path: ["toStage"], equals: "Offered" } },
-            { description: { contains: 'to "Offered" in' } },
+            { metadata: { path: ["toStage"], equals: toStage } },
+            { description: { contains: `to "${toStage}" in` } },
           ],
         },
         select: {
@@ -118,11 +175,12 @@ export async function GET(request: NextRequest) {
       // Normalise to a stable shape — the drill-down UI doesn't need
       // to know whether the row came from structured metadata or
       // from parsing the description. The job title is recoverable
-      // either way (metadata.jobId resolves through the Submission;
-      // legacy rows have the title quoted inside `description`).
+      // either way (metadata.submissionId resolves through the
+      // Submission; legacy rows have the title quoted inside the
+      // description).
       const items = await Promise.all(
         rows.map(async (a) => {
-          const meta = (a.metadata as any) || {};
+          const meta = (a.metadata as { submissionId?: string } | null) || {};
           let jobTitle: string | null = null;
           let jobId: string | null = null;
           let clientName: string | null = null;
@@ -147,7 +205,7 @@ export async function GET(request: NextRequest) {
           }
           return {
             id: a.id,
-            offeredAt: a.createdAt,
+            enteredStageAt: a.createdAt,
             candidate: a.candidate,
             jobId,
             jobTitle,
@@ -157,13 +215,13 @@ export async function GET(request: NextRequest) {
         }),
       );
       // Dedup same as the aggregate count: one row per submission.
-      // A candidate bounced in/out of Offered on the same job shows
-      // once, with the most recent transition kept (rows are
-      // already sorted desc by createdAt). The synthetic key for
-      // legacy rows combines candidate + job title so two distinct
-      // jobs for the same candidate still both appear.
+      // A candidate bounced in/out of the stage on the same job shows
+      // once, with the most recent transition kept (rows are already
+      // sorted desc by createdAt). The synthetic key for legacy rows
+      // combines candidate + job title so two distinct jobs for the
+      // same candidate still both appear.
       const seen = new Set<string>();
-      const deduped = items.filter((it) => {
+      return items.filter((it) => {
         const key = it.submissionId
           ? `s:${it.submissionId}`
           : `c:${it.candidate?.id || ""}|j:${it.jobTitle || ""}`;
@@ -171,6 +229,15 @@ export async function GET(request: NextRequest) {
         seen.add(key);
         return true;
       });
+    }
+
+    if (metric === "interviews") {
+      const deduped = await stageTransitionItems("Interviewing");
+      return NextResponse.json({ metric, recruiter, items: deduped });
+    }
+
+    if (metric === "offers") {
+      const deduped = await stageTransitionItems("Offered");
       return NextResponse.json({ metric, recruiter, items: deduped });
     }
 
@@ -183,14 +250,14 @@ export async function GET(request: NextRequest) {
           organizationId: ctx.organizationId,
           updatedAt: { gte: from, lte: to },
           OR: [
-            { recruiterId },
+            { recruiterId: userId },
             // Fallback: no override AND candidate is owned by the
             // recruiter. The null check on recruiterId avoids double-
             // counting a placement that was explicitly attributed to
             // someone else but whose candidate is owned by this user.
             {
               recruiterId: null,
-              submission: { candidate: { ownerId: recruiterId } },
+              submission: { candidate: { ownerId: userId } },
             },
           ],
         },
@@ -217,6 +284,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ error: "Unknown metric" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

@@ -5,6 +5,8 @@ import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail } from "@/lib/email";
 import { addAttendeeToGoogleEvent, getValidAccessToken } from "@/lib/google-calendar";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -48,6 +50,17 @@ export async function GET(
                 stages: {
                   select: { id: true, name: true, color: true, order: true },
                   orderBy: { order: "asc" },
+                },
+                // Defense-in-depth for ROADMAP.md #3: include this
+                // user's JobAssignment for each submission's job so
+                // the candidate page can hide the stage selector +
+                // share toggle on jobs the user isn't on. Server still
+                // enforces in /api/submissions/[id] (PATCH/DELETE),
+                // this just stops the UI from offering a control that
+                // would 404.
+                assignments: {
+                  where: { userId: ctx.userId },
+                  select: { userId: true },
                 },
               },
             },
@@ -125,7 +138,7 @@ export async function GET(
 
     return NextResponse.json(candidate);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -153,12 +166,37 @@ export async function PUT(
     const newEmail = data.email?.toLowerCase().trim() || "";
     const emailChanged = !!newEmail && newEmail !== oldEmail;
 
+    // Resolve owner the same way the POST does: only honor an
+    // ownerId that belongs to this org. A stale dropdown value or
+    // a tampered request body can't shove the candidate into a
+    // foreign tenant. If the supplied id doesn't match, we keep
+    // the existing owner instead of silently downgrading to the
+    // current actor.
+    //
+    // Changing the owner is purely forward-looking: past Placement
+    // rows keep their own recruiterId (separate field), so reporting
+    // by-recruiter on historical placements stays accurate.
+    let resolvedOwnerId: string | undefined = undefined;
+    if (data.ownerId) {
+      const owner = await prisma.user.findFirst({
+        where: { id: data.ownerId, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (owner) resolvedOwnerId = owner.id;
+    }
+    // Strip ownerId before spreading — we handle it explicitly
+    // through resolvedOwnerId below so a foreign-org id can't slip
+    // into the update via the rest payload.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { ownerId: _ignored, ...updateData } = data;
+
     const candidate = await prisma.candidate.updateMany({
       where: { id, organizationId: ctx.organizationId },
       data: {
-        ...data,
+        ...updateData,
         currentSalary: data.currentSalary ?? null,
         desiredSalary: data.desiredSalary ?? null,
+        ...(resolvedOwnerId ? { ownerId: resolvedOwnerId } : {}),
       },
     });
 
@@ -192,7 +230,7 @@ export async function PUT(
         },
         include: {
           job: { select: { title: true, client: { select: { name: true } } } },
-          creator: { select: { name: true } },
+          creator: { select: { name: true, email: true } },
         },
       });
 
@@ -256,6 +294,7 @@ export async function PUT(
               location: iv.location || undefined,
               notes: iv.notes || undefined,
               recruiterName: iv.creator?.name || ctx.userName,
+              recruiterEmail: iv.creator?.email || ctx.userEmail || undefined,
             });
             emailResentCount++;
           } catch (emailErr) {
@@ -302,28 +341,55 @@ export async function PUT(
         { status: 400 }
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
-    const deleted = await prisma.candidate.deleteMany({
-      where: { id, organizationId: ctx.organizationId },
-    });
+    // Opt-out for "keep historical metrics". Default behaviour:
+    // candidate delete cascades to Activity (schema FK is ON DELETE
+    // CASCADE), wiping their entire history. If the caller wants to
+    // preserve dashboard metrics (e.g. "Juan left but his Q1
+    // interviews still count toward my performance"), they pass
+    // ?keepMetrics=true and we orphan the rows by nulling candidateId
+    // BEFORE the delete. Once the FK is null'd, the cascade no longer
+    // reaches those rows, and the dashboard fallback (description
+    // regex) still credits them to the actor.
+    const url = new URL(request.url);
+    const keepMetrics = url.searchParams.get("keepMetrics") === "true";
 
-    if (deleted.count === 0) {
+    // Verify ownership before any mutation so we don't half-orphan
+    // Activity rows for a candidate that doesn't belong to this org.
+    const exists = await prisma.candidate.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { id: true },
+    });
+    if (!exists) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    if (keepMetrics) {
+      await prisma.activity.updateMany({
+        where: { candidateId: id, organizationId: ctx.organizationId },
+        data: { candidateId: null },
+      });
+    }
+
+    await prisma.candidate.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true, keptMetrics: keepMetrics });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

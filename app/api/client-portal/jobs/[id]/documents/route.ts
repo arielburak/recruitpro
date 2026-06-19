@@ -3,6 +3,8 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([
@@ -49,7 +51,7 @@ export async function GET(
 
     return NextResponse.json(withDownload);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -165,7 +167,7 @@ export async function POST(
     }, { status: 201 });
   } catch (error: any) {
     console.error("Client job document upload error:", error);
-    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) || "Upload failed" }, { status: 500 });
   }
 }
 
@@ -175,6 +177,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getClientContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
     const url = new URL(request.url);
     const documentId = url.searchParams.get("documentId");
@@ -217,6 +221,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

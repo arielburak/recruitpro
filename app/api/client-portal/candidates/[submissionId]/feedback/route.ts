@@ -4,6 +4,7 @@ import { getClientContext } from "@/lib/tenant";
 import { notifyOnNewComment } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
 import { accessibleAgencyJobIds, type ClientCtx } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Helper: verify the submission belongs to this client AND is shared
 // AND lives on an agency Job the caller is a member of (or which sits
@@ -11,11 +12,15 @@ import { accessibleAgencyJobIds, type ClientCtx } from "@/lib/client-job-access"
 async function verifyAccess(submissionId: string, ctx: ClientCtx) {
   const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
   if (visibleAgencyJobIds.length === 0) return false;
+  // Multi-firm support: sin `job.clientId === ctx.clientId`. Cada
+  // agencia tiene su propio Client record, asi que filtrar por
+  // ctx.clientId solo matchea la primera. El gate correcto es
+  // `jobId IN visibleAgencyJobIds`, que sale de ACCEPTED engagements
+  // en ClientJobs accesibles.
   const submission = await prisma.candidateSubmission.findFirst({
     where: {
       id: submissionId,
       isSharedWithClient: true,
-      job: { clientId: ctx.clientId },
       jobId: { in: visibleAgencyJobIds },
     },
     select: { id: true },
@@ -70,7 +75,7 @@ export async function GET(
 
     return NextResponse.json({ ratings, comments });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -146,6 +151,7 @@ export async function POST(
         authorKind: "client",
         authorId: ctx.clientUserId,
         authorName: ctx.userName || "A teammate",
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) => console.error("[client feedback POST] notify failed:", e));
 
       // Activity log: only surface CLIENT_VISIBLE posts on the
@@ -185,6 +191,6 @@ export async function POST(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { clientJobAccessWhere } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -15,8 +16,12 @@ export async function GET() {
         select: { name: true, industry: true, isStub: true },
       }),
       prisma.clientJob.findMany({
-        // Per-JO visibility: admins see everything; non-admins see
-        // jobs they're a member of (or legacy jobs with no member list).
+        // Per-JO visibility: a ClientUser sees the JO only when
+        // they're an explicit member (ClientJobMember row). No
+        // admin bypass, no "any candidates shared" relaxation —
+        // the user flagged that a Job they were assigned to as a
+        // recruiter but had not invited any contact for was still
+        // showing up. WhatsApp-group rule: invited or nothing.
         where: clientJobAccessWhere(ctx),
         include: {
           _count: { select: { engagements: true } },
@@ -28,16 +33,29 @@ export async function GET() {
         },
         orderBy: { createdAt: "desc" },
       }),
-      // Agency-created Jobs running under this same Client. These never
-      // landed in the portal before because the dashboard only listed
-      // ClientJob (jobs the hiring company posted themselves). When a
-      // recruiter creates a Job in /jobs/new under Client X, the
-      // ClientUsers of Client X had no surface to see it on — only the
-      // candidates that came out of it via /client-portal/candidates.
-      // Surface them as "Active Searches" so the hiring manager knows
-      // their recruiter is working on something.
+      // Agency-created Jobs running under this same Client. They
+      // only surface here when the ClientUser is a member of the
+      // ClientJob mirror (gated through the FirmEngagement → mirror
+      // → members chain). Without this filter every Job whose
+      // clientId matched leaked into the portal regardless of
+      // whether the ClientUser had been invited to it — exactly
+      // the bug the user flagged.
+      // Multi-firm: sin clientId: ctx.clientId. Cuando 2 agencias
+      // trabajan el mismo ClientJob, cada Job creado por ellas tiene
+      // su propio Client record (audit metadata, NO authoritative).
+      // El gate de membership via firmEngagements.clientJob.members
+      // ya hace el trabajo correcto.
       prisma.job.findMany({
-        where: { clientId: ctx.clientId },
+        where: {
+          firmEngagements: {
+            some: {
+              status: "ACCEPTED",
+              clientJob: {
+                members: { some: { clientUserId: ctx.clientUserId } },
+              },
+            },
+          },
+        },
         select: {
           id: true,
           title: true,
@@ -53,11 +71,22 @@ export async function GET() {
         },
         orderBy: { createdAt: "desc" },
       }),
-      // Count candidates shared with this client across all recruiter firms
+      // Count candidates shared with this client across all recruiter
+      // firms. Multi-firm: el gate correcto es el firmEngagement chain
+      // (job.firmEngagements ACCEPTED.clientJob.clientId === ctx.clientId)
+      // en vez de job.clientId, ya que cada agencia tiene su propio
+      // Client record para el mismo cliente real.
       prisma.candidateSubmission.count({
         where: {
           isSharedWithClient: true,
-          job: { clientId: ctx.clientId },
+          job: {
+            firmEngagements: {
+              some: {
+                status: "ACCEPTED",
+                clientJob: { clientId: ctx.clientId },
+              },
+            },
+          },
         },
       }),
       // Count UNIQUE accepted firms (one firm on three jobs = 1, not 3).
@@ -109,6 +138,6 @@ export async function GET() {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

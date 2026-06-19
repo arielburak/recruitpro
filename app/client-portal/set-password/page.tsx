@@ -25,6 +25,12 @@ function SetPasswordForm() {
   const [isStub, setIsStub] = useState(false);
   const [stubCompanyName, setStubCompanyName] = useState("");
   const [stubIndustry, setStubIndustry] = useState("");
+  // Hiring contact's own name + role. We always ask — even when the
+  // recruiter pre-filled them on the invite, the contact should
+  // confirm so we don't carry typos through the portal. Pre-filled
+  // from the invite payload when available.
+  const [userName, setUserName] = useState("");
+  const [userTitle, setUserTitle] = useState("");
 
   useEffect(() => {
     if (!token || !email) return;
@@ -36,6 +42,8 @@ function SetPasswordForm() {
           setStubCompanyName(data.currentName === "New Client" ? "" : data.currentName || "");
           setStubIndustry(data.currentIndustry || "");
         }
+        if (typeof data?.currentUserName === "string") setUserName(data.currentUserName);
+        if (typeof data?.currentUserTitle === "string") setUserTitle(data.currentUserTitle);
       })
       .catch(() => {});
   }, [token, email]);
@@ -67,6 +75,17 @@ function SetPasswordForm() {
       return;
     }
 
+    if (!userName.trim()) {
+      setError("Your full name is required");
+      setLoading(false);
+      return;
+    }
+    if (!userTitle.trim()) {
+      setError("Your role is required");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/client-portal/set-password", {
         method: "POST",
@@ -75,6 +94,8 @@ function SetPasswordForm() {
           token,
           email,
           password,
+          userName: userName.trim(),
+          userTitle: userTitle.trim(),
           ...(isStub
             ? { companyName: stubCompanyName.trim(), industry: stubIndustry.trim() }
             : {}),
@@ -174,6 +195,29 @@ function SetPasswordForm() {
                 </div>
               </>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="userName">Your Full Name *</Label>
+              <Input
+                id="userName"
+                name="userName"
+                placeholder="Jane Smith"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="userTitle">Your Role *</Label>
+              <Input
+                id="userTitle"
+                name="userTitle"
+                placeholder="e.g. Hiring Manager, Head of Engineering"
+                value={userTitle}
+                onChange={(e) => setUserTitle(e.target.value)}
+                required
+              />
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { isInvitedUserVisible, isUserVisible } from "@/lib/firm-engagement-visibility";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 type Status = "accepted" | "pending" | "declined" | "email_sent";
 
@@ -41,6 +43,22 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const clientJobId = url.searchParams.get("clientJobId");
 
+    // Defensive: never surface this client's own portal members as
+    // recruiter suggestions. The write-side check in invite-firm
+    // already rejects creating an engagement against an own-team email,
+    // but legacy rows can have it set (the dirty data we cleaned up
+    // 2026-06-09 was exactly this case). Treating own-team emails as
+    // banned at read-time keeps the dropdown trustworthy even if a
+    // stray row sneaks in via OAuth claim or import.
+    const ownTeamEmails = new Set(
+      (
+        await prisma.clientUser.findMany({
+          where: { clientId: ctx.clientId },
+          select: { email: true },
+        })
+      ).map((u) => u.email.toLowerCase())
+    );
+
     const [personEngagements, legacyEngagements, pending, workedJobs] = await Promise.all([
       prisma.firmEngagement.findMany({
         where: {
@@ -52,8 +70,14 @@ export async function GET(request: Request) {
           invitedEmail: true,
           invitedAt: true,
           status: true,
+          // organizationId del engagement va al lado del invitedUser
+          // para que el helper isInvitedUserVisible compare org-mismatch
+          // (bug aburak) sin segundo query.
+          organizationId: true,
           organization: { select: { name: true } },
-          invitedUser: { select: { name: true, email: true } },
+          invitedUser: {
+            select: { name: true, email: true, organizationId: true, isActive: true },
+          },
         },
         orderBy: { invitedAt: "desc" },
       }),
@@ -100,13 +124,17 @@ export async function GET(request: Request) {
           organization: { select: { name: true } },
           assignments: {
             select: {
-              user: { select: { email: true, name: true } },
+              // isActive viaja con el user para filtrar abajo. Asi
+              // un recruiter soft-released no aparece en el dropdown
+              // del cliente aunque siga teniendo JobAssignment rows
+              // viejos en la DB.
+              user: { select: { email: true, name: true, isActive: true } },
             },
           },
           submissions: {
             select: {
               createdAt: true,
-              submitter: { select: { email: true, name: true } },
+              submitter: { select: { email: true, name: true, isActive: true } },
             },
           },
         },
@@ -163,6 +191,11 @@ export async function GET(request: Request) {
     for (const e of personEngagements) {
       const email = (e.invitedEmail || "").toLowerCase();
       if (!email) continue;
+      // ROADMAP P1 (QA walkthrough 2026-06-16): mismo filtro que
+      // aplica el componente Assigned Firms. Rechaza engagements donde
+      // el invitedUser cargado existe pero esta inactivo o apunta a
+      // otra org (data corrupta).
+      if (!isInvitedUserVisible(e.invitedUser, e.organizationId)) continue;
       upsert(email, {
         key: email,
         email,
@@ -201,7 +234,10 @@ export async function GET(request: Request) {
       // dedupes by email.
       const userTouchpoints: { email: string; name: string; ts: Date }[] = [];
       for (const a of j.assignments) {
-        if (a.user?.email) {
+        // Skip inactive — un recruiter soft-released ya no debería ser
+        // sugerido al cliente como contacto. Mismo criterio que la
+        // card de Assigned Firms y la rama personEngagements arriba.
+        if (a.user?.email && isUserVisible(a.user)) {
           userTouchpoints.push({
             email: a.user.email,
             name: a.user.name || "",
@@ -210,7 +246,7 @@ export async function GET(request: Request) {
         }
       }
       for (const s of j.submissions) {
-        if (s.submitter?.email) {
+        if (s.submitter?.email && isUserVisible(s.submitter)) {
           userTouchpoints.push({
             email: s.submitter.email,
             name: s.submitter.name || "",
@@ -264,12 +300,12 @@ export async function GET(request: Request) {
       });
     }
 
-    const suggestions = Array.from(byKey.values()).sort((a, b) =>
-      b.lastInvitedAt.localeCompare(a.lastInvitedAt)
-    );
+    const suggestions = Array.from(byKey.values())
+      .filter((s) => !s.email || !ownTeamEmails.has(s.email))
+      .sort((a, b) => b.lastInvitedAt.localeCompare(a.lastInvitedAt));
 
     return NextResponse.json(suggestions);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

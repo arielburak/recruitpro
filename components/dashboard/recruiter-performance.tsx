@@ -342,7 +342,7 @@ export function RecruiterPerformance() {
           value={data?.totals.interviews ?? 0}
           prior={data?.prior?.totals.interviews ?? null}
           loading={loading}
-          tooltip="Interviews scheduled with a start time in this period, for candidates owned by the recruiter."
+          tooltip="Distinct candidate-job submissions that entered the Interviewing stage in this period — counted once per submission, even if multiple interview events were scheduled. Scheduling a calendar interview does NOT bump this on its own; only the kanban stage transition does."
         />
         <TotalTile
           icon={Handshake}
@@ -396,7 +396,7 @@ export function RecruiterPerformance() {
                     active={sortBy === "interviews"}
                     dir={sortDir}
                     onClick={() => toggleSort("interviews")}
-                    tooltip="Interviews scheduled with a start time in the period, for candidates owned by this recruiter."
+                    tooltip="Distinct submissions that entered the Interviewing stage in this period. Booking a calendar interview doesn't bump this — only the kanban stage transition counts. Dedup per submission so back-and-forth on the same job stays single-count."
                   />
                   <SortableHeader
                     label="Offers"
@@ -415,11 +415,11 @@ export function RecruiterPerformance() {
                     tooltip="Placements created in the period. Placement's Recruiter override wins; otherwise attributed to the candidate's owner."
                   />
                   <SortableHeader
-                    label="Conv %"
+                    label="Placement %"
                     active={sortBy === "conversionPct"}
                     dir={sortDir}
                     onClick={() => toggleSort("conversionPct")}
-                    tooltip="Conversion rate: Placements ÷ Submissions × 100. How often a candidate this recruiter put forward ends up placed."
+                    tooltip="Placements ÷ Submissions × 100. Of every 100 candidates this recruiter sent to a client, how many ended up placed."
                   />
                 </tr>
               </thead>

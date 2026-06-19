@@ -25,12 +25,26 @@ export default function InvitePage({
     fetch(`/api/invite/${token}`)
       .then((res) => res.json())
       .then((data) => {
+        // Caso "ya acepté antes y volví a clickear el mail": el link
+        // tiene que seguir siendo util en vez de un dead-end. Redirect
+        // al login con email precargado + flag para mostrar banner
+        // amigable. Reemplazamos en history para que el back del browser
+        // no devuelva al invite ya usado.
+        if (data.alreadyAccepted) {
+          const qs = new URLSearchParams({
+            portal: "agency",
+            email: data.email || "",
+            from: "invite-used",
+          });
+          router.replace(`/login?${qs.toString()}`);
+          return;
+        }
         if (data.error) setError(data.error);
         else setInvite(data);
       })
       .catch(() => setError("Failed to load invitation"))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, router]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -38,6 +52,16 @@ export default function InvitePage({
     setError("");
 
     const formData = new FormData(e.currentTarget);
+    const password = formData.get("password") as string;
+    const confirmPassword = formData.get("confirmPassword") as string;
+    // Match the other signup paths (/register, set-password,
+    // reset-password) — explicit confirm so a typo doesn't lock the
+    // invitee out of their own account.
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/invite/${token}`, {
@@ -161,6 +185,17 @@ export default function InvitePage({
                 id="password"
                 name="password"
                 placeholder="Min. 8 characters"
+                minLength={8}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <PasswordInput
+                id="confirmPassword"
+                name="confirmPassword"
+                placeholder="Re-enter the same password"
                 minLength={8}
                 required
               />

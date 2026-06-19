@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Label } from "@/components/ui/label";
 import { Paperclip, Upload, FileText, X, Download } from "lucide-react";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // Attachments panel for an interview — list of files pinned to it
 // plus an upload button. Shared MIME/size policy with the other
@@ -24,10 +26,14 @@ function formatBytes(bytes: number) {
 }
 
 export function InterviewAttachments({ interviewId }: { interviewId: string }) {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [deletingDoc, setDeletingDoc] = useState<{ id: string; name: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -67,7 +73,6 @@ export function InterviewAttachments({ interviewId }: { interviewId: string }) {
   }
 
   async function remove(id: string) {
-    if (!confirm("Remove this attachment?")) return;
     await fetch(`/api/documents/${id}`, { method: "DELETE" });
     await load();
   }
@@ -127,18 +132,31 @@ export function InterviewAttachments({ interviewId }: { interviewId: string }) {
               >
                 <Download className="h-3 w-3" />
               </a>
-              <button
-                type="button"
-                onClick={() => remove(d.id)}
-                className="p-1 rounded text-gray-400 hover:text-red-600"
-                title="Remove"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setDeletingDoc({ id: d.id, name: d.name })}
+                  className="p-1 rounded text-gray-400 hover:text-red-600"
+                  title="Remove"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
+        itemLabel={deletingDoc?.name || ""}
+        itemKind="attachment"
+        onConfirm={async () => {
+          if (deletingDoc) await remove(deletingDoc.id);
+          setDeletingDoc(null);
+        }}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

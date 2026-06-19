@@ -3,11 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { canAccessJob } from "@/lib/job-access";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { getValidAccessToken, createGoogleCalendarEvent } from "@/lib/google-calendar";
 import {
   getValidAccessToken as getMsAccessToken,
   createMicrosoftCalendarEvent,
 } from "@/lib/microsoft-calendar";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,17 +21,22 @@ export async function GET(request: NextRequest) {
     const end = searchParams.get("end");
     const status = searchParams.get("status");
 
-    // The calendar is a per-user view: each recruiter only sees the
-    // interviews they own (createdBy) or were invited to as an
-    // interviewer. The full org-wide list lives elsewhere (e.g. the
-    // job-level Interviews tab) where that wider scope makes sense.
+    // Calendar visibility (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: ve TODAS las interviews del org. Dueño del workspace,
+    //   tiene vista global. Consciente del trade-off: con N recruiters
+    //   activos el calendar puede saturarse, pero es lo que el ADMIN
+    //   quiere para coordinar / cubrir / supervisar.
+    // - USER: per-user. Solo ve las interviews que él creó (createdBy)
+    //   o donde figura como interviewer.
     const where: any = {
       organizationId: ctx.organizationId,
-      OR: [
+    };
+    if (ctx.role !== "ADMIN") {
+      where.OR = [
         { createdBy: ctx.userId },
         { interviewers: { some: { userId: ctx.userId } } },
-      ],
-    };
+      ];
+    }
 
     if (start && end) {
       where.startTime = {
@@ -62,13 +71,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(interviews);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const {
@@ -111,6 +123,14 @@ export async function POST(request: Request) {
 
     if (!submission) {
       return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+    }
+
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total, puede agendar en cualquier job del org.
+    // - USER: solo en jobs en los que figura como JobAssignment.
+    // canAccessJob recibe ctx.role para aplicar la regla nueva.
+    if (!(await canAccessJob(jobId, ctx.organizationId, ctx.userId, ctx.role))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const interviewTz = timezone || "America/Argentina/Buenos_Aires";
@@ -327,12 +347,22 @@ export async function POST(request: Request) {
       },
     });
 
+    // Hardening del contador de Interviews (#9 del roadmap): siempre
+    // stampear submissionId + interviewId en metadata. La dedup del
+    // dashboard usa estos campos — sin ellos, si el candidato se borra
+    // (cascade arrastra Activity), las metricas de Interviews de
+    // periodos viejos pueden contar de menos por ambiguedad.
     await logActivity({
       action: "interview.scheduled",
       description: `${ctx.userName} scheduled interview "${title}" with ${interview.candidate.firstName} ${interview.candidate.lastName} for ${interview.job.title}`,
       userId: ctx.userId,
       candidateId,
       organizationId: ctx.organizationId,
+      metadata: {
+        interviewId: interview.id,
+        submissionId: submissionId || null,
+        jobId,
+      },
     });
 
     // Send invite emails — gated on notifyAttendees so the kanban
@@ -379,6 +409,7 @@ export async function POST(request: Request) {
           location: location || undefined,
           notes: notes || undefined,
           recruiterName: ctx.userName,
+          recruiterEmail: ctx.userEmail || undefined,
         });
       } catch (emailErr) {
         console.error("[interview] Failed to send candidate invite:", emailErr);
@@ -407,6 +438,7 @@ export async function POST(request: Request) {
               notes: notes || undefined,
               recruiterName: ctx.userName,
               firmName: org?.name || "Our recruiting team",
+              recruiterEmail: ctx.userEmail || undefined,
             });
           } catch (emailErr) {
             console.error(`[interview] Failed to send client contact invite to ${cc.contact.email}:`, emailErr);
@@ -417,7 +449,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(interview, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Interview create error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -2,23 +2,38 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { clientJobAccessWhere } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
     const ctx = await getClientContext();
 
     const jobs = await prisma.clientJob.findMany({
-      // Visibility scope: admins see all, non-admins see jobs they're
-      // a member of (plus legacy jobs with no member list). Centralized
-      // in clientJobAccessWhere so every list endpoint applies the
-      // same rule.
+      // Visibility scope: a ClientUser sees the JO only when they
+      // were explicitly invited to it (ClientJobMember row). No
+      // admin bypass, no "shared candidates" relaxation — the
+      // agency can create hundreds of jobs tagged to this client
+      // and none of them surface here until the recruiter actively
+      // invites this contact's email to a specific search.
       where: clientJobAccessWhere(ctx),
       include: {
         postedBy: { select: { name: true } },
         engagements: {
           include: {
             organization: { select: { name: true, id: true } },
-            invitedUser: { select: { id: true, name: true, email: true } },
+            // organizationId on the User itself is the live "where do
+            // they actually work today" signal — the engagement's
+            // organizationId is whatever firm they were AT when the
+            // invite was extended. We expose both so the client UI
+            // can hide stale rows where the recruiter has since moved
+            // (or where invitedUserId is null entirely — orphaned
+            // invites that never resolved to a real agency contact).
+            // isActive feed el filter del cliente: cuando un User se
+            // soft-deactiva (scramble del mail + isActive=false), la
+            // row de engagement queda apuntando al user inactivo. La
+            // UI filtra esos como si no existieran para no mostrar
+            // 'released+<id>@deleted.local' en el panel de firms.
+            invitedUser: { select: { id: true, name: true, email: true, organizationId: true, isActive: true } },
           },
         },
         // Email invites sent to people who haven't registered yet. We
@@ -28,17 +43,36 @@ export async function GET() {
           select: { id: true, email: true, message: true, createdAt: true },
         },
         // Visible members for the JO's chip strip on the dashboard /
-        // detail page. Empty list = "everyone on the team".
+        // detail page. Empty list = "everyone on the team". passwordHash
+        // + emailVerifiedAt come along so the UI can mark members who
+        // were invited but never activated as "pending" — gives the
+        // client a clear cancel affordance on the panel where they
+        // originally hit Invite.
         members: {
           select: {
-            clientUser: { select: { id: true, name: true, email: true, role: true } },
+            clientUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                passwordHash: true,
+                emailVerifiedAt: true,
+              },
+            },
           },
         },
-        // Chat-style notes thread for the client team (replaces the
-        // legacy `notes` string). CLIENT_INTERNAL by definition — the
-        // agency side never sees these rows.
+        // Chat-style notes thread for the ClientJob. Two tabs in the
+        // UI:
+        //   · CLIENT_INTERNAL → only the client team sees the row;
+        //     the agency is never notified.
+        //   · CLIENT_VISIBLE  → shared with the agency, who can
+        //     read and reply from /jobs/[id] Notes on their side.
+        // Author info comes via clientUser (when the client posted)
+        // OR user (when staffing did) so the chat can render the
+        // right name and avatar.
         comments: {
-          where: { type: "CLIENT_INTERNAL" },
+          where: { type: { in: ["CLIENT_INTERNAL", "CLIENT_VISIBLE"] } },
           orderBy: { createdAt: "asc" },
           select: {
             id: true,
@@ -48,6 +82,13 @@ export async function GET() {
             createdAt: true,
             clientUserId: true,
             clientUser: { select: { id: true, name: true, title: true } },
+            userId: true,
+            user: { select: { id: true, name: true } },
+            // jobId points at the agency-side Job for CLIENT_VISIBLE
+            // rows (CLIENT_INTERNAL is null). The client portal uses
+            // it to group "Shared with [agency]" threads by engagement
+            // — one tab per accepted firm.
+            jobId: true,
           },
         },
       },
@@ -114,8 +155,24 @@ export async function GET() {
           }
         }
 
+        // Strip passwordHash before shipping — the UI only needs the
+        // derived "isPending" boolean (member exists but never
+        // activated: no password set + email never verified). The
+        // hash itself stays server-side.
+        const sanitizedMembers = (job.members || []).map((m: any) => ({
+          clientUser: {
+            id: m.clientUser.id,
+            name: m.clientUser.name,
+            email: m.clientUser.email,
+            role: m.clientUser.role,
+            isPending:
+              !m.clientUser.passwordHash && !m.clientUser.emailVerifiedAt,
+          },
+        }));
+
         return {
           ...job,
+          members: sanitizedMembers,
           teamMembers: Array.from(teamMap.values()),
           firmCandidateCounts,
         };
@@ -124,7 +181,7 @@ export async function GET() {
 
     return NextResponse.json(enriched);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -177,6 +234,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(job, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

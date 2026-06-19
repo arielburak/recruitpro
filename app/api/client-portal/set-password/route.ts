@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { sendClientPortalWelcomeEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — used by the set-password page to know whether to show the
 // "complete your company info" fields. When the underlying Client was
@@ -29,23 +31,56 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "This link has expired" }, { status: 400 });
     }
 
+    // Pre-fill name + title on the form when we already have something
+    // from the invite — the recruiter usually types in the contact's
+    // full name (and sometimes title) when sending the invite, so the
+    // hiring contact only has to confirm. Falls back to a blank input
+    // when only the email was provided.
+    const clientUser = await prisma.clientUser.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        clientId: tokenRecord.clientId,
+        isActive: true,
+      },
+      select: { name: true, title: true },
+    });
+
     return NextResponse.json({
       isStub: tokenRecord.client.isStub,
       currentName: tokenRecord.client.name,
       currentIndustry: tokenRecord.client.industry || "",
+      currentUserName: clientUser?.name || "",
+      currentUserTitle: clientUser?.title || "",
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const { token, email: rawEmail, password, companyName, industry } = await request.json();
+    const {
+      token,
+      email: rawEmail,
+      password,
+      companyName,
+      industry,
+      userName: rawUserName,
+      userTitle: rawUserTitle,
+    } = await request.json();
     const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+    const userName = typeof rawUserName === "string" ? rawUserName.trim() : "";
+    const userTitle = typeof rawUserTitle === "string" ? rawUserTitle.trim() : "";
 
     if (!token || !email || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    if (!userName) {
+      return NextResponse.json({ error: "Your full name is required" }, { status: 400 });
+    }
+    if (!userTitle) {
+      return NextResponse.json({ error: "Your role is required" }, { status: 400 });
     }
 
     if (password.length < 8) {
@@ -96,6 +131,12 @@ export async function POST(request: Request) {
         where: { id: clientUser.id },
         data: {
           passwordHash,
+          // Stamp name + title from the form. These are required by
+          // the POST validator above, so we always have a real value
+          // here — the page may pre-fill from the invite payload but
+          // the hiring contact can correct anything before submit.
+          name: userName,
+          title: userTitle,
           // Possession of the email-delivered token is proof of mailbox
           // ownership, so stamp the verified-at here. The login flow's
           // hard-block on unverified accounts would otherwise lock the
@@ -126,8 +167,35 @@ export async function POST(request: Request) {
 
     await prisma.$transaction(ops);
 
+    // Confirmation mail: the invite mail asked them to click; now
+    // we tell them "your account is live, here's how to come back".
+    // Fire-and-forget — a Resend hiccup shouldn't fail a flow the
+    // user just succeeded at. Skipped silently if anything's missing.
+    try {
+      // NEXTAUTH_URL primero (canonical). Ver comentario en
+      // /api/auth/register.
+      const origin =
+        process.env.NEXTAUTH_URL ||
+        request.headers.get("origin") ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      const client = await prisma.client.findUnique({
+        where: { id: tokenRecord.clientId },
+        select: { name: true },
+      });
+      sendClientPortalWelcomeEmail({
+        to: email,
+        recipientName: userName,
+        clientName: client?.name ?? null,
+        portalUrl: `${origin}/client-portal/login`,
+      }).catch((err) =>
+        console.error("[set-password] welcome mail failed:", err),
+      );
+    } catch (err) {
+      console.error("[set-password] welcome mail dispatch failed:", err);
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

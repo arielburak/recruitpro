@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PartyPopper, ArrowRight, Building2, User, X, Search, ChevronDown } from "lucide-react";
 import { CurrencyPicker, getCurrency, formatCurrencyValue } from "@/components/ui/currency-picker";
 import { AR_NET_TO_GROSS, SALARY_KIND_CURRENCIES } from "@/lib/constants";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // Defaults that pre-fill the form. Anything we know from the candidate /
 // job / client gets surfaced; the recruiter can still override.
@@ -52,6 +54,12 @@ type CongratsProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   submissionId: string;
+  // Optional — when present, we pre-select the candidate's owner
+  // as the placement Recruiter (handoffs between sourcer/closer
+  // are still allowed via the dropdown). Without it the form
+  // opens with no recruiter selected, which is fine for legacy
+  // call sites and edge cases where the owner is genuinely unknown.
+  candidateId?: string;
   candidateName: string;
   jobTitle: string;
   clientName?: string;
@@ -151,6 +159,9 @@ function previewFromAnchor(
 }
 
 export function PlacementDialog(props: Props) {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const isCongrats = props.mode === "congrats";
   const isEdit = props.mode === "edit";
 
@@ -160,6 +171,7 @@ export function PlacementDialog(props: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [skipping, setSkipping] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Manual-mode-only: which job the recruiter is back-filling.
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -219,6 +231,14 @@ export function PlacementDialog(props: Props) {
   // monthly bill. Defaults to HH; pre-picked from the job's
   // Client.engagementType when the form opens.
   const [kind, setKind] = useState<"HH" | "OS">("HH");
+  // OS engagements are monthly by contract — pin salaryPeriod
+  // to MONTHLY whenever the kind flips to OS so the submit
+  // payload + fee math match the visible UI. Doesn't fire on
+  // mount (the kind-dependent default-load already covers
+  // hydration); only on user-driven kind changes after that.
+  useEffect(() => {
+    if (kind === "OS") setSalaryPeriod("MONTHLY");
+  }, [kind]);
   const [monthlyFee, setMonthlyFee] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -555,13 +575,9 @@ export function PlacementDialog(props: Props) {
     }
   }, [props.open, props.mode]);
 
-  // Hydrate selectedCandidate.ownerId so the Recruiter picker can
-  // label the "default" option with the owner's actual name (search
-  // results don't carry ownerId). We deliberately don't push the
-  // value into `recruiterId` — leaving it empty signals "use the
-  // candidate owner" to the API, and the picker renders the owner's
-  // name on the empty sentinel option so the UI looks the same.
-  // Edit mode preloads recruiterId from props.initial below.
+  // Hydrate selectedCandidate.ownerId when the search result didn't
+  // carry it. Used by the next effect to pre-select the owner as
+  // the Recruiter.
   useEffect(() => {
     if (!selectedCandidate) return;
     if (selectedCandidate.ownerId) return;
@@ -582,6 +598,52 @@ export function PlacementDialog(props: Props) {
     };
   }, [selectedCandidate]);
 
+  // Pre-select the candidate owner as the Recruiter. Previously the
+  // dropdown stayed on the empty sentinel option and rendered the
+  // owner's name there, which looked unselected ("Select recruiter")
+  // to most users — one extra click to confirm what was already
+  // implied. Now the owner is the actual value, and the user can
+  // re-assign mid-form for handoffs. Edit mode is skipped (it
+  // hydrates from props.initial). Manual override is preserved via
+  // recruiterTouchedRef.
+  useEffect(() => {
+    if (isEdit) return;
+    if (recruiterTouchedRef.current) return;
+    if (!selectedCandidate?.ownerId) return;
+    setRecruiterId(selectedCandidate.ownerId);
+  }, [selectedCandidate?.ownerId, isEdit]);
+
+  // Congrats mode never builds a selectedCandidate — it gets the
+  // candidate as a plain `candidateName` string plus a submissionId.
+  // The effect above only fires for manual mode, so without this
+  // fetch the Recruiter dropdown stayed on "Select recruiter"
+  // whenever you flipped a candidate to Placed and the modal
+  // opened on the placement form. Source of truth for the owner
+  // is /api/candidates/[id]; the caller provides candidateId.
+  // Edit mode is skipped (recruiterId hydrates from props.initial
+  // above) and the manual-override flag keeps user picks intact.
+  useEffect(() => {
+    if (!isCongrats) return;
+    if (!props.open) return;
+    if (recruiterTouchedRef.current) return;
+    const candidateId = (props as { candidateId?: string }).candidateId;
+    if (!candidateId) return;
+    let cancelled = false;
+    fetch(`/api/candidates/${candidateId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((full) => {
+        if (cancelled) return;
+        const ownerId = full?.ownerId;
+        if (ownerId && !recruiterTouchedRef.current) {
+          setRecruiterId(ownerId);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isCongrats, props]);
+
   // Live preview of when the guarantee expires. Read-only — server
   // computes the persisted value on save with the same logic.
   const guaranteeExpiryPreview = previewFromAnchor(startDate, estimatedStartDate, guaranteePeriod);
@@ -592,12 +654,6 @@ export function PlacementDialog(props: Props) {
 
   async function handleDeletePlacement() {
     if (props.mode !== "edit") return;
-    if (
-      !confirm(
-        "Delete this placement? The candidate will move back to the previous stage on the pipeline. This cannot be undone."
-      )
-    )
-      return;
     setSubmitting(true);
     setError("");
     try {
@@ -1079,7 +1135,29 @@ export function PlacementDialog(props: Props) {
               </div>
             </div>
 
+            {/* Dates row: Starting date is the prominent field, the
+                one recruiters care about most ("when does this person
+                actually start"). Estimated start stays as a fallback
+                for forecasting payment due before the actual day is
+                confirmed. Both editable in create + edit. */}
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
+                <Input
+                  id="placement-actual-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setStartDate(v);
+                    setPaymentDueDateTouched(false);
+                    setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
+                  }}
+                />
+                <p className="text-[10px] text-gray-400">
+                  When the candidate actually starts. Anchors guarantee & payment due.
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs" htmlFor="placement-est-start">Estimated start</Label>
                 <Input
@@ -1096,15 +1174,19 @@ export function PlacementDialog(props: Props) {
                     setPaymentDueDate(previewFromAnchor(startDate, v, paymentTerms));
                   }}
                 />
+                <p className="text-[10px] text-gray-400">
+                  Fallback used when Starting date is empty.
+                </p>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Currency</Label>
-                <CurrencyPicker
-                  compact
-                  value={currency}
-                  onChange={setCurrency}
-                />
-              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Currency</Label>
+              <CurrencyPicker
+                compact
+                value={currency}
+                onChange={setCurrency}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1117,28 +1199,47 @@ export function PlacementDialog(props: Props) {
                   value={agreedSalary}
                   onChange={setAgreedSalary}
                 />
-                <div className="flex items-center justify-between gap-2">
-                  <div className="inline-flex rounded-md border bg-white p-0.5">
-                    {(["MONTHLY", "ANNUAL"] as const).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setSalaryPeriod(p)}
-                        className={`px-2 py-1 text-[11px] font-medium rounded ${
-                          salaryPeriod === p
-                            ? "bg-indigo-600 text-white"
-                            : "text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        {p === "MONTHLY" ? "/mo" : "/yr"}
-                      </button>
-                    ))}
+                {kind === "OS" ? (
+                  // OS engagements are recurring monthly fees by
+                  // definition — exposing a /yr toggle here
+                  // confused recruiters into thinking they could
+                  // bill annually. We pin to MONTHLY internally
+                  // via the kind-change effect above and only show
+                  // the gross/net switch when the currency cares.
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-gray-400">
+                      Salary and fee are monthly while the engagement is active.
+                    </p>
+                    {salaryKind === "NETO" && (
+                      <p className="text-[10px] text-gray-400 text-right">
+                        Grossed up for the fee math
+                      </p>
+                    )}
                   </div>
-                  <p className="text-[10px] text-gray-400 text-right">
-                    Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
-                    {salaryKind === "NETO" ? " · grossed up" : ""}
-                  </p>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="inline-flex rounded-md border bg-white p-0.5">
+                      {(["MONTHLY", "ANNUAL"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setSalaryPeriod(p)}
+                          className={`px-2 py-1 text-[11px] font-medium rounded ${
+                            salaryPeriod === p
+                              ? "bg-indigo-600 text-white"
+                              : "text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {p === "MONTHLY" ? "/mo" : "/yr"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-right">
+                      Fee % uses annual{salaryPeriod === "MONTHLY" ? " (monthly × 12)" : ""}
+                      {salaryKind === "NETO" ? " · grossed up" : ""}
+                    </p>
+                  </div>
+                )}
                 {SALARY_KIND_CURRENCIES.has(currency) && (
                   <div className="flex items-center gap-2">
                     <div className="inline-flex rounded-md border bg-white p-0.5">
@@ -1309,54 +1410,40 @@ export function PlacementDialog(props: Props) {
                     onChange={(e) => setEndDate(e.target.value)}
                   />
                 )}
-                <p className="text-[10px] text-gray-400">
-                  Off = engagement is ongoing — that&apos;s what counts as Active MRR.
-                </p>
+                {endDate !== "" && monthlyFee !== "" && Number(monthlyFee) > 0 ? (
+                  <p className="text-[10px] text-amber-600">
+                    Losing {formatCurrencyValue(Number(monthlyFee), currency)}/mo of recurring revenue once this ends.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-gray-400">
+                    Off = engagement is ongoing — that&apos;s what counts as Active MRR.
+                  </p>
+                )}
               </div>
             )}
 
             {kind === "HH" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
-                <Input
-                  id="placement-due"
-                  type="date"
-                  value={paymentDueDate}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setPaymentDueDate(v);
-                    // Clearing the field reverts to auto-mode so the next
-                    // edit to start / terms recomputes it. Only mark
-                    // "touched" when the user actually picked a date.
-                    setPaymentDueDateTouched(v !== "");
-                  }}
-                />
-                <p className="text-[10px] text-gray-400">
-                  Auto: actual start (if set) or estimated start + payment terms. Editable.
-                </p>
-              </div>
-            )}
-
-            {isEdit && (
-              <div className={kind === "HH" ? "grid grid-cols-2 gap-3" : ""}>
+              <div className={isEdit ? "grid grid-cols-2 gap-3" : ""}>
                 <div className="space-y-1.5">
-                  <Label className="text-xs" htmlFor="placement-actual-start">Starting date</Label>
+                  <Label className="text-xs" htmlFor="placement-due">Payment due</Label>
                   <Input
-                    id="placement-actual-start"
+                    id="placement-due"
                     type="date"
-                    value={startDate}
+                    value={paymentDueDate}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setStartDate(v);
-                      setPaymentDueDateTouched(false);
-                      setPaymentDueDate(previewFromAnchor(v, estimatedStartDate, paymentTerms));
+                      setPaymentDueDate(v);
+                      // Clearing the field reverts to auto-mode so the next
+                      // edit to start / terms recomputes it. Only mark
+                      // "touched" when the user actually picked a date.
+                      setPaymentDueDateTouched(v !== "");
                     }}
                   />
                   <p className="text-[10px] text-gray-400">
-                    Fill once the candidate starts. Anchors the guarantee.
+                    Auto: actual start (if set) or estimated start + payment terms. Editable.
                   </p>
                 </div>
-                {kind === "HH" && (
+                {isEdit && (
                   <div className="space-y-1.5">
                     <Label className="text-xs" htmlFor="placement-invoice-status">Invoice status</Label>
                     <select
@@ -1385,14 +1472,12 @@ export function PlacementDialog(props: Props) {
                 and the owner is filtered out of the teammates list
                 so they don't appear twice. */}
             {(() => {
-              const ownerMember = teamMembers.find(
-                (u) => u.id === selectedCandidate?.ownerId,
-              );
-              const ownerLabel =
-                ownerMember?.name || ownerMember?.email || "Candidate owner";
-              const otherMembers = teamMembers.filter(
-                (u) => u.id !== selectedCandidate?.ownerId,
-              );
+              // Owner is pre-selected by the effect above. Render the
+              // full team list (no filtering of the owner) so the
+              // selection looks like a normal dropdown — what the
+              // candidate's owner is named is what shows in the box.
+              // Only fall back to the "Select recruiter" sentinel
+              // when no candidate has been picked yet.
               return (
                 <div className="space-y-1.5">
                   <Label className="text-xs" htmlFor="placement-recruiter">Recruiter</Label>
@@ -1405,12 +1490,10 @@ export function PlacementDialog(props: Props) {
                     }}
                     className="w-full h-10 px-3 rounded-md border border-gray-200 bg-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
-                    <option value="">
-                      {selectedCandidate?.ownerId
-                        ? ownerLabel
-                        : "Select recruiter"}
-                    </option>
-                    {otherMembers.map((u) => (
+                    {!recruiterId && (
+                      <option value="">Select recruiter</option>
+                    )}
+                    {teamMembers.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name}
                       </option>
@@ -1441,10 +1524,10 @@ export function PlacementDialog(props: Props) {
             )}
 
             <div className="flex items-center justify-between gap-2">
-              {isEdit ? (
+              {isEdit && isAdmin ? (
                 <Button
                   variant="ghost"
-                  onClick={handleDeletePlacement}
+                  onClick={() => setShowDeleteConfirm(true)}
                   disabled={submitting}
                   className="text-red-600 hover:bg-red-50 hover:text-red-700"
                 >
@@ -1473,6 +1556,18 @@ export function PlacementDialog(props: Props) {
           </div>
         )}
       </DialogContent>
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        itemLabel="this placement"
+        itemKind="placement"
+        consequences={[
+          "The candidate returns to the previous pipeline stage",
+          "The commission record and related metrics will be removed",
+        ]}
+        onConfirm={handleDeletePlacement}
+        confirmLabel="Yes, delete placement"
+      />
     </Dialog>
   );
 }

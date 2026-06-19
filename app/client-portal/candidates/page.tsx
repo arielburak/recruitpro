@@ -125,6 +125,26 @@ function ClientCandidatesPageInner() {
     (firmFilter !== "all" ? 1 : 0) +
     (clientJobIdFilter ? 1 : 0);
 
+  // Group submissions by candidate. The same candidate shared into N
+  // jobs used to render as N rows in the table (e.g. "Bob — Backend",
+  // "Bob — SWE 2.0", "Bob — Associate"); the header count also
+  // double-counted. We now keep the server-side flat list (the table
+  // logic stays simple) but collapse it into one row per candidate at
+  // render time. Additional submissions live behind an expand
+  // toggle so the recruiter can drill in when needed without us
+  // shouting "3 candidates" when it's really 1.
+  type Grouped = { candidateId: string; rows: CandidateRow[] };
+  const groupedRows = useMemo<Grouped[]>(() => {
+    const map = new Map<string, Grouped>();
+    for (const r of rows) {
+      const id = r.candidate.id;
+      const g = map.get(id);
+      if (g) g.rows.push(r);
+      else map.set(id, { candidateId: id, rows: [r] });
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
   function clearFilters() {
     setJobFilter("all");
     setStageFilter("all");
@@ -160,7 +180,9 @@ function ClientCandidatesPageInner() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Candidates</h1>
             <p className="text-gray-500 text-sm">
-              {loading ? "Loading..." : `${rows.length} candidate${rows.length === 1 ? "" : "s"} shared with you`}
+              {loading
+                ? "Loading..."
+                : `${groupedRows.length} candidate${groupedRows.length === 1 ? "" : "s"} shared with you`}
             </p>
           </div>
         </div>
@@ -265,13 +287,39 @@ function ClientCandidatesPageInner() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <CandidateTableRow
-                    key={row.submissionId}
-                    row={row}
-                    onRated={refetch}
-                  />
-                ))}
+                {groupedRows.map((group) => {
+                  // Single-submission candidate → un solo CandidateTableRow.
+                  // Multi-submission → tantas CandidateTableRow como rows,
+                  // todas usando las mismas TableCells de la tabla (Job,
+                  // Stage, Firm, Location, Shared). La primera lleva el
+                  // pill "in N searches"; las subsiguientes van con
+                  // asSecondary=true para mostrar la L-line indent en la
+                  // cell de candidato. Asi:
+                  //   · cada sub-row usa el ancho que la tabla asigna a
+                  //     cada columna (no hay grid hardcodeado);
+                  //   · si manana sumamos una columna al header, los
+                  //     sub-rows la heredan sin tocar nada;
+                  //   · si un candidato pasa a tener 5 jobs en vez de 2,
+                  //     el formato sigue prolijo.
+                  if (group.rows.length === 1) {
+                    return (
+                      <CandidateTableRow
+                        key={group.rows[0].submissionId}
+                        row={group.rows[0]}
+                        onRated={refetch}
+                      />
+                    );
+                  }
+                  return group.rows.map((r, idx) => (
+                    <CandidateTableRow
+                      key={r.submissionId}
+                      row={r}
+                      asSecondary={idx > 0}
+                      totalSearches={idx === 0 ? group.rows.length : undefined}
+                      onRated={refetch}
+                    />
+                  ));
+                })}
               </TableBody>
             </Table>
           </CardContent>

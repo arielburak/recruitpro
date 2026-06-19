@@ -34,6 +34,12 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Test credentials para el browser-driving en sesiones de Claude.
+# Local-only: nunca se commitea. Para regenerar, copiá el .example
+# y completá las passwords reales. El template (.example) sí va al
+# repo para que cualquiera sepa el formato.
+.test-credentials.json
+
 # vercel
 .vercel
 

@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { sendTeamInviteEmail } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
 
-    // Only admins can invite
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-    }
+    const ctx = await getOrgContextWithActiveSub();
 
     const body = await request.json();
     const email = body.email;
-    const role: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+    // Cualquier miembro del org puede invitar a un teammate. Decisión 2026-06-17:
+    // los invites NO son destructivos y abrirlos a USER baja la fricción del
+    // onboarding cuando el admin no esta cerca. La unica restriccion: si quien
+    // invita es USER, el invite se crea forzosamente como USER — no puede
+    // elevar privilegios a ADMIN. ADMIN sigue siendo el unico que puede
+    // sembrar otro ADMIN (y el unico que puede borrar / revocar invites).
+    const requestedRole: "ADMIN" | "USER" = body.role === "ADMIN" ? "ADMIN" : "USER";
+    const role: "ADMIN" | "USER" = ctx.role === "ADMIN" ? requestedRole : "USER";
     const name = typeof body.name === "string" ? body.name.trim() : null;
 
     if (!email) {
@@ -48,13 +56,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create invite
+    // Create invite. invitedById nos permite notificarle al inviter
+    // cuando el invitee acepta. Para invites pre-2026-06-17 el campo es
+    // null — no romper backward compat, solo trackeamos hacia adelante.
     const invite = await prisma.userInvite.create({
       data: {
         email,
         role,
         name: name || null,
         organizationId: ctx.organizationId,
+        invitedById: ctx.userId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
@@ -79,6 +90,7 @@ export async function POST(request: Request) {
         inviteUrl,
         inviterName: ctx.userName,
         organizationName: org?.name || "the team",
+        recipientName: name || undefined,
       });
     } catch (emailError) {
       console.error("Failed to send invite email:", emailError);
@@ -90,17 +102,18 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
 // GET - list pending invites
+// Open to any authenticated org member so the My Team tab can render
+// pending invitations. Mutations (POST/DELETE) remain admin-only.
 export async function GET() {
   try {
     const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-    }
 
     const invites = await prisma.userInvite.findMany({
       where: { organizationId: ctx.organizationId, usedAt: null },
@@ -109,7 +122,7 @@ export async function GET() {
 
     return NextResponse.json(invites);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -129,6 +142,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

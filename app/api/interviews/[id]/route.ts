@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
+import { canAccessJob } from "@/lib/job-access";
 
 export async function GET(
   _request: Request,
@@ -33,7 +36,7 @@ export async function GET(
 
     return NextResponse.json(interview);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -55,6 +58,18 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total a través de canAccessJob(role=ADMIN).
+    // - USER: estar assigned al job, O ser el creator de la interview
+    //   (mismo patrón owner-bypass que submissions PATCH para no
+    //   romperle el flow al creador si lo sacan del job).
+    if (
+      existing.createdBy !== ctx.userId &&
+      !(await canAccessJob(existing.jobId, ctx.organizationId, ctx.userId, ctx.role))
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Update interview fields
@@ -128,7 +143,7 @@ export async function PUT(
 
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -138,18 +153,29 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
-    const deleted = await prisma.interview.deleteMany({
+    // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: bypass total via canAccessJob(role=ADMIN).
+    // - USER: estar assigned al job.
+    // Pulleo jobId primero para pasarlo al gate.
+    const interview = await prisma.interview.findFirst({
       where: { id, organizationId: ctx.organizationId },
+      select: { jobId: true },
     });
-
-    if (deleted.count === 0) {
+    if (!interview) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (!(await canAccessJob(interview.jobId, ctx.organizationId, ctx.userId, ctx.role))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.interview.delete({ where: { id } });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

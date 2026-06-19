@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { jobSchema } from "@/lib/validations/job";
 import { logActivity } from "@/lib/activity";
 import { DEFAULT_STAGES } from "@/lib/constants";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,22 +19,14 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Non-admins see only their assigned jobs.
-    //
-    // Admins see every job in the org EXCEPT jobs born from a person-
-    // level client-portal invite they weren't invited to. Those jobs
-    // stay private to the invited recruiter (and anyone that recruiter
-    // chose to assign) — that's the whole point of person-level
-    // invites. A job becomes "private" when it has at least one
-    // FirmEngagement row with invitedUserId set; legacy jobs without
-    // such engagements keep the old org-wide admin visibility.
+    // Visibility (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: ve TODOS los jobs del org. Dueño del workspace, no
+    //   necesita estar en cada assignment para tener visibilidad.
+    // - USER: estrictamente assignment-based. Solo ve los jobs en los
+    //   que figura como JobAssignment. Job creators son auto-asignados
+    //   en POST así que mantienen acceso a lo que crean.
     if (ctx.role !== "ADMIN") {
       where.assignments = { some: { userId: ctx.userId } };
-    } else {
-      where.OR = [
-        { firmEngagements: { none: { invitedUserId: { not: null } } } },
-        { assignments: { some: { userId: ctx.userId } } },
-      ];
     }
 
     if (status) where.status = status;
@@ -72,13 +66,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ jobs, total });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const data = jobSchema.parse(body);
 
@@ -132,9 +126,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(job, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     if (error.name === "ZodError") {
       return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

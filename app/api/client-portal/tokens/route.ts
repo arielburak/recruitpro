@@ -4,9 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { sendClientPortalShareEmail, sendClientSetPasswordEmail } from "@/lib/email";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import crypto from "crypto";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getOrgContext();
     const body = await request.json();
     const { clientId, jobId, inviteEmail: rawInviteEmail, inviteName } = body;
@@ -277,6 +282,31 @@ export async function POST(request: Request) {
           data: { jobId, status: "ACCEPTED", respondedAt: new Date() },
         });
       }
+
+      // Make sure the invited ClientUser is on the member list of
+      // the ClientJob. Was a bug: the initial mirror seeded the
+      // FIRST recipient but every subsequent agency-side invite
+      // re-used the existing mirror and never added the new user
+      // — so a second hiring manager invited from the same Job by
+      // a recruiter got portal access but couldn't open the Job.
+      // Upsert keeps it idempotent.
+      try {
+        await prisma.clientJobMember.upsert({
+          where: {
+            clientJobId_clientUserId: {
+              clientJobId: mirroredClientJobId,
+              clientUserId: clientUser.id,
+            },
+          },
+          update: {},
+          create: {
+            clientJobId: mirroredClientJobId,
+            clientUserId: clientUser.id,
+          },
+        });
+      } catch (e) {
+        console.error("[tokens] upsert ClientJobMember failed:", e);
+      }
     }
 
     const hasPassword = !!clientUser.passwordHash;
@@ -289,9 +319,14 @@ export async function POST(request: Request) {
     });
     const firmName = org?.name || "Your recruiting firm";
 
+    // Mail sends are fire-and-forget. The user reported a 1–2s wait
+    // on the "Send Invite" button — Resend round-trips were happening
+    // in series with await, blocking the response. The DB state is
+    // already committed by this point; if the mail itself fails the
+    // user can re-send via the resend endpoint, and the in-app
+    // notification we create below is the dependable surface anyway.
     if (hasPassword) {
-      // Existing user with password — send share notification with login link
-      await sendClientPortalShareEmail({
+      sendClientPortalShareEmail({
         to: inviteEmail,
         portalUrl,
         recruiterName: ctx.userName,
@@ -299,9 +334,14 @@ export async function POST(request: Request) {
         jobTitle,
         clientName: recipientName,
         candidateCount,
-      });
+      }).catch((err) =>
+        console.error("[tokens] share mail failed:", err),
+      );
     } else {
-      // New user or user without password — send set-password invite
+      // New user or user without password — mint a set-password token
+      // then fire the mail. Token creation stays awaited (the token
+      // has to exist before any retry path can resend), but the mail
+      // dispatch itself doesn't block the response.
       const setPasswordToken = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -314,18 +354,19 @@ export async function POST(request: Request) {
         },
       });
 
-      // Forward the same deep-link target so a fresh user who sets a
-      // password from the email lands on the shared Job, not dashboard.
       const setPasswordUrl =
         `${baseUrl}/client-portal/set-password?token=${setPasswordToken}` +
         `&email=${encodeURIComponent(inviteEmail)}` +
         (jobId ? `&callbackUrl=${encodeURIComponent(deepLinkPath)}` : "");
 
-      await sendClientSetPasswordEmail({
+      sendClientSetPasswordEmail({
         to: inviteEmail,
         setPasswordUrl,
         clientName: recipientName,
-      });
+        firmName,
+      }).catch((err) =>
+        console.error("[tokens] set-password mail failed:", err),
+      );
     }
 
     // In-app notification for the invited ClientUser. Email is best-effort
@@ -346,7 +387,14 @@ export async function POST(request: Request) {
           type: "candidate_shared",
           title: notifTitle,
           body: notifBody,
-          link: jobId ? `/client-portal/jobs/${jobId}` : "/client-portal/dashboard",
+          // The client portal navigates by ClientJob.id, not the
+          // agency-side Job.id. Using `jobId` here gave a 404
+          // ("Job not found.") on every click. Fall back to the
+          // dashboard if the mirror wasn't created (no jobId in
+          // the invite payload at all).
+          link: mirroredClientJobId
+            ? `/client-portal/jobs/${mirroredClientJobId}`
+            : "/client-portal/dashboard",
         },
       });
     } catch (e) {
@@ -359,6 +407,6 @@ export async function POST(request: Request) {
     }, { status: 201 });
   } catch (error: any) {
     console.error("[invite] Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

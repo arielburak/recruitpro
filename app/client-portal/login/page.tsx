@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import { Combobox } from "@/components/ui/combobox";
-import { INDUSTRY_OPTIONS } from "@/lib/constants";
 import {
   Briefcase,
   CheckCircle2,
@@ -110,20 +108,19 @@ function ClientPortalLoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(
-    searchParams.get("error") === "no-client-account"
-      ? "That email isn't registered as a client user. Ask your recruiter to invite you, or create an account below."
-      : ""
-  );
+  const [error, setError] = useState(() => {
+    const e = searchParams.get("error");
+    if (e === "no-client-account")
+      return "That email isn't registered. Ask your recruiting partner to invite you to the portal.";
+    if (e === "not-invited")
+      return "We couldn't find an invite for that Google account. The client portal is invite-only — ask your recruiting partner to add you.";
+    return "";
+  });
   const [success, setSuccess] = useState("");
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
-  const [isInvitedUser, setIsInvitedUser] = useState(false);
-  const [checkingEmail, setCheckingEmail] = useState(false);
-  const [clearingSession, setClearingSession] = useState(false);
   // Set when the credentials sign-in succeeds on password but the
   // server throws EMAIL_NOT_VERIFIED. We surface a dedicated panel
   // (instead of a generic red error) with a one-click "resend
@@ -131,11 +128,6 @@ function ClientPortalLoginInner() {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string>("");
   const [resendingVerification, setResendingVerification] = useState(false);
   const [verificationResent, setVerificationResent] = useState(false);
-  // Controlled Industry field on the sign-up form. The Combobox lets
-  // the user pick a standard bucket from INDUSTRY_OPTIONS or type
-  // their own — both produce the same string value submitted to
-  // /api/client-portal/register.
-  const [industry, setIndustry] = useState("");
 
   async function resendVerification() {
     if (!unverifiedEmail || resendingVerification) return;
@@ -198,107 +190,14 @@ function ClientPortalLoginInner() {
           setLoading(false);
           return;
         }
-        // Check if user exists but has no password
-        try {
-          const checkRes = await fetch("/api/client-portal/check-account", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: fd.get("email") }),
-          });
-          const checkData = await checkRes.json();
-          if (checkData.exists && !checkData.hasPassword) {
-            setError("Your account doesn't have a password yet. Check your email for a setup link, or ask your recruiter to resend the portal invitation.");
-          } else {
-            setError("Invalid email or password");
-          }
-        } catch {
-          setError("Invalid email or password");
-        }
-        setLoading(false);
-        return;
-      }
-
-      window.location.href = safeCallback || "/client-portal/dashboard";
-    } catch {
-      setError("Something went wrong");
-      setLoading(false);
-    }
-  }
-
-  async function checkInvitedEmail(email: string) {
-    if (!email) return;
-    setCheckingEmail(true);
-    try {
-      const res = await fetch("/api/client-portal/check-account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      setIsInvitedUser(data.exists && !data.hasPassword);
-    } catch {}
-    setCheckingEmail(false);
-  }
-
-  async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-
-    const fd = new FormData(e.currentTarget);
-    const email = fd.get("email") as string;
-    const password = fd.get("password") as string;
-
-    try {
-      const res = await fetch("/api/client-portal/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyName: fd.get("companyName") as string,
-          name: fd.get("name") as string,
-          title: fd.get("title") as string,
-          email,
-          password,
-          industry,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Registration failed");
-        setLoading(false);
-        return;
-      }
-
-      const data = await res.json().catch(() => ({}));
-
-      // New accounts ship in unverified state — the credentials provider
-      // would refuse to sign them in until they click the verify link.
-      // Skip the auto-login attempt and surface the "check your email"
-      // panel instead so the UX matches the actual constraint.
-      if (data?.needsVerification) {
-        setUnverifiedEmail(email);
-        setMode("login");
-        setLoading(false);
-        return;
-      }
-
-      // If a staffing session is active, transparently sign out first
-      if (hasStaffingSession) {
-        await signOut({ redirect: false });
-      }
-
-      // Auto-login (legacy path for pre-verification accounts; new
-      // accounts go through the verify panel above).
-      const result = await signIn("client-credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setSuccess("Account created! Please sign in.");
-        setMode("login");
+        // Mensaje generico — no diferenciamos "email inexistente" vs
+        // "email sin password" porque eso permitia account enumeration
+        // via el endpoint /api/client-portal/check-account (cerrado
+        // 2026-06-18). El copy menciona ambos casos para guiar al user
+        // sin filtrar cual aplica.
+        setError(
+          "Invalid email or password. If you were recently invited and haven't set up your password yet, check your inbox for the setup link.",
+        );
         setLoading(false);
         return;
       }
@@ -398,37 +297,18 @@ function ClientPortalLoginInner() {
             />
           ) : (
           <>
-          {/* Toggle */}
-          <div className="flex bg-white rounded-xl border border-gray-200 p-1 mb-8">
-            <button
-              onClick={() => { setMode("login"); setError(""); }}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition ${
-                mode === "login"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => { setMode("register"); setError(""); }}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition ${
-                mode === "register"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Create Account
-            </button>
+          {/* Sign-in only. The client portal is invite-only — agencies
+              add hiring-company contacts to the portal; nobody self-
+              signs up. The Activate flow lives at /client-portal/set-
+              password (link arrives by email). */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">Sign in to your client portal</h2>
+            <p className="text-gray-500 mt-1 text-sm">
+              Access is by invitation from your recruiting partner.
+            </p>
           </div>
 
-          {mode === "login" ? (
-            <>
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-                <p className="text-gray-500 mt-1">Sign in to your client portal.</p>
-              </div>
-
+          <>
               <div className="space-y-3 mb-5">
                 <button
                   type="button"
@@ -502,81 +382,14 @@ function ClientPortalLoginInner() {
                 </Button>
               </form>
             </>
-          ) : (
-            <>
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {isInvitedUser ? "Activate your account" : "Create your account"}
-                </h2>
-                <p className="text-gray-500 mt-1">
-                  {isInvitedUser
-                    ? "A recruiter invited you. Set a password to get started."
-                    : "Post jobs, invite recruiting firms, and hire great people."}
-                </p>
-              </div>
-              <form onSubmit={handleRegister} className="space-y-4">
-                {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
-                <div className="space-y-2">
-                  <Label htmlFor="reg-email">Work Email</Label>
-                  <Input
-                    id="reg-email"
-                    name="email"
-                    type="email"
-                    placeholder="jane@acme.com"
-                    required
-                    onBlur={(e) => checkInvitedEmail(e.target.value)}
-                  />
-                </div>
-                {!isInvitedUser && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="companyName">Company Name</Label>
-                      <Input id="companyName" name="companyName" placeholder="Acme Inc." required={!isInvitedUser} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="industry">Industry</Label>
-                      <Combobox
-                        id="industry"
-                        value={industry}
-                        onChange={setIndustry}
-                        options={INDUSTRY_OPTIONS}
-                        placeholder="Technology"
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Your Name</Label>
-                    <Input id="name" name="name" placeholder="Jane Smith" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Job Title</Label>
-                    <Input id="title" name="title" placeholder="e.g. Hiring Manager" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reg-password">Password</Label>
-                  <PasswordInput id="reg-password" name="password" placeholder="Min. 8 characters" minLength={8} required />
-                </div>
-                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={loading}>
-                  {loading ? (isInvitedUser ? "Activating..." : "Creating account...") : (isInvitedUser ? "Activate & Sign In" : "Create Account")}
-                </Button>
-              </form>
-            </>
-          )}
 
           </>
           )}
 
-          <div className="mt-8 text-center">
-            <p className="text-xs text-gray-400">
-              Are you a recruiting firm?{" "}
-              <Link href="/register" className="text-indigo-600 font-medium hover:underline">
-                Sign up here
-              </Link>
-            </p>
-          </div>
+          {/* CTA de sign-up removida intencionalmente: el portal del
+              cliente es invite-only. Cualquier landing organica al
+              /client-portal/login deberia salir por "Get in touch with
+              your recruiting partner", no por un signup. */}
         </div>
       </div>
     </div>

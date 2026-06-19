@@ -3,6 +3,7 @@ import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — stream a candidate document to the client portal user.
 //
@@ -23,11 +24,13 @@ export async function GET(
     // ClientJob is legacy-open) to fetch a document on the shared
     // submission.
     const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
+    // Multi-firm: sin job.clientId === ctx.clientId — ver comentario
+    // en candidates/route.ts. El gate correcto es jobId IN
+    // visibleAgencyJobIds.
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
         jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       select: { candidateId: true },
@@ -37,11 +40,24 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Solo permitir docs que la agencia eligio para esta submission.
+    // Backwards-compat: si no hay SubmissionDocument rows (legacy
+    // share), caemos al chequeo "doc del candidate" para no romper
+    // links historicos.
+    const totalShared = await prisma.submissionDocument.count({
+      where: { submissionId },
+    });
+    const docWhere =
+      totalShared > 0
+        ? {
+            id: docId,
+            candidateId: submission.candidateId,
+            submissionShares: { some: { submissionId } },
+          }
+        : { id: docId, candidateId: submission.candidateId };
+
     const doc = await prisma.document.findFirst({
-      where: {
-        id: docId,
-        candidateId: submission.candidateId,
-      },
+      where: docWhere,
       select: { url: true, name: true },
     });
 
@@ -66,7 +82,7 @@ export async function GET(
   } catch (error: any) {
     console.error("[client-portal candidate doc] download error:", error);
     return NextResponse.json(
-      { error: error.message || "Download failed" },
+      { error: safeErrorMessage(error) || "Download failed" },
       { status: 500 }
     );
   }

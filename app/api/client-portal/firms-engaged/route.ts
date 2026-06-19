@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Returns the unique list of recruiting firms (Organizations) that
 // have at least one ACCEPTED engagement with this client, plus the
@@ -27,6 +28,8 @@ export async function GET() {
         status: true,
         invitedAt: true,
         respondedAt: true,
+        invitedEmail: true,
+        invitedUser: { select: { id: true, name: true, email: true, title: true, organizationId: true } },
         organization: { select: { name: true } },
         clientJob: { select: { title: true, id: true } },
       },
@@ -82,6 +85,19 @@ export async function GET() {
       lastActivityAt: string | null;
     };
 
+    type ContactRow = {
+      // Stable identity per recruiter contact at this firm. Uses
+      // userId when registered, otherwise the email — which is what
+      // the client typed when inviting the firm before the recruiter
+      // signed up.
+      key: string;
+      userId: string | null;
+      name: string | null;
+      email: string;
+      title: string | null;
+      lastInvitedAt: string;
+    };
+
     type FirmAgg = {
       organizationId: string;
       name: string;
@@ -92,7 +108,12 @@ export async function GET() {
       placements: number;
       lastActivityAt: string | null;
       jobs: JobAgg[];
+      contacts: ContactRow[];
     };
+
+    // Tracks contacts per firm across engagements — a single recruiter
+    // invited on three different jobs collapses to ONE row.
+    const contactsByOrg = new Map<string, Map<string, ContactRow>>();
 
     const byOrg = new Map<string, FirmAgg>();
     for (const e of engagements) {
@@ -108,9 +129,50 @@ export async function GET() {
           placements: 0,
           lastActivityAt: null,
           jobs: [],
+          contacts: [],
         };
         byOrg.set(e.organizationId, agg);
       }
+
+      // Track recruiter contacts at the firm — surfaced on the firm
+      // detail page so the client can see "who am I working with at
+      // Morabits?". Two strict rules so we never attribute a person
+      // to a firm they're not at:
+      //   1. The engagement must point to a registered User (no
+      //      invited-email-only orphans — that recruiter hasn't even
+      //      decided which firm they work at yet).
+      //   2. That User's CURRENT organizationId must match this
+      //      engagement's organizationId. Stale data (recruiter moved
+      //      firms after we recorded the engagement) drops off here
+      //      so we don't show "aburak@lionpoint" under Morabits just
+      //      because the engagement row says so.
+      const contactUser = e.invitedUser;
+      if (
+        contactUser &&
+        contactUser.id &&
+        contactUser.organizationId === e.organizationId
+      ) {
+        let bucket = contactsByOrg.get(e.organizationId);
+        if (!bucket) {
+          bucket = new Map();
+          contactsByOrg.set(e.organizationId, bucket);
+        }
+        const prev = bucket.get(contactUser.id);
+        const invitedIso = e.invitedAt.toISOString();
+        if (!prev) {
+          bucket.set(contactUser.id, {
+            key: contactUser.id,
+            userId: contactUser.id,
+            name: contactUser.name || null,
+            email: contactUser.email || e.invitedEmail || "",
+            title: contactUser.title || null,
+            lastInvitedAt: invitedIso,
+          });
+        } else if (invitedIso > prev.lastInvitedAt) {
+          prev.lastInvitedAt = invitedIso;
+        }
+      }
+
       if (e.status === "PENDING") agg.pendingCount += 1;
       if (e.status === "ACCEPTED") {
         const submitted = e.jobId
@@ -146,6 +208,21 @@ export async function GET() {
           lastActivityAt: lastAt ? lastAt.toISOString() : null,
         });
       }
+    }
+
+    // Attach contacts to each firm aggregate now that all engagements
+    // have been scanned. Contacts are sorted name-first (so registered
+    // recruiters appear before pending-email-only invites), then by
+    // most recently invited.
+    for (const agg of byOrg.values()) {
+      const bucket = contactsByOrg.get(agg.organizationId);
+      if (!bucket) continue;
+      agg.contacts = Array.from(bucket.values()).sort((a, b) => {
+        const aHasName = a.name ? 1 : 0;
+        const bHasName = b.name ? 1 : 0;
+        if (aHasName !== bHasName) return bHasName - aHasName;
+        return b.lastInvitedAt.localeCompare(a.lastInvitedAt);
+      });
     }
 
     const firms = Array.from(byOrg.values())
@@ -191,6 +268,6 @@ export async function GET() {
 
     return NextResponse.json({ firms, pending, declined });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

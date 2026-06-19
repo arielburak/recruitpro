@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,10 +17,11 @@ export async function GET(request: NextRequest) {
 
     const where: any = { organizationId: ctx.organizationId };
 
-    // Non-admin sees own candidates by default
-    if (ctx.role !== "ADMIN" && searchParams.get("mine") !== "false") {
-      where.ownerId = ctx.userId;
-    }
+    // Candidates son org-wide: cualquier user del agency ve todos los
+    // candidatos. El filter opcional `?ownerId=` mas abajo sirve para
+    // "ver solo los mios" desde la UI sin imponerlo a nivel API.
+    // ROADMAP #13: se removio el default que ocultaba candidatos a
+    // USERs no-admin — violaba la regla del producto "todos ven todos".
 
     if (search) {
       where.OR = [
@@ -104,6 +107,26 @@ export async function GET(request: NextRequest) {
     else if (sort === "name_desc") orderBy = [{ firstName: "desc" }, { lastName: "desc" }];
     else if (sort === "created_asc") orderBy = { createdAt: "asc" };
 
+    // Mode "idsOnly": el UI de "Select all N matching" lo usa para
+    // expandir el set de selected ids más allá de la página actual.
+    // Devuelve solo ids + total, sin pagination ni includes. Cap a
+    // 5,000 para no traer un megabyte de strings si filter es "all".
+    const idsOnly = searchParams.get("idsOnly") === "true";
+    if (idsOnly) {
+      const all = await prisma.candidate.findMany({
+        where,
+        select: { id: true },
+        orderBy,
+        take: 5000,
+      });
+      const total = await prisma.candidate.count({ where });
+      return NextResponse.json({
+        ids: all.map((c) => c.id),
+        total,
+        capped: total > 5000,
+      });
+    }
+
     const [candidates, total] = await Promise.all([
       prisma.candidate.findMany({
         where,
@@ -120,13 +143,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ candidates, total, page, limit });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    // Guard de subscription activa — sin trial vigente ni sub paga,
+    // no se puede crear nuevo data. El catch al final convierte
+    // SubscriptionError en 402 user-friendly.
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const data = candidateSchema.parse(body);
 
@@ -164,12 +190,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json(candidate, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     if (error.name === "ZodError") {
       return NextResponse.json(
         { error: error.errors[0].message },
         { status: 400 }
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { createCheckoutSession, createStripeCustomer } from "@/lib/stripe";
 import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST() {
   try {
@@ -52,6 +53,6 @@ export async function POST() {
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

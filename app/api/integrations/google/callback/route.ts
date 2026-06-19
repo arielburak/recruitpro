@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exchangeGoogleCode, getGoogleEmail } from "@/lib/google-calendar";
 
+// Land back on the same Integrations tab the user started from, so the
+// success/error banner renders in context. The legacy `/admin/settings`
+// path doesn't exist and dropped users on Organization view.
+const SETTINGS_URL = "/settings/integrations";
+
 export async function GET(request: NextRequest) {
   try {
     const code = request.nextUrl.searchParams.get("code");
@@ -11,13 +16,13 @@ export async function GET(request: NextRequest) {
     if (error) {
       // User denied access
       return NextResponse.redirect(
-        new URL("/admin/settings?google=denied", request.nextUrl.origin)
+        new URL(`${SETTINGS_URL}?google=denied`, request.nextUrl.origin)
       );
     }
 
     if (!code || !stateParam) {
       return NextResponse.redirect(
-        new URL("/admin/settings?google=error", request.nextUrl.origin)
+        new URL(`${SETTINGS_URL}?google=error`, request.nextUrl.origin)
       );
     }
 
@@ -30,7 +35,7 @@ export async function GET(request: NextRequest) {
       userId = state.userId;
     } catch {
       return NextResponse.redirect(
-        new URL("/admin/settings?google=error", request.nextUrl.origin)
+        new URL(`${SETTINGS_URL}?google=error`, request.nextUrl.origin)
       );
     }
 
@@ -70,12 +75,12 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.redirect(
-      new URL("/admin/settings?google=connected", request.nextUrl.origin)
+      new URL(`${SETTINGS_URL}?google=connected`, request.nextUrl.origin)
     );
   } catch (error: any) {
     console.error("[google-callback] Error:", error.message, error.stack);
     return NextResponse.redirect(
-      new URL("/admin/settings?google=error", request.nextUrl.origin)
+      new URL(`${SETTINGS_URL}?google=error`, request.nextUrl.origin)
     );
   }
 }

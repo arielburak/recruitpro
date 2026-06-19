@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,9 +11,15 @@ export async function GET(request: NextRequest) {
     const start = searchParams.get("start");
     const end = searchParams.get("end");
 
-    // Find all interviews for jobs belonging to this client
+    // Multi-firm: el gate correcto es jobId IN visibleAgencyJobIds
+    // (FirmEngagements ACCEPTED en ClientJobs accesibles). Filtrar por
+    // job.clientId === ctx.clientId rompia cuando habia 2+ agencias
+    // engaged con el mismo ClientJob porque cada agencia tiene su
+    // propio Client record. Ver /api/client-portal/candidates/route.ts
+    // para el rationale completo.
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
     const where: any = {
-      job: { clientId: ctx.clientId },
+      jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
     };
 
     if (start || end) {
@@ -68,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -98,12 +106,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify submission belongs to this client and is shared
+    // Verify submission via visibleAgencyJobIds (multi-firm safe).
+    const visibleAgencyJobIds = await accessibleAgencyJobIds(prisma, ctx);
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
         id: submissionId,
         isSharedWithClient: true,
-        job: { clientId: ctx.clientId },
+        jobId: visibleAgencyJobIds.length > 0 ? { in: visibleAgencyJobIds } : "__none__",
       },
       include: {
         job: { select: { id: true, organizationId: true } },
@@ -154,6 +163,6 @@ export async function POST(request: Request) {
     return NextResponse.json(interview, { status: 201 });
   } catch (error: any) {
     console.error("[client-portal/interviews] Create error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

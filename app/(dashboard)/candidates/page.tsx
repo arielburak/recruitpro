@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,9 +17,11 @@ import {
   ChevronDown,
   ArrowUpDown,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { DateRangeFilter, type DateRange } from "@/components/ui/date-range-filter";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // ─── Types ───
 
@@ -259,6 +262,9 @@ function SortSelector({
 // ─── Main Page ───
 
 export default function CandidatesPage() {
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -270,6 +276,7 @@ export default function CandidatesPage() {
   // the visible page doesn't leave dangling ids selected.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -290,10 +297,6 @@ export default function CandidatesPage() {
 
   async function bulkDelete() {
     if (selectedIds.size === 0 || bulkDeleting) return;
-    const n = selectedIds.size;
-    if (!confirm(`Delete ${n} candidate${n === 1 ? "" : "s"}? This removes their submissions, interviews, and history. Cannot be undone.`)) {
-      return;
-    }
     setBulkDeleting(true);
     try {
       const res = await fetch("/api/candidates/bulk-delete", {
@@ -312,6 +315,8 @@ export default function CandidatesPage() {
     setBulkDeleting(false);
   }
 
+  const [expandingSelection, setExpandingSelection] = useState(false);
+
   // CSV export uses the shared <ExportCsvButton/> component below —
   // no per-page handler needed.
 
@@ -323,6 +328,37 @@ export default function CandidatesPage() {
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
   const [sort, setSort] = useState("created_desc");
+
+  // "Select all N matching" — expande el set de selectedIds más allá
+  // de la página actual. Hits el endpoint con idsOnly=true que
+  // devuelve hasta 5000 ids matching los filters/search activos. Sin
+  // esto, bulk delete solo cubría los 20 visibles y borrar 1000
+  // candidates obligaba a paginar manualmente. Pasamos los mismos
+  // params del fetch principal para que el set sea exacto.
+  async function selectAllMatching() {
+    if (expandingSelection) return;
+    setExpandingSelection(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("idsOnly", "true");
+      if (search) params.set("search", search);
+      if (ownerFilter.length > 0) params.set("ownerId", ownerFilter.join(","));
+      if (locationFilter.length > 0) params.set("location", locationFilter.join(","));
+      if (jobFilter.length > 0) params.set("jobId", jobFilter.join(","));
+      if (clientFilter.length > 0) params.set("clientId", clientFilter.join(","));
+      if (stageFilter.length > 0) params.set("stage", stageFilter.join(","));
+      if (dateRange.from) params.set("createdFrom", dateRange.from);
+      if (dateRange.to) params.set("createdTo", dateRange.to);
+      const res = await fetch(`/api/candidates?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.ids)) {
+          setSelectedIds(new Set(data.ids));
+        }
+      }
+    } catch {}
+    setExpandingSelection(false);
+  }
 
   // Filter options from API
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -430,6 +466,11 @@ export default function CandidatesPage() {
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="candidates" disabled={candidates.length === 0} />
+          <Link href="/import?type=candidates">
+            <Button size="sm" variant="outline">
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+            </Button>
+          </Link>
           <Link href="/candidates/new">
             <Button size="sm">
               <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
@@ -533,17 +574,36 @@ export default function CandidatesPage() {
           >
             Clear
           </button>
-          <div className="ml-auto flex items-center gap-2">
-            <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
+          {/* "Select all N matching" — solo aparece cuando hay más
+              candidatos en filas no visibles (otras páginas) que los
+              que ya tenés seleccionados. Hace fetch a idsOnly=true
+              para traer todos los ids matching los filtros actuales.
+              Sin esto, bulk delete se quedaba en los 20 visibles. */}
+          {total > selectedIds.size && (
             <button
               type="button"
-              onClick={bulkDelete}
-              disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              onClick={selectAllMatching}
+              disabled={expandingSelection}
+              className="text-xs text-indigo-700 hover:text-indigo-900 underline disabled:opacity-60"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkDeleting ? "Deleting…" : "Delete"}
+              {expandingSelection
+                ? "Selecting…"
+                : `Select all ${total.toLocaleString()} matching`}
             </button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "Deleting…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -561,8 +621,24 @@ export default function CandidatesPage() {
           <p className="text-gray-500 text-sm">
             {search || activeFilters.length > 0
               ? "No candidates match your filters"
-              : "No candidates yet. Add your first candidate to get started."}
+              : "No candidates yet — start building your pipeline."}
           </p>
+          {!search && activeFilters.length === 0 && (
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Link href="/candidates/new">
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add candidate
+                </Button>
+              </Link>
+              <Link href="/import">
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <Upload className="h-3.5 w-3.5" />
+                  Import from CSV
+                </Button>
+              </Link>
+            </div>
+          )}
           {(search || activeFilters.length > 0) && (
             <button
               onClick={() => {
@@ -709,6 +785,20 @@ export default function CandidatesPage() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={showBulkDelete}
+        onOpenChange={setShowBulkDelete}
+        itemLabel={`${selectedIds.size} candidate${selectedIds.size === 1 ? "" : "s"}`}
+        itemKind={selectedIds.size === 1 ? "candidate" : undefined}
+        consequences={[
+          "Their job submissions",
+          "Their interview history",
+          "All their activity and notes",
+        ]}
+        onConfirm={bulkDelete}
+        confirmLabel="Yes, delete"
+      />
     </div>
   );
 }

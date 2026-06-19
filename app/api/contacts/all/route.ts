@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Unified contacts list — folds Contact[] (CRM rows the recruiter
 // curated) and ClientUser[] (people who can actually sign in to the
@@ -21,7 +22,18 @@ export async function GET(request: NextRequest) {
     const ctx = await getOrgContext();
     const clientId = request.nextUrl.searchParams.get("clientId");
 
-    const [contacts, clients] = await Promise.all([
+    // contacts: agency-side rows in this firm's book.
+    // agencyClients: the agency-side Client rows for those contacts —
+    //   used purely to map (name → agency-side id) when re-keying
+    //   matched ClientUsers below.
+    // Subtle bug we just fixed (2026-06-10): a Contact's `clientId`
+    // and a ClientUser's `clientId` are NOT the same id space — the
+    // agency-side Client is a mirror created at engagement accept,
+    // ClientUsers live at the original client-portal-side Client.
+    // They share `name`, not id. We therefore match across by name +
+    // email and re-key matches back to the agency-side id so the
+    // existing `makeKey` join still works.
+    const [contacts, agencyClients] = await Promise.all([
       prisma.contact.findMany({
         where: {
           organizationId: ctx.organizationId,
@@ -35,26 +47,51 @@ export async function GET(request: NextRequest) {
           organizationId: ctx.organizationId,
           ...(clientId ? { id: clientId } : {}),
         },
-        select: {
-          id: true,
-          name: true,
-          clientUsers: {
-            where: { isActive: true },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    // Pull ClientUsers at any client-portal-side Client whose name
+    // matches one of the agency-side Clients we're enriching. The
+    // `client` include lets us re-key by name back to the agency-side
+    // id below.
+    const agencyNames = agencyClients.map((c) => c.name);
+    const portalUsers =
+      agencyNames.length > 0
+        ? await prisma.clientUser.findMany({
+            where: {
+              isActive: true,
+              client: {
+                name: { in: agencyNames, mode: "insensitive" as const },
+              },
+            },
             select: {
               id: true,
               name: true,
               email: true,
               title: true,
               role: true,
-              // passwordHash drives the pending vs active flip. We
-              // never ship the hash itself — only the boolean.
               passwordHash: true,
               emailVerifiedAt: true,
+              client: { select: { name: true } },
             },
-          },
-        },
-      }),
-    ]);
+          })
+        : [];
+
+    // Stitch ClientUsers back to their agency-side mirror by name so
+    // the rest of the enrichment loop can use the same agency-side id
+    // the contacts already carry.
+    const agencyIdByName = new Map<string, string>();
+    for (const ac of agencyClients) {
+      agencyIdByName.set(ac.name.toLowerCase(), ac.id);
+    }
+    const clients = agencyClients.map((ac) => ({
+      id: ac.id,
+      name: ac.name,
+      clientUsers: portalUsers.filter(
+        (u) => u.client.name.toLowerCase() === ac.name.toLowerCase(),
+      ),
+    }));
 
     type PortalStatus = "none" | "pending" | "active";
 
@@ -130,6 +167,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(all);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

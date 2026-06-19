@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // List candidates shared with this client
 //
@@ -45,14 +46,26 @@ export async function GET(request: NextRequest) {
         select: { jobId: true },
       });
       const requested = linkedJobs
-        .map((e) => e.jobId)
-        .filter((v): v is string => !!v);
-      allowedJobIds = requested.filter((id) => visibleSet.has(id));
+        .map((e: { jobId: string | null }) => e.jobId)
+        .filter((v: string | null): v is string => !!v);
+      allowedJobIds = requested.filter((jid: string) => visibleSet.has(jid));
     }
 
+    // No filtramos por job.clientId aca aposta. Cada agencia tiene su
+    // propio Client record (ver Client.organizationId — audit metadata
+    // que NO es authoritative), asi que cuando 2 agencias trabajan el
+    // mismo ClientJob, sus Jobs apuntan a Client records DISTINTOS.
+    // El ctx.clientId del ClientUser linkea al record de UNA agencia
+    // (la que originalmente invito al cliente al portal), asi que
+    // filtrar por job.clientId === ctx.clientId borraba todos los
+    // submissions de la segunda agencia.
+    //
+    // El gate correcto ya esta en allowedJobIds (via
+    // accessibleAgencyJobIds → ACCEPTED FirmEngagements de los
+    // ClientJobs accesibles). Eso garantiza que solo vemos submissions
+    // de Jobs efectivamente engaged con este cliente.
     const where: any = {
       isSharedWithClient: true,
-      job: { clientId: ctx.clientId },
       jobId: allowedJobIds.length > 0 ? { in: allowedJobIds } : "__none__",
     };
 
@@ -67,7 +80,7 @@ export async function GET(request: NextRequest) {
       };
     }
     if (clientStageId) where.clientStageId = clientStageId;
-    if (firmId) where.job.organizationId = firmId;
+    if (firmId) where.job = { organizationId: firmId };
 
     const submissions = await prisma.candidateSubmission.findMany({
       where,
@@ -116,7 +129,7 @@ export async function GET(request: NextRequest) {
     // list can link to the right ClientJob detail page in the portal. Without
     // this, /client-portal/jobs/<firm-Job-id> 404s and the list crashes when
     // the user clicks the job badge.
-    const firmJobIds = Array.from(new Set(submissions.map((s) => s.job.id)));
+    const firmJobIds = Array.from(new Set(submissions.map((s: { job: { id: string } }) => s.job.id)));
     const engagements = firmJobIds.length
       ? await prisma.firmEngagement.findMany({
           where: { jobId: { in: firmJobIds }, clientJob: { clientId: ctx.clientId } },
@@ -223,6 +236,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(Array.from(candidateMap.values()));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

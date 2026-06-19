@@ -14,7 +14,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Public routes (landing page, auth, marketing)
-  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/client-portal/register"];
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/client-portal/register"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
   const isLandingPage = pathname === "/";
 
@@ -28,9 +28,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Client portal API routes that don't need session (register, check-account,
+  // Client portal API routes that don't need session (register,
   // verify-email + resend — the recipient has no session yet by definition).
-  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/check-account", "/api/client-portal/set-password", "/api/client-portal/verify-email", "/api/client-portal/resend-verification"];
+  const clientPublicApis = ["/api/client-portal/register", "/api/client-portal/set-password", "/api/client-portal/verify-email", "/api/client-portal/resend-verification"];
   if (clientPublicApis.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }

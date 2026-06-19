@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
-import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
+import { canAccessJob } from "@/lib/job-access";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
@@ -36,7 +38,7 @@ export async function GET() {
 
     return NextResponse.json(placements);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -60,7 +62,7 @@ function computePaymentDueDate(
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const {
@@ -119,6 +121,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Submission not found" }, { status: 404 });
       }
 
+      // SECURITY 2026-06-17: tambien gateamos la rama submission-anchored.
+      // El submissionId lo arma el cliente — un USER sin acceso al Job
+      // podia mandarle el id de una submission ajena y crear el Placement.
+      const allowedSub = await canAccessJob(submission.job.id, ctx.organizationId, ctx.userId, ctx.role);
+      if (!allowedSub) {
+        return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+      }
+
       const existing = await prisma.placement.findUnique({ where: { submissionId } });
       if (existing) {
         return NextResponse.json(
@@ -154,6 +164,14 @@ export async function POST(request: Request) {
           { error: "Job does not belong to the given client" },
           { status: 400 }
         );
+      }
+      // SECURITY 2026-06-17: en la rama manual el caller arma el body
+      // con rawJobId arbitrario — sin canAccessJob, un USER sin
+      // assignment al Job podia crear un Placement (y de paso un
+      // CandidateSubmission "Placed") en un job ajeno.
+      const allowed = await canAccessJob(job.id, ctx.organizationId, ctx.userId, ctx.role);
+      if (!allowed) {
+        return NextResponse.json({ error: "Job not found" }, { status: 404 });
       }
 
       jobId = job.id;
@@ -344,18 +362,15 @@ export async function POST(request: Request) {
           where: { id: jobId! },
           data: { status: "FILLED" },
         });
-        // Same notification fan-out as a manual flip to FILLED so the
-        // client portal hears about the placement regardless of which
-        // path triggered the status change.
-        try {
-          await notifyClientOfJobStatusChange({
-            jobId: jobId!,
-            newStatus: "FILLED",
-            organizationId: ctx.organizationId,
-          });
-        } catch (e) {
-          console.error("[placement] FILLED notif failed:", e);
-        }
+        // ROADMAP.md #22 — we intentionally DON'T notify the client
+        // when a job auto-flips to FILLED on placement creation. The
+        // shared helper already early-returns for non-ON_HOLD status
+        // changes (see lib/job-status-notifications.ts), so the call
+        // we used to make here was a no-op AND the comment misled
+        // future devs into thinking the client got pinged. The agency
+        // tells the client manually when the placement is firm — if a
+        // pre-signature flip got auto-announced and then reverted,
+        // the client would have celebrated for nothing.
       }
     }
 
@@ -368,6 +383,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(placement, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

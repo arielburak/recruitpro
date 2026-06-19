@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
+import { requireAdminResponse } from "@/lib/permissions";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -21,7 +23,7 @@ export async function GET(
     if (!contact) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(contact);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -63,16 +65,27 @@ export async function PUT(
 
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    const refreshed = await prisma.contact.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { firstName: true, lastName: true, client: { select: { name: true } } },
+    });
+    const contactName = refreshed
+      ? `${refreshed.firstName} ${refreshed.lastName}`.trim()
+      : "";
+    const label = refreshed?.client?.name
+      ? `${contactName} (${refreshed.client.name})`
+      : contactName || id;
+
     await logActivity({
       action: "CONTACT_UPDATED",
-      description: `Updated contact ${id}`,
+      description: `Updated contact ${label}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -82,7 +95,14 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
+
+    const existing = await prisma.contact.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      select: { firstName: true, lastName: true, client: { select: { name: true } } },
+    });
 
     const deleted = await prisma.contact.deleteMany({
       where: { id, organizationId: ctx.organizationId },
@@ -90,15 +110,22 @@ export async function DELETE(
 
     if (deleted.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    const contactName = existing
+      ? `${existing.firstName} ${existing.lastName}`.trim()
+      : "";
+    const label = existing?.client?.name
+      ? `${contactName} (${existing.client.name})`
+      : contactName || id;
+
     await logActivity({
       action: "CONTACT_DELETED",
-      description: `Deleted contact ${id}`,
+      description: `Deleted contact ${label}`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

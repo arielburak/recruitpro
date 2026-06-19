@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Send, Share2, Building2, User, CheckCircle2 } from "lucide-react";
+import {
+  Send,
+  Share2,
+  Building2,
+  User,
+  FileText,
+  Loader2,
+} from "lucide-react";
 
 type Props = {
   open: boolean;
@@ -21,39 +27,160 @@ type Props = {
     candidate: { firstName: string; lastName: string; currentTitle?: string | null };
     job?: { title: string; client?: { name: string } | null };
   };
+  // True cuando el candidato ya esta shared y el dialog se abre solo
+  // para ajustar la seleccion de documentos (kebab "Manage shared
+  // docs"). Hace que la accion principal sea "Update", oculta la
+  // nota + el toggle de mail (que solo tienen sentido en el primer
+  // share), y solo dispara un PUT a /documents en vez del PATCH
+  // completo de share.
+  editDocsOnly?: boolean;
   onShared?: () => void;
 };
 
-export function ShareCandidateDialog({ open, onOpenChange, submission, onShared }: Props) {
+type DocRow = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  category: string | null;
+  createdAt: string;
+  isShared: boolean;
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function ShareCandidateDialog({
+  open,
+  onOpenChange,
+  submission,
+  editDocsOnly = false,
+  onShared,
+}: Props) {
   const [note, setNote] = useState("");
   const [notifyViaEmail, setNotifyViaEmail] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const candidateName = `${submission.candidate.firstName} ${submission.candidate.lastName}`.trim();
   const clientName = submission.job?.client?.name;
   const jobTitle = submission.job?.title;
 
-  async function handleShare() {
+  // Reset transient form state when the dialog closes — important
+  // because some callers (e.g. kanban-card) keep this component
+  // mounted across opens, so without an explicit reset the previous
+  // note + notify toggle survive. Re-opens always start as a fresh
+  // share, not a half-edited one. docs + selectedIds re-fetch on
+  // open=true in the effect below, so no need to reset them here.
+  useEffect(() => {
+    if (open) return;
+    setNote("");
+    setNotifyViaEmail(true);
+    setError("");
+  }, [open]);
+
+  // Trae los docs del candidate cuando se abre el dialog. Defaults:
+  // - Primer share (ningun doc shared todavia): pre-marcamos TODOS.
+  //   El recruiter solo desmarca lo que no quiera exponer.
+  // - Re-share / edit: pre-marcamos los que ya estaban shared para
+  //   que el state inicial refleje lo que el cliente ve hoy.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setDocsLoading(true);
+    setError("");
+    fetch(`/api/submissions/${submission.id}/documents`)
+      .then((r) => (r.ok ? r.json() : { documents: [] }))
+      .then((data) => {
+        if (cancelled) return;
+        const list: DocRow[] = Array.isArray(data?.documents) ? data.documents : [];
+        setDocs(list);
+        const anyShared = list.some((d) => d.isShared);
+        setSelectedIds(
+          new Set(
+            anyShared
+              ? list.filter((d) => d.isShared).map((d) => d.id)
+              : list.map((d) => d.id),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDocs([]);
+          setSelectedIds(new Set());
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDocsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, submission.id]);
+
+  function toggleDoc(id: string) {
+    setSelectedIds((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(docs.map((d: DocRow) => d.id)));
+  }
+  function selectNone() {
+    setSelectedIds(new Set());
+  }
+
+  async function handleSubmit() {
     setSubmitting(true);
     setError("");
     try {
-      const res = await fetch(`/api/submissions/${submission.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          isSharedWithClient: true,
-          shareNote: note.trim() || undefined,
-          notifyViaEmail,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to share");
-        setSubmitting(false);
-        return;
+      if (editDocsOnly) {
+        // Re-edit puro de la seleccion de docs. PUT al endpoint
+        // dedicado evita reenviar email + re-disparar la logica de
+        // first-share del PATCH (que ya corrio cuando se compartio
+        // originalmente).
+        const res = await fetch(`/api/submissions/${submission.id}/documents`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentIds: Array.from(selectedIds) }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Failed to update");
+          setSubmitting(false);
+          return;
+        }
+      } else {
+        const res = await fetch(`/api/submissions/${submission.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            isSharedWithClient: true,
+            shareNote: note.trim() || undefined,
+            notifyViaEmail,
+            // Siempre mandamos el array; backend valida e ignora ids
+            // ajenos. Empty array = ningun doc visible.
+            selectedDocumentIds: Array.from(selectedIds),
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error || "Failed to share");
+          setSubmitting(false);
+          return;
+        }
+        setNote("");
       }
-      setNote("");
       onShared?.();
       onOpenChange(false);
     } catch {
@@ -64,15 +191,18 @@ export function ShareCandidateDialog({ open, onOpenChange, submission, onShared 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-4 w-4 text-emerald-600" />
-            Share candidate with client
+            {editDocsOnly ? "Manage shared documents" : "Submit candidate to client"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        {/* Body con scroll propio — el footer (Cancel/Confirm) queda
+            siempre visible abajo. Sin esto, cuando el list de docs
+            crece, el item de abajo se cortaba contra los botones. */}
+        <div className="space-y-4 px-6 py-2 overflow-y-auto flex-1 min-h-0">
           {/* Preview card */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-2">
             <div className="flex items-start gap-2.5">
@@ -100,58 +230,134 @@ export function ShareCandidateDialog({ open, onOpenChange, submission, onShared 
             </div>
           </div>
 
-          {/* Note */}
+          {/* Documents selection */}
           <div className="space-y-2">
-            <Label className="text-xs">Note for the client (optional)</Label>
-            <Textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Why this candidate is a great fit, what stands out..."
-              rows={3}
-              className="text-sm"
-            />
-          </div>
-
-          {/* Notify toggle */}
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifyViaEmail}
-              onChange={(e) => setNotifyViaEmail(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <div>
-              <p className="text-sm text-gray-900">Send email notification</p>
-              <p className="text-[11px] text-gray-500">
-                Notifies the hiring manager and admin users of the client portal. They&apos;ll get a link to review.
-              </p>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">
+                Documents to share
+                {docs.length > 0 && (
+                  <span className="ml-1.5 text-gray-400 font-normal">
+                    ({selectedIds.size} of {docs.length})
+                  </span>
+                )}
+              </Label>
+              {docs.length > 1 && (
+                <div className="flex items-center gap-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={selectAll}
+                    className="text-indigo-600 hover:underline"
+                  >
+                    All
+                  </button>
+                  <span className="text-gray-300">·</span>
+                  <button
+                    type="button"
+                    onClick={selectNone}
+                    className="text-gray-500 hover:underline"
+                  >
+                    None
+                  </button>
+                </div>
+              )}
             </div>
-          </label>
-
-          <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-800 flex items-start gap-2">
-            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>
-              The candidate will appear in the client portal at <strong>Submitted</strong>. They can move it through
-              their own pipeline (Interviewing, Offered, Placed, etc.).
-            </span>
+            {docsLoading ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500 px-2 py-3 border border-dashed border-gray-200 rounded-lg">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading documents…
+              </div>
+            ) : docs.length === 0 ? (
+              <div className="text-xs text-gray-500 px-2 py-3 border border-dashed border-gray-200 rounded-lg">
+                No documents uploaded for this candidate yet. The client
+                will see the submission without attachments.
+              </div>
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                {docs.map((doc: DocRow) => {
+                  const checked = selectedIds.has(doc.id);
+                  return (
+                    <label
+                      key={doc.id}
+                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                        checked
+                          ? "bg-emerald-50 border border-emerald-200"
+                          : "bg-white border border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleDoc(doc.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <FileText className={`h-3.5 w-3.5 shrink-0 ${checked ? "text-emerald-600" : "text-gray-400"}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-gray-800 truncate">{doc.name}</p>
+                        <p className="text-[10px] text-gray-400 truncate">
+                          {doc.category ? `${doc.category} · ` : ""}
+                          {formatBytes(doc.size)}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
+
+          {/* Note + notify solo en primer share — re-edit no
+              re-dispara el mail. Mas compacto que antes para que el
+              picker de docs sea lo dominante: textarea de 2 filas,
+              info bg sacada (la promesa "you can adjust later" la
+              cubre el menu Manage shared docs), notify pasa a una
+              linea simple. */}
+          {!editDocsOnly && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Note for the client (optional)</Label>
+                <Textarea
+                  value={note}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNote(e.target.value)}
+                  placeholder="Why this candidate is a great fit..."
+                  rows={2}
+                  className="text-sm resize-none"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={notifyViaEmail}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNotifyViaEmail(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                Send email notification to client contacts on this job
+              </label>
+            </>
+          )}
 
           {error && (
             <div className="bg-red-50 text-red-600 text-xs p-2 rounded">{error}</div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0 bg-white">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
           <Button
-            onClick={handleShare}
+            onClick={handleSubmit}
             disabled={submitting}
             className="bg-emerald-600 hover:bg-emerald-700 gap-1.5"
           >
             <Send className="h-3.5 w-3.5" />
-            {submitting ? "Sharing..." : "Share with Client"}
+            {submitting
+              ? editDocsOnly
+                ? "Updating..."
+                : "Sending..."
+              : editDocsOnly
+                ? "Update documents"
+                : "Send submission"}
           </Button>
         </div>
       </DialogContent>

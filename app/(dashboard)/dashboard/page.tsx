@@ -15,21 +15,15 @@ import {
   TrendingDown,
   Clock,
   Target,
-  Zap,
-  BarChart3,
   Activity,
   Upload,
+  Info,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import Link from "next/link";
-import {
-  PipelineChart,
-  ActivityTrendChart,
-  RecruiterLeaderboard,
-} from "@/components/dashboard-charts";
+import { ActivityTrendChart } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
-import { PipelineDistribution } from "@/components/dashboard/pipeline-distribution";
-import { MigrateBanner, MigrateBannerStatic } from "@/components/dashboard/migrate-banner";
+import { MigrateBanner } from "@/components/dashboard/migrate-banner";
 
 // Force dynamic rendering. The page already depends on getServerSession
 // + prisma so Next.js auto-detects this, but stating it explicitly
@@ -43,6 +37,7 @@ export const revalidate = 0;
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.organizationId;
+  const userId = session?.user?.id as string | undefined;
 
   if (!orgId) return null;
 
@@ -50,16 +45,34 @@ export default async function DashboardPage() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-  // Org age drives the first-week migration banner (see MigrateBanner).
-  // We fetch this outside the Promise.all so the banner can render
-  // even if any of the dashboard stat queries fail — it's a hint, not
-  // a hard dependency.
-  const org = await prisma.organization.findUnique({
-    where: { id: orgId },
-    select: { createdAt: true },
-  });
-  const daysSinceSignup = org
-    ? Math.floor((now.getTime() - new Date(org.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+  // Visibility de jobs en KPIs del dashboard (decisión 2026-06-19 con
+  // Nicolás + Ari):
+  // - ADMIN: ve los KPIs sobre todos los jobs del org.
+  // - USER: estrictamente assignment-based, igual que /api/jobs y
+  //   canAccessJob.
+  const role = (session?.user as any)?.role as "ADMIN" | "USER" | undefined;
+  const jobAccessFilter =
+    role === "ADMIN" ? {} : { assignments: { some: { userId } } };
+
+  // First-week banners ahora se basan en la edad del USER, no del org.
+  // Antes (commit eafa844 + previos) usabamos org.createdAt — eso dejaba
+  // sin banners de onboarding a los users invitados a un org existente.
+  // Reportado 2026-06-17: "invité a otro mail mio como teammate y no me
+  // aparecieron los carteles que deberían aparecer cuando alguien se
+  // loguea por primera vez". El onboarding es personal de cada user, no
+  // del workspace.
+  //
+  // Edge case: si userId no está en la session por alguna razon, usamos
+  // Infinity para que isWithinFirstWeek sea false y los banners se
+  // escondan en vez de aparecer indefinidamente.
+  const user = userId
+    ? await prisma.user.findUnique({
+        where: { id: userId },
+        select: { createdAt: true },
+      })
+    : null;
+  const daysSinceSignup = user
+    ? Math.floor((now.getTime() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
     : Infinity;
   const isWithinFirstWeek = daysSinceSignup <= 7;
 
@@ -75,13 +88,21 @@ export default async function DashboardPage() {
     candidatesLastMonth,
     placementsThisMonth,
     placementsLastMonth,
-    pipelineData,
     activityByDay,
     recruiterStats,
     recentSubmissions,
+    // teamSize: solo para gating del banner de "Invite Team Member"
+    // de primera semana. Si el user esta solo (count === 1) y todavia
+    // esta dentro de los primeros 7 dias, le destacamos el CTA para
+    // sumar al equipo. Cualquier invite hecho saca el banner.
+    teamSize,
   ] = await Promise.all([
     prisma.job.count({
-      where: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } },
+      where: {
+        organizationId: orgId,
+        status: { in: ["OPEN", "ACTIVE"] },
+        ...jobAccessFilter,
+      },
     }),
     prisma.candidate.count({ where: { organizationId: orgId } }),
     prisma.candidateSubmission.count({
@@ -129,12 +150,6 @@ export default async function DashboardPage() {
         updatedAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
       },
     }),
-    // Pipeline stage distribution (all active jobs)
-    prisma.pipelineStage.findMany({
-      where: { job: { organizationId: orgId, status: { in: ["OPEN", "ACTIVE"] } } },
-      include: { _count: { select: { submissions: true } } },
-      orderBy: { order: "asc" },
-    }),
     // Activity count by day (last 14 days)
     prisma.activity.findMany({
       where: { organizationId: orgId, createdAt: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) } },
@@ -166,14 +181,10 @@ export default async function DashboardPage() {
         stage: { select: { name: true, color: true } },
       },
     }),
+    prisma.user.count({
+      where: { organizationId: orgId, isActive: true },
+    }),
   ]);
-
-  // Aggregate pipeline data by stage name
-  const pipelineAgg = new Map<string, number>();
-  for (const stage of pipelineData) {
-    pipelineAgg.set(stage.name, (pipelineAgg.get(stage.name) || 0) + stage._count.submissions);
-  }
-  const pipelineChartData = Array.from(pipelineAgg.entries()).map(([name, count]) => ({ name, count }));
 
   // Aggregate activity by day
   const dayMap = new Map<string, number>();
@@ -230,8 +241,12 @@ export default async function DashboardPage() {
   const candidateTrend = meaningfulTrend(candidatesThisMonth, candidatesLastMonth);
   const placementTrend = meaningfulTrend(placementsThisMonth, placementsLastMonth);
 
-  const totalInPipeline = pipelineChartData.reduce((sum, d) => sum + d.count, 0);
-
+  // Tooltips are plain-English explanations of WHEN each tile
+  // increments. Surfaced as a gray Info icon next to the label so an
+  // operator can hover before trusting the number. Wording matches
+  // the policy enforced server-side — Placements counts submissions
+  // that reached the Placed stage (not Placement rows), Active
+  // Searches respects strict assignment-based visibility, etc.
   const stats = [
     {
       label: "Active Searches",
@@ -241,6 +256,7 @@ export default async function DashboardPage() {
       lightBg: "bg-blue-50",
       lightColor: "text-blue-600",
       href: "/jobs",
+      tooltip: "Jobs in OPEN or ACTIVE status that you're assigned to. Searches the rest of the firm owns but didn't share with you don't count here.",
     },
     {
       label: "Total Candidates",
@@ -252,16 +268,13 @@ export default async function DashboardPage() {
       trend: candidateTrend,
       trendLabel: "vs last 30d",
       href: "/candidates",
+      tooltip: "Every candidate row in your firm's database. The trend chip compares the last 30 days of new candidates vs the prior 30.",
     },
-    {
-      label: "In Pipeline",
-      value: totalInPipeline,
-      icon: Target,
-      gradient: "from-violet-500 to-purple-600",
-      lightBg: "bg-violet-50",
-      lightColor: "text-violet-600",
-      href: "/jobs",
-    },
+    // "In Pipeline" removido del strip de stats: duplicaba info que
+    // ya esta granular en Total Candidates + per-job kanban, y como
+    // total agregado no movia decisiones. Si vuelve mas adelante,
+    // tiene que justificarse por accion (ej. linkar a una vista
+    // filtrada de candidatos en pipeline, no a /jobs generico).
     {
       label: "Placements",
       value: placements,
@@ -272,6 +285,7 @@ export default async function DashboardPage() {
       trend: placementTrend,
       trendLabel: "vs last 30d",
       href: "/placements",
+      tooltip: "Submissions that reached the Placed stage. The trend chip compares Placed transitions in the last 30 days vs the prior 30.",
     },
     {
       label: "Clients",
@@ -281,6 +295,7 @@ export default async function DashboardPage() {
       lightBg: "bg-amber-50",
       lightColor: "text-amber-600",
       href: "/clients",
+      tooltip: "Hiring companies your firm is engaged with (linked via OrganizationClient). The global Client pool isn't counted — only the ones you're working with.",
     },
   ];
 
@@ -433,6 +448,47 @@ export default async function DashboardPage() {
         <MigrateBanner daysSinceSignup={daysSinceSignup} orgId={orgId} />
       )}
 
+      {/* Invite teammate banner — visible toda la primera semana del
+          USER (no del org). El copy se adapta segun teamSize:
+          · teamSize === 1 → "Working alone? Pull your team in" (founder)
+          · teamSize > 1  → "Bring more people in" (invitee que llego a
+                            un org ya armado, igual le queremos sugerir
+                            que sume contactos)
+          Apenas pasa la semana, desaparece. */}
+      {isWithinFirstWeek && (
+        <div className="bg-gradient-to-r from-violet-50 via-purple-50 to-indigo-50 border border-violet-200 rounded-2xl p-5">
+          <div className="flex items-start gap-4 pr-6">
+            <div className="p-2.5 bg-violet-100 rounded-xl shrink-0">
+              <UserPlus className="w-5 h-5 text-violet-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-violet-900">
+                {teamSize === 1
+                  ? "Want backup on this? Add a teammate."
+                  : "Welcome to the team — bring more people in."}
+              </p>
+              <p className="text-sm text-violet-800/80 mt-0.5">
+                {teamSize === 1
+                  ? "Split searches, share notes on candidates, and chat with clients together. Free during your trial."
+                  : "You can invite teammates yourself — anyone you add joins the same workspace and shares jobs, candidates, and client chats with you."}
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <Link
+                  href="/settings/team"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Invite a teammate
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+                <span className="text-[11px] text-violet-700/70">
+                  {7 - daysSinceSignup} day{7 - daysSinceSignup === 1 ? "" : "s"} left in your first week
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {stats.map((stat) => (
@@ -457,7 +513,24 @@ export default async function DashboardPage() {
                   )}
                 </div>
                 <p className="text-2xl font-bold tracking-tight">{stat.value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <p className="text-xs text-gray-500">{stat.label}</p>
+                  {stat.tooltip && (
+                    <span
+                      // Wrapping en un <span> con title hace que el
+                      // hover tooltip funcione sin necesidad de un
+                      // event handler (este page.tsx es server
+                      // component y pasar onClick al icon tira
+                      // "Event handlers cannot be passed to Client
+                      // Component props" en el render server-side).
+                      title={stat.tooltip}
+                      aria-label={stat.tooltip}
+                      className="inline-flex"
+                    >
+                      <Info className="h-3 w-3 text-gray-300 hover:text-gray-500 cursor-help shrink-0" />
+                    </span>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </Link>
@@ -471,29 +544,23 @@ export default async function DashboardPage() {
           compare-vs-prior) re-fetch independently of the SSR shell. */}
       <RecruiterPerformance />
 
-      {/* Main Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Distribution — client-side so the date range
-            picker can re-aggregate without re-running the SSR
-            dashboard. Uses the shared DateRangePicker so the
-            "time" semantics match the Recruiter Performance widget
-            above. */}
-        <PipelineDistribution />
-
-        {/* Activity Trend */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-indigo-500" />
-              Activity (Last 14 Days)
-            </CardTitle>
-            <p className="text-xs text-gray-400">Daily team activity across all actions</p>
-          </CardHeader>
-          <CardContent>
-            <ActivityTrendChart data={activityTrendData} />
-          </CardContent>
-        </Card>
-      </div>
+      {/* Activity Trend — full width ahora que sacamos el Pipeline
+          Distribution de al lado. El strip violeta de pipeline
+          duplicaba la lectura del kanban por job y como agregado
+          no movia decisiones; queda Activity sola hasta que demos
+          con una metrica de pipeline que aporte algo nuevo. */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="h-4 w-4 text-indigo-500" />
+            Activity (Last 14 Days)
+          </CardTitle>
+          <p className="text-xs text-gray-400">Daily team activity across all actions</p>
+        </CardHeader>
+        <CardContent>
+          <ActivityTrendChart data={activityTrendData} />
+        </CardContent>
+      </Card>
 
       {/* Bottom Row: Recent Submissions + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

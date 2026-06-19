@@ -29,6 +29,19 @@ interface ChatNotesProps {
   // Distinct from submissionId: those are tied to a candidate-on-job;
   // jobId covers standing notes about the search itself.
   jobId?: string;
+  // True when the submission hasn't been shared with the client yet.
+  // We still let the user read CLIENT_VISIBLE comments (there might
+  // be history from a prior share) but hide the composer and the
+  // tab visibility-toggle, with a hint that explains the rule:
+  // "Share this candidate to start the conversation". Only applies
+  // to the per-submission chat; ignored at job and candidate scope.
+  clientChatLocked?: boolean;
+  // Name of the client that the CLIENT_VISIBLE tab talks to. Used to
+  // render "Shared with AlphaBridge" instead of the generic "Shared
+  // with Client" — mirrors the client side, where the tab says
+  // "Shared with Morabits" (the firm name). Optional: when missing
+  // we fall back to "the client".
+  clientName?: string | null;
   onCommentAdded: () => void;
   // Visual override — candidate-level notes usually live above the
   // per-job chat and don't need the full chat height.
@@ -111,20 +124,53 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function renderMentions(text: string) {
+// Clickable mention chip — Outlook-style toggle: click highlights it
+// with a stronger bg; click again (or click another chip) clears it.
+// State is local per chip so we don't thread anything through the
+// parent component. Purely visual feedback — no navigation, no side
+// effects.
+function MentionChip({ label, onDark }: { label: string; onDark?: boolean }) {
+  const [selected, setSelected] = useState(false);
+  // Base + selected variant per bubble color. The unselected chip keeps
+  // the original "Outlook chip" look from before this change; selected
+  // jumps to indigo-300 / white-40% so the difference is obvious without
+  // being loud.
+  const base = onDark
+    ? "bg-white/25 text-white"
+    : "bg-indigo-100 text-indigo-700";
+  const activeCls = onDark
+    ? "bg-white/40 text-white ring-1 ring-white/60"
+    : "bg-indigo-300 text-indigo-900 ring-1 ring-indigo-500";
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelected((v) => !v);
+      }}
+      className={`font-semibold px-1.5 py-px rounded transition-colors cursor-pointer ${
+        selected ? activeCls : base
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function renderMentions(text: string, opts: { onDark?: boolean } = {}) {
   // Only style the @-prefixed first name. Trying to also consume a second
   // word was over-greedy and swallowed normal text following a mention
   // (e.g. "@Ariel tambien" rendered as one styled chunk). The mentioned
   // userId is stored separately on the comment, so using first-name-only
   // here doesn't break notification routing.
+  //
+  // Estilo "Outlook chip": pill con bg sutil + bold + clickable. Cada
+  // chip mantiene su propio estado local de "seleccionado" — click
+  // togglea el highlight (feedback visual solo, sin navegacion).
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("@")) {
-      return (
-        <span key={i} className="text-indigo-600 font-medium bg-indigo-50 px-0.5 rounded">
-          {part}
-        </span>
-      );
+      return <MentionChip key={i} label={part} onDark={opts.onDark} />;
     }
     return part;
   });
@@ -155,7 +201,8 @@ function parseComment(c: any) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommentAdded, heightClass }: ChatNotesProps) {
+export function ChatNotes({ comments, candidateId, submissionId, jobId, clientChatLocked, clientName, onCommentAdded, heightClass }: ChatNotesProps) {
+  const clientLabel = clientName?.trim() || "Client";
   const { data: session } = useSession();
   const currentUserId = (session?.user as any)?.id || "";
   // Candidate-level scope means there's no client to share with, so
@@ -189,15 +236,27 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
 
   // ── Mention search ───────────────────────────────────────────────────
 
+  // Mention picker is gated by the currently-active tab:
+  //   · INTERNAL → only Users with access to this Job. No clients.
+  //     Mentioning a hiring manager from an internal note would
+  //     leak private context to them via the notification mail.
+  //   · CLIENT_VISIBLE → Users with access to the Job PLUS hiring
+  //     contacts of that Job's client only (not every engaged
+  //     client). The backend (/api/users/search) does the actual
+  //     scoping when we pass jobId/submissionId.
   const searchUsers = useCallback(async (query: string) => {
     try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}&includeClients=true`);
+      const includeClients = activeTab === "CLIENT_VISIBLE";
+      const params = new URLSearchParams({ q: query, includeClients: String(includeClients) });
+      if (jobId) params.set("jobId", jobId);
+      else if (submissionId) params.set("submissionId", submissionId);
+      const res = await fetch(`/api/users/search?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setMentionResults([...data.users, ...data.clients]);
+        setMentionResults([...data.users, ...(includeClients ? data.clients : [])]);
       }
     } catch {}
-  }, []);
+  }, [activeTab, jobId, submissionId]);
 
   useEffect(() => {
     if (!showMentions) return;
@@ -207,6 +266,20 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
     };
   }, [mentionQuery, showMentions, searchUsers]);
+
+  // Flipping back from CLIENT_VISIBLE to INTERNAL must also drop
+  // any ClientUsers the user had already picked while the comment
+  // was client-visible. Without this the submit payload still
+  // carries client IDs in `mentions` and the server-side notifier
+  // mails them about an internal-only thread. Guarded so it doesn't
+  // re-render at mount when mentions is already empty.
+  useEffect(() => {
+    if (activeTab !== "INTERNAL") return;
+    setMentions((prev) => {
+      const next = prev.filter((m) => m.type !== "client");
+      return next.length === prev.length ? prev : next;
+    });
+  }, [activeTab]);
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value;
@@ -356,8 +429,10 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
                 : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100"
             }`}
           >
-            <Globe className="h-3.5 w-3.5" />
-            Shared with Client
+            <Globe className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-[200px]" title={`Shared with ${clientLabel}`}>
+              Shared with {clientLabel}
+            </span>
             {clientCount > 0 && (
               <span className={`ml-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 activeTab === "CLIENT_VISIBLE" ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
@@ -383,13 +458,21 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
         ) : (
           filtered.map((c: any, idx: number) => {
             const { isClient, authorName, displayContent, rating, authorId } = parseComment(c);
-            const isCurrentUser = authorId === currentUserId;
+            // Lado del mensaje por TEAM, no por usuario. Todos los de
+            // la agencia (incluido vos) van a la derecha con bubble
+            // indigo; los del cliente a la izquierda con emerald.
+            // Mismo criterio mirror-ed en el client portal: ahi el
+            // lado "mio" pasa a ser el del cliente. Asi el chat lee
+            // siempre como "mi equipo a la derecha, los otros a la
+            // izquierda" desde cualquiera de los dos portales.
+            const isMyOrg = !isClient;
             const showHeader = shouldShowHeader(idx);
             // Day separator: render a centered "Today"/"Yesterday"/date
             // chip the first time we land on a new calendar day, so
             // long-running threads read like a chat-history timeline.
             const prev = idx > 0 ? filtered[idx - 1] : null;
             const showDaySeparator = !prev || !sameDay(prev.createdAt, c.createdAt);
+            const isCurrentUser = authorId === currentUserId;
 
             return (
               <Fragment key={c.id}>
@@ -403,18 +486,21 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
                   </div>
                 )}
                 <div
-                  className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
+                  className={`flex ${isMyOrg ? "justify-end" : "justify-start"} ${showHeader ? "mt-3" : "mt-0.5"}`}
                 >
-                  <div className={`flex gap-2 max-w-[80%] ${isCurrentUser ? "flex-row-reverse" : ""}`}>
-                    {/* Avatar */}
+                  <div className={`flex gap-2 max-w-[80%] ${isMyOrg ? "flex-row-reverse" : ""}`}>
+                    {/* Avatar — solido para "vos" y para el cliente
+                        (matchea el color del bubble). Teammates de la
+                        agencia van con la version clara, asi te
+                        distinguis del resto del equipo igual. */}
                     {showHeader ? (
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                          isClient
-                            ? "bg-emerald-100 text-emerald-700"
-                            : isCurrentUser
-                            ? "bg-indigo-600 text-white"
-                            : "bg-gray-200 text-gray-600"
+                          isMyOrg
+                            ? isCurrentUser
+                              ? "bg-indigo-600 text-white"
+                              : "bg-indigo-100 text-indigo-700"
+                            : "bg-emerald-600 text-white"
                         }`}
                       >
                         {initials(authorName)}
@@ -424,9 +510,9 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
                     )}
 
                     {/* Message body */}
-                    <div className={isCurrentUser ? "text-right" : ""}>
+                    <div className={isMyOrg ? "text-right" : ""}>
                       {showHeader && (
-                        <div className={`flex items-center gap-2 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                        <div className={`flex items-center gap-2 mb-0.5 ${isMyOrg ? "justify-end" : ""}`}>
                           <span className="text-xs font-semibold text-gray-700">{authorName}</span>
                           {isClient && (
                             <Badge variant="secondary" className="text-[10px] py-0 px-1 bg-emerald-50 text-emerald-600 border-emerald-200">
@@ -438,7 +524,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
                       )}
 
                       {rating && (
-                        <div className={`flex gap-0.5 mb-0.5 ${isCurrentUser ? "justify-end" : ""}`}>
+                        <div className={`flex gap-0.5 mb-0.5 ${isMyOrg ? "justify-end" : ""}`}>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <Star
                               key={n}
@@ -448,20 +534,24 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
                         </div>
                       )}
 
-                      {/* Bubble + always-visible clock time. Time sits on
-                          the opposite side of the bubble (after for
-                          incoming, before for outgoing) so it never
-                          interferes with the message text. */}
+                      {/* Bubble: lo MIO destaca con color saturado,
+                          lo recibido va en gris callado. Es el patron
+                          tipo WhatsApp / iMessage donde tu propia voz
+                          se distingue, y lo que llega del otro queda
+                          como info secundaria. Avatar + "Client" badge
+                          ya marcan que el mensaje es del cliente; el
+                          color saturado de ese lado generaba mucha
+                          competencia visual. */}
                       {displayContent && (
-                        <div className={`flex items-end gap-1.5 ${isCurrentUser ? "flex-row-reverse" : ""}`}>
+                        <div className={`flex items-end gap-1.5 ${isMyOrg ? "flex-row-reverse" : ""}`}>
                           <div
                             className={`inline-block px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap ${
-                              isCurrentUser
+                              isMyOrg
                                 ? "bg-indigo-600 text-white rounded-tr-md"
                                 : "bg-gray-100 text-gray-800 rounded-tl-md"
                             }`}
                           >
-                            {isCurrentUser ? displayContent : renderMentions(displayContent)}
+                            {isMyOrg ? renderMentions(displayContent, { onDark: true }) : renderMentions(displayContent)}
                           </div>
                           <span
                             className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap pb-0.5"
@@ -501,35 +591,73 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input area. The client chat is gated behind "has this
+          candidate been shared with the client yet?" — until then
+          the composer is replaced by a hint that points the user
+          at the share button. Internal stays open at all times. */}
+      {clientChatLocked && activeTab === "CLIENT_VISIBLE" ? (
+        <div className="border-t border-gray-200 p-4 bg-gray-50 shrink-0 text-center">
+          <p className="text-xs text-gray-600">
+            <Globe className="h-3.5 w-3.5 inline-block mr-1 align-text-bottom text-gray-400" />
+            Share this candidate to start the conversation with {clientLabel}.
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Use the <span className="font-medium">Share with Client</span> button on the candidate to unlock this chat.
+          </p>
+        </div>
+      ) : (
       <div className="border-t border-gray-200 p-3 bg-gray-50 shrink-0 relative">
-        {/* Mention dropdown (positioned above input) */}
+        {/* Mention dropdown (positioned above input). Avatar +
+            label color por equipo: indigo = agencia (mi equipo desde
+            esta vista), emerald = cliente. Misma paleta que ya usan
+            los chat bubbles para que el cliente y la agencia se
+            distingan al toque tambien en el picker. */}
         {showMentions && mentionResults.length > 0 && (
           <div className="absolute bottom-full mb-1 left-3 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-            {mentionResults.map((user, i) => (
-              <button
-                key={`${user.type}-${user.id}`}
-                onClick={() => insertMention(user)}
-                className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-indigo-50 ${
-                  i === selectedIndex ? "bg-indigo-50" : ""
-                }`}
-              >
-                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-medium text-gray-600 shrink-0">
-                  {user.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{user.name}</p>
-                  <p className="text-xs text-gray-400 truncate">
-                    {user.type === "client" ? `Client · ${user.companyName || ""}` : user.role || user.email}
-                  </p>
-                </div>
-              </button>
-            ))}
+            {mentionResults.map((user, i) => {
+              const isClient = user.type === "client";
+              return (
+                <button
+                  key={`${user.type}-${user.id}`}
+                  onClick={() => insertMention(user)}
+                  className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-indigo-50 ${
+                    i === selectedIndex ? "bg-indigo-50" : ""
+                  }`}
+                >
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${
+                      isClient
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-indigo-100 text-indigo-700"
+                    }`}
+                  >
+                    {user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-gray-900 truncate">{user.name}</p>
+                      <span
+                        className={`text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                          isClient
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-indigo-50 text-indigo-700"
+                        }`}
+                      >
+                        {isClient ? "Client" : "Team"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 truncate">
+                      {isClient ? user.companyName || user.email : user.role || user.email}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -542,7 +670,7 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
             placeholder={
               activeTab === "INTERNAL"
                 ? "Internal note... @ to mention"
-                : "Client-visible note... @ to mention"
+                : `Note to ${clientLabel}... @ to mention`
             }
             rows={1}
             className="flex-1 resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 max-h-24 overflow-y-auto"
@@ -573,11 +701,12 @@ export function ChatNotes({ comments, candidateId, submissionId, jobId, onCommen
               : "bg-gray-200 text-gray-500"
           }`}>
             {activeTab === "CLIENT_VISIBLE" ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-            {activeTab === "CLIENT_VISIBLE" ? "Visible to client" : "Internal only"}
+            {activeTab === "CLIENT_VISIBLE" ? `Visible to ${clientLabel}` : "Internal only"}
           </span>
           <span className="text-[11px] text-gray-400">Enter to send · Shift+Enter for newline</span>
         </div>
       </div>
+      )}
     </div>
   );
 }

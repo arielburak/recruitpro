@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { ensureClientHasActiveAdmin } from "@/lib/client-portal-roles";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET my profile (works for both staffing and client users)
 export async function GET() {
@@ -73,7 +74,7 @@ export async function GET() {
       createdAt: u.createdAt,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -127,7 +128,7 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -146,24 +147,38 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
     }
 
+    // Defensa en profundidad: filtrar por (id, orgId) o (id, clientId) en
+    // el update para que un JWT con id de otra org no pueda cambiar
+    // password ajeno. El id viene del session (no del body) — la
+    // superficie real es estrecha, pero el extra filter es barato.
     if (user.isClientUser) {
-      const cu = await prisma.clientUser.findUnique({ where: { id: user.id } });
+      const cu = await prisma.clientUser.findFirst({
+        where: { id: user.id, clientId: user.clientId },
+      });
       if (!cu?.passwordHash) return NextResponse.json({ error: "No password set" }, { status: 400 });
       const valid = await bcrypt.compare(currentPassword, cu.passwordHash);
       if (!valid) return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
       const newHash = await bcrypt.hash(newPassword, 12);
-      await prisma.clientUser.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+      await prisma.clientUser.update({
+        where: { id: cu.id },
+        data: { passwordHash: newHash },
+      });
       return NextResponse.json({ success: true });
     }
 
-    const u = await prisma.user.findUnique({ where: { id: user.id } });
+    const u = await prisma.user.findFirst({
+      where: { id: user.id, organizationId: user.organizationId },
+    });
     if (!u?.passwordHash) return NextResponse.json({ error: "No password set" }, { status: 400 });
     const valid = await bcrypt.compare(currentPassword, u.passwordHash);
     if (!valid) return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
     const newHash = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+    await prisma.user.update({
+      where: { id: u.id },
+      data: { passwordHash: newHash },
+    });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

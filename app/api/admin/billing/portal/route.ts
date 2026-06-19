@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { createBillingPortalSession } from "@/lib/stripe";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST() {
   try {
@@ -21,6 +22,6 @@ export async function POST() {
     const session = await createBillingPortalSession(subscription.stripeCustomerId);
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

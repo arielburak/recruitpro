@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/utils";
 import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS, TRIAL_DAYS } from "@/lib/constants";
 import { sendWelcomeEmail } from "@/lib/email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 const onboardingSchema = z.object({
   orgName: z.string().trim().min(2, "Company name must be at least 2 characters"),
@@ -86,7 +87,9 @@ export async function POST(request: Request) {
         select: { email: true, name: true },
       });
       if (fullUser) {
-        const origin = request.headers.get("origin") || process.env.NEXTAUTH_URL || "";
+        // NEXTAUTH_URL primero (canonical). Ver comentario en
+        // /api/auth/register.
+        const origin = process.env.NEXTAUTH_URL || request.headers.get("origin") || "";
         sendWelcomeEmail({
           to: fullUser.email,
           recipientName: fullUser.name,
@@ -114,7 +117,7 @@ export async function POST(request: Request) {
     }
     console.error("Onboarding error:", error);
     return NextResponse.json(
-      { error: error.message || "Onboarding failed" },
+      { error: safeErrorMessage(error) || "Onboarding failed" },
       { status: 500 }
     );
   }

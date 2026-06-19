@@ -3,36 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { jobSchema } from "@/lib/validations/job";
 import { notifyClientOfJobStatusChange } from "@/lib/job-status-notifications";
-
-// A job is "private" when it was born from a person-level client-portal
-// invite: at least one FirmEngagement row points at it with invitedUserId
-// set. Private jobs are visible only to their assignees, even to firm
-// admins. Legacy or directly-created jobs (no such engagements) keep
-// the old behaviour — admins see everything, non-admins need an
-// assignment.
-async function canAccessJob(
-  jobId: string,
-  organizationId: string,
-  userId: string,
-  role: "ADMIN" | "USER"
-): Promise<boolean> {
-  const job = await prisma.job.findFirst({
-    where: { id: jobId, organizationId },
-    select: {
-      assignments: { where: { userId }, select: { userId: true } },
-      firmEngagements: {
-        where: { invitedUserId: { not: null } },
-        select: { id: true },
-        take: 1,
-      },
-    },
-  });
-  if (!job) return false;
-  const isAssigned = job.assignments.length > 0;
-  const isPrivate = job.firmEngagements.length > 0;
-  if (isPrivate) return isAssigned;
-  return role === "ADMIN" || isAssigned;
-}
+import { requireAdminResponse } from "@/lib/permissions";
+import { canAccessJob } from "@/lib/job-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -45,15 +18,68 @@ export async function GET(
     let job = await prisma.job.findFirst({
       where: { id, organizationId: ctx.organizationId },
       include: {
-        client: true,
+        client: {
+          include: {
+            // ClientUsers activos del cliente para resolver el caso
+            // legacy: si el ClientJob mirror existe pero no tiene
+            // members explicitos, todos los ClientUsers activos
+            // tienen acceso. Los devolvemos siempre asi el UI puede
+            // decidir si mostrar la lista de members o la fallback.
+            clientUsers: {
+              where: { isActive: true },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                title: true,
+                role: true,
+                // Hash + verifiedAt feed the derived "isPending" flag
+                // below. We DROP the hash itself before responding —
+                // never sent to the agency client. A pending user is
+                // one we invited but who never set a password and
+                // never verified their email = the invite is still
+                // outstanding and cancellable.
+                passwordHash: true,
+                emailVerifiedAt: true,
+              },
+              orderBy: { name: "asc" },
+            },
+          },
+        },
         stages: { orderBy: { order: "asc" } },
         assignments: { include: { user: { select: { id: true, name: true } } } },
-        documents: { orderBy: { createdAt: "desc" } },
-        firmEngagements: {
-          where: { invitedUserId: { not: null } },
-          select: { id: true },
-          take: 1,
+        // ClientJob mirror (creado cuando la agencia comparte el job
+        // con el cliente). Lo incluimos solo para listar los client
+        // users con acceso desde la vista de agencia. Si la JO tiene
+        // members explicitos, solo esos ven el job; si esta vacio,
+        // todos los ClientUsers activos del cliente lo ven (legacy
+        // backwards-compat). Esa segunda regla la resolvemos en el
+        // page abajo cuando renderea.
+        clientJobMirror: {
+          select: {
+            id: true,
+            postedBy: {
+              select: { id: true, name: true, email: true, title: true, role: true, isActive: true },
+            },
+            members: {
+              select: {
+                clientUser: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    title: true,
+                    role: true,
+                    isActive: true,
+                    passwordHash: true,
+                    emailVerifiedAt: true,
+                  },
+                },
+              },
+            },
+          },
         },
+        documents: { orderBy: { createdAt: "desc" } },
         submissions: {
           include: {
             candidate: {
@@ -131,20 +157,83 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // ADMIN bypass (decisión 2026-06-19 con Nicolás + Ari): el admin
+    // del org ve y muta cualquier job. No necesita estar en el
+    // assignment list para abrir el detalle.
+    const isAdminBypass = ctx.role === "ADMIN";
     const isAssigned = job.assignments.some((a: any) => a.user.id === ctx.userId);
-    const isPrivate = job.firmEngagements.length > 0;
-    if (isPrivate) {
-      if (!isAssigned) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    } else if (ctx.role !== "ADMIN" && !isAssigned) {
+
+    // Fallback access paths for when assignment alone would 404. Both
+    // consulted only on the deny path so the happy path stays one
+    // query. Skipeados directamente si el caller es ADMIN — ya tiene
+    // acceso, no hace falta el lookup extra.
+    //
+    //   1. Mention-based: if the recruiter was arrobado in any
+    //      comment on this job, let them read it. Otherwise the
+    //      "X mentioned you in Y" notification lands on a 404 and
+    //      the click — which is the whole point of the notification
+    //      — does nothing.
+    //
+    //   2. Engagement-based: a recruiter who accepted a person-
+    //      level invite via /engagements should always be able to
+    //      open the job from that page, even on rare cases where
+    //      the JobAssignment row wasn't created (e.g. legacy
+    //      engagements predating the upsert in
+    //      /api/engagements/[id]). Without this the link from
+    //      /engagements/[clientId] dead-ends in 404.
+    let mentioned = false;
+    let engaged = false;
+    if (!isAdminBypass && !isAssigned) {
+      const [m, e] = await Promise.all([
+        prisma.comment.findFirst({
+          where: { jobId: id, mentions: { has: ctx.userId } },
+          select: { id: true },
+        }),
+        prisma.firmEngagement.findFirst({
+          where: { jobId: id, invitedUserId: ctx.userId, status: "ACCEPTED" },
+          select: { id: true },
+        }),
+      ]);
+      mentioned = !!m;
+      engaged = !!e;
+    }
+
+    const hasAccess = isAdminBypass || isAssigned || mentioned || engaged;
+    if (!hasAccess) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Strip the privacy marker we only loaded to make the decision — the
-    // client doesn't need that noise.
-    const { firmEngagements: _drop, ...jobForClient } = job as any;
-    return NextResponse.json(jobForClient);
+    // Strip passwordHash everywhere it leaked through ClientUser
+    // selects, derive isPending in its place. The flag tells the UI
+    // which invites are still cancellable (never activated).
+    const sanitizeClientUser = (u: any) => {
+      if (!u) return u;
+      const { passwordHash, emailVerifiedAt, ...rest } = u;
+      return {
+        ...rest,
+        isPending: !passwordHash && !emailVerifiedAt,
+      };
+    };
+    const payload: any = { ...job };
+    if (payload.client?.clientUsers) {
+      payload.client = {
+        ...payload.client,
+        clientUsers: payload.client.clientUsers.map(sanitizeClientUser),
+      };
+    }
+    if (payload.clientJobMirror?.members) {
+      payload.clientJobMirror = {
+        ...payload.clientJobMirror,
+        members: payload.clientJobMirror.members.map((m: any) => ({
+          ...m,
+          clientUser: sanitizeClientUser(m.clientUser),
+        })),
+      };
+    }
+
+    return NextResponse.json(payload);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -169,7 +258,7 @@ export async function PUT(
     if (updated.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -179,6 +268,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await getOrgContext();
+    const forbidden = requireAdminResponse(ctx.role);
+    if (forbidden) return forbidden;
     const { id } = await params;
 
     const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
@@ -189,7 +280,7 @@ export async function DELETE(
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -273,6 +364,6 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

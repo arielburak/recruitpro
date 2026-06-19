@@ -34,6 +34,19 @@ type Props = {
   row: CandidateRow;
   showJob?: boolean;
   showFirm?: boolean;
+  // When true, the row is a secondary submission of the same
+  // candidate as the row above (the candidate's avatar + name
+  // already appear there). We dim the row and replace the
+  // candidate cell with a quiet indent line so the table reads
+  // "1 candidate, 3 searches" instead of "3 candidates with the
+  // same name". No copy in the cell — the indent + the parent
+  // row already say it.
+  asSecondary?: boolean;
+  // When set on the PRIMARY row of a candidate that has multiple
+  // submissions, renders a small "in N searches" pill next to the
+  // name. Makes the multi-search status legible even before the
+  // user clicks the toggle below.
+  totalSearches?: number;
   // Kept on the API surface so callers don't break — the prop is now
   // a no-op since rating is removed from the row.
   onRated?: () => void;
@@ -49,32 +62,59 @@ function formatDateShort(iso: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function CandidateTableRow({ row, showJob = true, showFirm = true }: Props) {
+export function CandidateTableRow({ row, showJob = true, showFirm = true, asSecondary = false, totalSearches }: Props) {
   const fullName = `${row.candidate.firstName} ${row.candidate.lastName}`.trim();
   const initials = (row.candidate.firstName[0] || "") + (row.candidate.lastName[0] || "");
+  const showSearchPill = !asSecondary && totalSearches && totalSearches > 1;
 
   return (
-    <TableRow className="hover:bg-gray-50">
+    <TableRow className={asSecondary ? "hover:bg-gray-50 bg-gray-50/40" : "hover:bg-gray-50"}>
       <TableCell>
-        <Link
-          href={`/client-portal/candidates/${row.submissionId}`}
-          className="flex items-center gap-2.5 min-w-0 group"
-        >
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
-            {initials.toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
-              {fullName}
-            </p>
-            {row.candidate.currentTitle && (
-              <p className="text-[11px] text-gray-500 truncate">
-                {row.candidate.currentTitle}
-                {row.candidate.currentCompany ? ` · ${row.candidate.currentCompany}` : ""}
-              </p>
-            )}
-          </div>
-        </Link>
+        {asSecondary ? (
+          // Quiet indent only — no avatar, no name, no copy. The
+          // parent row above carries the candidate's identity; the
+          // L-shape line below ramifies visually so the
+          // relationship is unambiguous. The whole cell is still a
+          // link to the submission detail.
+          <Link
+            href={`/client-portal/candidates/${row.submissionId}`}
+            className="flex items-center pl-4 h-full group"
+            aria-label={`Open this search for ${fullName}`}
+          >
+            <span
+              aria-hidden="true"
+              className="inline-block w-4 h-4 border-l-2 border-b-2 border-gray-300 rounded-bl shrink-0"
+            />
+            <span className="sr-only">{fullName}</span>
+          </Link>
+        ) : (
+          <Link
+            href={`/client-portal/candidates/${row.submissionId}`}
+            className="flex items-center gap-2.5 min-w-0 group"
+          >
+            <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+              {initials.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-600">
+                  {fullName}
+                </p>
+                {showSearchPill && (
+                  <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full shrink-0">
+                    in {totalSearches} searches
+                  </span>
+                )}
+              </div>
+              {row.candidate.currentTitle && (
+                <p className="text-[11px] text-gray-500 truncate">
+                  {row.candidate.currentTitle}
+                  {row.candidate.currentCompany ? ` · ${row.candidate.currentCompany}` : ""}
+                </p>
+              )}
+            </div>
+          </Link>
+        )}
       </TableCell>
 
       {showJob && (
@@ -138,3 +178,13 @@ export function CandidateTableRow({ row, showJob = true, showFirm = true }: Prop
     </TableRow>
   );
 }
+
+// El antiguo CandidateMultiSearchRow se elimino — combinaba todas
+// las submissions del candidato en un "super-row" con grid hardcodeado
+// que se desalineaba cada vez que sumabamos columnas a la tabla o el
+// candidato tenia muchos jobs. Ahora el caller (app/client-portal/
+// candidates/page.tsx) emite N CandidateTableRow comunes: el primero
+// con `totalSearches={N}` (pill "in N searches") y los siguientes con
+// `asSecondary={true}` (L-line indent en la cell de candidato). Asi
+// todos los sub-rows usan las TableCell de la tabla y heredan sus
+// anchos — robusto ante cambios de schema y de cantidad de submissions.

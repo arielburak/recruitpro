@@ -29,7 +29,32 @@ export async function POST(request: Request) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = session.metadata?.organizationId;
-      if (orgId && session.subscription) {
+      const customerId =
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id;
+
+      // Cross-validation contra el row de Subscription: el metadata
+      // organizationId viene del checkout que iniciamos nosotros, pero
+      // si alguna vez el flow se compromete (e.g. middleware hijack),
+      // un atacante podria activar suscripcion de otra org. Antes de
+      // marcar ACTIVE confirmamos que el stripeCustomerId del session
+      // matchea con el cliente que ya guardamos para ese org.
+      if (orgId && session.subscription && customerId) {
+        const existing = await prisma.subscription.findUnique({
+          where: { organizationId: orgId },
+          select: { stripeCustomerId: true },
+        });
+        if (!existing || existing.stripeCustomerId !== customerId) {
+          // Anomalia — el customer del checkout NO matchea el customer
+          // que guardamos cuando se creo la suscripcion. No tocamos
+          // nada y dejamos en Sentry para investigar.
+          console.error(
+            "[stripe webhook] checkout.session.completed customer mismatch:",
+            { orgId, sessionCustomer: customerId, dbCustomer: existing?.stripeCustomerId },
+          );
+          break;
+        }
         await prisma.subscription.update({
           where: { organizationId: orgId },
           data: {
@@ -83,6 +108,22 @@ export async function POST(request: Request) {
     case "customer.subscription.updated": {
       const subscription = event.data.object as any;
       const quantity = subscription.items?.data?.[0]?.quantity || 1;
+      // Stripe subscription status → nuestro enum. Pre-fix solo mapeaba
+      // active y past_due — cuando llegaba un update con status=canceled
+      // (caso documentado: cancel_at_period_end → final del periodo) la
+      // sub seguía como ACTIVE en la DB y el guard de subscription la
+      // dejaba seguir usando el ATS sin pagar. Mapeamos los 6 valores
+      // posibles de Stripe que conocemos. Cualquier otro queda
+      // undefined (no se toca el campo) para no pisar con basura un
+      // estado válido pre-existente.
+      const stripeStatus = subscription.status as string | undefined;
+      let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined;
+      if (stripeStatus === "active") mappedStatus = "ACTIVE";
+      else if (stripeStatus === "past_due") mappedStatus = "PAST_DUE";
+      else if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired") mappedStatus = "CANCELED";
+      else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
+      else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: {
@@ -90,7 +131,7 @@ export async function POST(request: Request) {
           currentPeriodEnd: subscription.current_period_end
             ? new Date(subscription.current_period_end * 1000)
             : undefined,
-          status: subscription.status === "active" ? "ACTIVE" : subscription.status === "past_due" ? "PAST_DUE" : undefined,
+          ...(mappedStatus && { status: mappedStatus }),
         },
       });
       break;

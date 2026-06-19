@@ -7,6 +7,8 @@ import {
   notifyOnNewJobComment,
 } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
+import { validateCommentScope } from "@/lib/comment-access";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
@@ -26,7 +28,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
 
-    const mentions: string[] = Array.isArray(body.mentions) ? body.mentions.filter((m: unknown) => typeof m === "string") : [];
+    const rawMentions: string[] = Array.isArray(body.mentions)
+      ? body.mentions.filter((m: unknown) => typeof m === "string")
+      : [];
+
+    // Server-side scope guard. Enforces: (a) CLIENT_VISIBLE only on
+    // shared submissions, (b) mentions filtered to people with real
+    // access to the destination. Everything else falls back to the
+    // existing handler logic.
+    const scope = await validateCommentScope(
+      prisma,
+      { kind: "agency", userId: ctx.userId, organizationId: ctx.organizationId, role: ctx.role },
+      {
+        type: requestedType,
+        submissionId: body.submissionId || null,
+        candidateId: body.candidateId || null,
+        jobId: body.jobId || null,
+        mentions: rawMentions,
+      },
+    );
+    if (!scope.allowed) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status });
+    }
+    const mentions = scope.mentions;
+
+    // When the agency posts a CLIENT_VISIBLE Job note, mirror the
+    // row onto the ClientJob it backs (via accepted FirmEngagement)
+    // so the comment shows up on the client portal Notes tab as
+    // "Shared with Agency". Without this stamp the client side
+    // queries clientJob.comments and never sees agency-posted
+    // visible notes. Internal comments don't get clientJobId — the
+    // client never reads INTERNAL.
+    let clientJobIdForRow: string | null = null;
+    if (body.jobId && requestedType === "CLIENT_VISIBLE") {
+      const eng = await prisma.firmEngagement.findFirst({
+        where: {
+          jobId: body.jobId,
+          status: "ACCEPTED",
+          organizationId: ctx.organizationId,
+        },
+        select: { clientJobId: true },
+      });
+      clientJobIdForRow = eng?.clientJobId ?? null;
+    }
 
     const comment = await prisma.comment.create({
       data: {
@@ -39,6 +83,7 @@ export async function POST(request: Request) {
         // "this client cobra X bajo la mesa" without it being tied
         // to a specific candidate.
         jobId: body.jobId || null,
+        clientJobId: clientJobIdForRow,
         userId: ctx.userId,
         mentions,
       },
@@ -64,6 +109,7 @@ export async function POST(request: Request) {
         authorKind: "staffing",
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) => console.error("[comments POST] notify failed:", e));
     } else if (body.candidateId) {
       notifyOnNewCandidateComment({
@@ -72,6 +118,7 @@ export async function POST(request: Request) {
         mentions,
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) =>
         console.error("[comments POST] candidate notify failed:", e),
       );
@@ -82,6 +129,7 @@ export async function POST(request: Request) {
         mentions,
         authorId: ctx.userId,
         authorName,
+        authorEmail: ctx.userEmail || undefined,
       }).catch((e) =>
         console.error("[comments POST] job notify failed:", e),
       );
@@ -126,6 +174,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

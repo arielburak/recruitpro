@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { Resend } from "resend";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(firms);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -75,6 +76,26 @@ export async function POST(request: Request) {
     });
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
+    // Reject early if the email is already a portal member of THIS
+    // client — they belong on the team, not on the recruiter side. Lets
+    // an admin who fat-fingered their own email get a clear error
+    // instead of silently creating a FirmEngagement whose invitedEmail
+    // points at one of their own users (which then bleeds into the
+    // "previously engaged firms" dropdown as a fake recruiter contact).
+    const ownTeamMember = await prisma.clientUser.findFirst({
+      where: { email: normalizedEmail, clientId: ctx.clientId },
+      select: { id: true, name: true },
+    });
+    if (ownTeamMember) {
+      return NextResponse.json(
+        {
+          error:
+            "That email belongs to your own team. Recruiter invites go to people at the firm you want to engage, not to your colleagues.",
+        },
+        { status: 400 }
+      );
     }
 
     // Was this exact email already invited to this exact job?
@@ -135,8 +156,8 @@ export async function POST(request: Request) {
               <p><strong>${job.title}</strong></p>
               <p>${message || "They'd like you to work on this role."}</p>
               <p>Join Recruiting ATS to manage this engagement:</p>
-              <a href="${baseUrl}/register?invite=${clientJobId}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
-                Join Recruiting ATS
+              <a href="${baseUrl}/register?invite=firm&jobId=${clientJobId}&email=${encodeURIComponent(normalizedEmail)}" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px;">
+                Set up your firm on Recruiting ATS
               </a>
               <p style="margin-top: 16px; font-size: 13px; color: #6b7280;">
                 Already have an account? <a href="${baseUrl}/login" style="color: #4f46e5;">Sign in here</a>
@@ -216,6 +237,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(engagement, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

@@ -8,6 +8,8 @@ import {
   sendClientTeamInviteEmail,
   sendClientJobAccessGrantedEmail,
 } from "@/lib/email";
+import { requireVerifiedEmail } from "@/lib/require-verified-email";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // Add a member to a specific ClientJob from the "Your Team" panel on
 // the job page. Three intent paths, all returned as one call:
@@ -33,6 +35,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireVerifiedEmail();
+    if (guard) return guard;
+
     const ctx = await getClientContext();
     const { id } = await params;
     const body = await request.json();
@@ -196,6 +201,6 @@ export async function POST(
       { status: 201 }
     );
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

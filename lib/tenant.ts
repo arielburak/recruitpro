@@ -30,13 +30,13 @@ export async function getOrgContext() {
     (sessionId
       ? await prisma.user.findUnique({
           where: { id: sessionId },
-          select: { id: true, role: true, organizationId: true, name: true, isActive: true },
+          select: { id: true, role: true, organizationId: true, name: true, email: true, isActive: true },
         })
       : null) ||
     (sessionEmail
       ? await prisma.user.findUnique({
           where: { email: sessionEmail },
-          select: { id: true, role: true, organizationId: true, name: true, isActive: true },
+          select: { id: true, role: true, organizationId: true, name: true, email: true, isActive: true },
         })
       : null);
 
@@ -48,6 +48,7 @@ export async function getOrgContext() {
     organizationId: dbUser.organizationId,
     role: (dbUser.role || "USER") as "ADMIN" | "USER",
     userName: dbUser.name || "",
+    userEmail: dbUser.email || "",
   };
 }
 
@@ -58,7 +59,7 @@ export async function getClientContext() {
   // One email → one ClientUser (DB-enforced via `email @unique`).
   // Look up by email so role / clientId / clientName stay fresh even if
   // the JWT cache is stale after a recent edit.
-  let clientUser: { id: string; clientId: string; role: "ADMIN" | "USER"; name: string; client: { name: string } } | null = null;
+  let clientUser: { id: string; clientId: string; role: "ADMIN" | "USER"; name: string; email: string; client: { name: string } } | null = null;
   if (user?.email) {
     const cu = await prisma.clientUser.findFirst({
       where: { email: { equals: user.email, mode: "insensitive" }, isActive: true },
@@ -67,6 +68,7 @@ export async function getClientContext() {
         clientId: true,
         role: true,
         name: true,
+        email: true,
         client: { select: { name: true } },
       },
     });
@@ -83,5 +85,6 @@ export async function getClientContext() {
     clientName: clientUser.client.name || "",
     role: clientUser.role as "ADMIN" | "USER",
     userName: clientUser.name,
+    userEmail: clientUser.email,
   };
 }

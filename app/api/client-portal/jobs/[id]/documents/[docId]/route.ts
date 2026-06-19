@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — stream a client-portal job document.
 //
@@ -47,7 +48,7 @@ export async function GET(
   } catch (error: any) {
     console.error("[client-portal job doc] download error:", error);
     return NextResponse.json(
-      { error: error.message || "Download failed" },
+      { error: safeErrorMessage(error) || "Download failed" },
       { status: 500 }
     );
   }

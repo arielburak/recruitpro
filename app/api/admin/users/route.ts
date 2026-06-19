@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
   try {
+    // Read is open to any authenticated org member — the My Team tab is
+    // visible to every user so they can see who's on the team. Mutations
+    // (POST/PATCH/DELETE below) remain admin-only.
     const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin only" }, { status: 403 });
-    }
 
     const users = await prisma.user.findMany({
       where: { organizationId: ctx.organizationId },
@@ -22,7 +23,7 @@ export async function GET() {
 
     return NextResponse.json(users);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }
 
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -119,7 +120,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -174,6 +175,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
