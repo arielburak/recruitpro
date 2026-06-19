@@ -21,14 +21,18 @@ const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 //
 // Decisión 2026-06-19 con Nicolás: aparece SIEMPRE cada vez que se
 // monta el componente (cada login / refresh). No persiste dismiss en
-// storage. El user puede cerrarlo con X / click afuera para usar el
-// ATS, pero al refresh / próximo login reaparece. La idea es que sea
-// imposible olvidarse del trial.
+// storage. Modos no-urgent: user puede cerrar con X o esc para usar
+// el ATS, pero al refresh / próximo login reaparece.
 //
 // Visual escalado por urgencia:
 //   · 7d+ → indigo (gentle reminder, dismissible esta carga)
 //   · 3-6d → amber (heads up, dismissible esta carga)
-//   · 0-2d → red (urgent, no dismissible — solo el CTA)
+//   · 0-2d → red (urgent, SIN X, solo el CTA. La X confunde porque
+//     no cierra — la sacamos directo del DialogContent)
+//
+// Si el trial YA expiró: early return. El SubscriptionGate del layout
+// muestra overlay full-screen bloqueante y este popup no aporta nada
+// arriba de eso.
 
 type Subscription = {
   status: string;
@@ -72,6 +76,12 @@ export function TrialCountdown() {
   const trialEnd = new Date(subscription.trialEndsAt).getTime();
   const now = Date.now();
   const msLeft = trialEnd - now;
+
+  // Si el trial YA expiró, el SubscriptionGate del layout se hace
+  // cargo con un overlay full-screen bloqueante. Este popup chico
+  // no aporta nada arriba de eso — solo confunde.
+  if (msLeft <= 0) return null;
+
   const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
 
   const isUrgent = daysLeft <= 2;
@@ -124,7 +134,7 @@ export function TrialCountdown() {
         if (!o) handleDismiss();
       }}
     >
-      <DialogContent>
+      <DialogContent showCloseButton={!isUrgent}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <span
@@ -156,7 +166,7 @@ export function TrialCountdown() {
 
         {isUrgent && (
           <p className="text-xs text-red-600 text-center mt-2">
-            We'll keep showing this until you subscribe to avoid losing access.
+            You'll lose access to the ATS when the trial ends. Subscribe now to keep working.
           </p>
         )}
       </DialogContent>
