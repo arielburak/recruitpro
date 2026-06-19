@@ -24,6 +24,7 @@ import Link from "next/link";
 import { ActivityTrendChart } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
 import { MigrateBanner } from "@/components/dashboard/migrate-banner";
+import { TrialCountdown } from "@/components/billing/trial-countdown";
 
 // Force dynamic rendering. The page already depends on getServerSession
 // + prisma so Next.js auto-detects this, but stating it explicitly
@@ -325,6 +326,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Trial countdown banner — visible si la org está en trial. Self-
+          gated por el componente: no se renderiza si está ACTIVE, isComp
+          o sin sub. Click → /settings/billing. Color/urgencia cambia
+          según días restantes (indigo → amber → rojo). */}
+      <TrialCountdown />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
