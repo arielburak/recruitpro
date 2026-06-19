@@ -1807,8 +1807,57 @@ export default function JobDetailPage() {
                       </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 col-span-2">
-                      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Assigned to</p>
-                      <p className="text-sm font-semibold text-gray-900">{job.assignments?.map((a: any) => a.user.name).join(", ") || "—"}</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                          Assigned to
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowAssignDialog(true)}
+                          className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-900 inline-flex items-center gap-1"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Manage
+                        </button>
+                      </div>
+                      {(() => {
+                        const team = job.assignments || [];
+                        if (team.length === 0) {
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Nobody assigned yet. Use{" "}
+                              <span className="font-medium text-gray-700">Manage</span>{" "}
+                              to add teammates.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1.5">
+                            {team.map((a: any) => {
+                              const initials = (a.user.name || a.user.email || "?")
+                                .split(/\s+/)
+                                .filter(Boolean)
+                                .slice(0, 2)
+                                .map((p: string) => p[0]?.toUpperCase() || "")
+                                .join("");
+                              return (
+                                <div
+                                  key={a.user.id || a.userId}
+                                  className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-0.5 border bg-white border-gray-200"
+                                  title={a.user.email || ""}
+                                >
+                                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold bg-indigo-100 text-indigo-700">
+                                    {initials || "?"}
+                                  </span>
+                                  <span className="text-xs font-medium text-gray-800">
+                                    {a.user.name || a.user.email}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* Client portal access — quien del cliente puede
                         ver el job en su portal. Editable: la agencia
@@ -1829,7 +1878,7 @@ export default function JobDetailPage() {
                         <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                           Client portal access
                         </p>
-                        {job.clientJobMirror && !editingPortalAccess && (
+                        {job.clientJobMirror && (
                           <button
                             type="button"
                             onClick={() => {
@@ -1861,98 +1910,13 @@ export default function JobDetailPage() {
                         }
 
                         const allClientUsers = job.client?.clientUsers || [];
-
-                        if (editingPortalAccess) {
-                          const toggleId = (uid: string) => {
-                            setAccessSelectedIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(uid)) next.delete(uid);
-                              else next.add(uid);
-                              return next;
-                            });
-                          };
-                          const saveAccess = async () => {
-                            setSavingAccess(true);
-                            setAccessError(null);
-                            try {
-                              const res = await fetch(`/api/jobs/${job.id}/client-portal-access`, {
-                                method: "PUT",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                  memberIds: Array.from(accessSelectedIds),
-                                }),
-                              });
-                              if (!res.ok) {
-                                const j = await res.json().catch(() => ({}));
-                                throw new Error(j.error || "Save failed");
-                              }
-                              setEditingPortalAccess(false);
-                              await fetchJob();
-                            } catch (e: any) {
-                              setAccessError(e.message || "Save failed");
-                            } finally {
-                              setSavingAccess(false);
-                            }
-                          };
-                          return (
-                            <div className="space-y-2">
-                              <p className="text-[11px] text-gray-500">
-                                Tick the people who should see this search. Unchecking everyone reverts to the legacy &quot;visible to the whole team&quot; state.
-                              </p>
-                              {allClientUsers.length === 0 ? (
-                                <p className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg p-3">
-                                  Nobody on {job.client?.name || "this client"} has a portal account yet. Invite them first.
-                                </p>
-                              ) : (
-                                <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-72 overflow-y-auto">
-                                  {allClientUsers.map((u: any) => {
-                                    const checked = accessSelectedIds.has(u.id);
-                                    return (
-                                      <label
-                                        key={u.id}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={() => toggleId(u.id)}
-                                          className="rounded border-gray-300"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                          <p className="font-medium text-gray-900 truncate">{u.name || u.email}</p>
-                                          <p className="text-[11px] text-gray-500 truncate">{u.email}</p>
-                                        </div>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {accessError && (
-                                <p className="text-xs text-rose-600">{accessError}</p>
-                              )}
-                              <div className="flex items-center gap-2 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingPortalAccess(false);
-                                    setAccessError(null);
-                                  }}
-                                  className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1"
-                                  disabled={savingAccess}
-                                >
-                                  Cancel
-                                </button>
-                                <Button
-                                  size="sm"
-                                  onClick={saveAccess}
-                                  disabled={savingAccess}
-                                >
-                                  {savingAccess ? "Saving…" : "Save"}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        }
+                        // El editing del Client Portal Access vive en
+                        // un Dialog popout (ver más abajo en el JSX
+                        // del componente). Acá solo mostramos los
+                        // chips de lectura — mismo patrón que la
+                        // sección "Assigned to" más arriba. Sin esto
+                        // el inline tomaba toda la altura del card y
+                        // se sentía raro.
 
                         const memberUsers = (mirror.members || [])
                           .map((m: any) => m.clientUser)
@@ -2399,6 +2363,148 @@ export default function JobDetailPage() {
           }}
         />
       )}
+
+      {/* Client Portal Access — Manage popout. Reemplaza el editing
+          inline que se montaba dentro de la sección Details (sucio
+          visualmente). Mismo form, pero contenido y prolijo en un
+          dialog. Suma un link al final "Invite a new contact" que
+          dispara el flow Invite Client existente para sumar a
+          alguien que todavía no figura como ClientUser. */}
+      <Dialog
+        open={editingPortalAccess}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingPortalAccess(false);
+            setAccessError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage client portal access</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500">
+            Tick the people who should see this search on the client
+            portal. Unchecking everyone reverts to the legacy
+            &quot;visible to the whole team&quot; state.
+          </p>
+          {(() => {
+            const allClientUsers = job?.client?.clientUsers || [];
+            if (allClientUsers.length === 0) {
+              return (
+                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2">
+                  Nobody on {job?.client?.name || "this client"} has a
+                  portal account yet. Invite one below to get started.
+                </p>
+              );
+            }
+            const toggleId = (uid: string) => {
+              setAccessSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(uid)) next.delete(uid);
+                else next.add(uid);
+                return next;
+              });
+            };
+            return (
+              <div className="border border-gray-200 rounded-lg bg-white divide-y divide-gray-100 max-h-72 overflow-y-auto mt-2">
+                {allClientUsers.map((u: any) => {
+                  const checked = accessSelectedIds.has(u.id);
+                  return (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleId(u.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 truncate">
+                          {u.name || u.email}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate">
+                          {u.email}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Link "Invite a new contact" — abre el flow Invite Client
+              que ya existe. Cierra este dialog primero para que no
+              queden 2 modales encima. */}
+          <button
+            type="button"
+            onClick={() => {
+              setEditingPortalAccess(false);
+              setAccessError(null);
+              setShareSuccess("");
+              setShareError("");
+              setShowShareDialog(true);
+            }}
+            className="text-xs text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 mt-2"
+          >
+            <Plus className="h-3 w-3" />
+            Invite a new contact to the portal
+          </button>
+
+          {accessError && (
+            <p className="text-xs text-rose-600 mt-2">{accessError}</p>
+          )}
+
+          <div className="flex items-center gap-2 justify-end mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingPortalAccess(false);
+                setAccessError(null);
+              }}
+              disabled={savingAccess}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={async () => {
+                setSavingAccess(true);
+                setAccessError(null);
+                try {
+                  const res = await fetch(
+                    `/api/jobs/${job?.id}/client-portal-access`,
+                    {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        memberIds: Array.from(accessSelectedIds),
+                      }),
+                    },
+                  );
+                  if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    throw new Error(j.error || "Save failed");
+                  }
+                  setEditingPortalAccess(false);
+                  await fetchJob();
+                } catch (e: any) {
+                  setAccessError(e.message || "Save failed");
+                } finally {
+                  setSavingAccess(false);
+                }
+              }}
+              disabled={savingAccess}
+            >
+              {savingAccess ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Assign Recruiters Dialog */}
       <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
