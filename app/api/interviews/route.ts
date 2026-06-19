@@ -20,17 +20,22 @@ export async function GET(request: NextRequest) {
     const end = searchParams.get("end");
     const status = searchParams.get("status");
 
-    // The calendar is a per-user view: each recruiter only sees the
-    // interviews they own (createdBy) or were invited to as an
-    // interviewer. The full org-wide list lives elsewhere (e.g. the
-    // job-level Interviews tab) where that wider scope makes sense.
+    // Calendar visibility (decisión 2026-06-19 con Nicolás + Ari):
+    // - ADMIN: ve TODAS las interviews del org. Dueño del workspace,
+    //   tiene vista global. Consciente del trade-off: con N recruiters
+    //   activos el calendar puede saturarse, pero es lo que el ADMIN
+    //   quiere para coordinar / cubrir / supervisar.
+    // - USER: per-user. Solo ve las interviews que él creó (createdBy)
+    //   o donde figura como interviewer.
     const where: any = {
       organizationId: ctx.organizationId,
-      OR: [
+    };
+    if (ctx.role !== "ADMIN") {
+      where.OR = [
         { createdBy: ctx.userId },
         { interviewers: { some: { userId: ctx.userId } } },
-      ],
-    };
+      ];
+    }
 
     if (start && end) {
       where.startTime = {
