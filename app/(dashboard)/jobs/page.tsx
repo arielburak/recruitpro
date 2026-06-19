@@ -7,7 +7,7 @@ import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, X, Check, ChevronDown, Upload } from "lucide-react";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, JOB_STATUS_SELECTABLE, WORK_ARRANGEMENT_LABELS, WORK_ARRANGEMENT_COLORS } from "@/lib/constants";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
@@ -618,6 +618,11 @@ export default function JobsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="jobs" disabled={jobs.length === 0} />
+          <Link href="/import?type=jobs">
+            <Button size="sm" variant="outline">
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+            </Button>
+          </Link>
           <Link href="/jobs/new">
             <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create Job</Button>
           </Link>

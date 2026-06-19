@@ -7,7 +7,7 @@ import { ExportCsvButton } from "@/components/export-csv-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Building2, Trash2 } from "lucide-react";
+import { Plus, Search, Building2, Trash2, Upload } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
@@ -123,6 +123,11 @@ export default function ClientsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="clients" disabled={clients.length === 0} />
+          <Link href="/import?type=clients">
+            <Button size="sm" variant="outline">
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+            </Button>
+          </Link>
           <Link href="/clients/new">
             <Button size="sm"><Plus className="mr-1.5 h-3.5 w-3.5" /> Add Client</Button>
           </Link>

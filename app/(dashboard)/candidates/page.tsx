@@ -315,6 +315,8 @@ export default function CandidatesPage() {
     setBulkDeleting(false);
   }
 
+  const [expandingSelection, setExpandingSelection] = useState(false);
+
   // CSV export uses the shared <ExportCsvButton/> component below —
   // no per-page handler needed.
 
@@ -326,6 +328,37 @@ export default function CandidatesPage() {
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
   const [sort, setSort] = useState("created_desc");
+
+  // "Select all N matching" — expande el set de selectedIds más allá
+  // de la página actual. Hits el endpoint con idsOnly=true que
+  // devuelve hasta 5000 ids matching los filters/search activos. Sin
+  // esto, bulk delete solo cubría los 20 visibles y borrar 1000
+  // candidates obligaba a paginar manualmente. Pasamos los mismos
+  // params del fetch principal para que el set sea exacto.
+  async function selectAllMatching() {
+    if (expandingSelection) return;
+    setExpandingSelection(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("idsOnly", "true");
+      if (search) params.set("search", search);
+      if (ownerFilter.length > 0) params.set("ownerId", ownerFilter.join(","));
+      if (locationFilter.length > 0) params.set("location", locationFilter.join(","));
+      if (jobFilter.length > 0) params.set("jobId", jobFilter.join(","));
+      if (clientFilter.length > 0) params.set("clientId", clientFilter.join(","));
+      if (stageFilter.length > 0) params.set("stage", stageFilter.join(","));
+      if (dateRange.from) params.set("createdFrom", dateRange.from);
+      if (dateRange.to) params.set("createdTo", dateRange.to);
+      const res = await fetch(`/api/candidates?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.ids)) {
+          setSelectedIds(new Set(data.ids));
+        }
+      }
+    } catch {}
+    setExpandingSelection(false);
+  }
 
   // Filter options from API
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -433,6 +466,11 @@ export default function CandidatesPage() {
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="candidates" disabled={candidates.length === 0} />
+          <Link href="/import?type=candidates">
+            <Button size="sm" variant="outline">
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Import
+            </Button>
+          </Link>
           <Link href="/candidates/new">
             <Button size="sm">
               <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Candidate
@@ -536,6 +574,23 @@ export default function CandidatesPage() {
           >
             Clear
           </button>
+          {/* "Select all N matching" — solo aparece cuando hay más
+              candidatos en filas no visibles (otras páginas) que los
+              que ya tenés seleccionados. Hace fetch a idsOnly=true
+              para traer todos los ids matching los filtros actuales.
+              Sin esto, bulk delete se quedaba en los 20 visibles. */}
+          {total > selectedIds.size && (
+            <button
+              type="button"
+              onClick={selectAllMatching}
+              disabled={expandingSelection}
+              className="text-xs text-indigo-700 hover:text-indigo-900 underline disabled:opacity-60"
+            >
+              {expandingSelection
+                ? "Selecting…"
+                : `Select all ${total.toLocaleString()} matching`}
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <ExportCsvButton type="candidates" ids={Array.from(selectedIds)} variant="subtle" />
             {isAdmin && (

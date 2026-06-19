@@ -823,10 +823,10 @@ export default function CandidateDetailPage() {
                               type="button"
                               onClick={() => toggleSubmissionShare(sub.id, true)}
                               className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
-                              title="Share with client"
+                              title="Submit to client"
                             >
                               <Share2 className="h-3 w-3" />
-                              Share
+                              Submit
                             </button>
                           )}
 

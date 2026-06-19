@@ -106,6 +106,26 @@ export async function GET(request: NextRequest) {
     else if (sort === "name_desc") orderBy = [{ firstName: "desc" }, { lastName: "desc" }];
     else if (sort === "created_asc") orderBy = { createdAt: "asc" };
 
+    // Mode "idsOnly": el UI de "Select all N matching" lo usa para
+    // expandir el set de selected ids más allá de la página actual.
+    // Devuelve solo ids + total, sin pagination ni includes. Cap a
+    // 5,000 para no traer un megabyte de strings si filter es "all".
+    const idsOnly = searchParams.get("idsOnly") === "true";
+    if (idsOnly) {
+      const all = await prisma.candidate.findMany({
+        where,
+        select: { id: true },
+        orderBy,
+        take: 5000,
+      });
+      const total = await prisma.candidate.count({ where });
+      return NextResponse.json({
+        ids: all.map((c) => c.id),
+        total,
+        capped: total > 5000,
+      });
+    }
+
     const [candidates, total] = await Promise.all([
       prisma.candidate.findMany({
         where,

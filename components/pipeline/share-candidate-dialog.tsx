@@ -195,7 +195,7 @@ export function ShareCandidateDialog({
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-4 w-4 text-emerald-600" />
-            {editDocsOnly ? "Manage shared documents" : "Share candidate with client"}
+            {editDocsOnly ? "Manage shared documents" : "Submit candidate to client"}
           </DialogTitle>
         </DialogHeader>
 
@@ -354,10 +354,10 @@ export function ShareCandidateDialog({
             {submitting
               ? editDocsOnly
                 ? "Updating..."
-                : "Sharing..."
+                : "Sending..."
               : editDocsOnly
                 ? "Update documents"
-                : "Share with Client"}
+                : "Send submission"}
           </Button>
         </div>
       </DialogContent>

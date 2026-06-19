@@ -37,6 +37,11 @@ type SendArgs = {
   // (no Reply-To header) so transactional account mails (verify,
   // reset, welcome) stay on the noreply@ envelope.
   replyTo?: string;
+  // Schedule el envío para una fecha futura (Resend `scheduledAt`).
+  // Usado por el getting-started email para que llegue 1h post-signup
+  // en vez de inmediato. Resend ISO 8601 format. Si no se pasa, envío
+  // inmediato.
+  scheduledAt?: Date;
 };
 
 // Shared copy helpers — single source of truth for the structural
@@ -114,7 +119,7 @@ function interviewDetailsTable(args: {
     </table>`;
 }
 
-async function sendEmail({ to, subject, html, replyTo }: SendArgs) {
+async function sendEmail({ to, subject, html, replyTo, scheduledAt }: SendArgs) {
   if (outboundDisabled) {
     console.warn(
       `[email] DISABLE_OUTBOUND_EMAIL set — dropping mail to ${to}: ${subject}`
@@ -141,6 +146,9 @@ async function sendEmail({ to, subject, html, replyTo }: SendArgs) {
     subject,
     html,
     ...(replyTo ? { reply_to: replyTo } : {}),
+    // Resend `scheduledAt` admite ISO 8601 o human-readable ("in 1 hour").
+    // Pasamos ISO para que el endpoint lo procese sin ambigüedad.
+    ...(scheduledAt ? { scheduledAt: scheduledAt.toISOString() } : {}),
   });
 
   if (error) {
@@ -898,6 +906,20 @@ export async function sendEmailVerificationEmail({
   });
 }
 
+// Welcome flow dividido en 2 emails:
+//
+// 1. sendWelcomeEmail (este) — al instante post-signup. Confirma que
+//    la cuenta existe y los manda al dashboard. Corto, sin guía
+//    "qué hacer primero" — el dashboard ya tiene un onboarding visual.
+// 2. sendGettingStartedEmail (abajo) — 1h después. Con la lista
+//    "Add your first client / job / teammate" cuando el user ya
+//    exploró un rato. Industry-standard B2B SaaS drip.
+//
+// Por qué split: el user feedback fue que el welcome con la lista
+// "Add your first X" al instante se sentía spam. La cuenta se acaba
+// de crear, todavía no exploraron nada, y ya les decimos qué hacer.
+// 1h después llega cuando vale la pena.
+
 export async function sendWelcomeEmail({
   to,
   recipientName,
@@ -913,22 +935,53 @@ export async function sendWelcomeEmail({
 }) {
   const first = firstName(recipientName) || recipientName;
 
-  // Deep-link to the specific create flows so the recruiter
-  // doesn't have to hunt for them. dashboardUrl is the full
-  // origin + /dashboard, so we strip the path and rebuild.
+  const trialLine = trialEndsAt
+    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong>. We won't charge until it ends — cancel any time before then and you won't be billed.</p>`
+    : "";
+
+  const html = wrapTemplate(
+    `You're in, ${first}`,
+    `<p><strong>${organizationName}</strong> is live on ${appName}. Take a look around — we'll send you a short getting-started note in a bit.</p>
+     ${trialLine}
+     <p>Reply to this email if anything's confusing or missing — we read every message.</p>`,
+    dashboardUrl,
+    "Open Dashboard"
+  );
+
+  return sendEmail({
+    to,
+    subject: `Welcome to ${appName}`,
+    html,
+  });
+}
+
+// Segundo email del welcome flow — la guía "qué hacer primero". Se
+// dispara con scheduledAt (Resend) ~1h post-signup. Si Resend no
+// soporta el campo, el fallback envía al instante (peor caso = igual
+// que antes del split).
+export async function sendGettingStartedEmail({
+  to,
+  recipientName,
+  organizationName,
+  dashboardUrl,
+  scheduledAt,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  dashboardUrl: string;
+  scheduledAt?: Date;
+}) {
+  const first = firstName(recipientName) || recipientName;
+
   const origin = dashboardUrl.replace(/\/dashboard\/?$/, "");
   const addClientUrl = `${origin}/clients/new`;
   const addJobUrl = `${origin}/jobs/new`;
   const inviteTeamUrl = `${origin}/settings/team`;
 
-  const trialLine = trialEndsAt
-    ? `<p style="color: #6b7280;">Your free trial runs until <strong>${trialEndsAt.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</strong>. We won't charge anything until it ends — cancel any time before then and you won't be billed.</p>`
-    : "";
-
   const html = wrapTemplate(
-    `Welcome, ${first}`,
-    `<p><strong>${organizationName}</strong> is live on ${appName}. Here's the fastest path to your first placement:</p>
-     ${trialLine}
+    `${first}, here's the fastest path to your first placement`,
+    `<p>Now that you've had a chance to look around <strong>${organizationName}</strong>, three things worth doing this week:</p>
      <ol style="color: #4b5563; padding-left: 20px; line-height: 1.9;">
        <li><a href="${addClientUrl}" style="color: #4f46e5; font-weight: 600;">Add your first client</a> — set fee structure + payment terms once, reuse for every search.</li>
        <li><a href="${addJobUrl}" style="color: #4f46e5; font-weight: 600;">Post your first job</a> — upload the JD and the parser fills the form for you.</li>
@@ -941,7 +994,8 @@ export async function sendWelcomeEmail({
 
   return sendEmail({
     to,
-    subject: `Welcome to ${appName} — ${organizationName} is ready`,
+    subject: `Getting started on ${appName}`,
     html,
+    scheduledAt,
   });
 }

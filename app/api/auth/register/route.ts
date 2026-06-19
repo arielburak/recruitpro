@@ -6,7 +6,7 @@ import { registerSchema } from "@/lib/validations/auth";
 import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
-import { sendWelcomeEmail, sendEmailVerificationEmail } from "@/lib/email";
+import { sendWelcomeEmail, sendGettingStartedEmail, sendEmailVerificationEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
@@ -123,6 +123,21 @@ export async function POST(request: Request) {
       trialEndsAt: result.trialEndsAt,
     }).catch((err) => {
       console.error("[register] welcome email failed:", err);
+    });
+
+    // Segundo email del flow: la guía "Add your first X". Demorado 1h
+    // para que llegue cuando el user ya exploró un rato el dashboard,
+    // no junto con el verify-email + welcome al instante (que se
+    // siente spam). Resend lo schedula del lado server.
+    const gettingStartedAt = new Date(Date.now() + 60 * 60 * 1000);
+    sendGettingStartedEmail({
+      to: data.email,
+      recipientName: data.name,
+      organizationName: data.orgName,
+      dashboardUrl: `${origin}/dashboard`,
+      scheduledAt: gettingStartedAt,
+    }).catch((err) => {
+      console.error("[register] getting started email failed:", err);
     });
 
     sendEmailVerificationEmail({

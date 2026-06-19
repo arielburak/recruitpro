@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,8 +49,18 @@ type Preview = {
   activeSheet: string;
 };
 
+function isImportType(v: string | null): v is ImportType {
+  return v === "candidates" || v === "clients" || v === "jobs" || v === "pipeline";
+}
+
 export default function ImportPage() {
-  const [importType, setImportType] = useState<ImportType>("candidates");
+  // Permitir pre-seleccionar el tipo via query param (?type=jobs|clients|...)
+  // — los botones Import desde cada lista linkean aca con el tipo
+  // correspondiente para que el user no tenga que cambiarlo a mano.
+  const searchParams = useSearchParams();
+  const typeParam = searchParams.get("type");
+  const initialType: ImportType = isImportType(typeParam) ? typeParam : "candidates";
+  const [importType, setImportType] = useState<ImportType>(initialType);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [parsing, setParsing] = useState(false);

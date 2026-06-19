@@ -461,12 +461,12 @@ export default async function DashboardPage() {
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-violet-900">
                 {teamSize === 1
-                  ? "Working alone? Pull your team in."
+                  ? "Want backup on this? Add a teammate."
                   : "Welcome to the team — bring more people in."}
               </p>
               <p className="text-sm text-violet-800/80 mt-0.5">
                 {teamSize === 1
-                  ? "Recruiting works better with backup — invite a teammate so you can split searches, share candidates, and chat with clients together. Free during your trial."
+                  ? "Split searches, share notes on candidates, and chat with clients together. Free during your trial."
                   : "You can invite teammates yourself — anyone you add joins the same workspace and shares jobs, candidates, and client chats with you."}
               </p>
               <div className="flex items-center gap-3 mt-3">
