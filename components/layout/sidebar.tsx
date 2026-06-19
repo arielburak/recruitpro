@@ -19,7 +19,6 @@ import {
   Inbox,
   Calendar,
   UserRound,
-  Target,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { StaffingNotificationBell } from "./staffing-notification-bell";
@@ -41,18 +40,6 @@ const mainNavItems = [
   // exponemos el deep-link aca para que el usuario llegue en 1 click.
   { label: "My Team", href: "/settings/team", icon: Users2 },
 ];
-
-// Founder-only nav item. Solo se renderea para emails en esta lista — debe
-// matchear con la lista en lib/founder-gate.ts (que es la fuente de verdad
-// del gate server-side). Si querés expandir, hacelo en ambos lugares + en
-// la env var FOUNDER_EMAILS de Vercel.
-const FOUNDER_EMAILS_CLIENT = ["ncuello@morabits.net", "arielb@morabits.net"];
-
-const founderNavItem = {
-  label: "Operations",
-  href: "/operations",
-  icon: Target,
-};
 
 // Profile + team + integrations + org settings all live under /settings
 // with tabs. Single entry keeps the sidebar tight and mirrors the client
@@ -278,27 +265,6 @@ export function Sidebar() {
             onClick={() => setMobileOpen(false)}
           />
         ))}
-
-        {/* Founder-only Operations link — solo visible para Nicolás + Ari.
-            La página tiene su propio gate server-side (notFound si no
-            matchea), esto solo controla la visibilidad del item del nav. */}
-        {(() => {
-          const email = (session?.user as any)?.email?.toLowerCase?.();
-          if (!email || !FOUNDER_EMAILS_CLIENT.includes(email)) return null;
-          return (
-            <>
-              <div className="!my-4 mx-0 border-t border-white/[0.06]" />
-              <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
-                Founder
-              </p>
-              <NavLink
-                item={founderNavItem}
-                pathname={pathname}
-                onClick={() => setMobileOpen(false)}
-              />
-            </>
-          );
-        })()}
 
         {/* Single unified Settings entry — profile, team, integrations,
             organization, billing all live behind tabs on /settings.

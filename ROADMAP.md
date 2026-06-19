@@ -136,7 +136,7 @@ Aplican a cualquier feature nueva o existente:
 - [ ] Tirarle 50 CVs al parser y medir accuracy; si <85% cambiar modelo
 - [ ] Loom onboarding autoplay
 - [ ] **Rate limiting** en endpoints sensibles (`/api/auth/forgot-password`, `/api/auth/register`, `/api/invite/[token]`). CSO audit lo marcó MEDIUM. Vercel ya tiene DDoS básico pero conviene throttle dedicado pre-tráfico real. Usar `@vercel/kv` Ratelimit o middleware.
-- [ ] **Layout founder separado**: hoy `/operations` vive dentro del agency portal con su sidebar normal. Mover a `app/(founder)/operations/` con su propio layout minimalista (sin sidebar de agency, sin contexto Morabits). P2 post-launch — cuando duela porque sumemos un 3er founder o advisor.
+- [x] ~~**Layout founder separado**~~ — descartado 2026-06-19. El panel `/operations` se eliminó completamente del ATS (era riesgo innecesario aunque estuviera gateado). La info ejecutiva vive en la página de Notion "Centro de Operaciones ATS" que ya armamos. Si en el futuro hace falta un dashboard founder, se arma fuera del ATS (Notion / dashboard externo / etc).
 
 ### 🔧 Pendientes del QA integral 2026-06-18 (no bloqueaban reunión Ari)
 
