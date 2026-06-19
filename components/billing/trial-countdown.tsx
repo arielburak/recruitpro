@@ -3,21 +3,30 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { X, Sparkles, AlertTriangle } from "lucide-react";
+import { Sparkles, AlertTriangle, ArrowRight } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { SOLO_PRICE_PER_SEAT_CENTS } from "@/lib/constants";
 
 const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 
-// Popup que aparece al cargar el dashboard si el workspace está en
-// trial. Muestra cuántos días quedan + un CTA grande para suscribirse.
-// Dismisible — al cerrarlo se guarda en localStorage un timestamp y
-// no vuelve a aparecer por 24h. Si el trial está por vencer (<= 2
-// días), se ignora el dismiss y siempre aparece.
+// Modal popup que se muestra al cargar el dashboard si el workspace
+// está en trial. Estilo overlay para que sea bien prominente — el
+// admin lo ve apenas entra. Usa sessionStorage (NO localStorage)
+// para que la sesión browser fresh siempre lo dispare: si el user
+// cierra el browser y se loguea de nuevo, el modal vuelve a aparecer.
+// Dentro de la misma sesión, "Remind me later" lo silencia hasta
+// el próximo login.
 //
 // Visual escalado por urgencia:
-//   · 7 días+ → indigo (gentle reminder)
-//   · 3-6 días → amber (heads up)
-//   · 0-2 días → red (urgent, no dismissible)
+//   · 7d+ → indigo (gentle reminder, dismissible)
+//   · 3-6d → amber (heads up, dismissible)
+//   · 0-2d → red (urgent, no dismissible — solo el CTA)
 
 type Subscription = {
   status: string;
@@ -26,13 +35,12 @@ type Subscription = {
   stripeSubscriptionId: string | null;
 };
 
-const DISMISS_KEY = "trial-popup-dismissed-at";
-const DISMISS_HOURS = 24;
+const SESSION_DISMISS_KEY = "trial-popup-dismissed";
 
 export function TrialCountdown() {
   const { data: session } = useSession();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -45,17 +53,22 @@ export function TrialCountdown() {
   }, [session]);
 
   useEffect(() => {
-    if (!loaded) return;
-    const raw = localStorage.getItem(DISMISS_KEY);
-    if (!raw) return;
-    const last = parseInt(raw, 10);
-    if (Number.isNaN(last)) return;
-    const hoursAgo = (Date.now() - last) / (1000 * 60 * 60);
-    if (hoursAgo < DISMISS_HOURS) setDismissed(true);
-  }, [loaded]);
+    if (!loaded || !subscription) return;
+    if (subscription.status !== "TRIALING") return;
+    if (subscription.isComp) return;
+    if (!subscription.trialEndsAt) return;
+
+    // Si en esta MISMA sesión ya lo cerró, no insistir hasta el
+    // próximo login (cuando sessionStorage se resetea).
+    if (typeof window !== "undefined") {
+      const dismissed = sessionStorage.getItem(SESSION_DISMISS_KEY) === "true";
+      if (dismissed) return;
+    }
+
+    setOpen(true);
+  }, [loaded, subscription]);
 
   if (!loaded || !subscription) return null;
-  // Solo mostrar si está en trial — no a comp, ni active, ni canceled.
   if (subscription.status !== "TRIALING") return null;
   if (subscription.isComp) return null;
   if (!subscription.trialEndsAt) return null;
@@ -65,38 +78,33 @@ export function TrialCountdown() {
   const msLeft = trialEnd - now;
   const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
 
-  // Escalado de urgencia. 0-2 días → no dismissible.
   const isUrgent = daysLeft <= 2;
   const isHeadsUp = daysLeft >= 3 && daysLeft <= 6;
-
-  if (dismissed && !isUrgent) return null;
 
   // Color + iconografía según urgencia.
   const styles = isUrgent
     ? {
-        bg: "bg-red-50",
-        border: "border-red-300",
         accent: "text-red-700",
-        button: "bg-red-600 hover:bg-red-700",
+        button: "bg-red-600 hover:bg-red-700 text-white",
         icon: AlertTriangle,
-        title: daysLeft === 0 ? "Your trial ends today" : `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
-        subtitle: "Add a payment method to keep your team working without interruption.",
+        title:
+          daysLeft === 0
+            ? "Your trial ends today"
+            : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left in your trial`,
+        subtitle:
+          "Add a payment method now to keep your team working without interruption.",
       }
     : isHeadsUp
     ? {
-        bg: "bg-amber-50",
-        border: "border-amber-300",
         accent: "text-amber-700",
-        button: "bg-amber-600 hover:bg-amber-700",
+        button: "bg-amber-600 hover:bg-amber-700 text-white",
         icon: AlertTriangle,
         title: `${daysLeft} days left in your trial`,
         subtitle: `Subscribe now to lock in $${pricePerSeatDollars}/seat/month and skip the interruption.`,
       }
     : {
-        bg: "bg-indigo-50",
-        border: "border-indigo-300",
         accent: "text-indigo-700",
-        button: "bg-indigo-600 hover:bg-indigo-700",
+        button: "bg-indigo-600 hover:bg-indigo-700 text-white",
         icon: Sparkles,
         title: `${daysLeft} days left in your free trial`,
         subtitle: `Enjoying the ATS? Subscribe any time — $${pricePerSeatDollars}/seat/month, cancel whenever.`,
@@ -105,53 +113,70 @@ export function TrialCountdown() {
   const Icon = styles.icon;
 
   function handleDismiss() {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setDismissed(true);
+    if (isUrgent) return; // urgent no se puede dismissar
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(SESSION_DISMISS_KEY, "true");
+    }
+    setOpen(false);
   }
 
   return (
-    <div
-      className={`${styles.bg} ${styles.border} border rounded-xl p-4 sm:p-5 flex items-start gap-4 relative`}
-      role="banner"
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        // El close del overlay (esc / click afuera) cuenta como
+        // dismiss salvo en modo urgent.
+        if (!o) handleDismiss();
+      }}
     >
-      <div className={`shrink-0 p-2 rounded-lg ${styles.bg} ${styles.accent}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <p className={`font-semibold ${styles.accent}`}>{styles.title}</p>
-        <p className="text-sm text-gray-700 mt-0.5">{styles.subtitle}</p>
-
-        <div className="flex flex-wrap gap-2 mt-3">
-          <Link
-            href="/settings/billing"
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors ${styles.button}`}
-          >
-            <Sparkles className="h-4 w-4" />
-            Subscribe now
-          </Link>
-          {!isUrgent && (
-            <button
-              onClick={handleDismiss}
-              type="button"
-              className="text-xs text-gray-500 hover:text-gray-900 px-2"
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            <span
+              className={`shrink-0 p-2 rounded-lg ${
+                isUrgent
+                  ? "bg-red-100"
+                  : isHeadsUp
+                  ? "bg-amber-100"
+                  : "bg-indigo-100"
+              } ${styles.accent}`}
             >
-              Remind me later
-            </button>
-          )}
-        </div>
-      </div>
+              <Icon className="h-5 w-5" />
+            </span>
+            <span>{styles.title}</span>
+          </DialogTitle>
+        </DialogHeader>
 
-      {!isUrgent && (
-        <button
-          onClick={handleDismiss}
-          aria-label="Dismiss"
-          type="button"
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
+        <p className="text-sm text-gray-700">{styles.subtitle}</p>
+
+        {/* Big CTA */}
+        <Link
+          href="/settings/billing"
+          className={`mt-2 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${styles.button}`}
         >
-          <X className="h-4 w-4" />
-        </button>
-      )}
-    </div>
+          <Sparkles className="h-5 w-5" />
+          Subscribe now
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+
+        {/* Footer secondary */}
+        {!isUrgent && (
+          <div className="flex justify-center mt-1">
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="text-xs text-gray-500 hover:text-gray-900 px-2 py-1"
+            >
+              Remind me at next login
+            </button>
+          </div>
+        )}
+        {isUrgent && (
+          <p className="text-xs text-red-600 text-center mt-2">
+            We'll keep showing this until you subscribe to avoid losing access.
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
