@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { monthlyTotalCents } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -193,7 +194,7 @@ export default function AdminUsersPage() {
         <p className="text-sm text-gray-500">
           {activeUsers.length} active user
           {activeUsers.length !== 1 ? "s" : ""} &middot; $
-          {activeUsers.length * 10}/mo
+          {(monthlyTotalCents(activeUsers.length) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}/mo
         </p>
         {/* Invite teammate accesible para todos los miembros del org.
             Decisión 2026-06-17: el invite no es destructivo; ADMIN sigue

@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { X, Sparkles, AlertTriangle } from "lucide-react";
+import { SOLO_PRICE_PER_SEAT_CENTS } from "@/lib/constants";
+
+const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 
 // Popup que aparece al cargar el dashboard si el workspace está en
 // trial. Muestra cuántos días quedan + un CTA grande para suscribirse.
@@ -87,7 +90,7 @@ export function TrialCountdown() {
         button: "bg-amber-600 hover:bg-amber-700",
         icon: AlertTriangle,
         title: `${daysLeft} days left in your trial`,
-        subtitle: "Subscribe now to lock in $20/seat/month and skip the interruption.",
+        subtitle: `Subscribe now to lock in $${pricePerSeatDollars}/seat/month and skip the interruption.`,
       }
     : {
         bg: "bg-indigo-50",
@@ -96,7 +99,7 @@ export function TrialCountdown() {
         button: "bg-indigo-600 hover:bg-indigo-700",
         icon: Sparkles,
         title: `${daysLeft} days left in your free trial`,
-        subtitle: "Enjoying the ATS? Subscribe any time — $20/seat/month, cancel whenever.",
+        subtitle: `Enjoying the ATS? Subscribe any time — $${pricePerSeatDollars}/seat/month, cancel whenever.`,
       };
 
   const Icon = styles.icon;
