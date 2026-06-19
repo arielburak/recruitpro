@@ -2,6 +2,14 @@ import { Resend } from "resend";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const fromAddress = process.env.EMAIL_FROM || "noreply@recruitingats.com";
+// Reply-to por default para emails transaccionales del ATS (welcome,
+// password reset, billing, system notifications). Cuando un email
+// específico tiene un reply-to contextual (interview con el recruiter,
+// chat con el sender, mention) ese gana — esto solo aplica cuando no
+// se pasa replyTo en sendEmail.
+// Decisión 2026-06-19 con Nicolás: todo lo del ATS responde a contact@.
+const supportEmail =
+  process.env.SUPPORT_EMAIL || "contact@alphabridgepartners.com";
 const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
@@ -32,10 +40,10 @@ type SendArgs = {
   html: string;
   // Optional Reply-To header. Use when the recipient's instinct will
   // be to "reply" to a real person — interview invites that say
-  // "contact ${recruiterName}", mention emails, etc. Without this
-  // their reply lands in noreply@ and vanishes. Default is unset
-  // (no Reply-To header) so transactional account mails (verify,
-  // reset, welcome) stay on the noreply@ envelope.
+  // "contact ${recruiterName}", mention emails, etc. When not passed
+  // we default to `supportEmail` (contact@alphabridgepartners.com) so
+  // generic account mails (verify, reset, welcome, billing) route to
+  // the team inbox if the user hits reply.
   replyTo?: string;
   // Schedule el envío para una fecha futura (Resend `scheduledAt`).
   // Usado por el getting-started email para que llegue 1h post-signup
@@ -140,12 +148,17 @@ async function sendEmail({ to, subject, html, replyTo, scheduledAt }: SendArgs) 
     return { skipped: true as const, reason: "no_key" };
   }
 
+  // Reply-to: el contextual gana (recruiter, sender, etc.). Si no hay,
+  // fallback al support email del equipo para que las respuestas no
+  // caigan en noreply@.
+  const effectiveReplyTo = replyTo || supportEmail;
+
   const { data, error } = await resend.emails.send({
     from: `${appName} <${fromAddress}>`,
     to,
     subject,
     html,
-    ...(replyTo ? { reply_to: replyTo } : {}),
+    replyTo: effectiveReplyTo,
     // Resend `scheduledAt` admite ISO 8601 o human-readable ("in 1 hour").
     // Pasamos ISO para que el endpoint lo procese sin ambigüedad.
     ...(scheduledAt ? { scheduledAt: scheduledAt.toISOString() } : {}),
