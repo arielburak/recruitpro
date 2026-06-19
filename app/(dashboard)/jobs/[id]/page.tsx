@@ -966,6 +966,74 @@ export default function JobDetailPage() {
           >
             <Users className="mr-2 h-4 w-4" /> Assign Team
           </Button>
+          {/* Client portal access preview — muestra a vuelo de pájaro
+              quién del cliente puede ver este job. Reusa el mismo
+              dataset que la sección detallada de /details (mirror.members
+              o fallback "todos los ClientUsers del cliente"). Click →
+              scroll suave a la sección completa donde el admin puede
+              gestionar el acceso. Sin esto el recruiter no veía a
+              quién había invitado al portal a menos que abriera
+              Details. */}
+          {(() => {
+            const mirror = job.clientJobMirror;
+            const members = (mirror?.members || [])
+              .map((m: any) => m.clientUser)
+              .filter(Boolean);
+            const allClientUsers = job.client?.clientUsers || [];
+            const visibleUsers = members.length > 0 ? members : allClientUsers;
+            if (!visibleUsers.length) return null;
+            const display = visibleUsers.slice(0, 3);
+            const extra = visibleUsers.length - display.length;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  // El access section vive en la tab "Details". Switch
+                  // de tab vía el state controller + scroll suave al
+                  // anchor en el siguiente paint para que el DOM ya
+                  // tenga la sección montada.
+                  setActiveTab("details");
+                  setTimeout(() => {
+                    const el = document.getElementById("client-portal-access-section");
+                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 60);
+                }}
+                title={`Client access: ${visibleUsers.map((u: any) => u.name || u.email).join(", ")}`}
+                className="inline-flex items-center gap-1.5 h-9 px-2 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex -space-x-1.5">
+                  {display.map((u: any) => {
+                    const initials = (u.name || u.email || "?")
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((p: string) => p[0]?.toUpperCase() || "")
+                      .join("");
+                    return (
+                      <span
+                        key={u.id}
+                        className={`w-6 h-6 rounded-full ring-2 ring-white flex items-center justify-center text-[10px] font-semibold ${
+                          u.isPending
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {initials || "?"}
+                      </span>
+                    );
+                  })}
+                  {extra > 0 && (
+                    <span className="w-6 h-6 rounded-full ring-2 ring-white bg-gray-100 text-gray-600 text-[10px] font-semibold flex items-center justify-center">
+                      +{extra}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-600 pr-1">
+                  {visibleUsers.length === 1 ? "1 has access" : `${visibleUsers.length} have access`}
+                </span>
+              </button>
+            );
+          })()}
           <Button
             variant="outline"
             onClick={() => {
@@ -1753,7 +1821,10 @@ export default function JobDetailPage() {
                         usamos la regla legacy "todos los ClientUsers
                         activos ven" como display, pero el editor
                         permite acotar. */}
-                    <div className="bg-gray-50 rounded-lg p-3 col-span-2 lg:col-span-4">
+                    <div
+                      id="client-portal-access-section"
+                      className="bg-gray-50 rounded-lg p-3 col-span-2 lg:col-span-4 scroll-mt-24"
+                    >
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                           Client portal access
