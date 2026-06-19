@@ -1052,3 +1052,159 @@ export async function sendSubscriptionActivatedEmail({
     html,
   });
 }
+
+// Email cuando el cliente marca la subscription para cancelar al final
+// del período de facturación (desde el Customer Portal de Stripe).
+// La sub sigue ACTIVE en la DB hasta el `cancelAt`, después se desactiva.
+// El email da heads-up + link para reactivar si cambia de opinión.
+export async function sendSubscriptionCanceledEmail({
+  to,
+  recipientName,
+  organizationName,
+  cancelAt,
+  reactivateUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  cancelAt: Date;
+  reactivateUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const cancelStr = cancelAt.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const html = wrapTemplate(
+    `${first}, we got your cancellation`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is scheduled to cancel.</p>
+     <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Access until</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${cancelStr}</td>
+       </tr>
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">After that</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">You'll lose access to create new data. Your existing candidates, jobs and clients stay in our DB.</td>
+       </tr>
+     </table>
+     <p>Changed your mind? <a href="${reactivateUrl}" style="color: #4f46e5; font-weight: 600;">Reactivate</a> before ${cancelStr} and keep everything as it is — no new charge until your normal billing cycle.</p>
+     <p>If we can do something to keep you on board, just reply — we read every email.</p>`,
+    reactivateUrl,
+    "Reactivate subscription",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription canceled — access until ${cancelStr}`,
+    html,
+  });
+}
+
+// Email cuando la subscription efectivamente termina (customer.subscription.deleted).
+// Llega después del cancelAt — el user ya perdió acceso para crear data.
+export async function sendSubscriptionEndedEmail({
+  to,
+  recipientName,
+  organizationName,
+  resubscribeUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  resubscribeUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+
+  const html = wrapTemplate(
+    `${first}, your subscription has ended`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> ended today.</p>
+     <p>Your data is safe — we keep it in our DB so you can pick up where you left off. To regain access:</p>
+     <ul style="color: #4b5563; padding-left: 20px; line-height: 1.8;">
+       <li><a href="${resubscribeUrl}" style="color: #4f46e5; font-weight: 600;">Resubscribe</a> — same price, your candidates and pipeline come back instantly.</li>
+       <li>Reply to this email if you'd like to chat about your experience or ask for a custom plan.</li>
+     </ul>
+     <p>Thanks for using ${appName}, whatever you decide.</p>`,
+    resubscribeUrl,
+    "Resubscribe",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Your ${appName} subscription has ended`,
+    html,
+  });
+}
+
+// Email cuando el cliente reactiva una sub que estaba marcada para cancelar.
+// Confirma que el billing sigue igual.
+export async function sendSubscriptionReactivatedEmail({
+  to,
+  recipientName,
+  organizationName,
+  nextBillingDate,
+  dashboardUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  nextBillingDate: Date | null;
+  dashboardUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const dateStr = nextBillingDate
+    ? nextBillingDate.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+  const html = wrapTemplate(
+    `${first}, glad to have you back`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is back on track. No cancellation pending.</p>
+     ${dateStr ? `<p>Next billing date: <strong>${dateStr}</strong>. Same plan, same seats — billing continues uninterrupted.</p>` : ""}
+     <p>If you reactivated by accident, you can cancel again from <a href="${dashboardUrl}" style="color: #4f46e5; font-weight: 600;">Settings → Billing</a>.</p>`,
+    dashboardUrl,
+    "Open Dashboard",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription reactivated — welcome back`,
+    html,
+  });
+}
+
+// Email cuando un pago falla (invoice.payment_failed). El cliente
+// tiene tiempo limitado (configurable en Stripe Smart Retries) antes
+// de que la sub pase a PAST_DUE definitivo.
+export async function sendPaymentFailedEmail({
+  to,
+  recipientName,
+  organizationName,
+  manageBillingUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  manageBillingUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+
+  const html = wrapTemplate(
+    `${first}, your payment didn't go through`,
+    `<p>We tried to charge your card for <strong>${appName}</strong> — <strong>${organizationName}</strong> — and the bank declined it.</p>
+     <p>To avoid losing access, update your payment method:</p>`,
+    manageBillingUrl,
+    "Update payment method",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Action required: payment failed for ${appName}`,
+    html,
+  });
+}

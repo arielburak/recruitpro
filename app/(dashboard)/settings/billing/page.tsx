@@ -73,6 +73,26 @@ function BillingContent() {
     }
   }
 
+  // Reactivar una sub marcada para cancelar (cancel_at_period_end).
+  // Hits el endpoint /api/admin/billing/reactivate que llama Stripe
+  // y actualiza la DB optimisticamente. El webhook updated llega
+  // después y refresca todo.
+  async function handleReactivate() {
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/admin/billing/reactivate", {
+        method: "POST",
+      });
+      if (res.ok) {
+        // Re-fetch para que el UI refleje el nuevo estado.
+        const subRes = await fetch("/api/admin/subscription");
+        if (subRes.ok) setSubscription(await subRes.json());
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -88,6 +108,12 @@ function BillingContent() {
   const isComp = subscription?.isComp;
   const hasStripeSub = !!subscription?.stripeSubscriptionId;
   const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
+  // Stripe flag: cancela al final del periodo actual. Sub sigue
+  // ACTIVE hasta ese día pero NO se renueva. UI distinto.
+  const scheduledToCancel = !!subscription?.cancelAtPeriodEnd && status === "ACTIVE";
+  const periodEnd = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd)
+    : null;
 
   // Trial progress (solo aplica si TRIALING).
   const trialEnd = subscription?.trialEndsAt
@@ -110,6 +136,17 @@ function BillingContent() {
         border: "border-emerald-200",
         label: "Complimentary",
         labelTone: "All features unlocked, no billing required.",
+      }
+    : status === "ACTIVE" && scheduledToCancel
+    ? {
+        bg: "bg-amber-50",
+        accent: "text-amber-700",
+        accentSoft: "bg-amber-100",
+        border: "border-amber-200",
+        label: "Scheduled to cancel",
+        labelTone: periodEnd
+          ? `Access until ${dateStr(periodEnd)}. Reactivate any time before then to keep billing as is.`
+          : "Your subscription is set to cancel at the end of the current period.",
       }
     : status === "ACTIVE"
     ? {
@@ -201,10 +238,24 @@ function BillingContent() {
             <p className="text-sm text-gray-700">{heroPalette.labelTone}</p>
           </div>
 
-          {/* CTA — solo si la sub está en estado actionable */}
+          {/* CTA — contextual según estado:
+              · Trial / no sub → Subscribe / Add payment method
+              · Scheduled to cancel → Reactivate (priority) + Manage
+              · Active normal → Manage billing */}
           {!isComp && (
             <div className="shrink-0 flex flex-col gap-2 w-full sm:w-auto">
-              {(!hasStripeSub || status === "TRIALING") && (
+              {scheduledToCancel && (
+                <Button
+                  size="lg"
+                  onClick={handleReactivate}
+                  disabled={actionLoading}
+                  className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700"
+                >
+                  <Sparkles className="h-4 w-4 mr-1.5" />
+                  {actionLoading ? "Reactivating…" : "Reactivate subscription"}
+                </Button>
+              )}
+              {!scheduledToCancel && (!hasStripeSub || status === "TRIALING") && (
                 <Button
                   size="lg"
                   onClick={handleCheckout}
@@ -279,12 +330,16 @@ function BillingContent() {
 
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-            {status === "TRIALING" ? (
+            {status === "TRIALING" || scheduledToCancel ? (
               <Calendar className="h-3.5 w-3.5" />
             ) : (
               <Receipt className="h-3.5 w-3.5" />
             )}
-            {status === "TRIALING" ? "Trial ends" : "Next billing"}
+            {status === "TRIALING"
+              ? "Trial ends"
+              : scheduledToCancel
+              ? "Ends on"
+              : "Next billing"}
           </div>
           {status === "TRIALING" && trialEnd ? (
             <>

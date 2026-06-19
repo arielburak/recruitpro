@@ -1047,6 +1047,12 @@ model Subscription {
   status               SubscriptionStatus @default(TRIALING)
   trialEndsAt          DateTime?
   currentPeriodEnd     DateTime?
+  // Stripe permite que el cliente marque "cancel at end of period" y
+  // sigue ACTIVE hasta esa fecha. Sin este flag no se distingue entre
+  // "ACTIVE va a renovar" y "ACTIVE pero le expira en X días sin
+  // renovar". El UI lo usa para mostrar banner amber + botón
+  // Reactivate, y para no perderse de mandar el email de heads-up.
+  cancelAtPeriodEnd    Boolean            @default(false)
   seats                Int                @default(1)
   // Complimentary / free-forever flag. Used for founding-team orgs,
   // partners, long-running test accounts — anyone we want to keep

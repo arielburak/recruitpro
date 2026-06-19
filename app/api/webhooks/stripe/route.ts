@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
-import { sendSubscriptionActivatedEmail } from "@/lib/email";
+import {
+  sendSubscriptionActivatedEmail,
+  sendSubscriptionCanceledEmail,
+  sendSubscriptionEndedEmail,
+  sendSubscriptionReactivatedEmail,
+  sendPaymentFailedEmail,
+} from "@/lib/email";
 import { monthlyTotalCents } from "@/lib/constants";
 import Stripe from "stripe";
 
@@ -135,16 +141,85 @@ export async function POST(request: Request) {
           where: { stripeSubscriptionId: invoice.subscription as string },
           data: { status: "PAST_DUE" },
         });
+
+        // Email al admin avisando que el pago falló y tiene que
+        // actualizar el método de pago.
+        try {
+          const sub = await prisma.subscription.findFirst({
+            where: { stripeSubscriptionId: invoice.subscription as string },
+            include: {
+              organization: {
+                include: {
+                  users: {
+                    where: { role: "ADMIN", isActive: true },
+                    orderBy: { createdAt: "asc" },
+                    take: 1,
+                    select: { name: true, email: true },
+                  },
+                },
+              },
+            },
+          });
+          const admin = sub?.organization?.users?.[0];
+          if (admin?.email && sub) {
+            const baseUrl =
+              process.env.NEXTAUTH_URL ||
+              process.env.NEXT_PUBLIC_APP_URL ||
+              "https://recruitingats.com";
+            await sendPaymentFailedEmail({
+              to: admin.email,
+              recipientName: admin.name || "",
+              organizationName: sub.organization.name,
+              manageBillingUrl: `${baseUrl}/settings/billing`,
+            });
+          }
+        } catch (emailErr) {
+          console.error("[stripe webhook] payment_failed email failed:", emailErr);
+        }
       }
       break;
     }
 
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
+      const sub = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        include: {
+          organization: {
+            include: {
+              users: {
+                where: { role: "ADMIN", isActive: true },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { name: true, email: true },
+              },
+            },
+          },
+        },
+      });
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
-        data: { status: "CANCELED" },
+        data: { status: "CANCELED", cancelAtPeriodEnd: false },
       });
+
+      // Email "Your subscription has ended" al admin.
+      try {
+        const admin = sub?.organization?.users?.[0];
+        if (admin?.email && sub) {
+          const baseUrl =
+            process.env.NEXTAUTH_URL ||
+            process.env.NEXT_PUBLIC_APP_URL ||
+            "https://recruitingats.com";
+          await sendSubscriptionEndedEmail({
+            to: admin.email,
+            recipientName: admin.name || "",
+            organizationName: sub.organization.name,
+            resubscribeUrl: `${baseUrl}/settings/billing`,
+          });
+        }
+      } catch (emailErr) {
+        console.error("[stripe webhook] subscription_ended email failed:", emailErr);
+      }
       break;
     }
 
@@ -167,6 +242,34 @@ export async function POST(request: Request) {
       else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
       else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
 
+      // Capturar cancel_at_period_end de Stripe. true cuando el
+      // cliente clickeó "Cancelar" en el Customer Portal y la sub
+      // sigue ACTIVE hasta el end del period. false cuando reactiva.
+      const willCancel = Boolean(subscription.cancel_at_period_end);
+      const cancelAtTs = subscription.cancel_at || subscription.current_period_end;
+
+      // Lookup del state previo para saber si la cancel-at-period-end
+      // flag cambió en este event. Sin esto mandaríamos el email de
+      // cancel cada vez que Stripe manda subscription.updated.
+      const existingSub = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        include: {
+          organization: {
+            include: {
+              users: {
+                where: { role: "ADMIN", isActive: true },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { name: true, email: true },
+              },
+            },
+          },
+        },
+      });
+      const wasCanceling = existingSub?.cancelAtPeriodEnd ?? false;
+      const becameCanceling = willCancel && !wasCanceling;
+      const becameReactivated = !willCancel && wasCanceling;
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: {
@@ -174,9 +277,49 @@ export async function POST(request: Request) {
           currentPeriodEnd: subscription.current_period_end
             ? new Date(subscription.current_period_end * 1000)
             : undefined,
+          cancelAtPeriodEnd: willCancel,
           ...(mappedStatus && { status: mappedStatus }),
         },
       });
+
+      // Disparar email según la transición. Solo si la flag CAMBIÓ —
+      // no en cada subscription.updated event (que llega también para
+      // seat changes, payment method update, etc).
+      const admin = existingSub?.organization?.users?.[0];
+      const baseUrl =
+        process.env.NEXTAUTH_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "https://recruitingats.com";
+
+      if (becameCanceling && admin?.email && existingSub) {
+        try {
+          await sendSubscriptionCanceledEmail({
+            to: admin.email,
+            recipientName: admin.name || "",
+            organizationName: existingSub.organization.name,
+            cancelAt: cancelAtTs ? new Date(cancelAtTs * 1000) : new Date(),
+            reactivateUrl: `${baseUrl}/settings/billing`,
+          });
+        } catch (emailErr) {
+          console.error("[stripe webhook] canceled email failed:", emailErr);
+        }
+      }
+
+      if (becameReactivated && admin?.email && existingSub) {
+        try {
+          await sendSubscriptionReactivatedEmail({
+            to: admin.email,
+            recipientName: admin.name || "",
+            organizationName: existingSub.organization.name,
+            nextBillingDate: subscription.current_period_end
+              ? new Date(subscription.current_period_end * 1000)
+              : null,
+            dashboardUrl: `${baseUrl}/settings/billing`,
+          });
+        } catch (emailErr) {
+          console.error("[stripe webhook] reactivated email failed:", emailErr);
+        }
+      }
       break;
     }
   }
