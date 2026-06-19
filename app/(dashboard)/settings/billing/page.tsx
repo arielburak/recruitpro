@@ -11,9 +11,6 @@ import {
   monthlyTotalCents,
   perSeatCents,
   SOLO_PRICE_PER_SEAT_CENTS,
-  TEAM_MAX_SEATS,
-  TEAM_PRICE_PER_SEAT_CENTS,
-  tierForSeats,
 } from "@/lib/constants";
 
 const dollars = (cents: number) => (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -46,8 +43,6 @@ function BillingContent() {
   }
 
   const seats = subscription?.seats || 1;
-  const tier = tierForSeats(seats);
-  const tierLabel = tier === "SOLO" ? "Solo" : "Team";
 
   const statusColors: Record<string, string> = {
     TRIALING: "bg-blue-100 text-blue-800",
@@ -100,7 +95,7 @@ function BillingContent() {
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Plan</span>
                 <span className="font-semibold">
-                  {tierLabel} &middot; ${dollars(perSeatCents(seats))}/seat/mo
+                  ${dollars(perSeatCents(seats))}/seat/mo
                 </span>
               </div>
               <div className="flex items-center justify-between">

@@ -32,6 +32,10 @@ export async function createCheckoutSession(
     success_url: `${process.env.NEXTAUTH_URL}/admin/billing?success=true`,
     cancel_url: `${process.env.NEXTAUTH_URL}/admin/billing?canceled=true`,
     metadata: { organizationId: orgId },
+    // Forzar UI en inglés. Sin esto Stripe autodetecta del browser
+    // del user y puede aparecer en castellano cuando el ATS está en
+    // inglés — inconsistente con el resto del flow.
+    locale: "en",
   });
 }
 
@@ -39,6 +43,7 @@ export async function createBillingPortalSession(customerId: string) {
   return getStripeClient().billingPortal.sessions.create({
     customer: customerId,
     return_url: `${process.env.NEXTAUTH_URL}/admin/billing`,
+    locale: "en",
   });
 }
 
