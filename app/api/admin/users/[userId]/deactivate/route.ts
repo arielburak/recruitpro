@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 export async function GET(
   _request: Request,
@@ -247,6 +248,11 @@ export async function POST(
       where: { id: userId },
       data: { isActive: false },
     });
+
+    // Recalcular seats + sync con Stripe (fire-and-forget).
+    // Sin esto el cliente sigue pagando por el seat del user que ya
+    // no usa el ATS.
+    void recalculateAndSyncSeats(ctx.organizationId);
 
     await logActivity({
       action: "user.deactivated",

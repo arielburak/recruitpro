@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 // GET - validate invite and return info
 export async function GET(
@@ -142,15 +143,10 @@ export async function POST(
       }),
     ]);
 
-    // Increment subscription seats
-    try {
-      await prisma.subscription.update({
-        where: { organizationId: invite.organizationId },
-        data: { seats: { increment: 1 } },
-      });
-    } catch {
-      // Subscription may not exist yet — non-fatal
-    }
+    // Recalcular seats + sync con Stripe. Sin esto, Stripe seguía
+    // cobrando el quantity original del checkout aunque el equipo
+    // creciera con invites aceptados.
+    void recalculateAndSyncSeats(invite.organizationId);
 
     // Memoria total (2026-06-17): si el mismo email tambien recibio un
     // PendingFirmInvite (un cliente lo invito a una busqueda especifica

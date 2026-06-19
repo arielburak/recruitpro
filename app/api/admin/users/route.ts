@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 export async function GET() {
   try {
@@ -54,11 +55,10 @@ export async function POST(request: Request) {
       },
     });
 
-    // Update subscription seat count
-    await prisma.subscription.update({
-      where: { organizationId: ctx.organizationId },
-      data: { seats: { increment: 1 } },
-    });
+    // Recalcula seats desde scratch (active users) + sync con Stripe.
+    // Fire-and-forget: si Stripe falla, el create del user se devuelve
+    // OK igual. Sync se intenta de nuevo en el próximo cambio.
+    void recalculateAndSyncSeats(ctx.organizationId);
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
@@ -118,6 +118,13 @@ export async function PATCH(request: Request) {
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
+    // Si el cambio fue isActive (deactivar o reactivar), recalcular
+    // seats para que el billing matchee la cantidad de active users.
+    // Sin esto: deactivar a alguien NO bajaba el cobro de Stripe.
+    if (typeof isActive === "boolean") {
+      void recalculateAndSyncSeats(ctx.organizationId);
+    }
+
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
@@ -163,15 +170,8 @@ export async function DELETE(request: Request) {
 
     await prisma.user.delete({ where: { id: userId } });
 
-    // Decrement subscription seats
-    try {
-      await prisma.subscription.update({
-        where: { organizationId: ctx.organizationId },
-        data: { seats: { decrement: 1 } },
-      });
-    } catch {
-      // Subscription may not exist — non-fatal
-    }
+    // Recalcula seats + sync con Stripe (fire-and-forget).
+    void recalculateAndSyncSeats(ctx.organizationId);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
