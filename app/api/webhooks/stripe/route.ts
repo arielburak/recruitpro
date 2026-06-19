@@ -78,10 +78,16 @@ export async function POST(request: Request) {
           const stripeSub = (await stripe.subscriptions.retrieve(
             session.subscription as string,
           )) as any;
-          if (stripeSub.current_period_end) {
-            periodEnd = new Date(stripeSub.current_period_end * 1000);
+          // Stripe API 2025-09+ movió current_period_end de root a
+          // items.data[i].current_period_end. Buscar primero ahí,
+          // fallback al root.
+          const firstItem = stripeSub.items?.data?.[0];
+          const periodEndTs =
+            firstItem?.current_period_end || stripeSub.current_period_end;
+          if (periodEndTs) {
+            periodEnd = new Date(periodEndTs * 1000);
           }
-          quantity = stripeSub.items?.data?.[0]?.quantity || 1;
+          quantity = firstItem?.quantity || 1;
         } catch (retrieveErr) {
           // Si Stripe falla, igual marcamos ACTIVE — el fix queda
           // para cuando llegue el subscription.updated.
@@ -187,7 +193,12 @@ export async function POST(request: Request) {
 
     case "customer.subscription.updated": {
       const subscription = event.data.object as any;
-      const quantity = subscription.items?.data?.[0]?.quantity || 1;
+      const firstItem = subscription.items?.data?.[0];
+      const quantity = firstItem?.quantity || 1;
+      // API 2025-09+ movió current_period_end al item. Buscar ahí
+      // primero, fallback al root.
+      const periodEndTs =
+        firstItem?.current_period_end || subscription.current_period_end;
       // Stripe subscription status → nuestro enum. Pre-fix solo mapeaba
       // active y past_due — cuando llegaba un update con status=canceled
       // (caso documentado: cancel_at_period_end → final del periodo) la
@@ -215,9 +226,7 @@ export async function POST(request: Request) {
         where: { stripeSubscriptionId: subscription.id },
         data: {
           seats: quantity,
-          currentPeriodEnd: subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000)
-            : undefined,
+          currentPeriodEnd: periodEndTs ? new Date(periodEndTs * 1000) : undefined,
           cancelAtPeriodEnd: willCancel,
           ...(mappedStatus && { status: mappedStatus }),
         },

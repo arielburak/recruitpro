@@ -88,10 +88,15 @@ export async function syncSubFromStripe(
       subscription.stripeSubscriptionId,
     )) as any;
 
-    const periodEnd = stripeSub.current_period_end
-      ? new Date(stripeSub.current_period_end * 1000)
-      : null;
-    const quantity = stripeSub.items?.data?.[0]?.quantity || 1;
+    // Stripe API 2025-09+ movió current_period_end del root del
+    // Subscription a items.data[i].current_period_end. Buscamos
+    // en items primero (la nueva ubicación), fallback al root para
+    // cuentas con versión anterior.
+    const firstItem = stripeSub.items?.data?.[0];
+    const periodEndTs =
+      firstItem?.current_period_end || stripeSub.current_period_end;
+    const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
+    const quantity = firstItem?.quantity || 1;
     const willCancel = !!stripeSub.cancel_at_period_end;
     const stripeStatus = stripeSub.status as string;
 
