@@ -32,12 +32,11 @@ const copyByReason: Record<
   trial_expired: {
     title: "Your free trial has ended",
     subtitle:
-      "Subscribe now to keep using Recruiting ATS. Your data stays safe — pick a plan and pick up exactly where you left off.",
+      "Subscribe to keep your team working. Your candidates, jobs and pipeline are safe — pick up exactly where you left off.",
   },
   no_sub: {
     title: "Subscription required",
-    subtitle:
-      "Your workspace doesn't have an active subscription. Choose a plan to start using Recruiting ATS.",
+    subtitle: "Subscribe to start using Recruiting ATS.",
   },
   canceled: {
     title: "Your subscription has ended",
