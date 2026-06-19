@@ -4,6 +4,7 @@
 // onRouterTransitionStart so client-side route changes appear as
 // breadcrumbs / are captured in the perf trace.
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryEvent } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -31,6 +32,7 @@ Sentry.init({
           }),
         ]
       : [],
+  beforeSend: scrubSentryEvent,
 });
 
 // Required by @sentry/nextjs >= 8 so client-side navigations get

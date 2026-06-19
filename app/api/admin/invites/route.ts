@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { sendTeamInviteEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
     const guard = await requireVerifiedEmail();
     if (guard) return guard;
 
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
 
     const body = await request.json();
     const email = body.email;
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

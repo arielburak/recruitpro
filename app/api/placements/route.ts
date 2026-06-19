@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { canAccessJob } from "@/lib/job-access";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function GET() {
@@ -61,7 +62,7 @@ function computePaymentDueDate(
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const {
@@ -382,6 +383,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(placement, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

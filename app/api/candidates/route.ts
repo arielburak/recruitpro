@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -148,7 +149,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    // Guard de subscription activa — sin trial vigente ni sub paga,
+    // no se puede crear nuevo data. El catch al final convierte
+    // SubscriptionError en 402 user-friendly.
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const data = candidateSchema.parse(body);
 
@@ -186,6 +190,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(candidate, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     if (error.name === "ZodError") {
       return NextResponse.json(
         { error: error.errors[0].message },

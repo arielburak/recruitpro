@@ -3,6 +3,7 @@
 // unset locally to silence reporting in dev. tracesSampleRate is kept
 // low (10%) for now; bump to 1.0 if you need full perf traces.
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryEvent } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -17,4 +18,5 @@ Sentry.init({
   environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
   // The default integrations capture unhandled rejections, console errors,
   // and HTTP context. No extras needed for the MVP.
+  beforeSend: scrubSentryEvent,
 });

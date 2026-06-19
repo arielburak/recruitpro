@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { clientSchema } from "@/lib/validations/client";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { clientAccessWhere } from "@/lib/client-access";
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const data = clientSchema.parse(body);
 
@@ -137,6 +138,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(client, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     if (error.name === "ZodError") {
       return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
     }

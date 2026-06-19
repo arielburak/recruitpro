@@ -108,6 +108,22 @@ export async function POST(request: Request) {
     case "customer.subscription.updated": {
       const subscription = event.data.object as any;
       const quantity = subscription.items?.data?.[0]?.quantity || 1;
+      // Stripe subscription status → nuestro enum. Pre-fix solo mapeaba
+      // active y past_due — cuando llegaba un update con status=canceled
+      // (caso documentado: cancel_at_period_end → final del periodo) la
+      // sub seguía como ACTIVE en la DB y el guard de subscription la
+      // dejaba seguir usando el ATS sin pagar. Mapeamos los 6 valores
+      // posibles de Stripe que conocemos. Cualquier otro queda
+      // undefined (no se toca el campo) para no pisar con basura un
+      // estado válido pre-existente.
+      const stripeStatus = subscription.status as string | undefined;
+      let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined;
+      if (stripeStatus === "active") mappedStatus = "ACTIVE";
+      else if (stripeStatus === "past_due") mappedStatus = "PAST_DUE";
+      else if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired") mappedStatus = "CANCELED";
+      else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
+      else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: {
@@ -115,7 +131,7 @@ export async function POST(request: Request) {
           currentPeriodEnd: subscription.current_period_end
             ? new Date(subscription.current_period_end * 1000)
             : undefined,
-          status: subscription.status === "active" ? "ACTIVE" : subscription.status === "past_due" ? "PAST_DUE" : undefined,
+          ...(mappedStatus && { status: mappedStatus }),
         },
       });
       break;

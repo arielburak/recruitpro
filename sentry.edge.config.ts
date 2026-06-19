@@ -3,6 +3,7 @@
 // Same DSN as the server config; the Edge SDK has a smaller surface
 // because most Node-only integrations aren't available.
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryEvent } from "./lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -12,4 +13,5 @@ Sentry.init({
     process.env.VERCEL_ENV === "preview" ||
     process.env.SENTRY_ENABLE_DEV === "1",
   environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
+  beforeSend: scrubSentryEvent,
 });

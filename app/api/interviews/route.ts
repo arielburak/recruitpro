@@ -5,6 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail, sendInterviewInviteToClientContact } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { canAccessJob } from "@/lib/job-access";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { getValidAccessToken, createGoogleCalendarEvent } from "@/lib/google-calendar";
 import {
   getValidAccessToken as getMsAccessToken,
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
     const guard = await requireVerifiedEmail();
     if (guard) return guard;
 
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const {
@@ -448,6 +449,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(interview, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Interview create error:", error);
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
