@@ -13,6 +13,7 @@ import {
   Star,
   GripVertical,
   MessageSquare,
+  Mail,
   Search,
   Menu,
   X,
@@ -878,7 +879,7 @@ function FinalCTA() {
           <div className="relative py-20 px-8 text-center">
             <div className="inline-flex items-center gap-2 bg-white/10 text-white/90 text-sm font-medium px-4 py-2 rounded-full mb-6 backdrop-blur-sm border border-white/10">
               <Sparkles className="w-4 h-4" />
-              Early access is open
+              Built by recruiters for recruiters
             </div>
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
               Ready to close more<br />placements, faster?
@@ -906,19 +907,31 @@ function FinalCTA() {
 function Footer() {
   return (
     <footer className="border-t border-gray-200 bg-gray-50 py-12 px-6">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-gray-900">Recruiting ATS</span>
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-10">
+          <p className="text-base font-semibold text-gray-900">Have a specific question? Get in touch.</p>
+          <a
+            href="mailto:contact@alphabridgepartners.com"
+            className="inline-flex items-center gap-2 mt-2 text-indigo-600 font-medium hover:text-indigo-700 transition-colors"
+          >
+            <Mail className="w-4 h-4" />
+            contact@alphabridgepartners.com
+          </a>
         </div>
-        <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} Recruiting ATS. All rights reserved.</p>
-        <div className="flex items-center gap-6 flex-wrap justify-center">
-          <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
-          <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
-          <Link href="/privacy" className="text-sm text-gray-500 hover:text-gray-700">Privacy</Link>
-          <Link href="/terms" className="text-sm text-gray-500 hover:text-gray-700">Terms</Link>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-t border-gray-200 pt-8">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Briefcase className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-gray-900">Recruiting ATS</span>
+          </div>
+          <p className="text-sm text-gray-400">&copy; {new Date().getFullYear()} Recruiting ATS. All rights reserved.</p>
+          <div className="flex items-center gap-6 flex-wrap justify-center">
+            <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700">Sign In</Link>
+            <Link href="/register" className="text-sm text-gray-500 hover:text-gray-700">Register</Link>
+            <Link href="/privacy" className="text-sm text-gray-500 hover:text-gray-700">Privacy</Link>
+            <Link href="/terms" className="text-sm text-gray-500 hover:text-gray-700">Terms</Link>
+          </div>
         </div>
       </div>
     </footer>
