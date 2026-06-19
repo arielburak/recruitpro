@@ -58,14 +58,16 @@ export async function PUT(
     }
 
     if (action === "accept") {
-      // Verify active subscription before accepting
+      // Verify active subscription before accepting. 402 (Payment
+      // Required) en lugar del 403 anterior — coherente con el resto
+      // de los endpoints donde el SubscriptionError mapea a 402.
       try {
         await requireActiveSubscription(ctx.organizationId);
       } catch (e) {
         if (e instanceof SubscriptionError) {
           return NextResponse.json(
-            { error: e.message, code: "SUBSCRIPTION_REQUIRED" },
-            { status: 403 }
+            { error: e.message, code: "subscription_required" },
+            { status: 402 }
           );
         }
         throw e;

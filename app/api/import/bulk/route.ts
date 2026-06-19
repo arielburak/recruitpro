@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { parseSpreadsheetFile } from "@/lib/parse-spreadsheet";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -63,7 +64,7 @@ const FIELD_SPEC: Record<
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
 
     // Accept either:
     //   - JSON: { type, mapping, records } — parsed on the client.
@@ -573,6 +574,8 @@ export async function POST(request: Request) {
       errors,
     });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

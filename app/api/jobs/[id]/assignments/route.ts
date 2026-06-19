@@ -6,6 +6,7 @@ import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { canAccessJob } from "@/lib/job-access";
 import { notifyUserIfActive } from "@/lib/notify-user";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 
 export async function GET(
   _request: Request,
@@ -44,7 +45,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
 
     // Job-level RBAC (decisión 2026-06-19 con Nicolás + Ari):
@@ -126,6 +127,8 @@ export async function POST(
 
     return NextResponse.json(assignment, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     // Handle duplicate assignment
     if (error.code === "P2002") {
       return NextResponse.json({ error: "User is already assigned to this job" }, { status: 409 });

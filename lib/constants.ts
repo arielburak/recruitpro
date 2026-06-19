@@ -1,4 +1,7 @@
-export const TRIAL_DAYS = 5;
+// Decisión 2026-06-19: 7 días free trial sin tarjeta. Después hard
+// paywall (ver requireActiveSubscription) — el user tiene que pagar
+// para seguir creando data.
+export const TRIAL_DAYS = 7;
 
 // Tiered per-seat pricing (monthly, in cents).
 // Solo covers the independent recruiter; Team kicks in at the second seat.
