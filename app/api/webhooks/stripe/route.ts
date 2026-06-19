@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { sendSubscriptionActivatedEmail } from "@/lib/email";
+import { monthlyTotalCents } from "@/lib/constants";
 import Stripe from "stripe";
 
 export async function POST(request: Request) {
@@ -62,6 +64,47 @@ export async function POST(request: Request) {
             status: "ACTIVE",
           },
         });
+
+        // Email transaccional al admin del org confirmando subscription
+        // activa. Stripe ya manda su propio recibo (si el dashboard
+        // tiene "Customer emails" activado) — esto es el toque
+        // personalizado del ATS con onboarding info.
+        try {
+          const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            include: {
+              users: {
+                where: { role: "ADMIN", isActive: true },
+                select: { name: true, email: true },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+              },
+              subscription: { select: { seats: true } },
+            },
+          });
+          const admin = org?.users?.[0];
+          if (admin?.email && org) {
+            const seats = org.subscription?.seats || 1;
+            const monthlyTotal = monthlyTotalCents(seats) / 100;
+            const baseUrl =
+              process.env.NEXTAUTH_URL ||
+              process.env.NEXT_PUBLIC_APP_URL ||
+              "https://recruitingats.com";
+            await sendSubscriptionActivatedEmail({
+              to: admin.email,
+              recipientName: admin.name || "",
+              organizationName: org.name,
+              seats,
+              monthlyTotalDollars: monthlyTotal,
+              dashboardUrl: `${baseUrl}/dashboard`,
+              manageBillingUrl: `${baseUrl}/settings/billing`,
+            });
+          }
+        } catch (emailErr) {
+          // No bloqueamos el webhook si el email falla — la sub ya
+          // está activa en DB, eso es lo importante.
+          console.error("[stripe webhook] activation email failed:", emailErr);
+        }
       }
       break;
     }

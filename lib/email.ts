@@ -999,3 +999,56 @@ export async function sendGettingStartedEmail({
     scheduledAt,
   });
 }
+
+// Email transaccional cuando un workspace completa el subscribe a un
+// plan pagado. Se dispara desde el webhook de Stripe en
+// checkout.session.completed. Stripe ya manda su propio recibo si el
+// admin lo activa en el dashboard ("Customer emails"), pero ese es
+// genérico — esto agrega un toque personalizado del ATS confirmando
+// que la subscription está activa + reminder de cómo manejarla.
+export async function sendSubscriptionActivatedEmail({
+  to,
+  recipientName,
+  organizationName,
+  seats,
+  monthlyTotalDollars,
+  dashboardUrl,
+  manageBillingUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  seats: number;
+  monthlyTotalDollars: number;
+  dashboardUrl: string;
+  manageBillingUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const seatsCopy = seats === 1 ? "1 seat" : `${seats} seats`;
+
+  const html = wrapTemplate(
+    `${first}, you're all set`,
+    `<p>Your subscription to <strong>${appName}</strong> is now active. Thanks for trusting us with <strong>${organizationName}</strong>'s recruiting workflow.</p>
+     <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Plan</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${seatsCopy} · $${monthlyTotalDollars}/month</td>
+       </tr>
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Billing</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">Monthly, auto-renewed</td>
+       </tr>
+     </table>
+     <p>You can <a href="${manageBillingUrl}" style="color: #4f46e5; font-weight: 600;">manage billing</a> — update your payment method, download invoices, or cancel — any time from your settings. Stripe will email you a receipt for every payment.</p>
+     <p>If you add or remove teammates the bill adjusts automatically on your next invoice.</p>
+     <p>Reply to this email if anything's confusing or you'd like to chat — we read every message.</p>`,
+    dashboardUrl,
+    "Open Dashboard",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription active — welcome to ${appName}`,
+    html,
+  });
+}
