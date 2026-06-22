@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { EmailVerificationBanner } from "@/components/auth/email-verification-banner";
+import { SessionGate } from "@/components/auth/session-gate";
 import { SubscriptionGate } from "@/components/billing/subscription-gate";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
@@ -90,6 +91,11 @@ export default async function DashboardLayout({
           </div>
         </main>
       </div>
+      {/* Polling client gate: detecta deactivation mid-session y
+          muestra overlay bloqueante full-screen. Z-index > Subscription
+          Gate (60 vs 50) para asegurar que tape todo si los 2 se
+          dispararan simultáneo. */}
+      <SessionGate />
     </div>
   );
 }
