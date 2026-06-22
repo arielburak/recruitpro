@@ -118,8 +118,17 @@ export default async function DashboardPage() {
     // not "every Client row in the DB" — that's why an agency with
     // 11 engaged clients was seeing 338 (the global pool).
     prisma.organizationClient.count({ where: { organizationId: orgId } }),
+    // Recent Activity — privacy gate por role.
+    // ADMIN: ve toda la activity del workspace (auditoría completa).
+    // USER: solo ve activity que él MISMO hizo (privacy — Ari no debería
+    // ver "Nicolás deactivated Ari" en su propio feed).
+    // QA reportado 2026-06-22: USER veía actions de ADMIN sobre OTROS
+    // users — leak entre miembros del equipo.
     prisma.activity.findMany({
-      where: { organizationId: orgId },
+      where: {
+        organizationId: orgId,
+        ...(role !== "ADMIN" && userId ? { userId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 10,
       include: { user: { select: { name: true } } },
