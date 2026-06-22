@@ -51,6 +51,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
+  // QA HIGH #1: Idempotency check. Stripe at-least-once delivery
+  // significa que un mismo event.id puede llegar 2+ veces si
+  // (a) nuestro handler responde no-2xx por error transitorio, o
+  // (b) Stripe duplica internamente por reasons. Sin dedup
+  // reprocesábamos todo: spam de email "subscription ended" al
+  // admin, llamadas Stripe API duplicadas, etc.
+  //
+  // INSERT con catch en unique violation. Si ya existe, devolvemos
+  // 200 sin procesar — Stripe ve OK y deja de reintentar. Si es la
+  // primera vez, el INSERT exitoso "reserva" el eventId y procedemos.
+  //
+  // Importante: el INSERT corre ANTES de cualquier side effect (DB
+  // update, email send, Stripe API call). Si el handler tira a
+  // mitad de camino, el row queda creado → Stripe va a marcarlo
+  // como delivered → nadie vuelve a procesarlo. Trade-off: si hay
+  // un bug real, perdemos visibilidad (no retry automático).
+  // Recomendado seguir con Sentry en cada catch para no perder
+  // observability.
+  try {
+    await prisma.webhookEvent.create({
+      data: {
+        eventId: event.id,
+        type: event.type,
+      },
+    });
+  } catch (err: any) {
+    // P2002 = Prisma unique violation. Significa "ya procesado".
+    if (err?.code === "P2002") {
+      return NextResponse.json({ received: true, deduped: true });
+    }
+    // Cualquier otro error de DB: log y procesar igual (mejor
+    // duplicar que perder el event).
+    console.error("[stripe webhook] idempotency insert failed:", err);
+  }
+
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;

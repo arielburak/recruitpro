@@ -1073,6 +1073,27 @@ enum SubscriptionStatus {
   UNPAID
 }
 
+// Idempotency table para webhooks externos (Stripe principalmente).
+// Stripe garantiza at-least-once delivery y reintenta hasta 3 días si
+// nuestro handler tira no-2xx. Antes el handler reprocesaba el evento
+// completo (incluido el send de subscription_ended email) → spam al
+// admin con múltiples "tu sub se terminó" + side effects duplicados.
+//
+// Patrón: al inicio del handler, INSERT { eventId, type } con UNIQUE
+// constraint en eventId. Si ya existe (duplicate violation), return 200
+// sin procesar — Stripe ve "OK" y deja de reintentar.
+//
+// processedAt = createdAt — útil para debugging y eventual cleanup
+// (rows mayores a 30 días pueden purgarse).
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
+
 // ─── PASSWORD RESETS ───
 
 model PasswordResetToken {
