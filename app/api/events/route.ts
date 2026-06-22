@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 // Generic personal calendar events that live alongside Interviews on
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const {
@@ -164,6 +165,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(event, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Calendar event create error:", error);
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }

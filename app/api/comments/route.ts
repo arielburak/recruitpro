@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import {
   notifyOnNewComment,
   notifyOnNewCandidateComment,
@@ -12,7 +13,7 @@ import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
 
     const requestedType = body.type || "INTERNAL";
@@ -174,6 +175,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

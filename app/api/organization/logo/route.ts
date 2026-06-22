@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
@@ -10,7 +11,7 @@ const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/s
 // POST: upload a new organization logo (admin only)
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Only admins can change the logo" }, { status: 403 });
     }
@@ -60,6 +61,8 @@ export async function POST(request: Request) {
     const v = new Date(updated.updatedAt).getTime();
     return NextResponse.json({ url: `/api/organization/logo/image?v=${v}` });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("[org logo upload] error:", error);
     return NextResponse.json({ error: safeErrorMessage(error) || "Upload failed" }, { status: 500 });
   }
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
 // DELETE: remove the logo (admin only)
 export async function DELETE() {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Only admins can change the logo" }, { status: 403 });
     }
@@ -87,6 +90,8 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

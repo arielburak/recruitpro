@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail } from "@/lib/email";
@@ -147,7 +148,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
     const data = candidateSchema.parse(body);
@@ -341,6 +342,8 @@ export async function PUT(
         { status: 400 }
       );
     }
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
@@ -350,7 +353,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const forbidden = requireAdminResponse(ctx.role);
     if (forbidden) return forbidden;
     const { id } = await params;
@@ -390,6 +393,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, keptMetrics: keepMetrics });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

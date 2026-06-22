@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { DEFAULT_STAGES } from "@/lib/constants";
 import { sendClientSetPasswordEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const guard = await requireVerifiedEmail();
     if (guard) return guard;
 
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const rawEmail =
       typeof body?.hiringContactEmail === "string"
@@ -210,6 +211,8 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json(
       { error: safeErrorMessage(error) },
       { status: error.message?.startsWith("Unauthorized") ? 401 : 500 }

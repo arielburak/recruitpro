@@ -59,6 +59,27 @@ type SendArgs = {
 // you write a new sendX, compose the body using these — don't reroll
 // the patterns.
 
+// Escapa caracteres HTML para prevenir phishing / link injection via
+// emails con contenido user-controlled. QA pre-launch (2026-06-22)
+// detectó que un comentario tipo `<a href="evil">click</a>` se
+// interpolaba RAW dentro del template y aparecía como link real en
+// el email — vector de phishing desde noreply@recruitingats.com.
+//
+// IMPORTANTE: usar este helper en CADA campo controlado por user
+// que se interpole en HTML (recipientName, candidateName, jobTitle,
+// firmName, organizationName, recruiterName, mentionedBy, comment
+// preview, note, etc.). Identifiers internos (URLs nuestras,
+// constantes, strings hardcodeados) NO necesitan escape.
+export function escapeHtml(value: string | number | null | undefined): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // "Hi {first name}," / "Hi there," default. Always returns a wrapped
 // <p>. Centralizes the first-name extraction so we never end up with
 // "Hi  ," (double space) or "Hi Federico Bochinsky," (full name).
@@ -71,7 +92,9 @@ function firstName(full: string | null | undefined): string {
 
 function greeting(recipientName?: string | null): string {
   const f = firstName(recipientName);
-  return `<p>Hi ${f || "there"},</p>`;
+  // f viene de input controlado por el inviter (admin), pero igual
+  // pasamos por escapeHtml por defense in depth.
+  return `<p>Hi ${escapeHtml(f) || "there"},</p>`;
 }
 
 // Slack-style quote / preview block. Use for chat previews, mention
@@ -83,14 +106,19 @@ function quoteBlock(
   text: string,
   opts?: { label?: string; accent?: "indigo" | "emerald" }
 ): string {
+  // Truncate first, then escape — preserva el límite en chars del
+  // user input antes de inflar con entities HTML.
   const trimmed = text.length > 240 ? `${text.slice(0, 240)}…` : text;
+  const escaped = escapeHtml(trimmed);
   const accentColor = opts?.accent === "emerald" ? "#10b981" : "#6366f1";
+  // El label puede venir hardcodeado del caller — pasamos por escape
+  // igual para que sea uniforme. Ningún call site lo pasa con HTML.
   const labelHtml = opts?.label
-    ? `<p style="font-size: 12px; color: #6b7280; margin: 0 0 6px 0; font-weight: 600;">${opts.label}</p>`
+    ? `<p style="font-size: 12px; color: #6b7280; margin: 0 0 6px 0; font-weight: 600;">${escapeHtml(opts.label)}</p>`
     : "";
   return `<div style="margin: 16px 0;">
       ${labelHtml}
-      <div style="padding: 12px 14px; background: #f9fafb; border-left: 3px solid ${accentColor}; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmed}</div>
+      <div style="padding: 12px 14px; background: #f9fafb; border-left: 3px solid ${accentColor}; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${escaped}</div>
     </div>`;
 }
 
@@ -111,10 +139,14 @@ function interviewDetailsTable(args: {
   location?: string;
   notes?: string;
 }): string {
+  // Todos los `value` se interpolan en HTML — escape obligatorio por
+  // defense in depth. Algunos son fechas/strings constantes (date,
+  // time, timezone), otros son user input (job.title, client.name,
+  // location, notes). Aplicamos escape uniforme.
   const row = (label: string, value: string) =>
     `<tr>
-      <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px; vertical-align: top; white-space: nowrap;">${label}</td>
-      <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${value}</td>
+      <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px; vertical-align: top; white-space: nowrap;">${escapeHtml(label)}</td>
+      <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${escapeHtml(value)}</td>
     </tr>`;
   return `<table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
       ${args.candidate ? row("Candidate", args.candidate.name) : ""}
