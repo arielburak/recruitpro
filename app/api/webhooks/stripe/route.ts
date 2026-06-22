@@ -3,7 +3,20 @@ import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
+import { syncSubFromStripe } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
+
+// Resolver el subscription id desde un Invoice. Stripe API 2025-09+
+// deprecó invoice.subscription (root) y lo movió a parent.subscription
+// _details.subscription. Buscamos ambos.
+function getInvoiceSubscriptionId(invoice: any): string | null {
+  if (typeof invoice?.subscription === "string") return invoice.subscription;
+  if (invoice?.subscription?.id) return invoice.subscription.id;
+  const sub = invoice?.parent?.subscription_details?.subscription;
+  if (typeof sub === "string") return sub;
+  if (sub?.id) return sub.id;
+  return null;
+}
 
 // Decisión 2026-06-19 con Nicolás: la mayoría de los emails de billing
 // los manda Stripe directo desde Customer Portal (Dashboard → Settings
@@ -112,18 +125,19 @@ export async function POST(request: Request) {
 
     case "invoice.paid": {
       const invoice = event.data.object as any;
-      if (invoice.subscription) {
+      const subId = getInvoiceSubscriptionId(invoice);
+      if (subId) {
         const sub = await prisma.subscription.findFirst({
-          where: { stripeSubscriptionId: invoice.subscription as string },
+          where: { stripeSubscriptionId: subId },
+          select: { organizationId: true },
         });
         if (sub) {
-          await prisma.subscription.update({
-            where: { id: sub.id },
-            data: {
-              status: "ACTIVE",
-              currentPeriodEnd: new Date((invoice.lines?.data[0]?.period?.end || 0) * 1000),
-            },
-          });
+          // En vez de hardcodear status/periodEnd desde el invoice
+          // (que históricamente tiraba new Date(0) cuando el field no
+          // venía), pull-from-Stripe completo. Garantiza que TODO
+          // queda en sync — status, seats, cancelAtPeriodEnd y
+          // currentPeriodEnd — con la verdad de Stripe.
+          await syncSubFromStripe(sub.organizationId);
         }
       }
       break;
@@ -131,11 +145,18 @@ export async function POST(request: Request) {
 
     case "invoice.payment_failed": {
       const invoice = event.data.object as any;
-      if (invoice.subscription) {
-        await prisma.subscription.updateMany({
-          where: { stripeSubscriptionId: invoice.subscription as string },
-          data: { status: "PAST_DUE" },
+      const subId = getInvoiceSubscriptionId(invoice);
+      if (subId) {
+        const sub = await prisma.subscription.findFirst({
+          where: { stripeSubscriptionId: subId },
+          select: { organizationId: true },
         });
+        if (sub) {
+          // Stripe es la source of truth — pull full state. Stripe
+          // ya marcó la sub en past_due / unpaid según el caso, y
+          // syncSubFromStripe lo mapea a nuestro enum.
+          await syncSubFromStripe(sub.organizationId);
+        }
       }
       break;
     }
