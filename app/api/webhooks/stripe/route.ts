@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
-import { syncSubFromStripe, mapStripeStatus } from "@/lib/sync-stripe-seats";
+import { syncSubFromStripe, mapStripeStatus, recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
 
 // Resolver el subscription id desde un Invoice. Stripe API 2025-09+
@@ -134,6 +134,17 @@ export async function POST(request: Request) {
             ...(periodEnd && { currentPeriodEnd: periodEnd }),
           },
         });
+
+        // QA HIGH #3: reconciliar seats con active users count actual.
+        // Antes el handler escribía seats = Stripe quantity, lo cual
+        // podía ser stale si invite/deactivate ocurrieron entre
+        // checkout-create y checkout-complete. recalculateAndSyncSeats
+        // cuenta active users reales, actualiza DB y push a Stripe
+        // via subscriptions.update si hace falta. Ahora hay
+        // stripeSubscriptionId (recién seteado arriba), así que
+        // syncStripeSeats interno no más no-opea con
+        // "no_stripe_subscription_yet".
+        void recalculateAndSyncSeats(orgId);
       }
       break;
     }
