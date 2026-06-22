@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
-import { syncSubFromStripe } from "@/lib/sync-stripe-seats";
+import { syncSubFromStripe, mapStripeStatus } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
 
 // Resolver el subscription id desde un Invoice. Stripe API 2025-09+
@@ -79,13 +79,22 @@ export async function POST(request: Request) {
           break;
         }
         // Fetch full subscription details from Stripe so we set
-        // current_period_end y seats correctamente en el primer
-        // update — sin depender de que después llegue invoice.paid
-        // o subscription.updated. Si esos eventos se demoran o se
-        // pierden, el UI muestra "Next billing: —" hasta el próximo
-        // ciclo. Una llamada API extra acá lo evita.
+        // current_period_end + seats + STATUS correctamente en el
+        // primer update — sin depender de que después llegue
+        // invoice.paid o subscription.updated.
+        //
+        // CRITICAL fix QA 2026-06-22: antes hardcodeabamos status=
+        // 'ACTIVE' acá, lo cual permitía acceso al ATS sin pagar
+        // cuando Stripe creaba la sub como 'incomplete' (3DS pending,
+        // declined first charge). Ahora leemos el status real y solo
+        // tocamos el campo si mapStripeStatus devuelve algo no-
+        // incomplete. Para 'incomplete' queda undefined → status DB
+        // se mantiene en TRIALING (estado pre-checkout) y el guard
+        // bloquea correctamente.
         let periodEnd: Date | undefined;
         let quantity = 1;
+        let mappedStatus: ReturnType<typeof mapStripeStatus> = undefined;
+        let stripeRetrieveOk = false;
         try {
           const stripe = getStripeClient();
           const stripeSub = (await stripe.subscriptions.retrieve(
@@ -101,9 +110,13 @@ export async function POST(request: Request) {
             periodEnd = new Date(periodEndTs * 1000);
           }
           quantity = firstItem?.quantity || 1;
+          mappedStatus = mapStripeStatus(stripeSub.status);
+          stripeRetrieveOk = true;
         } catch (retrieveErr) {
-          // Si Stripe falla, igual marcamos ACTIVE — el fix queda
-          // para cuando llegue el subscription.updated.
+          // Si Stripe falla, NO marcamos ACTIVE. Dejamos el status
+          // como estaba (TRIALING). El próximo subscription.updated /
+          // invoice.paid lo va a resolver. Es más seguro que dar
+          // acceso pre-confirmación de pago.
           console.error(
             "[stripe webhook] failed to retrieve sub on checkout:",
             retrieveErr,
@@ -114,7 +127,9 @@ export async function POST(request: Request) {
           where: { organizationId: orgId },
           data: {
             stripeSubscriptionId: session.subscription as string,
-            status: "ACTIVE",
+            // Solo seteamos status si Stripe confirmó pago. Si está
+            // en 'incomplete' o Stripe falló, el campo NO se toca.
+            ...(stripeRetrieveOk && mappedStatus && { status: mappedStatus }),
             seats: quantity,
             ...(periodEnd && { currentPeriodEnd: periodEnd }),
           },
@@ -185,9 +200,18 @@ export async function POST(request: Request) {
         },
       });
 
+      // Clear stripeSubscriptionId también — la sub vieja queda muerta.
+      // Sin esto, si el user resubscribe, syncSubFromStripe va a leer
+      // el subId viejo de Stripe (que está CANCELED) y machacar el
+      // estado fresh del nuevo checkout. El stripeCustomerId queda,
+      // solo limpiamos el subId.
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
-        data: { status: "CANCELED", cancelAtPeriodEnd: false },
+        data: {
+          status: "CANCELED",
+          cancelAtPeriodEnd: false,
+          stripeSubscriptionId: null,
+        },
       });
 
       try {
@@ -220,21 +244,12 @@ export async function POST(request: Request) {
       // primero, fallback al root.
       const periodEndTs =
         firstItem?.current_period_end || subscription.current_period_end;
-      // Stripe subscription status → nuestro enum. Pre-fix solo mapeaba
-      // active y past_due — cuando llegaba un update con status=canceled
-      // (caso documentado: cancel_at_period_end → final del periodo) la
-      // sub seguía como ACTIVE en la DB y el guard de subscription la
-      // dejaba seguir usando el ATS sin pagar. Mapeamos los 6 valores
-      // posibles de Stripe que conocemos. Cualquier otro queda
-      // undefined (no se toca el campo) para no pisar con basura un
-      // estado válido pre-existente.
-      const stripeStatus = subscription.status as string | undefined;
-      let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined;
-      if (stripeStatus === "active") mappedStatus = "ACTIVE";
-      else if (stripeStatus === "past_due") mappedStatus = "PAST_DUE";
-      else if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired") mappedStatus = "CANCELED";
-      else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
-      else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
+      // Stripe subscription status → nuestro enum. Helper compartido
+      // con syncSubFromStripe para evitar drift. 'incomplete' devuelve
+      // undefined (no tocamos el campo) — un sub que pasó por incomplete
+      // tras el checkout completed ya quedó en TRIALING y el guard la
+      // bloquea correctamente hasta que invoice.paid lo mueva a ACTIVE.
+      const mappedStatus = mapStripeStatus(subscription.status as string | undefined);
 
       // Capturar la flag "scheduled to cancel" de Stripe. Stripe API
       // 2025+ deprecó cancel_at_period_end (boolean) a favor de
@@ -245,12 +260,38 @@ export async function POST(request: Request) {
         subscription.cancel_at_period_end === true ||
         !!subscription.cancel_at;
 
+      // Sticky CANCELED protection: si la sub ya está CANCELED en la
+      // DB, NO permitimos que un evento updated (que puede llegar
+      // out-of-order después de subscription.deleted) la resucite a
+      // ACTIVE. Stripe garantiza at-least-once pero NO orden.
+      const currentDbState = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        select: { status: true },
+      });
+      const isAlreadyCanceled = currentDbState?.status === "CANCELED";
+      const wouldResurrect =
+        isAlreadyCanceled && mappedStatus && mappedStatus !== "CANCELED";
+      if (wouldResurrect) {
+        console.warn(
+          "[stripe webhook] skipping subscription.updated that would resurrect CANCELED sub:",
+          { subId: subscription.id, attemptedStatus: mappedStatus },
+        );
+        break;
+      }
+
+      // Cuando llega CANCELED, limpiamos cancelAtPeriodEnd: la sub ya
+      // se canceló, el flag "scheduled to cancel" pierde sentido. Sin
+      // esto, /settings/billing podía mostrar "Canceled" badge + el
+      // CTA "Reactivate" simultáneo (estado contradictorio).
+      const cancelAtPeriodEndFinal =
+        mappedStatus === "CANCELED" ? false : willCancel;
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: {
           seats: quantity,
           currentPeriodEnd: periodEndTs ? new Date(periodEndTs * 1000) : undefined,
-          cancelAtPeriodEnd: willCancel,
+          cancelAtPeriodEnd: cancelAtPeriodEndFinal,
           ...(mappedStatus && { status: mappedStatus }),
         },
       });

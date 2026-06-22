@@ -31,6 +31,32 @@ function isStripeSubScheduledToCancel(stripeSub: any): boolean {
   return false;
 }
 
+// Mapea el status de Stripe a nuestro enum interno. Helper compartido
+// entre el webhook handler y syncSubFromStripe para que el mapeo NO
+// drift entre los 2 paths.
+//
+// IMPORTANTE: 'incomplete' NO se mapea — Stripe usa este estado cuando
+// el primer charge falla (3DS pending, declined card, etc.) y la sub
+// queda inactiva hasta que invoice.paid resuelva. Devolver undefined
+// indica al caller "no toques el campo status" — la sub queda en el
+// estado previo (TRIALING / pre-checkout) hasta que Stripe confirme el
+// cobro. Marcar ACTIVE acá era el bug crítico del QA pre-launch:
+// permitía acceder al ATS sin haber pagado durante las 23h que Stripe
+// da antes de marcar incomplete_expired.
+export function mapStripeStatus(
+  stripeStatus: string | undefined,
+): "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined {
+  if (stripeStatus === "active") return "ACTIVE";
+  if (stripeStatus === "past_due") return "PAST_DUE";
+  if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired")
+    return "CANCELED";
+  if (stripeStatus === "unpaid") return "UNPAID";
+  if (stripeStatus === "trialing") return "TRIALING";
+  // 'incomplete' y cualquier otro estado desconocido → undefined.
+  // El caller debe usar spread condicional: `...(mapped && { status: mapped })`.
+  return undefined;
+}
+
 // Recalcula el seat count desde scratch (count de users active) y
 // sincroniza tanto la DB como Stripe. Es el helper que TODOS los
 // call sites deberían usar después de cualquier cambio que afecte el
@@ -110,17 +136,7 @@ export async function syncSubFromStripe(
     const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
     const quantity = firstItem?.quantity || 1;
     const willCancel = isStripeSubScheduledToCancel(stripeSub);
-    const stripeStatus = stripeSub.status as string;
-
-    // Mapeo Stripe status → enum interno. Mantener consistente con el
-    // mapeo del webhook handler (customer.subscription.updated case).
-    let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined;
-    if (stripeStatus === "active") mappedStatus = "ACTIVE";
-    else if (stripeStatus === "past_due") mappedStatus = "PAST_DUE";
-    else if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired")
-      mappedStatus = "CANCELED";
-    else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
-    else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
+    const mappedStatus = mapStripeStatus(stripeSub.status as string | undefined);
 
     // Detectar si hace falta actualizar. Si todo coincide, skip el
     // write (idempotente, evita updatedAt churn).
