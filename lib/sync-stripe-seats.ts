@@ -209,11 +209,17 @@ export async function syncStripeSeats(
 
     await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
       items: [{ id: item.id, quantity: newSeats }],
-      // Default proration_behavior: 'create_prorations' → cobra el
-      // delta proporcional en la próxima factura. Otras opciones:
-      // 'none' (sin prorate) o 'always_invoice' (cobra inmediato).
-      // Para MVP usamos el default: el cliente paga lo proporcional
-      // y la próxima factura ya viene con el monto nuevo.
+      // proration_behavior: 'none' — los cambios de seats se aplican
+      // al próximo billing cycle SIN generar proration line items
+      // intermedios. Decisión 2026-06-22 con Nicolás: visualmente
+      // limpio (la próxima factura es el monto exacto del current
+      // quantity, sin acumulación de líneas que se cancelan entre
+      // sí). Patrón que usan Linear / Vercel / Notion para seat
+      // changes en MVP. Trade-off menor: cliente no paga lo
+      // proporcional del cambio mid-cycle — se aplica al próximo
+      // ciclo completo. Para 1-5 seats con pocos cambios al mes,
+      // es la UX correcta.
+      proration_behavior: "none",
     });
 
     return { synced: true };
