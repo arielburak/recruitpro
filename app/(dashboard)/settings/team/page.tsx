@@ -100,12 +100,11 @@ export default function AdminUsersPage() {
       role: String(fd.get("role") || "USER"),
     };
 
-    // Si la org está ACTIVE (paying) y no es comp → interrumpir flow
-    // para mostrar el dialog con desglose del impacto. El dialog
-    // confirma o cancela. Trial / comp → submit directo sin fricción.
-    const isActivePaying =
-      subscription?.status === "ACTIVE" && !subscription?.isComp;
-    if (isActivePaying) {
+    // Decisión 2026-06-22: mostrar el dialog también en TRIAL para
+    // setear expectativas del cobro post-trial. Solo COMP skipea el
+    // dialog (no aplica billing). El dialog adapta su copy según
+    // status (ACTIVE → prorate now / TRIALING → kicks in after trial).
+    if (!subscription?.isComp) {
       setPendingInvite(inviteData);
       return;
     }
@@ -551,6 +550,9 @@ export default function AdminUsersPage() {
         userId={deactivateTarget?.id ?? null}
         userName={deactivateTarget?.name ?? ""}
         open={!!deactivateTarget}
+        currentSeats={activeUsers.length}
+        subscriptionStatus={subscription?.status}
+        isComp={!!subscription?.isComp}
         onOpenChange={(open) => {
           if (!open) setDeactivateTarget(null);
         }}
@@ -577,6 +579,8 @@ export default function AdminUsersPage() {
           if (!open) setPendingInvite(null);
         }}
         currentSeats={activeUsers.length}
+        status={subscription?.status || "TRIALING"}
+        isComp={!!subscription?.isComp}
         newTeammateName={pendingInvite?.name || undefined}
         loading={inviteLoading}
         onConfirm={() => {

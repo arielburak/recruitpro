@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { BillingImpactBlock } from "@/components/billing/billing-impact-block";
 
 // Dialog que pide la decisión al admin antes de desactivar a un user.
 // Carga el impact info (counts + lista de upcoming interviews) cuando
@@ -48,12 +49,21 @@ export function DeactivateUserDialog({
   open,
   onOpenChange,
   onDeactivated,
+  currentSeats,
+  subscriptionStatus,
+  isComp,
 }: {
   userId: string | null;
   userName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDeactivated: (summary: { interviewsHandled: number; choice: InterviewChoice }) => void;
+  // Billing context para mostrar el impacto del seat removido. Opcio-
+  // nales por compat con call sites que no lo pasan; en ese caso el
+  // BillingImpactBlock simplemente no renderiza nada.
+  currentSeats?: number;
+  subscriptionStatus?: string;
+  isComp?: boolean;
 }) {
   const [impact, setImpact] = useState<ImpactData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -290,6 +300,18 @@ export function DeactivateUserDialog({
                   </label>
                 </div>
               </div>
+            )}
+
+            {/* Billing impact — muestra el cambio en el bill mensual
+                cuando se quita el seat. No aparece para comp ni si la
+                sub no está en ACTIVE/TRIALING (decide BillingImpactBlock). */}
+            {typeof currentSeats === "number" && subscriptionStatus && (
+              <BillingImpactBlock
+                currentSeats={currentSeats}
+                delta={-1}
+                status={subscriptionStatus}
+                isComp={!!isComp}
+              />
             )}
 
             {/* Lista de interviews afectadas, para que el admin sepa

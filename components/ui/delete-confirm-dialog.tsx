@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { BillingImpactBlock } from "@/components/billing/billing-impact-block";
 
 // Reusable destructive-action confirmation. Use it for any delete in
 // the ATS — candidates, jobs, clients, contacts, documents, etc.
@@ -61,6 +62,17 @@ type DeleteConfirmDialogProps = {
   // Optional sub-decision. The dialog renders a checkbox; the boolean
   // is passed to onConfirm so the caller can branch on it.
   extraToggle?: ExtraToggle;
+  // Optional billing impact: when set, the dialog renders the standard
+  // BillingImpactBlock so the admin sees how the bill changes BEFORE
+  // confirming the delete. Used for user deletion in /settings/team —
+  // removing a seat decreases the Stripe quantity and prorates a
+  // credit on the next invoice. Skipped when isComp/non-paying.
+  billingImpact?: {
+    currentSeats: number;
+    delta: -1 | 1;
+    status: string;
+    isComp: boolean;
+  };
   // Async-aware. While the returned promise is pending, the dialog
   // shows a disabled "Deleting…" button. Errors should be handled
   // upstream (toast / inline) — this component just gates the action.
@@ -81,6 +93,7 @@ export function DeleteConfirmDialog({
   description,
   consequences,
   extraToggle,
+  billingImpact,
   onConfirm,
   confirmLabel = "Yes, delete",
 }: DeleteConfirmDialogProps) {
@@ -155,6 +168,15 @@ export function DeleteConfirmDialog({
               ))}
             </ul>
           </div>
+        )}
+
+        {billingImpact && (
+          <BillingImpactBlock
+            currentSeats={billingImpact.currentSeats}
+            delta={billingImpact.delta}
+            status={billingImpact.status}
+            isComp={billingImpact.isComp}
+          />
         )}
 
         {extraToggle && (
