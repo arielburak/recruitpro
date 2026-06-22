@@ -66,8 +66,15 @@ export default function ClientsPage() {
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
-        setClients(data);
+        // /api/clients returns { error } on 401/500, not an array. Normalize
+        // to [] so downstream `for (const c of clients)` doesn't blow up
+        // with "X is not iterable" (Sentry: TypeError on /clients).
+        setClients(Array.isArray(data) ? data : []);
         setSelectedIds(new Set());
+        setLoading(false);
+      })
+      .catch(() => {
+        setClients([]);
         setLoading(false);
       });
   }, []);

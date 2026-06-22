@@ -483,8 +483,15 @@ export default function JobsPage() {
     fetch("/api/jobs")
       .then((r) => r.json())
       .then((data) => {
-        setJobs(data);
+        // /api/jobs returns { error } on 401/500, not an array. Normalize
+        // to [] so the useMemo `for (const j of jobs)` doesn't blow up
+        // with "X is not iterable" (Sentry: TypeError on /jobs).
+        setJobs(Array.isArray(data) ? data : []);
         setSelectedIds(new Set());
+        setLoading(false);
+      })
+      .catch(() => {
+        setJobs([]);
         setLoading(false);
       });
   }, []);
