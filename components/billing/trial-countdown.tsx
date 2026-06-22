@@ -24,6 +24,11 @@ const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 // storage. Modos no-urgent: user puede cerrar con X o esc para usar
 // el ATS, pero al refresh / próximo login reaparece.
 //
+// Excepción 2026-06-22: NO mostrar durante los primeros 5min después
+// del signup. La primera vez que el user entra al dashboard recién
+// creó la cuenta — el popup interrumpe el onboarding. A partir del
+// próximo login (o refresh después de la ventana) aparece normal.
+//
 // Visual escalado por urgencia:
 //   · 7d+ → indigo (gentle reminder, dismissible esta carga)
 //   · 3-6d → amber (heads up, dismissible esta carga)
@@ -39,7 +44,18 @@ type Subscription = {
   trialEndsAt: string | null;
   isComp: boolean;
   stripeSubscriptionId: string | null;
+  // userCreatedAt viene del endpoint /api/admin/subscription. Si el
+  // user se acaba de crear (<5min), skipeamos el popup para no
+  // interrumpir el primer momento del onboarding. Logins posteriores
+  // y refreshes durante una sesión activa SÍ disparan el popup.
+  userCreatedAt: string | null;
 };
+
+// Ventana en minutos desde el signup donde NO se muestra el popup.
+// 5 minutos cubre el flow normal de signup → verify email → complete
+// profile → dashboard (~2min típico). Si el user demora más por
+// alguna razón, va a ver el popup — aceptable.
+const SIGNUP_GRACE_MINUTES = 5;
 
 export function TrialCountdown() {
   const { data: session } = useSession();
@@ -62,6 +78,20 @@ export function TrialCountdown() {
     if (subscription.isComp) return;
     if (!subscription.trialEndsAt) return;
 
+    // Si el trial ya expiró, el SubscriptionGate maneja el bloqueo
+    // — no abrir el popup chico por arriba.
+    const trialEndMs = new Date(subscription.trialEndsAt).getTime();
+    if (trialEndMs <= Date.now()) return;
+
+    // Skipear durante la ventana de gracia post-signup.
+    if (subscription.userCreatedAt) {
+      const minutesSinceSignup =
+        (Date.now() - new Date(subscription.userCreatedAt).getTime()) /
+        1000 /
+        60;
+      if (minutesSinceSignup < SIGNUP_GRACE_MINUTES) return;
+    }
+
     // Sin persistencia de dismiss: abre cada vez que el componente
     // se monta (cada login / refresh). User puede cerrar para usar
     // el ATS, pero al recargar reaparece.
@@ -81,6 +111,15 @@ export function TrialCountdown() {
   // cargo con un overlay full-screen bloqueante. Este popup chico
   // no aporta nada arriba de eso — solo confunde.
   if (msLeft <= 0) return null;
+
+  // Skipear si el user recién se creó la cuenta (<5min). Evita que
+  // el popup interrumpa el primer momento del onboarding. Apenas
+  // pase la ventana, cualquier refresh o próximo login lo dispara.
+  if (subscription.userCreatedAt) {
+    const minutesSinceSignup =
+      (now - new Date(subscription.userCreatedAt).getTime()) / 1000 / 60;
+    if (minutesSinceSignup < SIGNUP_GRACE_MINUTES) return null;
+  }
 
   const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
 
