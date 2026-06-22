@@ -88,6 +88,8 @@ export function TrialCountdown() {
   const isHeadsUp = daysLeft >= 3 && daysLeft <= 6;
 
   // Color + iconografía según urgencia.
+  // Copy consistente con /settings/billing: "$XX/seat per month. Cancel anytime."
+  // Sin em-dashes ni "$XX/seat/month" (esos quebraban feo en el wrap del modal).
   const styles = isUrgent
     ? {
         accent: "text-red-700",
@@ -106,14 +108,14 @@ export function TrialCountdown() {
         button: "bg-amber-600 hover:bg-amber-700 text-white",
         icon: AlertTriangle,
         title: `${daysLeft} days left in your trial`,
-        subtitle: `Subscribe now to lock in $${pricePerSeatDollars}/seat/month and skip the interruption.`,
+        subtitle: `Subscribe now to keep your team working. $${pricePerSeatDollars}/seat per month. Cancel anytime.`,
       }
     : {
         accent: "text-indigo-700",
         button: "bg-indigo-600 hover:bg-indigo-700 text-white",
         icon: Sparkles,
         title: `${daysLeft} days left in your free trial`,
-        subtitle: `Enjoying the ATS? Subscribe any time — $${pricePerSeatDollars}/seat/month, cancel whenever.`,
+        subtitle: `Enjoying the ATS? Subscribe any time. $${pricePerSeatDollars}/seat per month. Cancel anytime.`,
       };
 
   const Icon = styles.icon;
