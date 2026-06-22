@@ -70,6 +70,18 @@ export default function AdminUsersPage() {
     role: string;
   } | null>(null);
 
+  // Reactivate dialog state — mismo patrón que pendingInvite pero
+  // para reactivar un user deactivated. Antes era PATCH directo sin
+  // confirm — el seat se sumaba al billing silencioso. Feedback de
+  // Nicolás 2026-06-22: 'no puede reactivar y sumar un seat sin
+  // avisarme y sin llevarme a Stripe'. Ahora abre el ConfirmAddSeat
+  // Dialog en modo reactivate.
+  const [pendingReactivate, setPendingReactivate] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -155,21 +167,40 @@ export default function AdminUsersPage() {
       setDeactivateTarget({ id: userId, name: userName });
       return;
     }
-    // Reactivate (currentlyActive=false): no necesita confirmación,
-    // es no-destructivo. Endpoint genérico PATCH.
-    const res = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, isActive: true }),
-    });
-    if (res.ok) {
-      setSuccess(`${userName} reactivated`);
-      setTimeout(() => setSuccess(""), 3000);
-      fetchData();
-    } else {
-      const body = await res.json();
-      setError(body.error || "Failed to update user");
-      setTimeout(() => setError(""), 3000);
+    // Reactivate (currentlyActive=false): NO submitamos directo. Sumar
+    // un seat sin avisar al admin es lo que rompe la confianza —
+    // abrimos el ConfirmAddSeatDialog en modo reactivate para mostrar
+    // el impacto en billing + opción de cambiar payment method antes.
+    if (subscription?.isComp) {
+      // COMP: no aplica billing, reactivar directo sin fricción.
+      void doReactivate(userId, userName);
+      return;
+    }
+    setPendingReactivate({ id: userId, name: userName });
+  }
+
+  // Hace el PATCH real para reactivar. Llamado por toggleUserActive
+  // (comp / no-billing path) o por el confirm del dialog (paying path).
+  async function doReactivate(userId: string, userName: string) {
+    setReactivateLoading(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, isActive: true }),
+      });
+      if (res.ok) {
+        setSuccess(`${userName} reactivated`);
+        setTimeout(() => setSuccess(""), 3000);
+        fetchData();
+      } else {
+        const body = await res.json();
+        setError(body.error || "Failed to update user");
+        setTimeout(() => setError(""), 3000);
+      }
+    } finally {
+      setReactivateLoading(false);
+      setPendingReactivate(null);
     }
   }
 
@@ -569,10 +600,10 @@ export default function AdminUsersPage() {
         }}
       />
 
-      {/* Confirm seat dialog — visible solo cuando el workspace ya
-          está paying (ACTIVE, no comp). Muestra desglose del costo
-          actual + nuevo + diferencia con nota de prorrateo. Si el
-          admin confirma, dispara el POST del invite. Cancela = nada. */}
+      {/* Confirm seat dialog — modo invite. Aparece cuando el admin
+          envía un invite y el workspace no es COMP. Muestra desglose
+          + link "Change payment method" si quiere cambiar tarjeta
+          antes de confirmar. */}
       <ConfirmAddSeatDialog
         open={!!pendingInvite}
         onOpenChange={(open) => {
@@ -581,11 +612,33 @@ export default function AdminUsersPage() {
         currentSeats={activeUsers.length}
         status={subscription?.status || "TRIALING"}
         isComp={!!subscription?.isComp}
-        newTeammateName={pendingInvite?.name || undefined}
+        teammateName={pendingInvite?.name || undefined}
+        mode="invite"
         loading={inviteLoading}
         onConfirm={() => {
           if (pendingInvite) {
             void submitInvite(pendingInvite);
+          }
+        }}
+      />
+
+      {/* Confirm seat dialog — modo reactivate. Aparece cuando el
+          admin reactiva un user deactivated. Antes era un click
+          silencioso que sumaba seat sin avisar. Fix 2026-06-22. */}
+      <ConfirmAddSeatDialog
+        open={!!pendingReactivate}
+        onOpenChange={(open) => {
+          if (!open) setPendingReactivate(null);
+        }}
+        currentSeats={activeUsers.length}
+        status={subscription?.status || "TRIALING"}
+        isComp={!!subscription?.isComp}
+        teammateName={pendingReactivate?.name || undefined}
+        mode="reactivate"
+        loading={reactivateLoading}
+        onConfirm={() => {
+          if (pendingReactivate) {
+            void doReactivate(pendingReactivate.id, pendingReactivate.name);
           }
         }}
       />
