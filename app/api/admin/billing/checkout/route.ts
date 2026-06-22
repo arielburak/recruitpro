@@ -53,11 +53,21 @@ export async function POST() {
       });
     }
 
+    // QA Stripe audit HIGH: si la org está TRIALING con trialEndsAt en
+    // el futuro, pasamos esa fecha a Stripe para que respete el trial
+    // restante. Sin esto, el user que paga en día 3 del trial 'pierde'
+    // los 4 días restantes — Stripe cobra inmediato.
+    const trialEnd =
+      subscription.status === "TRIALING" && subscription.trialEndsAt
+        ? subscription.trialEndsAt
+        : null;
+
     const session = await createCheckoutSession(
       customerId,
       stripePriceIdForSeats(subscription.seats),
       subscription.seats,
-      ctx.organizationId
+      ctx.organizationId,
+      trialEnd,
     );
 
     return NextResponse.json({ url: session.url });
