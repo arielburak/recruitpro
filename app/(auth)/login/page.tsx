@@ -154,13 +154,19 @@ function LoginContent() {
       {/* Right Panel — form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to home
-          </Link>
+          {/* Back to home: solo en step=select. En step=agency el botón
+              específico abajo del form ("Back to portal selection") es
+              el back relevante. Antes aparecían los 2 botones simultáneo
+              (regression que ya se había arreglado y volvió). */}
+          {step === "select" && (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to home
+            </Link>
+          )}
 
           {step === "select" && (
             <>

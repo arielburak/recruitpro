@@ -284,13 +284,20 @@ function ClientPortalLoginInner() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to home
-          </Link>
+          {/* Back to home: solo en modo login (no en forgot). El sub-
+              componente ForgotPasswordSection ya tiene su propio "Back
+              to sign in" — sin este condicional aparecían los 2
+              botones simultáneo, regression del mismo bug del staffing
+              login. */}
+          {!forgotMode && (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to home
+            </Link>
+          )}
 
           {hasStaffingSession && (
             <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
