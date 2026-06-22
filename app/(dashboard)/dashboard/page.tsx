@@ -553,12 +553,11 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Recruiter performance — surfaces here right under the stat
-          strip so the metrics that drive comp / reviews are the
-          first thing a sales-ops lead sees. Self-contained client
-          widget so its filters (date range, recruiter picker,
-          compare-vs-prior) re-fetch independently of the SSR shell. */}
-      <RecruiterPerformance />
+      {/* Recruiter performance — leaderboard del team. ADMIN-only:
+          USER no debe ver métricas/comp data de otros recruiters.
+          QA CRITICAL privacy 2026-06-22. El endpoint también gate
+          server-side por defense in depth. */}
+      {role === "ADMIN" && <RecruiterPerformance />}
 
       {/* Activity Trend — full width ahora que sacamos el Pipeline
           Distribution de al lado. El strip violeta de pipeline

@@ -13,7 +13,15 @@ export async function POST(request: Request) {
       ? body.ids.filter((x: unknown): x is string => typeof x === "string")
       : [];
 
+    // QA CRITICAL privacy 2026-06-22: el export NO filtraba por role.
+    // USER con zero assignments podía POST sin body y bajar TODOS los
+    // jobs del workspace. Mirror del filter del list endpoint
+    // (app/api/jobs/route.ts): ADMIN ve todo, USER solo ve jobs donde
+    // tiene assignment.
     const where: any = { organizationId: ctx.organizationId };
+    if (ctx.role !== "ADMIN") {
+      where.assignments = { some: { userId: ctx.userId } };
+    }
     if (ids.length > 0) where.id = { in: ids };
 
     const jobs = await prisma.job.findMany({
