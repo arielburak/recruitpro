@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { clientSchema } from "@/lib/validations/client";
 import { clientAccessWhere } from "@/lib/client-access";
 import { requireAdminResponse } from "@/lib/permissions";
@@ -38,7 +39,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
     const data = clientSchema.parse(body);
@@ -54,6 +55,8 @@ export async function PUT(
     await prisma.client.update({ where: { id }, data });
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
@@ -63,7 +66,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const forbidden = requireAdminResponse(ctx.role);
     if (forbidden) return forbidden;
     const { id } = await params;
@@ -78,6 +81,8 @@ export async function DELETE(
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

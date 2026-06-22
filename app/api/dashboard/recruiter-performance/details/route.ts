@@ -42,6 +42,14 @@ export async function GET(request: NextRequest) {
     // narrowing across an `async function` declaration boundary.
     const userId: string = recruiterId;
 
+    // QA CRITICAL privacy 2026-06-22: USER NO debería ver fees/salaries
+    // /commissions de otros recruiters. ADMIN ve todo (auditoría
+    // financiera del workspace). USER solo puede consultar su PROPIO
+    // recruiterId — eso lo deja ver su drill-down sin leak cross-team.
+    if (ctx.role !== "ADMIN" && userId !== ctx.userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const now = new Date();
     const from = fromParam ? new Date(fromParam) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const to = toParam ? new Date(toParam) : now;

@@ -115,6 +115,8 @@ function ClientPortalLoginInner() {
       return "That email isn't registered. Ask your recruiting partner to invite you to the portal.";
     if (e === "not-invited")
       return "We couldn't find an invite for that Google account. The client portal is invite-only — ask your recruiting partner to add you.";
+    if (e === "use-client-portal")
+      return "We detected your email is registered as a client portal user. Please sign in here (not from the staffing portal) to access your account.";
     return "";
   });
   const [success, setSuccess] = useState("");
@@ -148,11 +150,29 @@ function ClientPortalLoginInner() {
   // If there's a staffing session, don't touch it — just warn the user
   // that they need to sign out of staffing first to log in as client
   const callbackUrl = searchParams.get("callbackUrl");
-  // Only honor relative URLs to avoid open-redirect via callbackUrl.
-  const safeCallback =
-    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
-      ? callbackUrl
-      : null;
+  // Defensa contra open-redirect via callbackUrl. El check anterior
+  // (`startsWith('/')` && `!startsWith('//')`) era bypassable con
+  // `/\evil.com/path` — Chromium normaliza `\` a `/` durante URL
+  // parsing, así que la string pasaba el validador y el browser
+  // navegaba a https://evil.com/path. Ahora usamos URL parse con
+  // fake base + chequeamos que el origin coincida y el pathname
+  // empiece con /client-portal/.
+  function isSafeClientPortalCallback(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      const fake = new URL(url, "http://x.local");
+      // Origin tiene que ser nuestro fake — cualquier URL absoluta
+      // (https://evil.com, //evil.com, \\evil.com normalizado) cambia
+      // el origin y queda rechazada.
+      if (fake.origin !== "http://x.local") return null;
+      if (!fake.pathname.startsWith("/client-portal/")) return null;
+      // Devolvemos pathname + search + hash — origen ya validado.
+      return fake.pathname + fake.search + fake.hash;
+    } catch {
+      return null;
+    }
+  }
+  const safeCallback = isSafeClientPortalCallback(callbackUrl);
   useEffect(() => {
     if (session?.user && (session.user as any).isClientUser) {
       router.replace(safeCallback || "/client-portal/dashboard");
@@ -180,13 +200,27 @@ function ClientPortalLoginInner() {
       });
 
       if (result?.error) {
-        // NextAuth surfaces our thrown EMAIL_NOT_VERIFIED message via
-        // result.error. Disambiguate that from a generic invalid-creds
-        // case so we can offer a one-click resend instead of leaving
-        // the user stuck without context.
+        // NextAuth surfaces thrown error messages via result.error.
+        // authorize() puede throwear varios sentinels:
+        //   · EMAIL_NOT_VERIFIED → panel con resend
+        //   · DEACTIVATED → mensaje claro de access revoked
+        //   · cualquier otro → genérico (no enumeration)
         if (result.error === "EMAIL_NOT_VERIFIED") {
           setUnverifiedEmail(String(fd.get("email") || ""));
           setError("");
+          setLoading(false);
+          return;
+        }
+        if (result.error === "DEACTIVATED") {
+          // Un ClientUser puede tener filas en múltiples agencias —
+          // si TODAS sus filas están inactive llegamos acá. Copy
+          // neutral porque no presuponemos relación 1:1 con una
+          // agencia específica (la que invitó originalmente puede
+          // no ser la que revocó el acceso). Decisión 2026-06-22
+          // con Nicolás.
+          setError(
+            "Your access has been revoked. Please contact your recruiting team to restore access.",
+          );
           setLoading(false);
           return;
         }
@@ -250,13 +284,20 @@ function ClientPortalLoginInner() {
       {/* Right Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-50">
         <div className="w-full max-w-md">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to home
-          </Link>
+          {/* Back to home: solo en modo login (no en forgot). El sub-
+              componente ForgotPasswordSection ya tiene su propio "Back
+              to sign in" — sin este condicional aparecían los 2
+              botones simultáneo, regression del mismo bug del staffing
+              login. */}
+          {!forgotMode && (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to home
+            </Link>
+          )}
 
           {hasStaffingSession && (
             <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">

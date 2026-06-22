@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { sendClientSetPasswordEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity";
 import { roleForNewClientUser } from "@/lib/client-portal-roles";
@@ -31,7 +32,7 @@ export async function POST(
     const guard = await requireVerifiedEmail();
     if (guard) return guard;
 
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
 
     // Optional job-level access. Reading the body is cheap and if
@@ -239,6 +240,8 @@ export async function POST(
       { status: mode === "invited" ? 201 : 200 }
     );
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

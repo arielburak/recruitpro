@@ -24,6 +24,7 @@ import Link from "next/link";
 import { ActivityTrendChart } from "@/components/dashboard-charts";
 import { RecruiterPerformance } from "@/components/dashboard/recruiter-performance";
 import { MigrateBanner } from "@/components/dashboard/migrate-banner";
+import { TrialCountdown } from "@/components/billing/trial-countdown";
 
 // Force dynamic rendering. The page already depends on getServerSession
 // + prisma so Next.js auto-detects this, but stating it explicitly
@@ -117,8 +118,17 @@ export default async function DashboardPage() {
     // not "every Client row in the DB" — that's why an agency with
     // 11 engaged clients was seeing 338 (the global pool).
     prisma.organizationClient.count({ where: { organizationId: orgId } }),
+    // Recent Activity — privacy gate por role.
+    // ADMIN: ve toda la activity del workspace (auditoría completa).
+    // USER: solo ve activity que él MISMO hizo (privacy — Ari no debería
+    // ver "Nicolás deactivated Ari" en su propio feed).
+    // QA reportado 2026-06-22: USER veía actions de ADMIN sobre OTROS
+    // users — leak entre miembros del equipo.
     prisma.activity.findMany({
-      where: { organizationId: orgId },
+      where: {
+        organizationId: orgId,
+        ...(role !== "ADMIN" && userId ? { userId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 10,
       include: { user: { select: { name: true } } },
@@ -325,6 +335,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Trial countdown banner — visible si la org está en trial. Self-
+          gated por el componente: no se renderiza si está ACTIVE, isComp
+          o sin sub. Click → /settings/billing. Color/urgencia cambia
+          según días restantes (indigo → amber → rojo). */}
+      <TrialCountdown />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -537,12 +553,11 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Recruiter performance — surfaces here right under the stat
-          strip so the metrics that drive comp / reviews are the
-          first thing a sales-ops lead sees. Self-contained client
-          widget so its filters (date range, recruiter picker,
-          compare-vs-prior) re-fetch independently of the SSR shell. */}
-      <RecruiterPerformance />
+      {/* Recruiter performance — leaderboard del team. ADMIN-only:
+          USER no debe ver métricas/comp data de otros recruiters.
+          QA CRITICAL privacy 2026-06-22. El endpoint también gate
+          server-side por defense in depth. */}
+      {role === "ADMIN" && <RecruiterPerformance />}
 
       {/* Activity Trend — full width ahora que sacamos el Pipeline
           Distribution de al lado. El strip violeta de pipeline

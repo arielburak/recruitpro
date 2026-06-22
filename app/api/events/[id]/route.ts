@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 // Single calendar event CRUD. Same per-user scope as the list endpoint:
@@ -41,7 +42,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const existing = await loadOwned(id, ctx);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -124,6 +125,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     });
     return NextResponse.json(updated);
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Calendar event update error:", error);
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
@@ -131,13 +134,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const existing = await loadOwned(id, ctx);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
     await prisma.calendarEvent.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

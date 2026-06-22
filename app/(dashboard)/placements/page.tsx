@@ -81,7 +81,10 @@ export default function PlacementsPage() {
     fetch("/api/placements")
       .then((r) => r.json())
       .then((data) => {
-        setPlacements(data);
+        // /api/placements returns { error } on 401/500, not an array.
+        // Normalize so downstream iteration doesn't blow up with
+        // "X is not iterable".
+        setPlacements(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
 
@@ -55,7 +56,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
 
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -126,6 +127,8 @@ export async function POST(
 
     return NextResponse.json(document);
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Client attachment upload error:", error);
     return NextResponse.json(
       { error: safeErrorMessage(error) || "Upload failed" },

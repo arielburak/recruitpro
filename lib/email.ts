@@ -2,6 +2,14 @@ import { Resend } from "resend";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const fromAddress = process.env.EMAIL_FROM || "noreply@recruitingats.com";
+// Reply-to por default para emails transaccionales del ATS (welcome,
+// password reset, billing, system notifications). Cuando un email
+// específico tiene un reply-to contextual (interview con el recruiter,
+// chat con el sender, mention) ese gana — esto solo aplica cuando no
+// se pasa replyTo en sendEmail.
+// Decisión 2026-06-19 con Nicolás: todo lo del ATS responde a contact@.
+const supportEmail =
+  process.env.SUPPORT_EMAIL || "contact@alphabridgepartners.com";
 const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
@@ -32,10 +40,10 @@ type SendArgs = {
   html: string;
   // Optional Reply-To header. Use when the recipient's instinct will
   // be to "reply" to a real person — interview invites that say
-  // "contact ${recruiterName}", mention emails, etc. Without this
-  // their reply lands in noreply@ and vanishes. Default is unset
-  // (no Reply-To header) so transactional account mails (verify,
-  // reset, welcome) stay on the noreply@ envelope.
+  // "contact ${recruiterName}", mention emails, etc. When not passed
+  // we default to `supportEmail` (contact@alphabridgepartners.com) so
+  // generic account mails (verify, reset, welcome, billing) route to
+  // the team inbox if the user hits reply.
   replyTo?: string;
   // Schedule el envío para una fecha futura (Resend `scheduledAt`).
   // Usado por el getting-started email para que llegue 1h post-signup
@@ -51,6 +59,27 @@ type SendArgs = {
 // you write a new sendX, compose the body using these — don't reroll
 // the patterns.
 
+// Escapa caracteres HTML para prevenir phishing / link injection via
+// emails con contenido user-controlled. QA pre-launch (2026-06-22)
+// detectó que un comentario tipo `<a href="evil">click</a>` se
+// interpolaba RAW dentro del template y aparecía como link real en
+// el email — vector de phishing desde noreply@recruitingats.com.
+//
+// IMPORTANTE: usar este helper en CADA campo controlado por user
+// que se interpole en HTML (recipientName, candidateName, jobTitle,
+// firmName, organizationName, recruiterName, mentionedBy, comment
+// preview, note, etc.). Identifiers internos (URLs nuestras,
+// constantes, strings hardcodeados) NO necesitan escape.
+export function escapeHtml(value: string | number | null | undefined): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // "Hi {first name}," / "Hi there," default. Always returns a wrapped
 // <p>. Centralizes the first-name extraction so we never end up with
 // "Hi  ," (double space) or "Hi Federico Bochinsky," (full name).
@@ -63,7 +92,9 @@ function firstName(full: string | null | undefined): string {
 
 function greeting(recipientName?: string | null): string {
   const f = firstName(recipientName);
-  return `<p>Hi ${f || "there"},</p>`;
+  // f viene de input controlado por el inviter (admin), pero igual
+  // pasamos por escapeHtml por defense in depth.
+  return `<p>Hi ${escapeHtml(f) || "there"},</p>`;
 }
 
 // Slack-style quote / preview block. Use for chat previews, mention
@@ -75,14 +106,19 @@ function quoteBlock(
   text: string,
   opts?: { label?: string; accent?: "indigo" | "emerald" }
 ): string {
+  // Truncate first, then escape — preserva el límite en chars del
+  // user input antes de inflar con entities HTML.
   const trimmed = text.length > 240 ? `${text.slice(0, 240)}…` : text;
+  const escaped = escapeHtml(trimmed);
   const accentColor = opts?.accent === "emerald" ? "#10b981" : "#6366f1";
+  // El label puede venir hardcodeado del caller — pasamos por escape
+  // igual para que sea uniforme. Ningún call site lo pasa con HTML.
   const labelHtml = opts?.label
-    ? `<p style="font-size: 12px; color: #6b7280; margin: 0 0 6px 0; font-weight: 600;">${opts.label}</p>`
+    ? `<p style="font-size: 12px; color: #6b7280; margin: 0 0 6px 0; font-weight: 600;">${escapeHtml(opts.label)}</p>`
     : "";
   return `<div style="margin: 16px 0;">
       ${labelHtml}
-      <div style="padding: 12px 14px; background: #f9fafb; border-left: 3px solid ${accentColor}; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${trimmed}</div>
+      <div style="padding: 12px 14px; background: #f9fafb; border-left: 3px solid ${accentColor}; border-radius: 4px; font-size: 14px; color: #374151; white-space: pre-wrap;">${escaped}</div>
     </div>`;
 }
 
@@ -103,10 +139,14 @@ function interviewDetailsTable(args: {
   location?: string;
   notes?: string;
 }): string {
+  // Todos los `value` se interpolan en HTML — escape obligatorio por
+  // defense in depth. Algunos son fechas/strings constantes (date,
+  // time, timezone), otros son user input (job.title, client.name,
+  // location, notes). Aplicamos escape uniforme.
   const row = (label: string, value: string) =>
     `<tr>
-      <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px; vertical-align: top; white-space: nowrap;">${label}</td>
-      <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${value}</td>
+      <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px; vertical-align: top; white-space: nowrap;">${escapeHtml(label)}</td>
+      <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${escapeHtml(value)}</td>
     </tr>`;
   return `<table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
       ${args.candidate ? row("Candidate", args.candidate.name) : ""}
@@ -140,12 +180,17 @@ async function sendEmail({ to, subject, html, replyTo, scheduledAt }: SendArgs) 
     return { skipped: true as const, reason: "no_key" };
   }
 
+  // Reply-to: el contextual gana (recruiter, sender, etc.). Si no hay,
+  // fallback al support email del equipo para que las respuestas no
+  // caigan en noreply@.
+  const effectiveReplyTo = replyTo || supportEmail;
+
   const { data, error } = await resend.emails.send({
     from: `${appName} <${fromAddress}>`,
     to,
     subject,
     html,
-    ...(replyTo ? { reply_to: replyTo } : {}),
+    replyTo: effectiveReplyTo,
     // Resend `scheduledAt` admite ISO 8601 o human-readable ("in 1 hour").
     // Pasamos ISO para que el endpoint lo procese sin ambigüedad.
     ...(scheduledAt ? { scheduledAt: scheduledAt.toISOString() } : {}),
@@ -997,5 +1042,214 @@ export async function sendGettingStartedEmail({
     subject: `Getting started on ${appName}`,
     html,
     scheduledAt,
+  });
+}
+
+// Email transaccional cuando un workspace completa el subscribe a un
+// plan pagado. Se dispara desde el webhook de Stripe en
+// checkout.session.completed. Stripe ya manda su propio recibo si el
+// admin lo activa en el dashboard ("Customer emails"), pero ese es
+// genérico — esto agrega un toque personalizado del ATS confirmando
+// que la subscription está activa + reminder de cómo manejarla.
+export async function sendSubscriptionActivatedEmail({
+  to,
+  recipientName,
+  organizationName,
+  seats,
+  monthlyTotalDollars,
+  dashboardUrl,
+  manageBillingUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  seats: number;
+  monthlyTotalDollars: number;
+  dashboardUrl: string;
+  manageBillingUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const seatsCopy = seats === 1 ? "1 seat" : `${seats} seats`;
+
+  const html = wrapTemplate(
+    `${first}, you're all set`,
+    `<p>Your subscription to <strong>${appName}</strong> is now active. Thanks for trusting us with <strong>${organizationName}</strong>'s recruiting workflow.</p>
+     <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Plan</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${seatsCopy} · $${monthlyTotalDollars}/month</td>
+       </tr>
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Billing</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">Monthly, auto-renewed</td>
+       </tr>
+     </table>
+     <p>You can <a href="${manageBillingUrl}" style="color: #4f46e5; font-weight: 600;">manage billing</a> — update your payment method, download invoices, or cancel — any time from your settings. Stripe will email you a receipt for every payment.</p>
+     <p>If you add or remove teammates the bill adjusts automatically on your next invoice.</p>
+     <p>Reply to this email if anything's confusing or you'd like to chat — we read every message.</p>`,
+    dashboardUrl,
+    "Open Dashboard",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription active — welcome to ${appName}`,
+    html,
+  });
+}
+
+// Email cuando el cliente marca la subscription para cancelar al final
+// del período de facturación (desde el Customer Portal de Stripe).
+// La sub sigue ACTIVE en la DB hasta el `cancelAt`, después se desactiva.
+// El email da heads-up + link para reactivar si cambia de opinión.
+export async function sendSubscriptionCanceledEmail({
+  to,
+  recipientName,
+  organizationName,
+  cancelAt,
+  reactivateUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  cancelAt: Date;
+  reactivateUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const cancelStr = cancelAt.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  const html = wrapTemplate(
+    `${first}, we got your cancellation`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is scheduled to cancel.</p>
+     <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Access until</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">${cancelStr}</td>
+       </tr>
+       <tr>
+         <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">After that</td>
+         <td style="padding: 6px 0; color: #111827; font-size: 14px; font-weight: 500;">You'll lose access to create new data. Your existing candidates, jobs and clients stay in our DB.</td>
+       </tr>
+     </table>
+     <p>Changed your mind? <a href="${reactivateUrl}" style="color: #4f46e5; font-weight: 600;">Reactivate</a> before ${cancelStr} and keep everything as it is — no new charge until your normal billing cycle.</p>
+     <p>If we can do something to keep you on board, just reply — we read every email.</p>`,
+    reactivateUrl,
+    "Reactivate subscription",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription canceled — access until ${cancelStr}`,
+    html,
+  });
+}
+
+// Email cuando la subscription efectivamente termina (customer.subscription.deleted).
+// Llega después del cancelAt — el user ya perdió acceso para crear data.
+export async function sendSubscriptionEndedEmail({
+  to,
+  recipientName,
+  organizationName,
+  resubscribeUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  resubscribeUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+
+  const html = wrapTemplate(
+    `${first}, your subscription has ended`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> ended today.</p>
+     <p>Your data is safe — we keep it in our DB so you can pick up where you left off. To regain access:</p>
+     <ul style="color: #4b5563; padding-left: 20px; line-height: 1.8;">
+       <li><a href="${resubscribeUrl}" style="color: #4f46e5; font-weight: 600;">Resubscribe</a> — same price, your candidates and pipeline come back instantly.</li>
+       <li>Reply to this email if you'd like to chat about your experience or ask for a custom plan.</li>
+     </ul>
+     <p>Thanks for using ${appName}, whatever you decide.</p>`,
+    resubscribeUrl,
+    "Resubscribe",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Your ${appName} subscription has ended`,
+    html,
+  });
+}
+
+// Email cuando el cliente reactiva una sub que estaba marcada para cancelar.
+// Confirma que el billing sigue igual.
+export async function sendSubscriptionReactivatedEmail({
+  to,
+  recipientName,
+  organizationName,
+  nextBillingDate,
+  dashboardUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  nextBillingDate: Date | null;
+  dashboardUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+  const dateStr = nextBillingDate
+    ? nextBillingDate.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+  const html = wrapTemplate(
+    `${first}, glad to have you back`,
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is back on track. No cancellation pending.</p>
+     ${dateStr ? `<p>Next billing date: <strong>${dateStr}</strong>. Same plan, same seats — billing continues uninterrupted.</p>` : ""}
+     <p>If you reactivated by accident, you can cancel again from <a href="${dashboardUrl}" style="color: #4f46e5; font-weight: 600;">Settings → Billing</a>.</p>`,
+    dashboardUrl,
+    "Open Dashboard",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Subscription reactivated — welcome back`,
+    html,
+  });
+}
+
+// Email cuando un pago falla (invoice.payment_failed). El cliente
+// tiene tiempo limitado (configurable en Stripe Smart Retries) antes
+// de que la sub pase a PAST_DUE definitivo.
+export async function sendPaymentFailedEmail({
+  to,
+  recipientName,
+  organizationName,
+  manageBillingUrl,
+}: {
+  to: string;
+  recipientName: string;
+  organizationName: string;
+  manageBillingUrl: string;
+}) {
+  const first = firstName(recipientName) || recipientName;
+
+  const html = wrapTemplate(
+    `${first}, your payment didn't go through`,
+    `<p>We tried to charge your card for <strong>${appName}</strong> — <strong>${organizationName}</strong> — and the bank declined it.</p>
+     <p>To avoid losing access, update your payment method:</p>`,
+    manageBillingUrl,
+    "Update payment method",
+  );
+
+  return sendEmail({
+    to,
+    subject: `Action required: payment failed for ${appName}`,
+    html,
   });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { canAccessJob } from "@/lib/job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 
@@ -85,7 +86,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
     // body.documentIds es any[] desde el JSON; narrow a string[] con
@@ -157,6 +158,8 @@ export async function PUT(
 
     return NextResponse.json({ success: true, count: wantedIds.length });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }
 }

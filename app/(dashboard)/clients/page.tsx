@@ -73,15 +73,44 @@ export default function ClientsPage() {
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
-        setClients(data);
+        // Defensive: el endpoint puede devolver { error } en 402
+        // (trial vencido), 401 (session expirada) o 500 (bug). Si
+        // asignamos el objeto error a clients, el for-of de
+        // engagementCounts falla con 'is not iterable'. Aseguramos
+        // array siempre — la UI sale con state vacío en lugar de
+        // crashear.
+        setClients(Array.isArray(data) ? data : []);
         setSelectedIds(new Set());
+        setLoading(false);
+      })
+      .catch(() => {
+        setClients([]);
         setLoading(false);
       });
   }, []);
 
+  // QA HIGH #9: optimistic delete con rollback en 4xx/5xx + toast.
+  // Antes: setClients(filter) sin chequear res.ok. Si el endpoint
+  // devolvía 402 (trial expired), 403 (RBAC) o 500, la fila
+  // desaparecía del UI pero seguía en server.
   async function deleteClient(id: string) {
-    await fetch(`/api/clients/${id}`, { method: "DELETE" });
+    const previous = clients;
     setClients((arr) => arr.filter((c) => c.id !== id));
+    try {
+      const res = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setClients(previous);
+        try {
+          const data = await res.json();
+          alert(data?.error || "Couldn't delete the client. Please try again.");
+        } catch {
+          alert("Couldn't delete the client. Please try again.");
+        }
+      }
+    } catch {
+      setClients(previous);
+      alert("Couldn't delete the client. Please try again.");
+    }
   }
 
   const engagementCounts = useMemo(() => {

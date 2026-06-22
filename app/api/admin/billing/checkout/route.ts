@@ -4,6 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { createCheckoutSession, createStripeCustomer } from "@/lib/stripe";
 import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 export async function POST() {
   try {
@@ -11,6 +12,14 @@ export async function POST() {
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
+
+    // QA HIGH #2: antes el checkout usaba subscription.seats stale —
+    // si entre el momento de iniciar checkout y completarlo el admin
+    // invitó o deactivó usuarios, el quantity quedaba desactualizado
+    // y Stripe cobraba lo viejo. Recalculamos ANTES de crear la
+    // session para garantizar quantity correcto. Es await (no fire-
+    // and-forget) porque necesitamos el valor fresh.
+    await recalculateAndSyncSeats(ctx.organizationId);
 
     const subscription = await prisma.subscription.findUnique({
       where: { organizationId: ctx.organizationId },
@@ -44,11 +53,21 @@ export async function POST() {
       });
     }
 
+    // QA Stripe audit HIGH: si la org está TRIALING con trialEndsAt en
+    // el futuro, pasamos esa fecha a Stripe para que respete el trial
+    // restante. Sin esto, el user que paga en día 3 del trial 'pierde'
+    // los 4 días restantes — Stripe cobra inmediato.
+    const trialEnd =
+      subscription.status === "TRIALING" && subscription.trialEndsAt
+        ? subscription.trialEndsAt
+        : null;
+
     const session = await createCheckoutSession(
       customerId,
       stripePriceIdForSeats(subscription.seats),
       subscription.seats,
-      ctx.organizationId
+      ctx.organizationId,
+      trialEnd,
     );
 
     return NextResponse.json({ url: session.url });

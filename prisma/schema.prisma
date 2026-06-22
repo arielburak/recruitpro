@@ -1047,6 +1047,12 @@ model Subscription {
   status               SubscriptionStatus @default(TRIALING)
   trialEndsAt          DateTime?
   currentPeriodEnd     DateTime?
+  // Stripe permite que el cliente marque "cancel at end of period" y
+  // sigue ACTIVE hasta esa fecha. Sin este flag no se distingue entre
+  // "ACTIVE va a renovar" y "ACTIVE pero le expira en X días sin
+  // renovar". El UI lo usa para mostrar banner amber + botón
+  // Reactivate, y para no perderse de mandar el email de heads-up.
+  cancelAtPeriodEnd    Boolean            @default(false)
   seats                Int                @default(1)
   // Complimentary / free-forever flag. Used for founding-team orgs,
   // partners, long-running test accounts — anyone we want to keep
@@ -1065,6 +1071,27 @@ enum SubscriptionStatus {
   PAST_DUE
   CANCELED
   UNPAID
+}
+
+// Idempotency table para webhooks externos (Stripe principalmente).
+// Stripe garantiza at-least-once delivery y reintenta hasta 3 días si
+// nuestro handler tira no-2xx. Antes el handler reprocesaba el evento
+// completo (incluido el send de subscription_ended email) → spam al
+// admin con múltiples "tu sub se terminó" + side effects duplicados.
+//
+// Patrón: al inicio del handler, INSERT { eventId, type } con UNIQUE
+// constraint en eventId. Si ya existe (duplicate violation), return 200
+// sin procesar — Stripe ve "OK" y deja de reintentar.
+//
+// processedAt = createdAt — útil para debugging y eventual cleanup
+// (rows mayores a 30 días pueden purgarse).
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
 }
 
 // ─── PASSWORD RESETS ───

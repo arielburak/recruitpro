@@ -20,5 +20,23 @@ export function safeErrorMessage(error: unknown): string {
     // Prisma error — mensaje técnico, devolvemos genérico
     return "Something went wrong. Please try again.";
   }
+  // QA HIGH #4: Stripe errors filtraban customer IDs ("No such customer:
+  // cus_xxx", "No such price: price_xxx", etc.) al frontend porque el
+  // Prisma check no los detectaba (Stripe codes son strings tipo
+  // "resource_missing", "customer_not_found"). Detectamos Stripe error
+  // shape duck-typed para no agregar Stripe SDK import acá.
+  // Stripe.errors.StripeError tiene `.type` con valores enum tipo
+  // 'StripeInvalidRequestError', 'StripeAPIError', 'StripeCardError'.
+  const type = (error as { type?: unknown }).type;
+  if (typeof type === "string" && type.startsWith("Stripe")) {
+    // Card errors (declined, insufficient_funds, etc.) son seguros y
+    // útiles para mostrar al user — Stripe los diseñó para ese fin.
+    // El resto (API errors, invalid_request con IDs internos, etc.)
+    // los reemplazamos con un genérico.
+    if (type === "StripeCardError") {
+      return error.message || "Your card was declined. Please try another payment method.";
+    }
+    return "Billing is temporarily unavailable. Please try again or contact support.";
+  }
   return error.message || "Something went wrong. Please try again.";
 }

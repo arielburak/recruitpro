@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -18,7 +19,7 @@ import { safeErrorMessage } from "@/lib/safe-error";
 // documents, firm engagements, etc.
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const forbidden = requireAdminResponse(ctx.role);
     if (forbidden) return forbidden;
     const body = await request.json();
@@ -55,6 +56,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ deleted: res.count, skipped });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

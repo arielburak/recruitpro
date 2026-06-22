@@ -53,8 +53,17 @@ export async function POST(request: Request) {
         }
       }
     } else {
-      // Recruiter user forgot password (existing flow)
-      const user = await prisma.user.findUnique({ where: { email } });
+      // Recruiter user forgot password (existing flow).
+      // QA HIGH #12: el path de ClientUser arriba filtra isActive: true
+      // pero acá NO lo hacía — un recruiter deactivated recibía el
+      // email de reset y podía mutar passwordHash de una row supuesta-
+      // mente muerta. El sign-in posterior lo bloquea (authorize
+      // throw DEACTIVATED) pero igual mejor cerrar el flow desde el
+      // principio. Parity rule: si filtro en client, filtro en
+      // staffing. Memoria feedback_consistent_filters.
+      const user = await prisma.user.findFirst({
+        where: { email, isActive: true },
+      });
 
       if (user) {
         await prisma.passwordResetToken.deleteMany({

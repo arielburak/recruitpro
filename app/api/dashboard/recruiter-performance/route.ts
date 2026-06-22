@@ -231,6 +231,17 @@ function totalsFromMaps(maps: {
 export async function GET(request: NextRequest) {
   try {
     const ctx = await getOrgContext();
+
+    // QA CRITICAL privacy 2026-06-22: leaderboard expone roster
+    // completo + métricas (submissions, interviews, offers, placements)
+    // de TODOS los recruiters. USER no debería ver eso. ADMIN-only.
+    // El widget en el dashboard ya está hidden para USER, pero el
+    // endpoint server-side también tiene que rechazar — sino el curl
+    // bypass funciona.
+    if (ctx.role !== "ADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const sp = request.nextUrl.searchParams;
 
     const now = new Date();

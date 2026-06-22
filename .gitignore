@@ -40,6 +40,9 @@ yarn-error.log*
 # repo para que cualquiera sepa el formato.
 .test-credentials.json
 
+# Claude Code local settings (per-user, may contain pasted secrets — never commit)
+.claude/settings.local.json
+
 # vercel
 .vercel
 

@@ -1,8 +1,35 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
+import * as Sentry from "@sentry/nextjs";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { sendSubscriptionEndedEmail } from "@/lib/email";
+import { syncSubFromStripe, mapStripeStatus, recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
+
+// Resolver el subscription id desde un Invoice. Stripe API 2025-09+
+// deprecó invoice.subscription (root) y lo movió a parent.subscription
+// _details.subscription. Buscamos ambos.
+function getInvoiceSubscriptionId(invoice: any): string | null {
+  if (typeof invoice?.subscription === "string") return invoice.subscription;
+  if (invoice?.subscription?.id) return invoice.subscription.id;
+  const sub = invoice?.parent?.subscription_details?.subscription;
+  if (typeof sub === "string") return sub;
+  if (sub?.id) return sub.id;
+  return null;
+}
+
+// Decisión 2026-06-19 con Nicolás: la mayoría de los emails de billing
+// los manda Stripe directo desde Customer Portal (Dashboard → Settings
+// → Customer emails) — recibos, payment failed. Sacamos los emails
+// custom del ATS para no duplicar.
+//
+// Excepción única: cuando la sub realmente termina (subscription.deleted)
+// queremos mandar nuestro propio email con CTA "Resubscribe" porque el
+// email genérico de Stripe ("tu sub se canceló") no invita a volver.
+// Para evitar duplicado el toggle "Send canceled subscription emails"
+// de Stripe DEBE quedar DESACTIVADO. Los demás senders en lib/email.ts
+// quedan declarados pero sin uso.
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -22,10 +49,63 @@ export async function POST(request: Request) {
       process.env.STRIPE_WEBHOOK_SECRET || ""
     );
   } catch (err: any) {
+    // Signature mismatch = security signal (alguien intentando POSTear
+    // payloads falsos). Sentry warning para que Nicolás/Ari se enteren
+    // si llega un volumen anómalo.
+    Sentry.captureMessage("stripe webhook signature verification failed", {
+      level: "warning",
+      tags: { area: "stripe-webhook", reason: "signature_failure" },
+      extra: { message: err?.message },
+    });
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
-  switch (event.type) {
+  // QA HIGH #1: Idempotency check. Stripe at-least-once delivery
+  // significa que un mismo event.id puede llegar 2+ veces si
+  // (a) nuestro handler responde no-2xx por error transitorio, o
+  // (b) Stripe duplica internamente por reasons. Sin dedup
+  // reprocesábamos todo: spam de email "subscription ended" al
+  // admin, llamadas Stripe API duplicadas, etc.
+  //
+  // INSERT con catch en unique violation. Si ya existe, devolvemos
+  // 200 sin procesar — Stripe ve OK y deja de reintentar. Si es la
+  // primera vez, el INSERT exitoso "reserva" el eventId y procedemos.
+  //
+  // Importante: el INSERT corre ANTES de cualquier side effect (DB
+  // update, email send, Stripe API call). Si el handler tira a
+  // mitad de camino, el row queda creado → Stripe va a marcarlo
+  // como delivered → nadie vuelve a procesarlo. Trade-off: si hay
+  // un bug real, perdemos visibilidad (no retry automático).
+  // Recomendado seguir con Sentry en cada catch para no perder
+  // observability.
+  try {
+    await prisma.webhookEvent.create({
+      data: {
+        eventId: event.id,
+        type: event.type,
+      },
+    });
+  } catch (err: any) {
+    // P2002 = Prisma unique violation. Significa "ya procesado".
+    if (err?.code === "P2002") {
+      return NextResponse.json({ received: true, deduped: true });
+    }
+    // Cualquier otro error de DB: log y procesar igual (mejor
+    // duplicar que perder el event).
+    console.error("[stripe webhook] idempotency insert failed:", err);
+    Sentry.captureException(err, {
+      tags: { area: "stripe-webhook", phase: "idempotency_insert" },
+      extra: { eventId: event.id, type: event.type },
+    });
+  }
+
+  // Top-level try/catch alrededor del switch. Si algún handler interno
+  // throwa, capturamos a Sentry, DELETE el idempotency row y devolvemos
+  // 500 para que Stripe reintente. Sin esto, un bug en cualquier case
+  // perdía el evento silenciosamente (idempotency row ya estaba
+  // creada → próximo delivery devolvía deduped sin reprocesar).
+  try {
+    switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = session.metadata?.organizationId;
@@ -46,40 +126,118 @@ export async function POST(request: Request) {
           select: { stripeCustomerId: true },
         });
         if (!existing || existing.stripeCustomerId !== customerId) {
-          // Anomalia — el customer del checkout NO matchea el customer
-          // que guardamos cuando se creo la suscripcion. No tocamos
-          // nada y dejamos en Sentry para investigar.
+          // Security signal — alguien intentando activar sub de otra
+          // org via metadata hijack, O un bug serio donde el customer
+          // se desincronizó. Sentry como ERROR para que founders se
+          // enteren.
           console.error(
             "[stripe webhook] checkout.session.completed customer mismatch:",
             { orgId, sessionCustomer: customerId, dbCustomer: existing?.stripeCustomerId },
           );
+          Sentry.captureMessage(
+            "stripe webhook customer mismatch on checkout.session.completed",
+            {
+              level: "error",
+              tags: { area: "stripe-webhook", reason: "customer_mismatch" },
+              extra: {
+                organizationId: orgId,
+                sessionCustomer: customerId,
+                dbCustomer: existing?.stripeCustomerId || null,
+              },
+            },
+          );
           break;
         }
+        // Fetch full subscription details from Stripe so we set
+        // current_period_end + seats + STATUS correctamente en el
+        // primer update — sin depender de que después llegue
+        // invoice.paid o subscription.updated.
+        //
+        // CRITICAL fix QA 2026-06-22: antes hardcodeabamos status=
+        // 'ACTIVE' acá, lo cual permitía acceso al ATS sin pagar
+        // cuando Stripe creaba la sub como 'incomplete' (3DS pending,
+        // declined first charge). Ahora leemos el status real y solo
+        // tocamos el campo si mapStripeStatus devuelve algo no-
+        // incomplete. Para 'incomplete' queda undefined → status DB
+        // se mantiene en TRIALING (estado pre-checkout) y el guard
+        // bloquea correctamente.
+        let periodEnd: Date | undefined;
+        let quantity = 1;
+        let mappedStatus: ReturnType<typeof mapStripeStatus> = undefined;
+        let stripeRetrieveOk = false;
+        try {
+          const stripe = getStripeClient();
+          const stripeSub = (await stripe.subscriptions.retrieve(
+            session.subscription as string,
+          )) as any;
+          // Stripe API 2025-09+ movió current_period_end de root a
+          // items.data[i].current_period_end. Buscar primero ahí,
+          // fallback al root.
+          const firstItem = stripeSub.items?.data?.[0];
+          const periodEndTs =
+            firstItem?.current_period_end || stripeSub.current_period_end;
+          if (periodEndTs) {
+            periodEnd = new Date(periodEndTs * 1000);
+          }
+          quantity = firstItem?.quantity || 1;
+          mappedStatus = mapStripeStatus(stripeSub.status);
+          stripeRetrieveOk = true;
+        } catch (retrieveErr) {
+          // Si Stripe falla, NO marcamos ACTIVE. Dejamos el status
+          // como estaba (TRIALING). El próximo subscription.updated /
+          // invoice.paid lo va a resolver. Es más seguro que dar
+          // acceso pre-confirmación de pago.
+          console.error(
+            "[stripe webhook] failed to retrieve sub on checkout:",
+            retrieveErr,
+          );
+        }
+
         await prisma.subscription.update({
           where: { organizationId: orgId },
           data: {
             stripeSubscriptionId: session.subscription as string,
-            status: "ACTIVE",
+            // Solo seteamos status si Stripe confirmó pago. Si está
+            // en 'incomplete' o Stripe falló, el campo NO se toca.
+            ...(stripeRetrieveOk && mappedStatus && { status: mappedStatus }),
+            seats: quantity,
+            ...(periodEnd && { currentPeriodEnd: periodEnd }),
           },
         });
+
+        // QA HIGH #3: reconciliar seats con active users count actual.
+        // Antes el handler escribía seats = Stripe quantity, lo cual
+        // podía ser stale si invite/deactivate ocurrieron entre
+        // checkout-create y checkout-complete. recalculateAndSyncSeats
+        // cuenta active users reales, actualiza DB y push a Stripe
+        // via subscriptions.update si hace falta. Ahora hay
+        // stripeSubscriptionId (recién seteado arriba), así que
+        // syncStripeSeats interno no más no-opea con
+        // "no_stripe_subscription_yet".
+        // await en lugar de void: Stripe webhook tiene 30s budget,
+        // recalculateAndSyncSeats son 2 DB queries + 1 Stripe call
+        // (~500ms). Sin await + serverless, el container podía morir
+        // mid-flight si la respuesta 200 se enviaba primero.
+        await recalculateAndSyncSeats(orgId);
       }
       break;
     }
 
     case "invoice.paid": {
       const invoice = event.data.object as any;
-      if (invoice.subscription) {
+      const subId = getInvoiceSubscriptionId(invoice);
+      if (subId) {
         const sub = await prisma.subscription.findFirst({
-          where: { stripeSubscriptionId: invoice.subscription as string },
+          where: { stripeSubscriptionId: subId },
+          select: { organizationId: true },
         });
         if (sub) {
-          await prisma.subscription.update({
-            where: { id: sub.id },
-            data: {
-              status: "ACTIVE",
-              currentPeriodEnd: new Date((invoice.lines?.data[0]?.period?.end || 0) * 1000),
-            },
-          });
+          // En vez de hardcodear status/periodEnd desde el invoice
+          // (que históricamente tiraba new Date(0) cuando el field no
+          // venía), pull-from-Stripe completo. Garantiza que TODO
+          // queda en sync — status, seats, cancelAtPeriodEnd y
+          // currentPeriodEnd — con la verdad de Stripe.
+          await syncSubFromStripe(sub.organizationId);
         }
       }
       break;
@@ -87,55 +245,162 @@ export async function POST(request: Request) {
 
     case "invoice.payment_failed": {
       const invoice = event.data.object as any;
-      if (invoice.subscription) {
-        await prisma.subscription.updateMany({
-          where: { stripeSubscriptionId: invoice.subscription as string },
-          data: { status: "PAST_DUE" },
+      const subId = getInvoiceSubscriptionId(invoice);
+      if (subId) {
+        const sub = await prisma.subscription.findFirst({
+          where: { stripeSubscriptionId: subId },
+          select: { organizationId: true },
         });
+        if (sub) {
+          // Stripe es la source of truth — pull full state. Stripe
+          // ya marcó la sub en past_due / unpaid según el caso, y
+          // syncSubFromStripe lo mapea a nuestro enum.
+          await syncSubFromStripe(sub.organizationId);
+        }
       }
       break;
     }
 
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
+
+      // Lookup del admin antes del update para mandar el email
+      // "Your subscription has ended → come back" con CTA Resubscribe.
+      // Es el único email custom que sobrevive — Stripe puede mandar
+      // "tu sub se canceló" pero sin CTA fuerte de re-suscribirse,
+      // y este es el momento clave para invitar al cliente a volver.
+      const sub = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        include: {
+          organization: {
+            include: {
+              users: {
+                where: { role: "ADMIN", isActive: true },
+                orderBy: { createdAt: "asc" },
+                take: 1,
+                select: { name: true, email: true },
+              },
+            },
+          },
+        },
+      });
+
+      // Clear stripeSubscriptionId también — la sub vieja queda muerta.
+      // Sin esto, si el user resubscribe, syncSubFromStripe va a leer
+      // el subId viejo de Stripe (que está CANCELED) y machacar el
+      // estado fresh del nuevo checkout. El stripeCustomerId queda,
+      // solo limpiamos el subId.
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
-        data: { status: "CANCELED" },
+        data: {
+          status: "CANCELED",
+          cancelAtPeriodEnd: false,
+          stripeSubscriptionId: null,
+        },
       });
+
+      try {
+        const admin = sub?.organization?.users?.[0];
+        if (admin?.email && sub) {
+          const baseUrl =
+            process.env.NEXTAUTH_URL ||
+            process.env.NEXT_PUBLIC_APP_URL ||
+            "https://recruitingats.com";
+          await sendSubscriptionEndedEmail({
+            to: admin.email,
+            recipientName: admin.name || "",
+            organizationName: sub.organization.name,
+            resubscribeUrl: `${baseUrl}/settings/billing`,
+          });
+        }
+      } catch (emailErr) {
+        // No bloqueamos el webhook si el email falla — la sub ya
+        // está CANCELED en DB, eso es lo importante.
+        console.error("[stripe webhook] subscription_ended email failed:", emailErr);
+      }
       break;
     }
 
     case "customer.subscription.updated": {
       const subscription = event.data.object as any;
-      const quantity = subscription.items?.data?.[0]?.quantity || 1;
-      // Stripe subscription status → nuestro enum. Pre-fix solo mapeaba
-      // active y past_due — cuando llegaba un update con status=canceled
-      // (caso documentado: cancel_at_period_end → final del periodo) la
-      // sub seguía como ACTIVE en la DB y el guard de subscription la
-      // dejaba seguir usando el ATS sin pagar. Mapeamos los 6 valores
-      // posibles de Stripe que conocemos. Cualquier otro queda
-      // undefined (no se toca el campo) para no pisar con basura un
-      // estado válido pre-existente.
-      const stripeStatus = subscription.status as string | undefined;
-      let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "UNPAID" | "TRIALING" | undefined;
-      if (stripeStatus === "active") mappedStatus = "ACTIVE";
-      else if (stripeStatus === "past_due") mappedStatus = "PAST_DUE";
-      else if (stripeStatus === "canceled" || stripeStatus === "incomplete_expired") mappedStatus = "CANCELED";
-      else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
-      else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
+      const firstItem = subscription.items?.data?.[0];
+      const quantity = firstItem?.quantity || 1;
+      // API 2025-09+ movió current_period_end al item. Buscar ahí
+      // primero, fallback al root.
+      const periodEndTs =
+        firstItem?.current_period_end || subscription.current_period_end;
+      // Stripe subscription status → nuestro enum. Helper compartido
+      // con syncSubFromStripe para evitar drift. 'incomplete' devuelve
+      // undefined (no tocamos el campo) — un sub que pasó por incomplete
+      // tras el checkout completed ya quedó en TRIALING y el guard la
+      // bloquea correctamente hasta que invoice.paid lo mueva a ACTIVE.
+      const mappedStatus = mapStripeStatus(subscription.status as string | undefined);
+
+      // Capturar la flag "scheduled to cancel" de Stripe. Stripe API
+      // 2025+ deprecó cancel_at_period_end (boolean) a favor de
+      // cancel_at (timestamp Unix o enum string). El Customer Portal
+      // ahora setea cancel_at, no cancel_at_period_end. Detectamos
+      // ambos para compat.
+      const willCancel =
+        subscription.cancel_at_period_end === true ||
+        !!subscription.cancel_at;
+
+      // Sticky CANCELED protection: si la sub ya está CANCELED en la
+      // DB, NO permitimos que un evento updated (que puede llegar
+      // out-of-order después de subscription.deleted) la resucite a
+      // ACTIVE. Stripe garantiza at-least-once pero NO orden.
+      const currentDbState = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: subscription.id },
+        select: { status: true },
+      });
+      const isAlreadyCanceled = currentDbState?.status === "CANCELED";
+      const wouldResurrect =
+        isAlreadyCanceled && mappedStatus && mappedStatus !== "CANCELED";
+      if (wouldResurrect) {
+        console.warn(
+          "[stripe webhook] skipping subscription.updated that would resurrect CANCELED sub:",
+          { subId: subscription.id, attemptedStatus: mappedStatus },
+        );
+        break;
+      }
+
+      // Cuando llega CANCELED, limpiamos cancelAtPeriodEnd: la sub ya
+      // se canceló, el flag "scheduled to cancel" pierde sentido. Sin
+      // esto, /settings/billing podía mostrar "Canceled" badge + el
+      // CTA "Reactivate" simultáneo (estado contradictorio).
+      const cancelAtPeriodEndFinal =
+        mappedStatus === "CANCELED" ? false : willCancel;
 
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },
         data: {
           seats: quantity,
-          currentPeriodEnd: subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000)
-            : undefined,
+          currentPeriodEnd: periodEndTs ? new Date(periodEndTs * 1000) : undefined,
+          cancelAtPeriodEnd: cancelAtPeriodEndFinal,
           ...(mappedStatus && { status: mappedStatus }),
         },
       });
       break;
     }
+  }
+  } catch (handlerErr: any) {
+    // Algún case del switch tiró. Capturamos a Sentry con el contexto
+    // del event, borramos el idempotency row para que Stripe pueda
+    // reintentar (sino el próximo delivery devolvería deduped sin
+    // reprocesar), y devolvemos 500.
+    Sentry.captureException(handlerErr, {
+      tags: { area: "stripe-webhook", event_type: event.type },
+      extra: { eventId: event.id },
+    });
+    console.error("[stripe webhook] handler failed:", handlerErr);
+    try {
+      await prisma.webhookEvent.delete({ where: { eventId: event.id } });
+    } catch (delErr) {
+      // Si no podemos borrar el row, el reintento de Stripe va a
+      // devolver deduped igualmente. Logamos pero seguimos.
+      console.error("[stripe webhook] idempotency cleanup failed:", delErr);
+    }
+    return NextResponse.json({ error: "Internal handler error" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

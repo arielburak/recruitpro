@@ -87,13 +87,19 @@ export default function ForgotPasswordPage() {
       {/* Right Panel — form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to sign in
-          </Link>
+          {/* Back to sign in: solo en el form view. En el confirmation
+              view (sent=true) el "Check your email" card tiene su
+              propio CTA centrado — sin este condicional aparecían los
+              2 botones simultáneo. */}
+          {!sent && (
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-8"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to sign in
+            </Link>
+          )}
 
           {sent ? (
             <div className="text-center py-8">

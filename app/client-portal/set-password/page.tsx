@@ -125,8 +125,26 @@ function SetPasswordForm() {
       // Honor ?callbackUrl= so a brand-new portal user clicking a
       // share email lands directly on the Job they were invited to,
       // not the generic dashboard.
+      //
+      // Open-redirect defense: el check anterior (startsWith '/' &&
+      // !startsWith '//') era bypassable con `/\evil.com/path` —
+      // Chromium normaliza \ a / durante URL parsing. URL parse +
+      // origin check es la defensa correcta.
       const cb = searchParams.get("callbackUrl");
-      const safeCb = cb && cb.startsWith("/") && !cb.startsWith("//") ? cb : null;
+      let safeCb: string | null = null;
+      if (cb) {
+        try {
+          const fake = new URL(cb, "http://x.local");
+          if (
+            fake.origin === "http://x.local" &&
+            fake.pathname.startsWith("/client-portal/")
+          ) {
+            safeCb = fake.pathname + fake.search + fake.hash;
+          }
+        } catch {
+          safeCb = null;
+        }
+      }
       window.location.href = safeCb || "/client-portal/dashboard";
     } catch {
       setError("Something went wrong");

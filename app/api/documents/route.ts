@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
 
@@ -17,7 +18,7 @@ const ALLOWED_TYPES = new Set([
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
 
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       return NextResponse.json(
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(document);
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Document upload error:", error);
     return NextResponse.json(
       { error: safeErrorMessage(error) || "Upload failed" },

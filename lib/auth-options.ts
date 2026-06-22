@@ -20,7 +20,12 @@ function deriveCompanyNameFromEmail(email: string): string {
 }
 
 // Helper — reads the per-portal OAuth hint cookie set by the UI before
-// calling signIn("google"). Cookie is short-lived (60s).
+// calling signIn("google"). Cookie max-age = 120s (set in
+// app/client-portal/login/page.tsx). Si la cookie no sobrevivió el
+// round-trip de Google (slow MFA, in-app browser, expiration), por
+// default caemos a "staffing" — pero el callsite del staffing branch
+// hace un check adicional contra ClientUser activos para evitar que
+// un client legítimo termine en una org staffing recién creada.
 async function getOAuthPortal(): Promise<"client" | "staffing"> {
   try {
     const c = await cookies();
@@ -119,12 +124,29 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+        // QA Medium: el lookup era case-sensitive (Postgres). Un user
+        // invitado como Jane@Acme.com no podía loggearse con
+        // jane@acme.com. Normalize input + case-insensitive lookup.
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: "insensitive" } },
           include: { organization: true },
         });
 
-        if (!user || !user.isActive) return null;
+        // Email no existe O password incorrecto → null genérico
+        // (no revelar enumeración de emails). UI muestra "Invalid
+        // email or password" sin distinguir el caso.
+        if (!user) return null;
+
+        // Email existe pero el user está deactivated → throw sentinel
+        // para que la UI pueda mostrar mensaje específico "your
+        // access has been revoked" en lugar de "Invalid credentials"
+        // (que confunde porque el user sabe que sus credenciales
+        // SON válidas). NextAuth pasa el message como result.error
+        // cuando se llama con redirect:false.
+        if (!user.isActive) {
+          throw new Error("DEACTIVATED");
+        }
 
         const isValid = await bcrypt.compare(
           credentials.password,
@@ -161,15 +183,39 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        // Find all matching client users and prefer the one with a password
-        const clientUsers = await prisma.clientUser.findMany({
-          where: { email: credentials.email, isActive: true },
+        // QA Medium: case-insensitive lookup. Normalize input first.
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        // Cargamos ClientUsers SIN filter de isActive primero, para
+        // poder distinguir "no existe" vs "existe pero deactivated".
+        // Como un mismo email puede tener múltiples ClientUser rows
+        // (uno por cliente que lo invitó), buscamos primero los
+        // activos; si no hay ninguno, chequeamos si existe algún
+        // ClientUser para ese email y throwear "DEACTIVATED" si sí.
+        const activeClientUsers = await prisma.clientUser.findMany({
+          where: {
+            email: { equals: normalizedEmail, mode: "insensitive" },
+            isActive: true,
+          },
           include: { client: true },
         });
 
-        const clientUser = clientUsers.find((u) => u.passwordHash) || clientUsers[0];
+        const clientUser = activeClientUsers.find((u) => u.passwordHash) || activeClientUsers[0];
 
-        if (!clientUser || !clientUser.passwordHash) return null;
+        if (!clientUser || !clientUser.passwordHash) {
+          // No hay clientUser ACTIVE → chequear si hay alguno
+          // deactivated. Si sí, throw para mostrar mensaje específico
+          // de "your access has been revoked".
+          const anyInactive = await prisma.clientUser.findFirst({
+            where: {
+              email: { equals: normalizedEmail, mode: "insensitive" },
+              isActive: false,
+            },
+            select: { id: true },
+          });
+          if (anyInactive) throw new Error("DEACTIVATED");
+          return null;
+        }
 
         const isValid = await bcrypt.compare(
           credentials.password,
@@ -223,7 +269,30 @@ export const authOptions: NextAuthOptions = {
       // === Staffing portal OAuth flow (default) ===
       const existingUser = await findStaffingUserByOAuthEmail(user.email);
 
-      if (existingUser) return true;
+      if (existingUser) {
+        // SECURITY: chequear isActive antes de dejar pasar el login.
+        // El authorize de CredentialsProvider ya filtra inactive users,
+        // pero el flow OAuth saltaba ese check — un admin desactivado
+        // podía hacer Sign in with Google y crear sesión válida.
+        if (!existingUser.isActive) {
+          return "/login?error=deactivated";
+        }
+        return true;
+      }
+
+      // SECURITY: HIGH #5 (QA 2026-06-22). Antes del auto-create de
+      // staffing org, chequeamos si el email pertenece a un ClientUser
+      // activo. Si SÍ, significa que probablemente la cookie portal=
+      // client no sobrevivió el OAuth round-trip de Google (slow MFA,
+      // in-app browser, cookie restrictions) y caímos por default a
+      // "staffing". Crear una org staffing nueva para un cliente real
+      // sería un disaster UX + le quemamos un trial start a alguien
+      // que no quería staffing. Rebotamos al client-portal login con
+      // un mensaje claro.
+      const orphanClientUser = await findClientUserByOAuthEmail(user.email);
+      if (orphanClientUser) {
+        return "/client-portal/login?error=use-client-portal";
+      }
 
       // ✋ Antes de tratarlo como signup nuevo, chequear si hay un
       // UserInvite pendiente para este email. Si lo hay, procesarlo

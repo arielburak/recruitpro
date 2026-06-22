@@ -4,165 +4,577 @@ import { useEffect, useState, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { CreditCard, Users, Calendar, CheckCircle } from "lucide-react";
+import {
+  CreditCard,
+  CheckCircle,
+  Calendar,
+  Sparkles,
+  AlertTriangle,
+  Users,
+  Receipt,
+} from "lucide-react";
 import {
   monthlyTotalCents,
   perSeatCents,
   SOLO_PRICE_PER_SEAT_CENTS,
-  TEAM_MAX_SEATS,
-  TEAM_PRICE_PER_SEAT_CENTS,
-  tierForSeats,
 } from "@/lib/constants";
 
-const dollars = (cents: number) => (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
+// Rediseño Linear/Vercel style: hero card con estado visual claro,
+// progress bar del trial cuando aplica, breakdown desglosado del costo,
+// próxima factura prominente. Reemplaza el card-cuadrado original que
+// listaba campos uno debajo del otro sin jerarquía.
+
+const dollars = (cents: number) =>
+  (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
+
+const dateStr = (d: Date | string) =>
+  new Date(d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
 function BillingContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
+  const canceled = searchParams.get("canceled");
+  const fromPortal = searchParams.get("from") === "portal";
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Error de carga inicial — si /api/admin/subscription falla, mostramos
+  // un banner con Retry en lugar de pretender que no hay sub.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Sync banner: cuando el user vuelve del Customer Portal, hacemos
+  // polling porque Stripe puede tardar 1-5s en propagar el cambio a
+  // su API. Sin esto el primer fetch traía data vieja y el user veía
+  // 'Active' después de cancelar hasta que refrescara manualmente.
+  const [syncing, setSyncing] = useState(false);
+
+  async function fetchSubWithErrorState() {
+    try {
+      const res = await fetch("/api/admin/subscription", { cache: "no-store" });
+      if (!res.ok) {
+        setLoadError(
+          "We couldn't load your billing info. Please try again or contact support.",
+        );
+        return null;
+      }
+      const data = await res.json();
+      setLoadError(null);
+      return data;
+    } catch {
+      setLoadError(
+        "We couldn't reach our servers. Check your connection and try again.",
+      );
+      return null;
+    }
+  }
 
   useEffect(() => {
-    fetch("/api/admin/subscription")
-      .then((r) => r.json())
-      .then(setSubscription)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    // Fetch inicial siempre. Después, si venimos del Portal, hacemos
+    // 3 fetches adicionales con 1.5s de delay para captar cambios
+    // que Stripe puede no haber propagado todavía.
+    fetchSubWithErrorState().then((data) => {
+      setSubscription(data);
+      setLoading(false);
+
+      if (!fromPortal) return;
+
+      setSyncing(true);
+      let attempt = 0;
+      const maxAttempts = 4;
+      const interval = setInterval(async () => {
+        attempt++;
+        const fresh = await fetchSubWithErrorState();
+        if (fresh) setSubscription(fresh);
+        if (attempt >= maxAttempts) {
+          clearInterval(interval);
+          setSyncing(false);
+        }
+      }, 1500);
+    });
+  }, [fromPortal]);
+
+  async function retryLoad() {
+    setLoading(true);
+    const data = await fetchSubWithErrorState();
+    setSubscription(data);
+    setLoading(false);
+  }
 
   async function handleCheckout() {
-    const res = await fetch("/api/admin/billing/checkout", { method: "POST" });
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/billing/checkout", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      // No URL → Stripe falló o devolvió error. Mostrar al user.
+      setActionError(
+        data?.error ||
+          "Couldn't reach Stripe to start checkout. Please try again in a moment.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   async function handleManageBilling() {
-    const res = await fetch("/api/admin/billing/portal", { method: "POST" });
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setActionError(
+        data?.error ||
+          "Couldn't open the billing portal. Please try again or contact support.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Reactivar una sub "Scheduled to cancel" lleva al user al Customer
+  // Portal de Stripe (mismo flow que Manage billing). Allí Stripe
+  // muestra la sub con "Will be canceled on X" y el user clickea
+  // "Renew" / "Don't cancel", con la opción de reconfirmar/cambiar
+  // tarjeta si quiere. Stripe redirige de vuelta con ?from=portal y
+  // el polling capta el cambio automáticamente.
+  //
+  // Decisión 2026-06-22 con Nicolás: un toggle silencioso en el ATS
+  // es amateur. Los SaaS pro siempre llevan al user a Stripe para
+  // que reconfirme y mantenga el flow visible end-to-end.
+  async function handleReactivate() {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setActionError(
+        data?.error ||
+          "Couldn't open the billing portal to reactivate. Please try again.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-44 bg-gray-100 rounded-2xl animate-pulse" />
+        <div className="h-28 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  // Error state cuando /api/admin/subscription falla y no tenemos data
+  // para renderizar. Distinguir "no data yet" de "fetch failed" como
+  // hacen Linear / Vercel.
+  if (loadError && !subscription) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-50 border border-red-200 text-red-800 p-5 rounded-xl">
+          <p className="font-semibold mb-1">Couldn't load your billing info</p>
+          <p className="text-sm mb-3">{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="text-sm font-semibold text-red-700 hover:text-red-900 underline"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const seats = subscription?.seats || 1;
-  const tier = tierForSeats(seats);
-  const tierLabel = tier === "SOLO" ? "Solo" : "Team";
+  const monthlyCost = monthlyTotalCents(seats);
+  const status = subscription?.status || "TRIALING";
+  const isComp = subscription?.isComp;
+  const hasStripeSub = !!subscription?.stripeSubscriptionId;
+  const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
+  // Stripe flag: cancela al final del periodo actual. Sub sigue
+  // ACTIVE hasta ese día pero NO se renueva. UI distinto.
+  const scheduledToCancel = !!subscription?.cancelAtPeriodEnd && status === "ACTIVE";
+  const periodEnd = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd)
+    : null;
 
-  const statusColors: Record<string, string> = {
-    TRIALING: "bg-blue-100 text-blue-800",
-    ACTIVE: "bg-green-100 text-green-800",
-    PAST_DUE: "bg-red-100 text-red-800",
-    CANCELED: "bg-gray-100 text-gray-800",
-  };
+  // Trial progress (solo aplica si TRIALING).
+  const trialEnd = subscription?.trialEndsAt
+    ? new Date(subscription.trialEndsAt)
+    : null;
+  const trialStart = subscription?.createdAt
+    ? new Date(subscription.createdAt)
+    : null;
+  const now = new Date();
+  const trialMsLeft = trialEnd ? trialEnd.getTime() - now.getTime() : 0;
+  const trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
+  // Trial total duration calculado dinámicamente desde createdAt →
+  // trialEndsAt en lugar de hardcoded 7d. Antes (hardcoded) si más
+  // adelante cambiamos TRIAL_DAYS en constants.ts, el progress bar
+  // mostraba info incorrecta. Fallback a 7 si falta data.
+  const trialTotalMs =
+    trialStart && trialEnd ? trialEnd.getTime() - trialStart.getTime() : 7 * 24 * 60 * 60 * 1000;
+  const trialTotalDays = Math.max(1, Math.round(trialTotalMs / (1000 * 60 * 60 * 24)));
+  const trialDaysUsed = Math.max(0, trialTotalDays - trialDaysLeft);
+  const trialProgress = Math.min(100, (trialDaysUsed / trialTotalDays) * 100);
+  // Trial expirado: status sigue siendo TRIALING en DB hasta que Stripe
+  // mande el webhook (que puede no llegar nunca si el user no subscribió
+  // y no hay sub en Stripe). El SubscriptionGate del layout ya bloqueó
+  // todo lo demás del ATS, pero billing/ es la excepción y necesita
+  // mostrar copy rojo prominente "Trial expired".
+  const trialExpired =
+    !isComp &&
+    status === "TRIALING" &&
+    trialEnd &&
+    trialEnd.getTime() <= now.getTime();
+
+  // Estado visual del hero card.
+  const heroPalette = isComp
+    ? {
+        bg: "bg-emerald-50",
+        accent: "text-emerald-700",
+        accentSoft: "bg-emerald-100",
+        border: "border-emerald-200",
+        label: "Complimentary",
+        labelTone: "All features unlocked, no billing required.",
+      }
+    : trialExpired
+    ? {
+        bg: "bg-red-50",
+        accent: "text-red-700",
+        accentSoft: "bg-red-100",
+        border: "border-red-200",
+        label: "Trial expired",
+        labelTone:
+          "Subscribe now to keep your team working. Your candidates, jobs and pipeline are safe.",
+      }
+    : status === "ACTIVE" && scheduledToCancel
+    ? {
+        bg: "bg-amber-50",
+        accent: "text-amber-700",
+        accentSoft: "bg-amber-100",
+        border: "border-amber-200",
+        label: "Scheduled to cancel",
+        labelTone: periodEnd
+          ? `Access until ${dateStr(periodEnd)}. Reactivate any time before then to keep billing as is.`
+          : "Your subscription is set to cancel at the end of the current period.",
+      }
+    : status === "ACTIVE"
+    ? {
+        bg: "bg-emerald-50",
+        accent: "text-emerald-700",
+        accentSoft: "bg-emerald-100",
+        border: "border-emerald-200",
+        label: "Active",
+        labelTone: "Your subscription is current.",
+      }
+    : status === "PAST_DUE"
+    ? {
+        bg: "bg-amber-50",
+        accent: "text-amber-700",
+        accentSoft: "bg-amber-100",
+        border: "border-amber-200",
+        label: "Past due",
+        labelTone: "Update your payment method to avoid interruption.",
+      }
+    : status === "CANCELED"
+    ? {
+        bg: "bg-gray-50",
+        accent: "text-gray-700",
+        accentSoft: "bg-gray-100",
+        border: "border-gray-200",
+        label: "Canceled",
+        labelTone: "Subscribe again to keep using the ATS.",
+      }
+    : {
+        bg: "bg-indigo-50",
+        accent: "text-indigo-700",
+        accentSoft: "bg-indigo-100",
+        border: "border-indigo-200",
+        label: "Free trial",
+        labelTone: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left to try everything.`,
+      };
 
   return (
     <div className="space-y-6">
-      {success && (
-        <div className="bg-green-50 text-green-600 p-4 rounded-lg flex items-center gap-2">
-          <CheckCircle className="h-5 w-5" /> Subscription activated! Thank you.
+      {/* Action error banner: cuando handleCheckout / handleManageBilling
+          / handleReactivate fallaron al contactar Stripe. Antes el
+          botón se quedaba en "Loading..." sin feedback visible.
+          Auto-clearable con la X. */}
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">Something went wrong</p>
+            <p className="text-sm mt-0.5">{actionError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-red-600 hover:text-red-900 text-xs font-semibold"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {loading ? (
-        <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
-      ) : (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" /> Subscription
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {subscription?.isComp && (
-                <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
-                  Your workspace is on a <strong>complimentary plan</strong> —
-                  no billing required. All features stay unlocked.
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Status</span>
-                {subscription?.isComp ? (
-                  <Badge className="bg-emerald-100 text-emerald-800">COMPLIMENTARY</Badge>
-                ) : (
-                  <Badge className={statusColors[subscription?.status || "TRIALING"]}>
-                    {subscription?.status || "TRIALING"}
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Seats
-                </span>
-                <span className="font-semibold">{seats}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Plan</span>
-                <span className="font-semibold">
-                  {tierLabel} &middot; ${dollars(perSeatCents(seats))}/seat/mo
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Monthly Cost</span>
-                <span className="font-semibold">${dollars(monthlyTotalCents(seats))}/mo</span>
-              </div>
-              {subscription?.trialEndsAt && subscription.status === "TRIALING" && (
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-500 flex items-center gap-2">
-                    <Calendar className="h-4 w-4" /> Trial Ends
-                  </span>
-                  <span>{new Date(subscription.trialEndsAt).toLocaleDateString()}</span>
-                </div>
-              )}
-              {subscription?.currentPeriodEnd && subscription.status === "ACTIVE" && (
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Next Billing</span>
-                  <span>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* Sync banner: el user vuelve del Customer Portal y mientras
+          completamos los polls para detectar cambios, mostramos que
+          estamos sincronizando. Desaparece solo cuando termina. */}
+      {syncing && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 p-3 rounded-xl flex items-center gap-3">
+          <div className="h-4 w-4 shrink-0 rounded-full border-2 border-indigo-300 border-t-indigo-700 animate-spin" />
+          <p className="text-sm font-medium">Syncing latest changes from Stripe…</p>
+        </div>
+      )}
 
-          {!subscription?.isComp && (
-            <div className="flex gap-2">
-              {(!subscription?.stripeSubscriptionId ||
-                subscription?.status === "TRIALING") && (
-                <Button onClick={handleCheckout} className="flex-1">
-                  {subscription?.status === "TRIALING"
-                    ? "Add Payment Method"
-                    : "Subscribe Now"}
+      {/* Result banners desde el redirect de Stripe */}
+      {success && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl flex items-center gap-3">
+          <CheckCircle className="h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Subscription activated</p>
+            <p className="text-sm">Thanks for choosing Recruiting ATS. Your team is good to go.</p>
+          </div>
+        </div>
+      )}
+      {canceled && (
+        <div className="bg-gray-50 border border-gray-200 text-gray-800 p-4 rounded-xl flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-gray-500" />
+          <div>
+            <p className="font-semibold">Subscription not completed</p>
+            <p className="text-sm">No charges were made. You can subscribe any time.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ──────── HERO ──────── */}
+      <div
+        className={`rounded-2xl border ${heroPalette.border} ${heroPalette.bg} p-6 sm:p-8`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+          <div className="space-y-3 flex-1">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${heroPalette.accentSoft} ${heroPalette.accent}`}
+              >
+                {status === "ACTIVE" || isComp ? (
+                  <CheckCircle className="h-3.5 w-3.5" />
+                ) : trialExpired ? (
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                ) : status === "TRIALING" ? (
+                  <Sparkles className="h-3.5 w-3.5" />
+                ) : (
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                )}
+                {heroPalette.label}
+              </span>
+            </div>
+            <div>
+              <p className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
+                ${dollars(monthlyCost)}
+                <span className="text-base font-normal text-gray-500">/month</span>
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                {seats} {seats === 1 ? "seat" : "seats"} × ${dollars(perSeatCents(seats))}/seat
+              </p>
+            </div>
+            <p className="text-sm text-gray-700">{heroPalette.labelTone}</p>
+          </div>
+
+          {/* CTA — contextual según estado:
+              · Trial / no sub → Subscribe / Add payment method
+              · Scheduled to cancel → Reactivate (priority) + Manage
+              · Active normal → Manage billing */}
+          {!isComp && (
+            <div className="shrink-0 flex flex-col gap-2 w-full sm:w-auto">
+              {scheduledToCancel && (
+                <Button
+                  size="lg"
+                  onClick={handleReactivate}
+                  disabled={actionLoading}
+                  className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700"
+                >
+                  <Sparkles className="h-4 w-4 mr-1.5" />
+                  {actionLoading ? "Reactivating…" : "Reactivate subscription"}
                 </Button>
               )}
-              {subscription?.stripeSubscriptionId &&
-                !subscription.stripeCustomerId.startsWith("pending_") && (
-                  <Button variant="outline" onClick={handleManageBilling} className="flex-1">
-                    Manage Subscription
-                  </Button>
-                )}
+              {!scheduledToCancel && (!hasStripeSub || status === "TRIALING") && (
+                <Button
+                  size="lg"
+                  onClick={handleCheckout}
+                  disabled={actionLoading}
+                  className={`w-full sm:w-auto ${trialExpired ? "bg-red-600 hover:bg-red-700" : ""}`}
+                >
+                  <Sparkles className="h-4 w-4 mr-1.5" />
+                  {actionLoading
+                    ? "Loading…"
+                    : trialExpired
+                    ? "Subscribe now"
+                    : status === "TRIALING"
+                    ? "Add payment method"
+                    : "Subscribe now"}
+                </Button>
+              )}
+              {hasStripeSub && !customerIsPending && (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={handleManageBilling}
+                  disabled={actionLoading}
+                  className="w-full sm:w-auto"
+                >
+                  <CreditCard className="h-4 w-4 mr-1.5" />
+                  {actionLoading ? "Loading…" : "Manage billing"}
+                </Button>
+              )}
             </div>
           )}
+        </div>
 
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="font-semibold mb-2">Pricing</h3>
-              <p className="text-gray-600 text-sm">
-                Solo: ${dollars(SOLO_PRICE_PER_SEAT_CENTS)}/seat/month (1 seat).{" "}
-                Team: ${dollars(TEAM_PRICE_PER_SEAT_CENTS)}/seat/month ({`2–${TEAM_MAX_SEATS}`} seats).{" "}
-                5-day trial included (credit card required). Add or remove seats any time from the Team page —
-                crossing from 1 to 2 seats moves you to the Team plan automatically.
+        {/* Trial progress bar — solo cuando TRIALING activo (no expirado) */}
+        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && (
+          <div className="mt-6 space-y-2">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>Trial progress</span>
+              <span className={`font-semibold ${heroPalette.accent}`}>
+                {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} left
+              </span>
+            </div>
+            <div className="h-2 bg-white rounded-full overflow-hidden border border-indigo-100">
+              <div
+                className="h-full bg-indigo-500 transition-all"
+                style={{ width: `${trialProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              Trial ends on <strong>{dateStr(trialEnd)}</strong>.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ──────── DETAILS ──────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+            <Users className="h-3.5 w-3.5" />
+            Team
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{seats}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {seats === 1 ? "Active recruiter" : "Active recruiters"}
+          </p>
+          <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+            Add or remove teammates from{" "}
+            <a href="/settings/team" className="text-indigo-600 hover:underline">
+              the Team page
+            </a>
+            . Billing updates automatically.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+            {status === "TRIALING" || scheduledToCancel ? (
+              <Calendar className="h-3.5 w-3.5" />
+            ) : (
+              <Receipt className="h-3.5 w-3.5" />
+            )}
+            {status === "TRIALING"
+              ? "Trial ends"
+              : scheduledToCancel
+              ? "Ends on"
+              : "Next billing"}
+          </div>
+          {status === "TRIALING" && trialEnd ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900">{dateStr(trialEnd)}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                After that, ${dollars(monthlyCost)}/month
               </p>
-            </CardContent>
-          </Card>
-        </>
-      )}
+            </>
+          ) : status === "ACTIVE" && subscription?.currentPeriodEnd ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900">
+                {dateStr(subscription.currentPeriodEnd)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Charged: ${dollars(monthlyCost)}
+              </p>
+            </>
+          ) : isComp ? (
+            <>
+              <p className="text-2xl font-bold text-emerald-700">Free</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Complimentary plan, no billing
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-gray-900">—</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Subscribe to see your next billing date
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ──────── PRICING INFO ──────── */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5 p-2 rounded-lg bg-white border border-gray-200">
+            <Sparkles className="h-4 w-4 text-indigo-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-900 mb-1">How pricing works</h3>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              <strong>${dollars(SOLO_PRICE_PER_SEAT_CENTS)}/seat/month.</strong>{" "}
+              7-day free trial — no credit card required. Add or remove seats
+              any time and billing adjusts automatically on your next invoice.
+              Cancel any time from the billing portal.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<div className="h-48 bg-gray-100 rounded-lg animate-pulse" />}>
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-44 bg-gray-100 rounded-2xl animate-pulse" />
+        </div>
+      }
+    >
       <BillingContent />
     </Suspense>
   );

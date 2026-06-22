@@ -503,8 +503,18 @@ export async function notifyOnNewClientJobComment(args: {
   }
 }
 
+// Limpia el comment para que sea seguro mostrarlo como preview en
+// emails. ANTES solo colapsaba whitespace — un user que pegaba
+// `<a href="evil">click</a>` dejaba intacto el tag y el quoteBlock
+// del email lo renderizaba como link real (phishing vector via
+// noreply@recruitingats.com). Ahora también stripeamos tags HTML
+// antes del whitespace normalize. quoteBlock además escapa entities
+// como defensa en profundidad.
 function stripMarkup(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
+  return s
+    .replace(/<[^>]*>/g, "") // strip HTML tags
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function truncate(s: string, max: number): string {

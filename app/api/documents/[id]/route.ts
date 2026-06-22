@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { del, get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -68,7 +69,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const forbidden = requireAdminResponse(ctx.role);
     if (forbidden) return forbidden;
     const { id } = await params;
@@ -135,6 +136,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("Document delete error:", error);
     return NextResponse.json(
       { error: safeErrorMessage(error) || "Delete failed" },

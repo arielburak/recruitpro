@@ -61,3 +61,42 @@ export async function hasActiveSubscription(organizationId: string): Promise<boo
     return false;
   }
 }
+
+// Variante no-throw del guard para usar en layouts / componentes.
+// Devuelve la razón específica del bloqueo si lo hay, así el UI puede
+// adaptar la copy ("Trial expired" vs "Payment past due" vs "Canceled").
+export type SubscriptionStatusResult =
+  | { ok: true; reason: null }
+  | {
+      ok: false;
+      reason:
+        | "no_sub"
+        | "trial_expired"
+        | "past_due"
+        | "canceled"
+        | "unpaid"
+        | "inactive";
+    };
+
+export async function getSubscriptionStatus(
+  organizationId: string,
+): Promise<SubscriptionStatusResult> {
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId },
+    select: { status: true, trialEndsAt: true, isComp: true },
+  });
+
+  if (!subscription) return { ok: false, reason: "no_sub" };
+  if (subscription.isComp) return { ok: true, reason: null };
+  if (subscription.status === "ACTIVE") return { ok: true, reason: null };
+  if (subscription.status === "TRIALING") {
+    if (subscription.trialEndsAt && new Date() > subscription.trialEndsAt) {
+      return { ok: false, reason: "trial_expired" };
+    }
+    return { ok: true, reason: null };
+  }
+  if (subscription.status === "PAST_DUE") return { ok: false, reason: "past_due" };
+  if (subscription.status === "CANCELED") return { ok: false, reason: "canceled" };
+  if (subscription.status === "UNPAID") return { ok: false, reason: "unpaid" };
+  return { ok: false, reason: "inactive" };
+}

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { parseDocumentBuffer } from "@/lib/parse-document";
 import { extractJobFields } from "@/lib/extract-job-fields";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
   try {
-    await getOrgContext(); // Auth check
+    await getOrgContextWithActiveSub(); // Auth check
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -32,6 +33,8 @@ export async function POST(request: Request) {
       });
     }
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
