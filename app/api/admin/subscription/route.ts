@@ -4,6 +4,12 @@ import { getOrgContext } from "@/lib/tenant";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { syncSubFromStripe } from "@/lib/sync-stripe-seats";
 
+// No-cache: la billing page necesita data fresca siempre, especial
+// cuando el user vuelve del Customer Portal de Stripe. Sin esto
+// browser/CDN/proxies podían servir respuesta cacheada con el
+// estado viejo y el user veía "Active" después de cancelar.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const ctx = await getOrgContext();
@@ -28,10 +34,17 @@ export async function GET() {
       select: { createdAt: true },
     });
 
-    return NextResponse.json({
-      ...subscription,
-      userCreatedAt: user?.createdAt ?? null,
-    });
+    return NextResponse.json(
+      {
+        ...subscription,
+        userCreatedAt: user?.createdAt ?? null,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
   } catch (error: any) {
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
   }

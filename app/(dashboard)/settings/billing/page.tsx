@@ -39,17 +39,47 @@ function BillingContent() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
+  const fromPortal = searchParams.get("from") === "portal";
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  // Sync banner: cuando el user vuelve del Customer Portal, hacemos
+  // polling porque Stripe puede tardar 1-5s en propagar el cambio a
+  // su API. Sin esto el primer fetch traía data vieja y el user veía
+  // 'Active' después de cancelar hasta que refrescara manualmente.
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/subscription")
-      .then((r) => r.json())
-      .then(setSubscription)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    // cache: no-store en cada fetch para garantizar que browser/CDN
+    // no sirvan respuestas viejas.
+    const fetchSub = () =>
+      fetch("/api/admin/subscription", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => null);
+
+    // Fetch inicial siempre. Después, si venimos del Portal, hacemos
+    // 3 fetches adicionales con 1.5s de delay para captar cambios
+    // que Stripe puede no haber propagado todavía.
+    fetchSub().then((data) => {
+      setSubscription(data);
+      setLoading(false);
+
+      if (!fromPortal) return;
+
+      setSyncing(true);
+      let attempt = 0;
+      const maxAttempts = 4;
+      const interval = setInterval(async () => {
+        attempt++;
+        const fresh = await fetchSub();
+        if (fresh) setSubscription(fresh);
+        if (attempt >= maxAttempts) {
+          clearInterval(interval);
+          setSyncing(false);
+        }
+      }, 1500);
+    });
+  }, [fromPortal]);
 
   async function handleCheckout() {
     setActionLoading(true);
@@ -206,6 +236,16 @@ function BillingContent() {
 
   return (
     <div className="space-y-6">
+      {/* Sync banner: el user vuelve del Customer Portal y mientras
+          completamos los polls para detectar cambios, mostramos que
+          estamos sincronizando. Desaparece solo cuando termina. */}
+      {syncing && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 p-3 rounded-xl flex items-center gap-3">
+          <div className="h-4 w-4 shrink-0 rounded-full border-2 border-indigo-300 border-t-indigo-700 animate-spin" />
+          <p className="text-sm font-medium">Syncing latest changes from Stripe…</p>
+        </div>
+      )}
+
       {/* Result banners desde el redirect de Stripe */}
       {success && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl flex items-center gap-3">

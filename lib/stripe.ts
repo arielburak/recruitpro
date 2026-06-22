@@ -40,9 +40,15 @@ export async function createCheckoutSession(
 }
 
 export async function createBillingPortalSession(customerId: string) {
+  // ?from=portal: el componente cliente detecta el flag y dispara
+  // polling para captar cambios que Stripe puede no haber propagado
+  // todavía a su API en el primer fetch. Sin esto el user veía data
+  // vieja por 1-5 segundos y tenía que refrescar manualmente.
+  //
+  // /settings/billing (no /admin/billing — esa ruta no existe).
   return getStripeClient().billingPortal.sessions.create({
     customer: customerId,
-    return_url: `${process.env.NEXTAUTH_URL}/admin/billing`,
+    return_url: `${process.env.NEXTAUTH_URL}/settings/billing?from=portal`,
     locale: "en",
   });
 }
