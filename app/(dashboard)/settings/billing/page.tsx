@@ -103,21 +103,22 @@ function BillingContent() {
     }
   }
 
-  // Reactivar una sub marcada para cancelar (cancel_at_period_end).
-  // Hits el endpoint /api/admin/billing/reactivate que llama Stripe
-  // y actualiza la DB optimisticamente. El webhook updated llega
-  // después y refresca todo.
+  // Reactivar una sub "Scheduled to cancel" lleva al user al Customer
+  // Portal de Stripe (mismo flow que Manage billing). Allí Stripe
+  // muestra la sub con "Will be canceled on X" y el user clickea
+  // "Renew" / "Don't cancel", con la opción de reconfirmar/cambiar
+  // tarjeta si quiere. Stripe redirige de vuelta con ?from=portal y
+  // el polling capta el cambio automáticamente.
+  //
+  // Decisión 2026-06-22 con Nicolás: un toggle silencioso en el ATS
+  // es amateur. Los SaaS pro siempre llevan al user a Stripe para
+  // que reconfirme y mantenga el flow visible end-to-end.
   async function handleReactivate() {
     setActionLoading(true);
     try {
-      const res = await fetch("/api/admin/billing/reactivate", {
-        method: "POST",
-      });
-      if (res.ok) {
-        // Re-fetch para que el UI refleje el nuevo estado.
-        const subRes = await fetch("/api/admin/subscription");
-        if (subRes.ok) setSubscription(await subRes.json());
-      }
+      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
     } finally {
       setActionLoading(false);
     }
