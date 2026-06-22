@@ -73,8 +73,18 @@ export default function ClientsPage() {
     fetch("/api/clients")
       .then((r) => r.json())
       .then((data) => {
-        setClients(data);
+        // Defensive: el endpoint puede devolver { error } en 402
+        // (trial vencido), 401 (session expirada) o 500 (bug). Si
+        // asignamos el objeto error a clients, el for-of de
+        // engagementCounts falla con 'is not iterable'. Aseguramos
+        // array siempre — la UI sale con state vacío en lugar de
+        // crashear.
+        setClients(Array.isArray(data) ? data : []);
         setSelectedIds(new Set());
+        setLoading(false);
+      })
+      .catch(() => {
+        setClients([]);
         setLoading(false);
       });
   }, []);
