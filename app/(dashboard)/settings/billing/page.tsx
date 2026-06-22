@@ -43,24 +43,41 @@ function BillingContent() {
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Error de carga inicial — si /api/admin/subscription falla, mostramos
+  // un banner con Retry en lugar de pretender que no hay sub.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Sync banner: cuando el user vuelve del Customer Portal, hacemos
   // polling porque Stripe puede tardar 1-5s en propagar el cambio a
   // su API. Sin esto el primer fetch traía data vieja y el user veía
   // 'Active' después de cancelar hasta que refrescara manualmente.
   const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    // cache: no-store en cada fetch para garantizar que browser/CDN
-    // no sirvan respuestas viejas.
-    const fetchSub = () =>
-      fetch("/api/admin/subscription", { cache: "no-store" })
-        .then((r) => r.json())
-        .catch(() => null);
+  async function fetchSubWithErrorState() {
+    try {
+      const res = await fetch("/api/admin/subscription", { cache: "no-store" });
+      if (!res.ok) {
+        setLoadError(
+          "We couldn't load your billing info. Please try again or contact support.",
+        );
+        return null;
+      }
+      const data = await res.json();
+      setLoadError(null);
+      return data;
+    } catch {
+      setLoadError(
+        "We couldn't reach our servers. Check your connection and try again.",
+      );
+      return null;
+    }
+  }
 
+  useEffect(() => {
     // Fetch inicial siempre. Después, si venimos del Portal, hacemos
     // 3 fetches adicionales con 1.5s de delay para captar cambios
     // que Stripe puede no haber propagado todavía.
-    fetchSub().then((data) => {
+    fetchSubWithErrorState().then((data) => {
       setSubscription(data);
       setLoading(false);
 
@@ -71,7 +88,7 @@ function BillingContent() {
       const maxAttempts = 4;
       const interval = setInterval(async () => {
         attempt++;
-        const fresh = await fetchSub();
+        const fresh = await fetchSubWithErrorState();
         if (fresh) setSubscription(fresh);
         if (attempt >= maxAttempts) {
           clearInterval(interval);
@@ -81,12 +98,30 @@ function BillingContent() {
     });
   }, [fromPortal]);
 
+  async function retryLoad() {
+    setLoading(true);
+    const data = await fetchSubWithErrorState();
+    setSubscription(data);
+    setLoading(false);
+  }
+
   async function handleCheckout() {
     setActionLoading(true);
+    setActionError(null);
     try {
       const res = await fetch("/api/admin/billing/checkout", { method: "POST" });
       const data = await res.json();
-      if (data.url) window.location.href = data.url;
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      // No URL → Stripe falló o devolvió error. Mostrar al user.
+      setActionError(
+        data?.error ||
+          "Couldn't reach Stripe to start checkout. Please try again in a moment.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -94,10 +129,20 @@ function BillingContent() {
 
   async function handleManageBilling() {
     setActionLoading(true);
+    setActionError(null);
     try {
       const res = await fetch("/api/admin/billing/portal", { method: "POST" });
       const data = await res.json();
-      if (data.url) window.location.href = data.url;
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setActionError(
+        data?.error ||
+          "Couldn't open the billing portal. Please try again or contact support.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -115,10 +160,20 @@ function BillingContent() {
   // que reconfirme y mantenga el flow visible end-to-end.
   async function handleReactivate() {
     setActionLoading(true);
+    setActionError(null);
     try {
       const res = await fetch("/api/admin/billing/portal", { method: "POST" });
       const data = await res.json();
-      if (data.url) window.location.href = data.url;
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setActionError(
+        data?.error ||
+          "Couldn't open the billing portal to reactivate. Please try again.",
+      );
+    } catch {
+      setActionError("Network error. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -129,6 +184,27 @@ function BillingContent() {
       <div className="space-y-4">
         <div className="h-44 bg-gray-100 rounded-2xl animate-pulse" />
         <div className="h-28 bg-gray-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  // Error state cuando /api/admin/subscription falla y no tenemos data
+  // para renderizar. Distinguir "no data yet" de "fetch failed" como
+  // hacen Linear / Vercel.
+  if (loadError && !subscription) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-50 border border-red-200 text-red-800 p-5 rounded-xl">
+          <p className="font-semibold mb-1">Couldn't load your billing info</p>
+          <p className="text-sm mb-3">{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="text-sm font-semibold text-red-700 hover:text-red-900 underline"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -150,13 +226,21 @@ function BillingContent() {
   const trialEnd = subscription?.trialEndsAt
     ? new Date(subscription.trialEndsAt)
     : null;
+  const trialStart = subscription?.createdAt
+    ? new Date(subscription.createdAt)
+    : null;
   const now = new Date();
   const trialMsLeft = trialEnd ? trialEnd.getTime() - now.getTime() : 0;
   const trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
-  // Calc total trial duration (asumimos 7d desde signup); usado para % progress.
-  const TRIAL_TOTAL_DAYS = 7;
-  const trialDaysUsed = Math.max(0, TRIAL_TOTAL_DAYS - trialDaysLeft);
-  const trialProgress = Math.min(100, (trialDaysUsed / TRIAL_TOTAL_DAYS) * 100);
+  // Trial total duration calculado dinámicamente desde createdAt →
+  // trialEndsAt en lugar de hardcoded 7d. Antes (hardcoded) si más
+  // adelante cambiamos TRIAL_DAYS en constants.ts, el progress bar
+  // mostraba info incorrecta. Fallback a 7 si falta data.
+  const trialTotalMs =
+    trialStart && trialEnd ? trialEnd.getTime() - trialStart.getTime() : 7 * 24 * 60 * 60 * 1000;
+  const trialTotalDays = Math.max(1, Math.round(trialTotalMs / (1000 * 60 * 60 * 24)));
+  const trialDaysUsed = Math.max(0, trialTotalDays - trialDaysLeft);
+  const trialProgress = Math.min(100, (trialDaysUsed / trialTotalDays) * 100);
   // Trial expirado: status sigue siendo TRIALING en DB hasta que Stripe
   // mande el webhook (que puede no llegar nunca si el user no subscribió
   // y no hay sub en Stripe). El SubscriptionGate del layout ya bloqueó
@@ -237,6 +321,27 @@ function BillingContent() {
 
   return (
     <div className="space-y-6">
+      {/* Action error banner: cuando handleCheckout / handleManageBilling
+          / handleReactivate fallaron al contactar Stripe. Antes el
+          botón se quedaba en "Loading..." sin feedback visible.
+          Auto-clearable con la X. */}
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">Something went wrong</p>
+            <p className="text-sm mt-0.5">{actionError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-red-600 hover:text-red-900 text-xs font-semibold"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Sync banner: el user vuelve del Customer Portal y mientras
           completamos los polls para detectar cambios, mostramos que
           estamos sincronizando. Desaparece solo cuando termina. */}
