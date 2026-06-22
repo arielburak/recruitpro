@@ -20,7 +20,12 @@ function deriveCompanyNameFromEmail(email: string): string {
 }
 
 // Helper — reads the per-portal OAuth hint cookie set by the UI before
-// calling signIn("google"). Cookie is short-lived (60s).
+// calling signIn("google"). Cookie max-age = 120s (set in
+// app/client-portal/login/page.tsx). Si la cookie no sobrevivió el
+// round-trip de Google (slow MFA, in-app browser, expiration), por
+// default caemos a "staffing" — pero el callsite del staffing branch
+// hace un check adicional contra ClientUser activos para evitar que
+// un client legítimo termine en una org staffing recién creada.
 async function getOAuthPortal(): Promise<"client" | "staffing"> {
   try {
     const c = await cookies();
@@ -255,14 +260,25 @@ export const authOptions: NextAuthOptions = {
         // SECURITY: chequear isActive antes de dejar pasar el login.
         // El authorize de CredentialsProvider ya filtra inactive users,
         // pero el flow OAuth saltaba ese check — un admin desactivado
-        // podía hacer Sign in with Google y crear sesión válida. El
-        // layout del dashboard lo rebotaba después con redirect a
-        // /login?error=deactivated, pero el JWT existía momentaneamente.
-        // Mejor bloquear acá. 2026-06-22 con Nicolás.
+        // podía hacer Sign in with Google y crear sesión válida.
         if (!existingUser.isActive) {
           return "/login?error=deactivated";
         }
         return true;
+      }
+
+      // SECURITY: HIGH #5 (QA 2026-06-22). Antes del auto-create de
+      // staffing org, chequeamos si el email pertenece a un ClientUser
+      // activo. Si SÍ, significa que probablemente la cookie portal=
+      // client no sobrevivió el OAuth round-trip de Google (slow MFA,
+      // in-app browser, cookie restrictions) y caímos por default a
+      // "staffing". Crear una org staffing nueva para un cliente real
+      // sería un disaster UX + le quemamos un trial start a alguien
+      // que no quería staffing. Rebotamos al client-portal login con
+      // un mensaje claro.
+      const orphanClientUser = await findClientUserByOAuthEmail(user.email);
+      if (orphanClientUser) {
+        return "/client-portal/login?error=use-client-portal";
       }
 
       // ✋ Antes de tratarlo como signup nuevo, chequear si hay un

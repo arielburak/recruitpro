@@ -115,6 +115,8 @@ function ClientPortalLoginInner() {
       return "That email isn't registered. Ask your recruiting partner to invite you to the portal.";
     if (e === "not-invited")
       return "We couldn't find an invite for that Google account. The client portal is invite-only — ask your recruiting partner to add you.";
+    if (e === "use-client-portal")
+      return "We detected your email is registered as a client portal user. Please sign in here (not from the staffing portal) to access your account.";
     return "";
   });
   const [success, setSuccess] = useState("");
@@ -148,11 +150,29 @@ function ClientPortalLoginInner() {
   // If there's a staffing session, don't touch it — just warn the user
   // that they need to sign out of staffing first to log in as client
   const callbackUrl = searchParams.get("callbackUrl");
-  // Only honor relative URLs to avoid open-redirect via callbackUrl.
-  const safeCallback =
-    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
-      ? callbackUrl
-      : null;
+  // Defensa contra open-redirect via callbackUrl. El check anterior
+  // (`startsWith('/')` && `!startsWith('//')`) era bypassable con
+  // `/\evil.com/path` — Chromium normaliza `\` a `/` durante URL
+  // parsing, así que la string pasaba el validador y el browser
+  // navegaba a https://evil.com/path. Ahora usamos URL parse con
+  // fake base + chequeamos que el origin coincida y el pathname
+  // empiece con /client-portal/.
+  function isSafeClientPortalCallback(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      const fake = new URL(url, "http://x.local");
+      // Origin tiene que ser nuestro fake — cualquier URL absoluta
+      // (https://evil.com, //evil.com, \\evil.com normalizado) cambia
+      // el origin y queda rechazada.
+      if (fake.origin !== "http://x.local") return null;
+      if (!fake.pathname.startsWith("/client-portal/")) return null;
+      // Devolvemos pathname + search + hash — origen ya validado.
+      return fake.pathname + fake.search + fake.hash;
+    } catch {
+      return null;
+    }
+  }
+  const safeCallback = isSafeClientPortalCallback(callbackUrl);
   useEffect(() => {
     if (session?.user && (session.user as any).isClientUser) {
       router.replace(safeCallback || "/client-portal/dashboard");
