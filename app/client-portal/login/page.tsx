@@ -192,8 +192,14 @@ function ClientPortalLoginInner() {
           return;
         }
         if (result.error === "DEACTIVATED") {
+          // Un ClientUser puede tener filas en múltiples agencias —
+          // si TODAS sus filas están inactive llegamos acá. Copy
+          // neutral porque no presuponemos relación 1:1 con una
+          // agencia específica (la que invitó originalmente puede
+          // no ser la que revocó el acceso). Decisión 2026-06-22
+          // con Nicolás.
           setError(
-            "Your access has been revoked. Please contact the agency that invited you.",
+            "Your access has been revoked. Please contact your recruiting team to restore access.",
           );
           setLoading(false);
           return;
