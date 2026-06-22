@@ -29,8 +29,11 @@ export async function createCheckoutSession(
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: priceId, quantity: seats }],
-    success_url: `${process.env.NEXTAUTH_URL}/admin/billing?success=true`,
-    cancel_url: `${process.env.NEXTAUTH_URL}/admin/billing?canceled=true`,
+    // /settings/billing (no /admin/billing — esa ruta no existe).
+    // El billing page lee ?success=true / ?canceled=true para mostrar
+    // los banners correspondientes.
+    success_url: `${process.env.NEXTAUTH_URL}/settings/billing?success=true`,
+    cancel_url: `${process.env.NEXTAUTH_URL}/settings/billing?canceled=true`,
     metadata: { organizationId: orgId },
     // Forzar UI en inglés. Sin esto Stripe autodetecta del browser
     // del user y puede aparecer en castellano cuando el ATS está en

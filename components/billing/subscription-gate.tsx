@@ -84,7 +84,7 @@ export function SubscriptionGate({
   const copy = copyByReason[status.reason];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-gray-900/70 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-br from-red-50 to-amber-50 p-6 border-b border-red-100">

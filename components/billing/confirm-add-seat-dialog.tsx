@@ -91,7 +91,17 @@ export function ConfirmAddSeatDialog({
         // Abrir en nueva tab para que el user vuelva al dialog
         // después de cambiar el método. El dialog queda abierto.
         window.open(data.url, "_blank", "noopener,noreferrer");
+      } else {
+        // QA Medium: antes el portal failure (e.g. customerId pending_*,
+        // 403 non-admin, 500 Stripe down) era silent — el botón paraba
+        // de cargar y nada pasaba. Surface el error al user.
+        alert(
+          data?.error ||
+            "Couldn't open billing portal. Try /settings/billing directly."
+        );
       }
+    } catch {
+      alert("Couldn't open billing portal. Please try again.");
     } finally {
       setPortalLoading(false);
     }

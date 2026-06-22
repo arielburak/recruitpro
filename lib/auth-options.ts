@@ -124,8 +124,12 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+        // QA Medium: el lookup era case-sensitive (Postgres). Un user
+        // invitado como Jane@Acme.com no podía loggearse con
+        // jane@acme.com. Normalize input + case-insensitive lookup.
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: "insensitive" } },
           include: { organization: true },
         });
 
@@ -179,6 +183,9 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        // QA Medium: case-insensitive lookup. Normalize input first.
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
         // Cargamos ClientUsers SIN filter de isActive primero, para
         // poder distinguir "no existe" vs "existe pero deactivated".
         // Como un mismo email puede tener múltiples ClientUser rows
@@ -186,7 +193,10 @@ export const authOptions: NextAuthOptions = {
         // activos; si no hay ninguno, chequeamos si existe algún
         // ClientUser para ese email y throwear "DEACTIVATED" si sí.
         const activeClientUsers = await prisma.clientUser.findMany({
-          where: { email: credentials.email, isActive: true },
+          where: {
+            email: { equals: normalizedEmail, mode: "insensitive" },
+            isActive: true,
+          },
           include: { client: true },
         });
 
@@ -197,7 +207,10 @@ export const authOptions: NextAuthOptions = {
           // deactivated. Si sí, throw para mostrar mensaje específico
           // de "your access has been revoked".
           const anyInactive = await prisma.clientUser.findFirst({
-            where: { email: credentials.email, isActive: false },
+            where: {
+              email: { equals: normalizedEmail, mode: "insensitive" },
+              isActive: false,
+            },
             select: { id: true },
           });
           if (anyInactive) throw new Error("DEACTIVATED");
