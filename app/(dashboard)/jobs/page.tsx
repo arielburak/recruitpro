@@ -232,6 +232,10 @@ function ViewSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Inline delete confirm — reemplaza window.confirm (anti-pattern,
+  // memoria feedback_confirm_destructive_clicks). View a borrar
+  // queda guardada en state hasta que el user confirme o cancele.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -240,6 +244,10 @@ function ViewSwitcher({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
+
+  const viewToDelete = confirmDeleteId
+    ? views.find((v) => v.id === confirmDeleteId) ?? null
+    : null;
 
   return (
     <div ref={ref} className="relative">
@@ -286,7 +294,7 @@ function ViewSwitcher({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm(`Delete view "${v.name}"?`)) onDelete(v.id);
+                      setConfirmDeleteId(v.id);
                     }}
                     className="ml-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
                     title="Delete view"
@@ -312,6 +320,20 @@ function ViewSwitcher({
           </div>
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={!!confirmDeleteId}
+        onOpenChange={(v) => {
+          if (!v) setConfirmDeleteId(null);
+        }}
+        itemLabel={viewToDelete?.name || ""}
+        itemKind="view"
+        confirmLabel="Yes, delete view"
+        onConfirm={() => {
+          if (confirmDeleteId) onDelete(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }
@@ -444,12 +466,22 @@ export default function JobsPage() {
       localStorage.setItem(STORAGE_KEYS.savedViews, JSON.stringify(next));
     } catch {}
   }
-  function saveCurrentAsView() {
-    const name = window.prompt("View name?");
-    if (!name || !name.trim()) return;
+  // Reemplaza window.prompt anti-pattern. El user clickea "Save
+  // current as view…", se abre un dialog con Input para el name,
+  // y al confirmar se persiste. Más prolijo + consistente con el
+  // resto del ATS.
+  const [savingView, setSavingView] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  function openSaveViewDialog() {
+    setNewViewName("");
+    setSavingView(true);
+  }
+  function confirmSaveView() {
+    const trimmed = newViewName.trim();
+    if (!trimmed) return;
     const view: SavedView = {
       id: `v_${Date.now()}`,
-      name: name.trim(),
+      name: trimmed,
       filters: {
         statusFilter,
         workArrangementFilter,
@@ -460,6 +492,8 @@ export default function JobsPage() {
       },
     };
     persistViews([...savedViews, view]);
+    setSavingView(false);
+    setNewViewName("");
   }
   function applyView(view: SavedView | null) {
     // Null = "All jobs" → wipe everything.
@@ -486,18 +520,46 @@ export default function JobsPage() {
   }
 
   useEffect(() => {
+    // QA HIGH #10: defensive — el endpoint puede devolver { error: ... }
+    // en 401/402/500. Si asignamos eso al state, el for-of de
+    // filterOptions crashea con "is not iterable". Igual patrón que
+    // clients/page.tsx (resuelto en 8dfd7d4).
     fetch("/api/jobs")
       .then((r) => r.json())
       .then((data) => {
-        setJobs(data);
+        setJobs(Array.isArray(data) ? data : []);
         setSelectedIds(new Set());
+        setLoading(false);
+      })
+      .catch(() => {
+        setJobs([]);
         setLoading(false);
       });
   }, []);
 
+  // QA HIGH #9: optimistic delete con rollback en 4xx/5xx + toast.
+  // Antes: setJobs(filter) sin chequear res.ok. Si el endpoint
+  // devolvía 402 (trial expired), 403 (RBAC) o 500, la fila
+  // desaparecía del UI pero seguía en server. Mismo pattern que
+  // changeStatus que ya tiene rollback bien hecho.
   async function deleteJob(id: string) {
-    await fetch(`/api/jobs/${id}`, { method: "DELETE" });
-    setJobs(jobs.filter((j) => j.id !== id));
+    const previous = jobs;
+    setJobs((prev) => prev.filter((j) => j.id !== id));
+    try {
+      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setJobs(previous);
+        try {
+          const data = await res.json();
+          alert(data?.error || "Couldn't delete the job. Please try again.");
+        } catch {
+          alert("Couldn't delete the job. Please try again.");
+        }
+      }
+    } catch {
+      setJobs(previous);
+      alert("Couldn't delete the job. Please try again.");
+    }
   }
 
   // Inline status change from the list. Optimistic update, rollback on
@@ -677,7 +739,7 @@ export default function JobsPage() {
           <ViewSwitcher
             views={savedViews}
             onApply={applyView}
-            onSave={saveCurrentAsView}
+            onSave={openSaveViewDialog}
             onDelete={deleteView}
             hasActiveFilters={
               statusFilter.length +
@@ -962,6 +1024,56 @@ export default function JobsPage() {
         }}
         confirmLabel="Yes, delete"
       />
+
+      {/* Save view dialog — reemplaza window.prompt anti-pattern.
+          State managed por JobsPage; ViewSwitcher solo dispara el
+          openSaveViewDialog callback. */}
+      {savingView && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSavingView(false);
+          }}
+        >
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-2xl p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">
+              Save current view
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Give your filter combination a name so you can apply it again later.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={newViewName}
+              onChange={(e) => setNewViewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmSaveView();
+                if (e.key === "Escape") setSavingView(false);
+              }}
+              placeholder="View name"
+              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setSavingView(false)}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmSaveView}
+                disabled={!newViewName.trim()}
+                className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-md font-medium"
+              >
+                Save view
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

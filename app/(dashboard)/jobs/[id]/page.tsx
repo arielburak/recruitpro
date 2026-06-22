@@ -2531,7 +2531,7 @@ export default function JobDetailPage() {
                     </div>
                     {isAdmin && (
                       <button
-                        onClick={() => setRemovingAssignment({ userId: a.user.id, name: a.user.name || "este recruiter" })}
+                        onClick={() => setRemovingAssignment({ userId: a.user.id, name: a.user.name || "this teammate" })}
                         className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
                         title="Remove"
                       >
