@@ -79,15 +79,23 @@ function LoginContent() {
       const result = await Promise.race([signInPromise, timeoutPromise]);
 
       if (result?.error) {
-        // NextAuth returns the error message via the `error` field on
-        // result when redirect:false. authorize() throws our sentinel
-        // "EMAIL_NOT_VERIFIED" string so we can switch on it; anything
-        // else falls through to the generic credential error.
+        // NextAuth returns the error message via `result.error` when
+        // signIn() is called with redirect:false. authorize() throws
+        // sentinels que mapeamos a copy específica:
+        //   · EMAIL_NOT_VERIFIED → panel con resend
+        //   · DEACTIVATED → mensaje claro de access revoked
+        //   · cualquier otro → "Invalid email or password" genérico
+        //     (no revelar enumeración de emails)
         const emailValue = (formData.get("email") as string | null)?.trim().toLowerCase() || "";
         if (result.error.includes("EMAIL_NOT_VERIFIED")) {
           setUnverifiedEmail(emailValue);
           setResendSent(false);
           setError("");
+        } else if (result.error.includes("DEACTIVATED")) {
+          setError(
+            "Your account has been deactivated. Please contact your workspace admin to regain access.",
+          );
+          setUnverifiedEmail(null);
         } else {
           setError("Invalid email or password");
           setUnverifiedEmail(null);

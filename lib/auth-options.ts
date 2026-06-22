@@ -124,7 +124,20 @@ export const authOptions: NextAuthOptions = {
           include: { organization: true },
         });
 
-        if (!user || !user.isActive) return null;
+        // Email no existe O password incorrecto → null genérico
+        // (no revelar enumeración de emails). UI muestra "Invalid
+        // email or password" sin distinguir el caso.
+        if (!user) return null;
+
+        // Email existe pero el user está deactivated → throw sentinel
+        // para que la UI pueda mostrar mensaje específico "your
+        // access has been revoked" en lugar de "Invalid credentials"
+        // (que confunde porque el user sabe que sus credenciales
+        // SON válidas). NextAuth pasa el message como result.error
+        // cuando se llama con redirect:false.
+        if (!user.isActive) {
+          throw new Error("DEACTIVATED");
+        }
 
         const isValid = await bcrypt.compare(
           credentials.password,
@@ -161,15 +174,30 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        // Find all matching client users and prefer the one with a password
-        const clientUsers = await prisma.clientUser.findMany({
+        // Cargamos ClientUsers SIN filter de isActive primero, para
+        // poder distinguir "no existe" vs "existe pero deactivated".
+        // Como un mismo email puede tener múltiples ClientUser rows
+        // (uno por cliente que lo invitó), buscamos primero los
+        // activos; si no hay ninguno, chequeamos si existe algún
+        // ClientUser para ese email y throwear "DEACTIVATED" si sí.
+        const activeClientUsers = await prisma.clientUser.findMany({
           where: { email: credentials.email, isActive: true },
           include: { client: true },
         });
 
-        const clientUser = clientUsers.find((u) => u.passwordHash) || clientUsers[0];
+        const clientUser = activeClientUsers.find((u) => u.passwordHash) || activeClientUsers[0];
 
-        if (!clientUser || !clientUser.passwordHash) return null;
+        if (!clientUser || !clientUser.passwordHash) {
+          // No hay clientUser ACTIVE → chequear si hay alguno
+          // deactivated. Si sí, throw para mostrar mensaje específico
+          // de "your access has been revoked".
+          const anyInactive = await prisma.clientUser.findFirst({
+            where: { email: credentials.email, isActive: false },
+            select: { id: true },
+          });
+          if (anyInactive) throw new Error("DEACTIVATED");
+          return null;
+        }
 
         const isValid = await bcrypt.compare(
           credentials.password,

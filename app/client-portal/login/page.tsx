@@ -180,13 +180,21 @@ function ClientPortalLoginInner() {
       });
 
       if (result?.error) {
-        // NextAuth surfaces our thrown EMAIL_NOT_VERIFIED message via
-        // result.error. Disambiguate that from a generic invalid-creds
-        // case so we can offer a one-click resend instead of leaving
-        // the user stuck without context.
+        // NextAuth surfaces thrown error messages via result.error.
+        // authorize() puede throwear varios sentinels:
+        //   · EMAIL_NOT_VERIFIED → panel con resend
+        //   · DEACTIVATED → mensaje claro de access revoked
+        //   · cualquier otro → genérico (no enumeration)
         if (result.error === "EMAIL_NOT_VERIFIED") {
           setUnverifiedEmail(String(fd.get("email") || ""));
           setError("");
+          setLoading(false);
+          return;
+        }
+        if (result.error === "DEACTIVATED") {
+          setError(
+            "Your access has been revoked. Please contact the agency that invited you.",
+          );
           setLoading(false);
           return;
         }
