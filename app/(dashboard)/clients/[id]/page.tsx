@@ -143,8 +143,11 @@ export default function ClientDetailPage() {
   useEffect(() => {
     fetch(`/api/contacts?clientId=${clientId}`)
       .then((r) => r.json())
-      .then((data) => { setContacts(data); setContactsLoading(false); })
-      .catch(() => setContactsLoading(false));
+      .then((data) => {
+        setContacts(Array.isArray(data) ? data : []);
+        setContactsLoading(false);
+      })
+      .catch(() => { setContacts([]); setContactsLoading(false); });
   }, [clientId]);
 
   function startEditContact(contact: any) {
