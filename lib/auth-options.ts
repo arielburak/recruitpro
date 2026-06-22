@@ -223,7 +223,19 @@ export const authOptions: NextAuthOptions = {
       // === Staffing portal OAuth flow (default) ===
       const existingUser = await findStaffingUserByOAuthEmail(user.email);
 
-      if (existingUser) return true;
+      if (existingUser) {
+        // SECURITY: chequear isActive antes de dejar pasar el login.
+        // El authorize de CredentialsProvider ya filtra inactive users,
+        // pero el flow OAuth saltaba ese check — un admin desactivado
+        // podía hacer Sign in with Google y crear sesión válida. El
+        // layout del dashboard lo rebotaba después con redirect a
+        // /login?error=deactivated, pero el JWT existía momentaneamente.
+        // Mejor bloquear acá. 2026-06-22 con Nicolás.
+        if (!existingUser.isActive) {
+          return "/login?error=deactivated";
+        }
+        return true;
+      }
 
       // ✋ Antes de tratarlo como signup nuevo, chequear si hay un
       // UserInvite pendiente para este email. Si lo hay, procesarlo
