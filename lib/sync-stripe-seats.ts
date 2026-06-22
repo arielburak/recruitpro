@@ -16,6 +16,7 @@
 //      caller (agregar user al ATS sigue funcionando aunque Stripe
 //      falle — el sync se reintenta on the next change).
 
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 
@@ -167,6 +168,10 @@ export async function syncSubFromStripe(
       `[syncSubFromStripe] failed for org ${organizationId}:`,
       error?.message || error,
     );
+    Sentry.captureException(error, {
+      tags: { area: "stripe-sync", phase: "syncSubFromStripe" },
+      extra: { organizationId },
+    });
     return { synced: false, reason: "stripe_api_error" };
   }
 }
@@ -228,6 +233,10 @@ export async function syncStripeSeats(
       `[syncStripeSeats] failed for org ${organizationId} → ${newSeats} seats:`,
       error?.message || error,
     );
+    Sentry.captureException(error, {
+      tags: { area: "stripe-sync", phase: "syncStripeSeats" },
+      extra: { organizationId, newSeats },
+    });
     return { synced: false, reason: "stripe_api_error" };
   }
 }

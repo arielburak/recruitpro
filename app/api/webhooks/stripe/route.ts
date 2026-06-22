@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
+import * as Sentry from "@sentry/nextjs";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
@@ -48,6 +49,14 @@ export async function POST(request: Request) {
       process.env.STRIPE_WEBHOOK_SECRET || ""
     );
   } catch (err: any) {
+    // Signature mismatch = security signal (alguien intentando POSTear
+    // payloads falsos). Sentry warning para que Nicolás/Ari se enteren
+    // si llega un volumen anómalo.
+    Sentry.captureMessage("stripe webhook signature verification failed", {
+      level: "warning",
+      tags: { area: "stripe-webhook", reason: "signature_failure" },
+      extra: { message: err?.message },
+    });
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
@@ -84,9 +93,19 @@ export async function POST(request: Request) {
     // Cualquier otro error de DB: log y procesar igual (mejor
     // duplicar que perder el event).
     console.error("[stripe webhook] idempotency insert failed:", err);
+    Sentry.captureException(err, {
+      tags: { area: "stripe-webhook", phase: "idempotency_insert" },
+      extra: { eventId: event.id, type: event.type },
+    });
   }
 
-  switch (event.type) {
+  // Top-level try/catch alrededor del switch. Si algún handler interno
+  // throwa, capturamos a Sentry, DELETE el idempotency row y devolvemos
+  // 500 para que Stripe reintente. Sin esto, un bug en cualquier case
+  // perdía el evento silenciosamente (idempotency row ya estaba
+  // creada → próximo delivery devolvía deduped sin reprocesar).
+  try {
+    switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = session.metadata?.organizationId;
@@ -107,9 +126,25 @@ export async function POST(request: Request) {
           select: { stripeCustomerId: true },
         });
         if (!existing || existing.stripeCustomerId !== customerId) {
+          // Security signal — alguien intentando activar sub de otra
+          // org via metadata hijack, O un bug serio donde el customer
+          // se desincronizó. Sentry como ERROR para que founders se
+          // enteren.
           console.error(
             "[stripe webhook] checkout.session.completed customer mismatch:",
             { orgId, sessionCustomer: customerId, dbCustomer: existing?.stripeCustomerId },
+          );
+          Sentry.captureMessage(
+            "stripe webhook customer mismatch on checkout.session.completed",
+            {
+              level: "error",
+              tags: { area: "stripe-webhook", reason: "customer_mismatch" },
+              extra: {
+                organizationId: orgId,
+                sessionCustomer: customerId,
+                dbCustomer: existing?.stripeCustomerId || null,
+              },
+            },
           );
           break;
         }
@@ -179,7 +214,11 @@ export async function POST(request: Request) {
         // stripeSubscriptionId (recién seteado arriba), así que
         // syncStripeSeats interno no más no-opea con
         // "no_stripe_subscription_yet".
-        void recalculateAndSyncSeats(orgId);
+        // await en lugar de void: Stripe webhook tiene 30s budget,
+        // recalculateAndSyncSeats son 2 DB queries + 1 Stripe call
+        // (~500ms). Sin await + serverless, el container podía morir
+        // mid-flight si la respuesta 200 se enviaba primero.
+        await recalculateAndSyncSeats(orgId);
       }
       break;
     }
@@ -343,6 +382,25 @@ export async function POST(request: Request) {
       });
       break;
     }
+  }
+  } catch (handlerErr: any) {
+    // Algún case del switch tiró. Capturamos a Sentry con el contexto
+    // del event, borramos el idempotency row para que Stripe pueda
+    // reintentar (sino el próximo delivery devolvería deduped sin
+    // reprocesar), y devolvemos 500.
+    Sentry.captureException(handlerErr, {
+      tags: { area: "stripe-webhook", event_type: event.type },
+      extra: { eventId: event.id },
+    });
+    console.error("[stripe webhook] handler failed:", handlerErr);
+    try {
+      await prisma.webhookEvent.delete({ where: { eventId: event.id } });
+    } catch (delErr) {
+      // Si no podemos borrar el row, el reintento de Stripe va a
+      // devolver deduped igualmente. Logamos pero seguimos.
+      console.error("[stripe webhook] idempotency cleanup failed:", delErr);
+    }
+    return NextResponse.json({ error: "Internal handler error" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
