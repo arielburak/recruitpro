@@ -236,12 +236,14 @@ export async function POST(request: Request) {
       else if (stripeStatus === "unpaid") mappedStatus = "UNPAID";
       else if (stripeStatus === "trialing") mappedStatus = "TRIALING";
 
-      // Capturar cancel_at_period_end de Stripe. true cuando el
-      // cliente clickeó "Cancelar" en el Customer Portal y la sub
-      // sigue ACTIVE hasta el end del period. false cuando reactiva.
-      // La UI lee este flag para mostrar la card amber "Scheduled to
-      // cancel" y el CTA Reactivate.
-      const willCancel = Boolean(subscription.cancel_at_period_end);
+      // Capturar la flag "scheduled to cancel" de Stripe. Stripe API
+      // 2025+ deprecó cancel_at_period_end (boolean) a favor de
+      // cancel_at (timestamp Unix o enum string). El Customer Portal
+      // ahora setea cancel_at, no cancel_at_period_end. Detectamos
+      // ambos para compat.
+      const willCancel =
+        subscription.cancel_at_period_end === true ||
+        !!subscription.cancel_at;
 
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: subscription.id },

@@ -19,6 +19,18 @@
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 
+// Detecta si una sub está scheduled para cancelar al fin del período.
+// Stripe deprecó cancel_at_period_end (boolean) a favor de cancel_at
+// (timestamp Unix o enum 'min_period_end'/'max_period_end'). Cliente
+// Portal de Stripe en API 2025+ setea cancel_at, no cancel_at_period
+// _end → por eso el helper viejo nunca detectaba el cancel.
+// Chequeamos ambos: el legacy boolean + el nuevo cancel_at truthy.
+function isStripeSubScheduledToCancel(stripeSub: any): boolean {
+  if (stripeSub?.cancel_at_period_end === true) return true;
+  if (stripeSub?.cancel_at) return true;
+  return false;
+}
+
 // Recalcula el seat count desde scratch (count de users active) y
 // sincroniza tanto la DB como Stripe. Es el helper que TODOS los
 // call sites deberían usar después de cualquier cambio que afecte el
@@ -97,7 +109,7 @@ export async function syncSubFromStripe(
       firstItem?.current_period_end || stripeSub.current_period_end;
     const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
     const quantity = firstItem?.quantity || 1;
-    const willCancel = !!stripeSub.cancel_at_period_end;
+    const willCancel = isStripeSubScheduledToCancel(stripeSub);
     const stripeStatus = stripeSub.status as string;
 
     // Mapeo Stripe status → enum interno. Mantener consistente con el
