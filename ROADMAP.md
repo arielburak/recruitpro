@@ -21,7 +21,40 @@ Aplican a cualquier feature nueva o existente:
 
 ---
 
-## 💳 Stripe live — DONE 🎉
+## 📅 Mañana con Ari (2026-06-24)
+
+Items que vos + Ari tienen que decidir / activar — todo 5 min cada uno desde el dashboard de Stripe, sin código.
+
+- [ ] **Activar Stripe Tax** (Dashboard → Tax → Settings → enable). Calcula automáticamente sales tax US / VAT EU según address del customer. Costo: 0.5% del monto cobrado. Vale prenderlo aunque facturen $0 — US tiene nexus apenas pasen ciertos umbrales por estado y si no lo activás ahora hay que pagar retroactivo. Recomendación: ON.
+- [ ] **Activar Promotion Codes** (Dashboard → Settings → Customer Portal → Promotion codes ON). Te permite dar discount codes (para partners, early customers, refunds parciales) sin tocar código. Stripe Checkout los acepta automáticamente. Recomendación: ON.
+- [ ] **Decidir annual pricing** (sí / no / esperar). Si sí: crear segundo Price con `interval=year` y descuento 15-20%. Mi sugerencia: esperar — sin data de retention monthly no sabés qué descuento ofrecer.
+
+---
+
+## 🚦 Pre-launch readiness audit (auditoría 2026-06-23)
+
+Lo que encontré faltando antes de promote a `main`. Ordenado por bloqueante → nice-to-have.
+
+### Bloqueantes legales / operacionales
+
+- [ ] **Rate limiting en `/api/auth/*`** (login, register, forgot-password, verify). Hoy no hay nada — un atacante puede hacer brute force sin freno. Solución estándar: `@upstash/ratelimit` + Vercel KV (gratis hasta 30k requests/día). 2 horas de trabajo.
+- [ ] **DKIM/SPF/DMARC para `recruitingats.com` en Resend**. Sin esto los mails caen en spam de Gmail/Outlook → onboarding fail. Resend dashboard → Domains → verificá que tu dominio tiene los 3 records DNS verdes. 15 min.
+- [ ] **Privacy + ToS pages**: existen (`/privacy`, `/terms`) pero verificar que el contenido es legalmente correcto para tu caso (procesamiento de CVs = PII, datos de candidatos = GDPR si tenés un europeo). Revisar con abogado. Recomendación: Termly o Iubenda para generar templates ($10-30/mes).
+
+### Alto impacto operacional
+
+- [ ] **Analytics**: cero tracking hoy (sin PostHog, Plausible, GA). No vas a saber qué features se usan, dónde se caen los signups, qué % completa el trial. Sin esto vas a launchear a ciegas. PostHog free tier alcanza para los primeros 6 meses, 30 min de setup.
+- [ ] **Support channel definido**: hoy todos los mails responden a `contact@alphabridgepartners.com`. ¿Vas a contestar vos? ¿Compartido con Ari? ¿Necesitás un helpdesk (Crisp / Plain / Help Scout)? Decisión + setup.
+- [ ] **Status page** (status.recruitingats.com): cuando se cae prod, ¿dónde miran los customers? Vercel + UptimeRobot tienen integraciones gratis con status pages.
+
+### Nice-to-have pre-launch
+
+- [ ] **Sentry release tracking + source maps**. Sentry está conectado pero los stack traces de prod vienen minificados (lo vimos hoy con el "p is not iterable"). Configurar `@sentry/nextjs` para upload de source maps en cada build = stack traces legibles.
+- [ ] **Backups verificados**. Neon hace backups automáticos, pero ¿alguna vez probaste restore? Pre-launch hacer un dry-run: spin up branch desde un point-in-time + verificar que la data está OK. 30 min.
+- [ ] **Account deletion + data export** (GDPR right). Hoy no hay UI para "delete my account" ni "export my data". Si tenés un solo customer europeo te lo van a pedir. Implementar antes que lleguen.
+- [ ] **2FA opcional**. Para admins con acceso a candidate PII + Stripe billing. NextAuth soporta TOTP con un plugin.
+
+
 
 Activado 2026-06-23. Pricing definitivo: **$20/seat/mes flat** (mismo precio SOLO y TEAM). Trial de 7 días sin tarjeta, hard paywall después vía `requireActiveSubscription`.
 
