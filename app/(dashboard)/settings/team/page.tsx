@@ -82,6 +82,12 @@ export default function AdminUsersPage() {
   } | null>(null);
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
+  // Pool seat model 2026-06-22: si el backend devuelve 402 con
+  // seat_pool_full (no hay seats disponibles para el invite),
+  // guardamos el mensaje + mostramos banner con CTA "Buy seats"
+  // que linka a /settings/billing en lugar del toast genérico.
+  const [poolFullError, setPoolFullError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -141,7 +147,15 @@ export default function AdminUsersPage() {
 
     if (!res.ok) {
       const body = await res.json();
-      setError(body.error || "Failed to send invite");
+      // Pool full → banner especial con CTA Buy seats. El error
+      // tradicional (red toast) lo dejamos para el resto de los casos.
+      if (body?.code === "seat_pool_full") {
+        setPoolFullError(body.error || "All seats are in use.");
+        setShowInvite(false);
+        setPendingInvite(null);
+      } else {
+        setError(body.error || "Failed to send invite");
+      }
       setInviteLoading(false);
       return;
     }
@@ -292,6 +306,32 @@ export default function AdminUsersPage() {
       {error && (
         <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-200">
           {error}
+        </div>
+      )}
+      {poolFullError && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <Mail className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-900">
+              All seats are in use
+            </p>
+            <p className="text-sm text-amber-800 mt-1">{poolFullError}</p>
+            <div className="mt-3 flex items-center gap-3">
+              <a
+                href="/settings/billing"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-md transition-colors"
+              >
+                Buy more seats →
+              </a>
+              <button
+                type="button"
+                onClick={() => setPoolFullError(null)}
+                className="text-xs text-amber-700 hover:text-amber-900"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

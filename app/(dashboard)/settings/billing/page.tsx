@@ -12,12 +12,14 @@ import {
   AlertTriangle,
   Users,
   Receipt,
+  Settings,
 } from "lucide-react";
 import {
   monthlyTotalCents,
   perSeatCents,
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
+import { ManageSeatsDialog } from "@/components/billing/manage-seats-dialog";
 
 // Rediseño Linear/Vercel style: hero card con estado visual claro,
 // progress bar del trial cuando aplica, breakdown desglosado del costo,
@@ -44,6 +46,8 @@ function BillingContent() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Pool seat dialog: gestionar cuántos seats compra el admin.
+  const [seatsDialogOpen, setSeatsDialogOpen] = useState(false);
   // Error de carga inicial — si /api/admin/subscription falla, mostramos
   // un banner con Retry en lugar de pretender que no hay sub.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -214,6 +218,9 @@ function BillingContent() {
   const status = subscription?.status || "TRIALING";
   const isComp = subscription?.isComp;
   const hasStripeSub = !!subscription?.stripeSubscriptionId;
+  // Pool seat model: activeUsersCount viene del endpoint /api/admin/subscription
+  const activeUsers = subscription?.activeUsersCount ?? 0;
+  const seatsAvailable = Math.max(0, seats - activeUsers);
   const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
   // Stripe flag: cancela al final del periodo actual. Sub sigue
   // ACTIVE hasta ese día pero NO se renueva. UI distinto.
@@ -480,21 +487,38 @@ function BillingContent() {
 
       {/* ──────── DETAILS ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* SEATS card — pool model: muestra X of Y in use + CTA Manage seats */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-            <Users className="h-3.5 w-3.5" />
-            Team
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <Users className="h-3.5 w-3.5" />
+              Seats
+            </div>
+            {!isComp && (
+              <button
+                type="button"
+                onClick={() => setSeatsDialogOpen(true)}
+                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                <Settings className="h-3 w-3" />
+                Manage seats
+              </button>
+            )}
           </div>
-          <p className="text-2xl font-bold text-gray-900">{seats}</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {activeUsers} <span className="text-gray-400 font-medium">/ {seats}</span>
+          </p>
           <p className="text-xs text-gray-500 mt-1">
-            {seats === 1 ? "Active recruiter" : "Active recruiters"}
+            {seatsAvailable === 0
+              ? "All seats in use"
+              : `${seatsAvailable} available to assign`}
           </p>
           <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-            Add or remove teammates from{" "}
+            Invite or deactivate teammates from{" "}
             <a href="/settings/team" className="text-indigo-600 hover:underline">
               the Team page
             </a>
-            . Billing updates automatically.
+            . Seats freed by deactivating stay in your pool.
           </p>
         </div>
 
@@ -562,6 +586,25 @@ function BillingContent() {
           </div>
         </div>
       </div>
+
+      {/* Pool seat model: dialog para comprar/vender seats. Llama
+          /api/admin/billing/update-seats que pushea cambio a Stripe
+          y actualiza DB. onConfirmed re-fetcha la subscription. */}
+      <ManageSeatsDialog
+        open={seatsDialogOpen}
+        onOpenChange={setSeatsDialogOpen}
+        currentSeats={seats}
+        activeUsers={activeUsers}
+        status={status}
+        isComp={!!isComp}
+        onConfirmed={() => {
+          // Trigger re-fetch para que la card refleje el nuevo seats.
+          fetch("/api/admin/subscription", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((data) => setSubscription(data))
+            .catch(() => {});
+        }}
+      />
     </div>
   );
 }
