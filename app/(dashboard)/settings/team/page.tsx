@@ -58,6 +58,7 @@ export default function AdminUsersPage() {
   const [subscription, setSubscription] = useState<{
     status?: string;
     isComp?: boolean;
+    seats?: number;
   } | null>(null);
 
   // Confirm-add-seat dialog state. Cuando admin clickea "Send
@@ -640,16 +641,16 @@ export default function AdminUsersPage() {
         }}
       />
 
-      {/* Confirm seat dialog — modo invite. Aparece cuando el admin
-          envía un invite y el workspace no es COMP. Muestra desglose
-          + link "Change payment method" si quiere cambiar tarjeta
-          antes de confirmar. */}
+      {/* Confirm seat dialog — modo invite (pool model 2026-06-22).
+          Muestra usage del pool sin billing impact. Si pool full,
+          el dialog cambia el CTA a "Buy more seats" → /settings/billing. */}
       <ConfirmAddSeatDialog
         open={!!pendingInvite}
         onOpenChange={(open) => {
           if (!open) setPendingInvite(null);
         }}
-        currentSeats={activeUsers.length}
+        currentSeats={subscription?.seats ?? 1}
+        activeUsers={activeUsers.length}
         status={subscription?.status || "TRIALING"}
         isComp={!!subscription?.isComp}
         teammateName={pendingInvite?.name || undefined}
@@ -670,7 +671,8 @@ export default function AdminUsersPage() {
         onOpenChange={(open) => {
           if (!open) setPendingReactivate(null);
         }}
-        currentSeats={activeUsers.length}
+        currentSeats={subscription?.seats ?? 1}
+        activeUsers={activeUsers.length}
         status={subscription?.status || "TRIALING"}
         isComp={!!subscription?.isComp}
         teammateName={pendingReactivate?.name || undefined}
