@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { CalendarClock, Zap, Users, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { CalendarClock, Zap, Users, AlertTriangle, Check } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,17 +15,16 @@ import {
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
 
-// Dialog para subscribirse desde trial. Permite al admin:
-//   1. Elegir cuántos seats comprar (default = current active users).
-//      Puede ser menos: los usuarios que sobren quedan deactivated y
-//      pueden reactivarse comprando más seats después.
-//   2. Decidir cuándo arranca el cobro:
-//      · "Pay now and activate" → cobra inmediato, sub ACTIVE
-//      · "Save card, charge at trial end" → guarda tarjeta + trial_end,
-//        cobra automático al fin del trial
+// Dialog para subscribirse desde trial:
+//   1. Counter de seats (default = active users count).
+//   2. Si seats < active users: el admin elige explícitamente quién
+//      mantiene acceso (checkboxes por teammate). Los no seleccionados
+//      quedan deactivated automáticamente al subscribirse.
+//   3. 2 opciones de billing: pay now / save card at trial end.
 //
-// Decisión 2026-06-22 con Nicolás: el trial es para que el admin
-// arme su equipo libre. Al subscribirse decide qué tamaño mantener.
+// Decisión 2026-06-22 con Nicolás: el admin elige quién, NO el sistema
+// por antigüedad. Cualquier teammate deactivado se puede reactivar
+// comprando más seats después.
 
 const PRICE_PER_SEAT = SOLO_PRICE_PER_SEAT_CENTS / 100;
 const SEAT_HARD_CAP = 100;
@@ -33,11 +32,21 @@ const SEAT_HARD_CAP = 100;
 const fmt = (cents: number) =>
   (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
+type Teammate = {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // Active users actuales (incluye al admin). Default del selector.
-  activeUsers: number;
+  // Active users actuales (incluye al admin). Excluir el admin del
+  // checklist — su seat es obligatorio.
+  activeUsers: Teammate[];
+  // userId del admin actual (no se puede deactivar a sí mismo).
+  currentUserId: string;
   trialDaysLeft: number;
   trialEndsAt: Date | null;
 };
@@ -46,21 +55,34 @@ export function SubscribeOptionsDialog({
   open,
   onOpenChange,
   activeUsers,
+  currentUserId,
   trialDaysLeft,
   trialEndsAt,
 }: Props) {
-  const [seats, setSeats] = useState(Math.max(1, activeUsers));
+  const activeCount = activeUsers.length;
+  const teammates = useMemo(
+    () => activeUsers.filter((u) => u.id !== currentUserId),
+    [activeUsers, currentUserId],
+  );
+
+  const [seats, setSeats] = useState(Math.max(1, activeCount));
+  // userIds de teammates que el admin marcó para mantener acceso.
+  // El admin actual está implícito (siempre keeps).
+  const [keepIds, setKeepIds] = useState<Set<string>>(
+    () => new Set(teammates.map((t) => t.id)),
+  );
   const [loadingOption, setLoadingOption] = useState<"now" | "later" | null>(
     null,
   );
 
-  // Reset state cada vez que se abre — sino el N anterior persiste.
+  // Reset state cada vez que se abre — sino el estado anterior persiste.
   useEffect(() => {
     if (open) {
-      setSeats(Math.max(1, activeUsers));
+      setSeats(Math.max(1, activeCount));
+      setKeepIds(new Set(teammates.map((t) => t.id)));
       setLoadingOption(null);
     }
-  }, [open, activeUsers]);
+  }, [open, activeCount, teammates]);
 
   const monthly = monthlyTotalCents(seats);
   const trialEndStr = trialEndsAt
@@ -71,19 +93,61 @@ export function SubscribeOptionsDialog({
       })
     : "trial end";
 
-  // Si elige menos seats que active users, los extra se deactivan.
-  const willDeactivate = Math.max(0, activeUsers - seats);
+  // Cuántos teammates puede mantener (sin contar al admin).
+  const teammateSlotsAvailable = Math.max(0, seats - 1);
+  const teammatesKept = keepIds.size;
+  const needsTeammateSelection = teammates.length > teammateSlotsAvailable;
+  const selectionIsValid =
+    !needsTeammateSelection || teammatesKept === teammateSlotsAvailable;
+
+  // Si elige menos seats que active users, los no marcados se deactivan.
+  const willDeactivate = needsTeammateSelection
+    ? teammates.length - teammatesKept
+    : 0;
+
+  function toggleKeep(id: string) {
+    setKeepIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        // Si llenó el cupo, no permitir más selecciones.
+        if (needsTeammateSelection && next.size >= teammateSlotsAvailable) {
+          return prev;
+        }
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  // Si bajan seats y queda con más keepIds que slots, recortar al límite.
+  useEffect(() => {
+    if (needsTeammateSelection && teammatesKept > teammateSlotsAvailable) {
+      setKeepIds((prev) => {
+        const arr = Array.from(prev);
+        // Mantener los primeros N (orden de selección original).
+        return new Set(arr.slice(0, teammateSlotsAvailable));
+      });
+    }
+  }, [seats, teammateSlotsAvailable, needsTeammateSelection, teammatesKept]);
+
   const inputInvalid =
     !Number.isFinite(seats) || seats < 1 || seats > SEAT_HARD_CAP;
+  const canConfirm = !inputInvalid && selectionIsValid && loadingOption === null;
 
   async function handleSubscribe(payNow: boolean) {
-    if (inputInvalid) return;
+    if (!canConfirm) return;
     setLoadingOption(payNow ? "now" : "later");
     try {
       const res = await fetch("/api/admin/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payNow, seats }),
+        body: JSON.stringify({
+          payNow,
+          seats,
+          keepUserIds: needsTeammateSelection ? Array.from(keepIds) : undefined,
+        }),
       });
       const data = await res.json();
       if (data.url) {
@@ -100,17 +164,16 @@ export function SubscribeOptionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Subscribe</DialogTitle>
         </DialogHeader>
 
         <p className="text-sm text-gray-600">
-          {activeUsers > 1 ? (
+          {activeCount > 1 ? (
             <>
-              You have <strong>{activeUsers} active teammates</strong> using
-              the ATS. Pick how many seats to keep — extras will lose access
-              and can be reactivated later by buying more seats.
+              You have <strong>{activeCount} active teammates</strong> using
+              the ATS. Pick how many seats to keep and who they belong to.
             </>
           ) : (
             <>
@@ -162,34 +225,100 @@ export function SubscribeOptionsDialog({
               </Button>
             </div>
           </div>
+          <p className="text-xs text-gray-500 mt-2">
+            ${fmt(monthly)}/mo · ${PRICE_PER_SEAT}/seat
+          </p>
         </div>
 
-        {/* Warning: si compra menos que active users */}
+        {/* Teammate selector — solo si seats < activeUsers */}
+        {needsTeammateSelection && teammates.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Choose who keeps access
+              </p>
+              <span
+                className={`text-xs font-semibold ${
+                  selectionIsValid ? "text-gray-600" : "text-amber-700"
+                }`}
+              >
+                {teammatesKept} / {teammateSlotsAvailable} selected
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              You take 1 seat as admin. Pick {teammateSlotsAvailable} more
+              teammate{teammateSlotsAvailable === 1 ? "" : "s"} who&apos;ll
+              keep access. The others will be deactivated and can be
+              reactivated later.
+            </p>
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+              {teammates.map((t) => {
+                const isChecked = keepIds.has(t.id);
+                const canCheck =
+                  isChecked || teammatesKept < teammateSlotsAvailable;
+                return (
+                  <label
+                    key={t.id}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                      isChecked
+                        ? "border-indigo-300 bg-indigo-50/40"
+                        : "border-gray-200 bg-white hover:bg-gray-50"
+                    } ${!canCheck ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleKeep(t.id)}
+                      disabled={!canCheck && !isChecked}
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {t.name}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {t.email}
+                      </p>
+                    </div>
+                    {t.role === "ADMIN" && (
+                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                        ADMIN
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {willDeactivate > 0 && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-900 leading-relaxed">
               <strong>
                 {willDeactivate} teammate
-                {willDeactivate === 1 ? "" : "s"} will be deactivated.
+                {willDeactivate === 1 ? "" : "s"} will lose access.
               </strong>{" "}
-              They&apos;ll lose access to the ATS. You can reactivate them
-              later by buying more seats — their data stays intact.
+              Their data stays intact — reactivate them later by buying more
+              seats.
             </p>
           </div>
         )}
 
-        {/* Trial days remaining */}
         <p className="text-xs text-gray-500 mt-1">
-          You have <strong>{trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"}</strong> left
-          in your trial.
+          You have{" "}
+          <strong>
+            {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"}
+          </strong>{" "}
+          left in your trial.
         </p>
 
         {/* Option A — Pay now */}
         <button
           type="button"
           onClick={() => handleSubscribe(true)}
-          disabled={loadingOption !== null || inputInvalid}
+          disabled={!canConfirm}
           className="text-left w-full rounded-xl border-2 border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 p-4 transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2"
         >
           <div className="flex items-start gap-3">
@@ -206,8 +335,7 @@ export function SubscribeOptionsDialog({
                 </span>
               </div>
               <p className="text-sm text-gray-600 mt-1 leading-snug">
-                Start your billing right away. No interruption when the
-                trial ends.
+                Start your billing right away.
               </p>
               {loadingOption === "now" && (
                 <p className="text-xs text-indigo-600 mt-2">Opening Stripe…</p>
@@ -220,7 +348,7 @@ export function SubscribeOptionsDialog({
         <button
           type="button"
           onClick={() => handleSubscribe(false)}
-          disabled={loadingOption !== null || inputInvalid}
+          disabled={!canConfirm}
           className="text-left w-full rounded-xl border border-gray-200 hover:border-gray-400 bg-white p-4 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <div className="flex items-start gap-3">
@@ -237,8 +365,7 @@ export function SubscribeOptionsDialog({
                 </span>
               </div>
               <p className="text-sm text-gray-600 mt-1 leading-snug">
-                Keep your free trial through the end. We&apos;ll charge the
-                card automatically on the last day.
+                Keep your free trial through the end.
               </p>
               {loadingOption === "later" && (
                 <p className="text-xs text-gray-500 mt-2">Opening Stripe…</p>

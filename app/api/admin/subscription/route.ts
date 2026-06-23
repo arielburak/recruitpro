@@ -34,18 +34,22 @@ export async function GET() {
       select: { createdAt: true },
     });
 
-    // Pool seat model 2026-06-22: el front necesita active users count
-    // para mostrar "X of Y seats in use" + bloquear invites si el pool
-    // está full. Es 1 query indexed, cheap.
-    const activeUsersCount = await prisma.user.count({
+    // Pool seat model 2026-06-22: front necesita active users count Y
+    // la lista completa (para el subscribe dialog donde el admin elige
+    // quién mantiene acceso si compra menos seats que active users).
+    const activeUsersList = await prisma.user.findMany({
       where: { organizationId: ctx.organizationId, isActive: true },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { createdAt: "asc" },
     });
+    const activeUsersCount = activeUsersList.length;
 
     return NextResponse.json(
       {
         ...subscription,
         userCreatedAt: user?.createdAt ?? null,
         activeUsersCount,
+        activeUsersList,
       },
       {
         headers: {

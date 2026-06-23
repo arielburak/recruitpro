@@ -13,18 +13,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
 
-    // Body opcional: { payNow: boolean, seats?: number }.
-    // Decisión 2026-06-22 con Nicolás:
+    // Body: { payNow, seats?, keepUserIds? }.
+    // Decisión 2026-06-22 con Nicolás (pivote final):
     //   · payNow=true → cobra inmediato, ACTIVE de una
-    //   · payNow=false (default) → trial_end nativo Stripe, cobro al fin
-    //   · seats → cantidad que el admin elige comprar. Default a
-    //     subscription.seats. Si seats < activeUsers, deactivamos
-    //     los más recientes (excluyendo al admin actual) antes del
-    //     checkout para alinear con la quantity comprada.
+    //   · payNow=false (default) → trial_end nativo Stripe
+    //   · seats → cantidad que el admin elige comprar
+    //   · keepUserIds → si seats < activeUsers, lista de userIds
+    //     (sin contar al admin actual) que mantienen acceso. Los
+    //     que NO están en la lista (y NO son el admin) se deactivan.
     const body = await request.json().catch(() => ({}));
     const payNow = body?.payNow === true;
     const requestedSeats = Number(body?.seats);
     const hasSeatsParam = Number.isFinite(requestedSeats) && requestedSeats >= 1;
+    const keepUserIds: string[] = Array.isArray(body?.keepUserIds)
+      ? body.keepUserIds.filter((x: unknown): x is string => typeof x === "string")
+      : [];
 
     // QA HIGH #2: recalcular seats antes del checkout para reflejar
     // active users actuales. Si el admin pasó `seats` en el body
@@ -33,40 +36,57 @@ export async function POST(request: Request) {
     await recalculateAndSyncSeats(ctx.organizationId);
 
     // Si el admin pasó `seats` y es menor que active users, deactivar
-    // los users más recientes (excluyendo al admin actual) hasta
-    // alcanzar el target. Los users deactivados pueden ser
-    // reactivados después comprando más seats.
+    // los teammates que el admin NO eligió mantener (keepUserIds).
+    // El admin actual nunca se deactiva (su seat es obligatorio).
     if (hasSeatsParam) {
-      const activeUsersCount = await prisma.user.count({
+      const activeUsersAll = await prisma.user.findMany({
         where: { organizationId: ctx.organizationId, isActive: true },
+        select: { id: true },
       });
+      const activeUsersCount = activeUsersAll.length;
+
       if (requestedSeats < activeUsersCount) {
-        const toDeactivateCount = activeUsersCount - requestedSeats;
-        // Más recientes primero, excluir al admin actual.
-        const candidates = await prisma.user.findMany({
-          where: {
-            organizationId: ctx.organizationId,
-            isActive: true,
-            NOT: { id: ctx.userId },
-          },
-          orderBy: { createdAt: "desc" },
-          take: toDeactivateCount,
-          select: { id: true },
-        });
-        if (candidates.length < toDeactivateCount) {
+        // Validar que el admin pasó keepUserIds + tiene el count correcto.
+        const adminSlot = 1; // siempre el admin actual
+        const expectedKeepCount = requestedSeats - adminSlot;
+        if (keepUserIds.length !== expectedKeepCount) {
           return NextResponse.json(
             {
-              error:
-                "Can't deactivate enough teammates to fit fewer seats. Try a higher seat count.",
+              error: `Select exactly ${expectedKeepCount} teammate${expectedKeepCount === 1 ? "" : "s"} to keep before subscribing with fewer seats.`,
             },
             { status: 400 },
           );
         }
-        await prisma.user.updateMany({
-          where: { id: { in: candidates.map((u) => u.id) } },
-          data: { isActive: false },
-        });
+
+        // Validar que todos los keepUserIds pertenezcan al org + estén
+        // activos + no sean el admin. Sino son ids spoofed.
+        const validKeepIds = new Set(
+          activeUsersAll
+            .map((u) => u.id)
+            .filter((id) => id !== ctx.userId),
+        );
+        for (const id of keepUserIds) {
+          if (!validKeepIds.has(id)) {
+            return NextResponse.json(
+              { error: "Invalid teammate selection. Please retry." },
+              { status: 400 },
+            );
+          }
+        }
+
+        // Deactivar los que NO están en keepUserIds (y no son el admin).
+        const keepSet = new Set([...keepUserIds, ctx.userId]);
+        const toDeactivate = activeUsersAll
+          .map((u) => u.id)
+          .filter((id) => !keepSet.has(id));
+        if (toDeactivate.length > 0) {
+          await prisma.user.updateMany({
+            where: { id: { in: toDeactivate } },
+            data: { isActive: false },
+          });
+        }
       }
+
       // Update subscription.seats al target final.
       await prisma.subscription.update({
         where: { organizationId: ctx.organizationId },

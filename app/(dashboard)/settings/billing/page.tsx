@@ -606,7 +606,8 @@ function BillingContent() {
       <SubscribeOptionsDialog
         open={subscribeOptionsOpen}
         onOpenChange={setSubscribeOptionsOpen}
-        activeUsers={activeUsers}
+        activeUsers={subscription?.activeUsersList || []}
+        currentUserId={(session?.user as any)?.id || ""}
         trialDaysLeft={trialDaysLeft}
         trialEndsAt={trialEnd}
       />
