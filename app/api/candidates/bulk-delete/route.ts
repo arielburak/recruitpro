@@ -34,22 +34,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ deleted: 0 });
     }
 
-    // Candidate has cascade-on-delete relations to submissions /
-    // documents / interviews / activities / comments, so a single
-    // deleteMany covers the lot. No application-level fan-out
-    // needed.
-    const res = await prisma.candidate.deleteMany({
-      where: { id: { in: ownedIds } },
+    // Audit 2026-06-23: el comment viejo decía "Candidate has cascade-
+    // on-delete relations to submissions" — FALSO. CandidateSubmission,
+    // Comment (con candidateId/submissionId) y Placement NO cascadean
+    // desde Candidate. Bulk-delete con cualquiera de esas dependencias
+    // tiraba FK 500. Fan-out manual en tx para borrar primero las
+    // dependencias no-cascade, después la Candidate.
+    //
+    // Cascades existentes (no hace falta tocarlas): Document, Activity,
+    // Interview (por candidateId), SubmissionDocument, CandidateRating
+    // (por submission), CalendarEvent SetNull.
+    const submissions = await prisma.candidateSubmission.findMany({
+      where: { candidateId: { in: ownedIds } },
+      select: { id: true },
     });
+    const submissionIds = submissions.map((s) => s.id);
+
+    const txOps: any[] = [];
+    if (submissionIds.length > 0) {
+      txOps.push(
+        prisma.comment.deleteMany({
+          where: { submissionId: { in: submissionIds } },
+        }),
+        prisma.placement.deleteMany({
+          where: { submissionId: { in: submissionIds } },
+        }),
+      );
+    }
+    txOps.push(
+      prisma.comment.deleteMany({ where: { candidateId: { in: ownedIds } } }),
+      prisma.candidateSubmission.deleteMany({
+        where: { candidateId: { in: ownedIds } },
+      }),
+    );
+
+    const res = await prisma.$transaction([
+      ...txOps,
+      prisma.candidate.deleteMany({ where: { id: { in: ownedIds } } }),
+    ]);
+    const deletedCount = res[res.length - 1].count;
 
     await logActivity({
       action: "candidate.bulk_deleted",
-      description: `${ctx.userName} deleted ${res.count} candidate${res.count === 1 ? "" : "s"} in bulk`,
+      description: `${ctx.userName} deleted ${deletedCount} candidate${deletedCount === 1 ? "" : "s"} in bulk`,
       userId: ctx.userId,
       organizationId: ctx.organizationId,
     });
 
-    return NextResponse.json({ deleted: res.count });
+    return NextResponse.json({ deleted: deletedCount });
   } catch (error: any) {
     const subErr = subscriptionErrorResponse(error);
     if (subErr) return subErr;

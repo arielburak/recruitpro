@@ -301,9 +301,44 @@ export async function DELETE(
     const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.job.deleteMany({
-      where: { id, organizationId: ctx.organizationId },
+    // Audit 2026-06-23: el deleteMany simple tiraba FK 500 cuando el job
+    // tenía submissions / placements / comments / firm engagements,
+    // porque esos modelos no cascadean desde Job. Fan-out manual en tx
+    // borra primero las dependencias no-cascade, después la Job.
+    //
+    // Cascades existentes (no hace falta tocarlas): JobAssignment,
+    // PipelineStage, Document, Interview, CalendarEvent SetNull.
+    // FirmEngagement.jobId es nullable y NO cascadea: lo seteamos a
+    // null para preservar el historial del engagement (legal trail
+    // del invite firm↔client).
+    const submissions = await prisma.candidateSubmission.findMany({
+      where: { jobId: id },
+      select: { id: true },
     });
+    const submissionIds = submissions.map((s) => s.id);
+
+    const txOps: any[] = [];
+    if (submissionIds.length > 0) {
+      txOps.push(
+        prisma.comment.deleteMany({
+          where: { submissionId: { in: submissionIds } },
+        }),
+      );
+    }
+    txOps.push(
+      prisma.comment.deleteMany({ where: { jobId: id } }),
+      prisma.placement.deleteMany({ where: { jobId: id } }),
+      prisma.firmEngagement.updateMany({
+        where: { jobId: id },
+        data: { jobId: null },
+      }),
+      prisma.candidateSubmission.deleteMany({ where: { jobId: id } }),
+      prisma.job.deleteMany({
+        where: { id, organizationId: ctx.organizationId },
+      }),
+    );
+
+    await prisma.$transaction(txOps);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     const subErr = subscriptionErrorResponse(error);

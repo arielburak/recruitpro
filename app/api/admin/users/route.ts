@@ -159,51 +159,21 @@ export async function PATCH(request: Request) {
   }
 }
 
-// DELETE - remove a user from the organization
-export async function DELETE(request: Request) {
-  try {
-    const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin only" }, { status: 403 });
-    }
-
-    const { userId } = await request.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
-    }
-
-    // Prevent self-deletion
-    if (userId === ctx.userId) {
-      return NextResponse.json({ error: "You cannot remove yourself" }, { status: 400 });
-    }
-
-    // Verify user belongs to same org
-    const user = await prisma.user.findFirst({
-      where: { id: userId, organizationId: ctx.organizationId },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Don't allow removing the last admin
-    if (user.role === "ADMIN") {
-      const adminCount = await prisma.user.count({
-        where: { organizationId: ctx.organizationId, role: "ADMIN", isActive: true },
-      });
-      if (adminCount <= 1) {
-        return NextResponse.json({ error: "Cannot remove the last admin" }, { status: 400 });
-      }
-    }
-
-    await prisma.user.delete({ where: { id: userId } });
-
-    // Pool seat model 2026-06-22: hard delete libera el seat al pool,
-    // billing no cambia hasta que el admin saque el seat desde
-    // /settings/billing → Manage seats.
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
-  }
-}
+// DELETE — eliminado a propósito (audit 2026-06-23).
+//
+// El schema NO tiene cascade desde User a JobAssignment, Comment,
+// CandidateRating, InterviewAssignment, etc. Un hard-delete de un User
+// con cualquier work asociado revienta con FK errors (500) o, peor, deja
+// las rows pendientes con un userId que ya no resuelve (silent orphan
+// attribution: comments aparecen como "?" en UI, performance metrics
+// crashean).
+//
+// Para sacar a alguien usar PATCH /api/admin/users con { isActive: false }
+// — soft-delete vía DeactivateUserDialog que ya pide qué hacer con las
+// interviews futuras + libera el seat al pool. La distancia entre
+// "Deactivate" y "Remove permanently" era invisible en el menú viejo
+// y el undocumented hard-delete se llevaba el trabajo de meses.
+//
+// Si en algún momento necesitamos hard-delete real (GDPR right-to-be-
+// forgotten), va con flow específico + cascade migration + doble
+// confirmación. Mientras tanto, mejor que no exista.
