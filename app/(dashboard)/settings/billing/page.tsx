@@ -440,11 +440,7 @@ function BillingContent() {
                   <Sparkles className="h-4 w-4 mr-1.5" />
                   {actionLoading
                     ? "Loading…"
-                    : trialExpired
-                    ? "Subscribe now"
-                    : status === "TRIALING"
-                    ? "Add payment method"
-                    : "Subscribe now"}
+                    : "Subscribe"}
                 </Button>
               )}
               {hasStripeSub && !customerIsPending && (
