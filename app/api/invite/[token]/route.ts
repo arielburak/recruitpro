@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkSeatAvailability } from "@/lib/seat-availability";
+import { findStaffingUserByEmail } from "@/lib/email-canonical";
 // Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
 // resta seats automático. El admin compra seats explícitamente desde
 // /settings/billing → Manage seats. Al accept del invite re-corremos
@@ -119,16 +120,15 @@ export async function POST(
       );
     }
 
-    // Check if user already exists with this email
-    const existing = await prisma.user.findUnique({
-      where: { email: invite.email },
-    });
+    // Check if user already exists with this email. Tolerante a Gmail
+    // aliases. Si existe pero NO en la org del invite, devolvemos el
+    // mismo error genérico (no leak de tenant ajeno). NO marcamos el
+    // invite como usado en collision: antes burnábamos el token, eso
+    // permitía enumeration y dejaba al invitee legítimo sin poder
+    // reintentar tras corregir el conflicto. Audit 2026-06-23.
+    const lookupEmail = invite.email.trim().toLowerCase();
+    const existing = await findStaffingUserByEmail(lookupEmail);
     if (existing) {
-      // Mark invite as used
-      await prisma.userInvite.update({
-        where: { id: invite.id },
-        data: { usedAt: new Date() },
-      });
       return NextResponse.json(
         {
           error:
@@ -141,10 +141,16 @@ export async function POST(
     // Create user and mark invite as used in a transaction
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // Normalizamos el email a lowercase al persistir el User. Antes
+    // se guardaba con el casing exacto del invite — si el admin lo
+    // creó con mayúsculas, futuras búsquedas case-sensitive (login,
+    // forgot-password) podían perderse el row. Audit 2026-06-23.
+    const normalizedEmail = invite.email.trim().toLowerCase();
+
     const [user] = await prisma.$transaction([
       prisma.user.create({
         data: {
-          email: invite.email,
+          email: normalizedEmail,
           name,
           title: title || null,
           passwordHash,

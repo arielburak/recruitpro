@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { sendEmailVerificationEmail } from "@/lib/email";
+import { findStaffingUserByEmail } from "@/lib/email-canonical";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 // Resend the verification email. Two callers:
@@ -32,16 +33,23 @@ export async function POST(request: Request) {
       });
     } else {
       // Unauthenticated path — accept { email }. Always return success
-      // shape to avoid leaking whether an account exists.
+      // shape to avoid leaking whether an account exists. Audit 2026-06-23:
+      // pasamos por findStaffingUserByEmail para tolerar Gmail aliases
+      // (sin esto, un user creado con casing distinto al input se perdía).
       const body = await request.json().catch(() => ({}));
       const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
       if (!email) {
         return NextResponse.json({ success: true });
       }
-      user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, name: true, email: true, emailVerifiedAt: true },
-      });
+      const found = await findStaffingUserByEmail(email);
+      user = found
+        ? {
+            id: found.id,
+            name: found.name,
+            email: found.email,
+            emailVerifiedAt: found.emailVerifiedAt,
+          }
+        : null;
     }
 
     if (!user) {

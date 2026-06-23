@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPasswordResetEmail } from "@/lib/email";
+import {
+  findStaffingUserByEmail,
+  findClientUserByEmail,
+} from "@/lib/email-canonical";
 import crypto from "crypto";
 
 const TOKEN_TTL_MINUTES = 60;
@@ -21,10 +25,16 @@ export async function POST(request: Request) {
       process.env.NEXTAUTH_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
+    // Normaliza el lookup para tolerar dot/+tag aliases en Gmail y
+    // diferencias de casing (audit 2026-06-23). Antes hacíamos
+    // findFirst({ where: { email } }) que es case-sensitive — si el
+    // user escribía la dirección con otro casing, el reset mail se
+    // perdía silencioso.
+    const normalized = email.trim().toLowerCase();
+
     if (isClient) {
-      // Client user forgot password
-      const clientUser = await prisma.clientUser.findFirst({
-        where: { email, isActive: true },
+      const clientUser = await findClientUserByEmail(normalized, {
+        onlyActive: true,
       });
 
       if (clientUser) {
@@ -61,8 +71,8 @@ export async function POST(request: Request) {
       // throw DEACTIVATED) pero igual mejor cerrar el flow desde el
       // principio. Parity rule: si filtro en client, filtro en
       // staffing. Memoria feedback_consistent_filters.
-      const user = await prisma.user.findFirst({
-        where: { email, isActive: true },
+      const user = await findStaffingUserByEmail(normalized, {
+        onlyActive: true,
       });
 
       if (user) {
