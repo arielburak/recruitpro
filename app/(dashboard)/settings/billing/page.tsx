@@ -497,7 +497,12 @@ function BillingContent() {
 
       {/* ──────── DETAILS ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* SEATS card — pool model: muestra X of Y in use + CTA Manage seats */}
+        {/* SEATS card. Durante TRIAL el pool no aplica — la sub tiene
+            seats=1 hardcoded pero el admin puede invitar lo que quiera
+            porque el cobro arranca recién post-trial. Mostrar "3 / 1
+            All seats in use" en trial confunde porque sugiere un límite
+            que no existe. Branch dedicado para trial: solo count + copy
+            específica. El pool X/Y se reserva a ACTIVE/COMP. */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -518,21 +523,47 @@ function BillingContent() {
               </button>
             )}
           </div>
-          <p className="text-2xl font-bold text-gray-900">
-            {activeUsers} <span className="text-gray-400 font-medium">/ {seats}</span>
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            {seatsAvailable === 0
-              ? "All seats in use"
-              : `${seatsAvailable} available to assign`}
-          </p>
-          <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-            Invite or deactivate teammates from{" "}
-            <a href="/settings/team" className="text-indigo-600 hover:underline">
-              the Team page
-            </a>
-            . Seats freed by deactivating stay in your pool.
-          </p>
+          {status === "TRIALING" && !isComp ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {activeUsers === 1 ? "Active recruiter" : "Active recruiters"}{" "}
+                · Unlimited during trial
+              </p>
+              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                Invite teammates from{" "}
+                <a href="/settings/team" className="text-indigo-600 hover:underline">
+                  the Team page
+                </a>
+                {trialEnd ? (
+                  <>
+                    . Per-seat billing kicks in on{" "}
+                    <strong>{dateStr(trialEnd)}</strong>.
+                  </>
+                ) : (
+                  <>. Per-seat billing kicks in after your trial ends.</>
+                )}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-gray-900">
+                {activeUsers} <span className="text-gray-400 font-medium">of {seats}</span>
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {seatsAvailable === 0
+                  ? "All seats in use"
+                  : `${seatsAvailable} available to assign`}
+              </p>
+              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                Invite or deactivate teammates from{" "}
+                <a href="/settings/team" className="text-indigo-600 hover:underline">
+                  the Team page
+                </a>
+                . Seats freed by deactivating stay in your pool.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-5">
