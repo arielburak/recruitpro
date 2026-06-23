@@ -20,6 +20,7 @@ import {
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
 import { ManageSeatsDialog } from "@/components/billing/manage-seats-dialog";
+import { SubscribeOptionsDialog } from "@/components/billing/subscribe-options-dialog";
 
 // Rediseño Linear/Vercel style: hero card con estado visual claro,
 // progress bar del trial cuando aplica, breakdown desglosado del costo,
@@ -48,6 +49,9 @@ function BillingContent() {
   const [actionError, setActionError] = useState<string | null>(null);
   // Pool seat dialog: gestionar cuántos seats compra el admin.
   const [seatsDialogOpen, setSeatsDialogOpen] = useState(false);
+  // Subscribe options dialog: durante trial, dar al user 2 opciones
+  // (pay now y activate / save card y cobro al fin del trial).
+  const [subscribeOptionsOpen, setSubscribeOptionsOpen] = useState(false);
   // Error de carga inicial — si /api/admin/subscription falla, mostramos
   // un banner con Retry en lugar de pretender que no hay sub.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -433,7 +437,17 @@ function BillingContent() {
               {!scheduledToCancel && (!hasStripeSub || status === "TRIALING") && (
                 <Button
                   size="lg"
-                  onClick={handleCheckout}
+                  onClick={() => {
+                    // En trial activo: abrir el dialog con 2 opciones
+                    // (pay now / save card). En cualquier otro estado
+                    // (trial expirado, canceled, no-sub), checkout
+                    // directo con cobro inmediato.
+                    if (status === "TRIALING" && !trialExpired) {
+                      setSubscribeOptionsOpen(true);
+                    } else {
+                      handleCheckout();
+                    }
+                  }}
                   disabled={actionLoading}
                   className={`w-full sm:w-auto ${trialExpired ? "bg-red-600 hover:bg-red-700" : ""}`}
                 >
@@ -585,6 +599,17 @@ function BillingContent() {
           </div>
         </div>
       </div>
+
+      {/* Subscribe options dialog — solo en TRIAL activo. Pay now
+          (cobro inmediato, ACTIVE) vs Save card for later (trial_end
+          nativo Stripe, cobro automático al fin del trial). */}
+      <SubscribeOptionsDialog
+        open={subscribeOptionsOpen}
+        onOpenChange={setSubscribeOptionsOpen}
+        activeUsers={activeUsers}
+        trialDaysLeft={trialDaysLeft}
+        trialEndsAt={trialEnd}
+      />
 
       {/* Pool seat model: dialog para comprar/vender seats. Llama
           /api/admin/billing/update-seats que pushea cambio a Stripe

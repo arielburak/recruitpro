@@ -6,20 +6,73 @@ import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const ctx = await getOrgContext();
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
 
-    // QA HIGH #2: antes el checkout usaba subscription.seats stale —
-    // si entre el momento de iniciar checkout y completarlo el admin
-    // invitó o deactivó usuarios, el quantity quedaba desactualizado
-    // y Stripe cobraba lo viejo. Recalculamos ANTES de crear la
-    // session para garantizar quantity correcto. Es await (no fire-
-    // and-forget) porque necesitamos el valor fresh.
+    // Body opcional: { payNow: boolean, seats?: number }.
+    // Decisión 2026-06-22 con Nicolás:
+    //   · payNow=true → cobra inmediato, ACTIVE de una
+    //   · payNow=false (default) → trial_end nativo Stripe, cobro al fin
+    //   · seats → cantidad que el admin elige comprar. Default a
+    //     subscription.seats. Si seats < activeUsers, deactivamos
+    //     los más recientes (excluyendo al admin actual) antes del
+    //     checkout para alinear con la quantity comprada.
+    const body = await request.json().catch(() => ({}));
+    const payNow = body?.payNow === true;
+    const requestedSeats = Number(body?.seats);
+    const hasSeatsParam = Number.isFinite(requestedSeats) && requestedSeats >= 1;
+
+    // QA HIGH #2: recalcular seats antes del checkout para reflejar
+    // active users actuales. Si el admin pasó `seats` en el body
+    // (pivote 2026-06-22: elige cuánto comprar), va a override más
+    // abajo. Si no pasó, este recalc deja seats = active users count.
     await recalculateAndSyncSeats(ctx.organizationId);
+
+    // Si el admin pasó `seats` y es menor que active users, deactivar
+    // los users más recientes (excluyendo al admin actual) hasta
+    // alcanzar el target. Los users deactivados pueden ser
+    // reactivados después comprando más seats.
+    if (hasSeatsParam) {
+      const activeUsersCount = await prisma.user.count({
+        where: { organizationId: ctx.organizationId, isActive: true },
+      });
+      if (requestedSeats < activeUsersCount) {
+        const toDeactivateCount = activeUsersCount - requestedSeats;
+        // Más recientes primero, excluir al admin actual.
+        const candidates = await prisma.user.findMany({
+          where: {
+            organizationId: ctx.organizationId,
+            isActive: true,
+            NOT: { id: ctx.userId },
+          },
+          orderBy: { createdAt: "desc" },
+          take: toDeactivateCount,
+          select: { id: true },
+        });
+        if (candidates.length < toDeactivateCount) {
+          return NextResponse.json(
+            {
+              error:
+                "Can't deactivate enough teammates to fit fewer seats. Try a higher seat count.",
+            },
+            { status: 400 },
+          );
+        }
+        await prisma.user.updateMany({
+          where: { id: { in: candidates.map((u) => u.id) } },
+          data: { isActive: false },
+        });
+      }
+      // Update subscription.seats al target final.
+      await prisma.subscription.update({
+        where: { organizationId: ctx.organizationId },
+        data: { seats: requestedSeats },
+      });
+    }
 
     const subscription = await prisma.subscription.findUnique({
       where: { organizationId: ctx.organizationId },
@@ -53,12 +106,17 @@ export async function POST() {
       });
     }
 
-    // QA Stripe audit HIGH: si la org está TRIALING con trialEndsAt en
-    // el futuro, pasamos esa fecha a Stripe para que respete el trial
-    // restante. Sin esto, el user que paga en día 3 del trial 'pierde'
-    // los 4 días restantes — Stripe cobra inmediato.
+    // trial_end nativo en Stripe — solo si NO eligió payNow.
+    //   · TRIALING + !payNow → respeta trial restante (no cobra hasta
+    //     trialEndsAt). Sub queda con status=TRIALING hasta esa fecha.
+    //   · TRIALING + payNow → cobra inmediato, pasa a ACTIVE de una
+    //     (permite agregar seats / usar todas las features que requieren
+    //     billing activo).
+    //   · No-TRIAL → siempre cobro inmediato (no aplica).
     const trialEnd =
-      subscription.status === "TRIALING" && subscription.trialEndsAt
+      !payNow &&
+      subscription.status === "TRIALING" &&
+      subscription.trialEndsAt
         ? subscription.trialEndsAt
         : null;
 

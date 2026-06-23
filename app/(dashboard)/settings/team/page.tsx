@@ -278,16 +278,11 @@ export default function AdminUsersPage() {
 
   const activeUsers = users.filter((u) => u.isActive);
 
-  // Trial = solo el admin. Para invitar teammates, subscribirse. El
-  // botón abre un dialog explícito con CTA Subscribe — el user elige
-  // qué hacer (cancelar o ir a billing). Decisión 2026-06-22 con
-  // Nicolás: cartel explícito mejor que botón silencioso cambiado.
-  const isTrialLimited =
-    subscription?.status === "TRIALING" && !subscription?.isComp;
-
-  // Dialog state: cuando el admin clickea "Invite Team Member" en
-  // trial, mostramos esto en lugar del invite form.
-  const [showTrialBlocker, setShowTrialBlocker] = useState(false);
+  // Trial 7d permite invitar libre — el admin arma su equipo durante
+  // el trial. Al subscribirse decide cuántos seats comprar (puede ser
+  // menor que el count activo y los extra quedan deactivated).
+  // Decisión 2026-06-22 con Nicolás (pivote final).
+  const isTrialLimited = false;
 
   return (
     <div className="space-y-6">
@@ -305,11 +300,7 @@ export default function AdminUsersPage() {
             roles ADMIN. Para USER, el dialog esconde el selector de role
             y manda role=USER hardcodeado al backend (que ademas re-fuerza
             esa regla server-side). */}
-        <Button
-          onClick={() =>
-            isTrialLimited ? setShowTrialBlocker(true) : setShowInvite(true)
-          }
-        >
+        <Button onClick={() => setShowInvite(true)}>
           <Mail className="mr-2 h-4 w-4" /> Invite Team Member
         </Button>
       </div>
@@ -454,11 +445,7 @@ export default function AdminUsersPage() {
                 </p>
                 <div className="flex items-center gap-3 mt-3">
                   <Button
-                    onClick={() =>
-                      isTrialLimited
-                        ? setShowTrialBlocker(true)
-                        : setShowInvite(true)
-                    }
+                    onClick={() => setShowInvite(true)}
                     size="sm"
                     className="gap-1.5 bg-violet-600 hover:bg-violet-700"
                   >
@@ -686,40 +673,6 @@ export default function AdminUsersPage() {
       {/* Confirm seat dialog — modo reactivate. Aparece cuando el
           admin reactiva un user deactivated. Antes era un click
           silencioso que sumaba seat sin avisar. Fix 2026-06-22. */}
-      {/* Trial blocker: cartel explícito cuando el admin clickea
-          Invite y está en trial. 2 opciones: Maybe later o Subscribe. */}
-      <Dialog open={showTrialBlocker} onOpenChange={setShowTrialBlocker}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Subscribe to invite teammates</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-gray-600">
-            During your trial you can use the ATS solo. To bring your team
-            in — invite recruiters, assign jobs and collaborate — subscribe
-            first.
-          </p>
-          <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 mt-2">
-            <p className="text-xs text-indigo-900 leading-relaxed">
-              <strong>$20/seat per month.</strong> Cancel anytime. You can
-              add or remove seats whenever your team grows or shrinks.
-            </p>
-          </div>
-          <div className="flex items-center justify-end gap-2 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowTrialBlocker(false)}
-            >
-              Maybe later
-            </Button>
-            <Link href="/settings/billing">
-              <Button onClick={() => setShowTrialBlocker(false)}>
-                Subscribe now
-              </Button>
-            </Link>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <ConfirmAddSeatDialog
         open={!!pendingReactivate}
         onOpenChange={(open) => {
