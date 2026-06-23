@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { monthlyTotalCents } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
@@ -277,6 +278,15 @@ export default function AdminUsersPage() {
 
   const activeUsers = users.filter((u) => u.isActive);
 
+  // Trial = 1 user solo. Si la org ya tiene 1+ active user en trial,
+  // el botón "Invite Team Member" cambia a "Subscribe to invite" que
+  // linka a /settings/billing — antes de meter mail/datos. Decisión
+  // 2026-06-22 con Nicolás: gate antes, no después.
+  const isTrialLimited =
+    subscription?.status === "TRIALING" &&
+    !subscription?.isComp &&
+    activeUsers.length >= 1;
+
   return (
     <div className="space-y-6">
       {/* Header row — keeps the Invite button, drops the doubled h1 since
@@ -293,9 +303,17 @@ export default function AdminUsersPage() {
             roles ADMIN. Para USER, el dialog esconde el selector de role
             y manda role=USER hardcodeado al backend (que ademas re-fuerza
             esa regla server-side). */}
-        <Button onClick={() => setShowInvite(true)}>
-          <Mail className="mr-2 h-4 w-4" /> Invite Team Member
-        </Button>
+        {isTrialLimited ? (
+          <Link href="/settings/billing">
+            <Button>
+              <Mail className="mr-2 h-4 w-4" /> Subscribe to invite team
+            </Button>
+          </Link>
+        ) : (
+          <Button onClick={() => setShowInvite(true)}>
+            <Mail className="mr-2 h-4 w-4" /> Invite Team Member
+          </Button>
+        )}
       </div>
 
       {/* Notifications */}
