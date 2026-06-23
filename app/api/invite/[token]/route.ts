@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
-// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
-// invitar/aceptar/deactivar ya NO suma/resta seats automático. El
-// admin compra seats explícitamente desde /settings/billing → Manage
-// seats. Al accept del invite asumimos que el admin ya tenía un seat
-// libre en el pool — la validación se hace en /api/admin/invites POST
-// cuando se crea el invite (checkSeatAvailability).
+import { checkSeatAvailability } from "@/lib/seat-availability";
+// Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
+// resta seats automático. El admin compra seats explícitamente desde
+// /settings/billing → Manage seats. Al accept del invite re-corremos
+// checkSeatAvailability porque el admin podría haber reducido el pool
+// entre crear y aceptar (bypass de 7 días). Audit 2026-06-23.
 
 // GET - validate invite and return info
 export async function GET(
@@ -99,6 +99,23 @@ export async function POST(
       return NextResponse.json(
         { error: "Invalid or expired invitation" },
         { status: 400 }
+      );
+    }
+
+    // Re-check pool al accept. Cierra el bypass de 7 días: si el admin
+    // redujo seats entre crear el invite y este accept, el pool puede
+    // estar full ahora. Sin este check, el accept agregaba un user que
+    // excedía DB.seats (y Stripe seguía facturando la cantidad menor).
+    // TRIAL/COMP siempre pasan libres. Audit 2026-06-23.
+    const seatCheck = await checkSeatAvailability(invite.organizationId);
+    if (!seatCheck.ok && seatCheck.reason === "pool_full") {
+      return NextResponse.json(
+        {
+          error:
+            "All seats are in use right now. Ask the admin to add a seat before accepting.",
+          code: "seat_pool_full",
+        },
+        { status: 402 },
       );
     }
 

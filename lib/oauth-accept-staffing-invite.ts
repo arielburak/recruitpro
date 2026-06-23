@@ -10,6 +10,7 @@
 // el user hizo Sign in with Google y le pidió company name.
 
 import { prisma } from "@/lib/prisma";
+import { checkSeatAvailability } from "@/lib/seat-availability";
 
 // Mismo patrón canonical de canonicalizeGmail / findStaffingUserByOAuthEmail
 // en auth-options.ts. Duplicado a propósito para que el módulo sea
@@ -97,6 +98,19 @@ export async function acceptStaffingInviteOnOAuth(
 ): Promise<{ userId: string } | null> {
   const name = (googleProfile.name || invite.name || "Member").trim();
 
+  // Re-check pool en OAuth path también — mismo bypass de 7 días que
+  // el path manual. Si pool full en ACTIVE, abortamos y dejamos que
+  // el callback de signIn caiga al lookup normal (que va a 404 sin
+  // user). Audit 2026-06-23.
+  const seatCheck = await checkSeatAvailability(invite.organizationId);
+  if (!seatCheck.ok && seatCheck.reason === "pool_full") {
+    console.warn(
+      "[oauth invite accept] pool full, aborting accept for invite",
+      invite.id,
+    );
+    return null;
+  }
+
   let createdUserId: string | null = null;
   try {
     const [user] = await prisma.$transaction([
@@ -128,15 +142,13 @@ export async function acceptStaffingInviteOnOAuth(
     return null;
   }
 
-  // Increment subscription seats (best effort).
-  try {
-    await prisma.subscription.update({
-      where: { organizationId: invite.organizationId },
-      data: { seats: { increment: 1 } },
-    });
-  } catch {
-    // Subscription puede no existir (org sin Stripe wired) — no es fatal
-  }
+  // Pool seat model 2026-06-22: el accept NO toca seats. El admin ya
+  // validó disponibilidad cuando creó el invite (checkSeatAvailability
+  // en /api/admin/invites POST). Antes este path tenía
+  // `subscription.update({ seats: { increment: 1 } })` heredado del
+  // modelo viejo — eso causaba que DB.seats drift contra Stripe.quantity
+  // y que el path OAuth diverja del path manual (que no toca seats).
+  // Audit 2026-06-23.
 
   // Memoria total (2026-06-17): si ademas del UserInvite el mismo email
   // tiene un PendingFirmInvite (un cliente lo invito a una busqueda),
