@@ -454,7 +454,11 @@ export default function AdminUsersPage() {
                 </p>
                 <div className="flex items-center gap-3 mt-3">
                   <Button
-                    onClick={() => setShowInvite(true)}
+                    onClick={() =>
+                      isTrialLimited
+                        ? setShowTrialBlocker(true)
+                        : setShowInvite(true)
+                    }
                     size="sm"
                     className="gap-1.5 bg-violet-600 hover:bg-violet-700"
                   >
