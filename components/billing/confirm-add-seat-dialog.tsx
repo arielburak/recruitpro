@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { Users, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { Users, AlertCircle, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -80,6 +80,8 @@ export function ConfirmAddSeatDialog({
   loading,
 }: Props) {
   const copy = copyByMode[mode];
+  const [buyAndInviteLoading, setBuyAndInviteLoading] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
 
   // Pool calculations.
   const isTrial = status === "TRIALING";
@@ -87,6 +89,35 @@ export function ConfirmAddSeatDialog({
   const available = Math.max(0, currentSeats - activeUsers);
   // Trial e isComp pasan libre — no aplica pool gate visualmente.
   const isPoolFull = !isTrial && !isComp && available < 1;
+
+  // "Buy seat & invite" flow: si pool full, este botón compra 1 seat
+  // adicional + después dispara el invite en una sola acción. Una
+  // cosa habilita la otra — feedback de Nicolás 2026-06-22.
+  async function handleBuyAndInvite() {
+    setBuyAndInviteLoading(true);
+    setBuyError(null);
+    try {
+      const res = await fetch("/api/admin/billing/update-seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats: currentSeats + 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBuyError(data?.error || "Couldn't buy seat. Try again.");
+        setBuyAndInviteLoading(false);
+        return;
+      }
+      // Seat comprado. Ahora disparamos el invite normal — el caller
+      // hace el POST a /api/admin/invites. El gate ya pasa porque
+      // ahora hay 1 seat disponible.
+      onConfirm();
+      // No cerramos manual — el caller cierra cuando termine.
+    } catch (e: any) {
+      setBuyError(e?.message || "Couldn't buy seat. Try again.");
+      setBuyAndInviteLoading(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,8 +180,10 @@ export function ConfirmAddSeatDialog({
             <p className="text-xs text-amber-900 leading-relaxed flex items-start gap-2">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
-                <strong>All seats are in use.</strong> Buy more seats from
-                billing to {mode === "invite" ? "invite this teammate" : "reactivate this teammate"}.
+                <strong>All seats are in use.</strong> Buying 1 more seat adds{" "}
+                <strong>$20/mo</strong> to your subscription and{" "}
+                {mode === "invite" ? "invites" : "reactivates"} {teammateName || "this teammate"}{" "}
+                automatically.
               </span>
             </p>
           </div>
@@ -164,19 +197,34 @@ export function ConfirmAddSeatDialog({
           </div>
         ) : null}
 
+        {/* Error display */}
+        {buyError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            {buyError}
+          </div>
+        )}
+
         {/* Buttons */}
         <div className="flex items-center justify-end gap-2 mt-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={loading}
+            disabled={loading || buyAndInviteLoading}
           >
             Cancel
           </Button>
           {isPoolFull ? (
-            <Link href="/settings/billing">
-              <Button onClick={() => onOpenChange(false)}>Buy more seats</Button>
-            </Link>
+            <Button
+              onClick={handleBuyAndInvite}
+              disabled={loading || buyAndInviteLoading}
+            >
+              <Sparkles className="h-4 w-4 mr-1.5" />
+              {buyAndInviteLoading
+                ? "Buying seat…"
+                : loading
+                  ? copy.loadingLabel
+                  : `Buy seat & ${mode === "invite" ? "invite" : "reactivate"}`}
+            </Button>
           ) : (
             <Button onClick={onConfirm} disabled={loading}>
               {loading ? copy.loadingLabel : copy.confirmLabel}
