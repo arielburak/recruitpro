@@ -110,7 +110,20 @@ export function ManageSeatsDialog({
         setLoading(false);
         return;
       }
-      // Success — invocar callback + cerrar.
+
+      // Decisión 2026-06-22 con Nicolás: después del cambio (que ya
+      // se procesó en Stripe + DB), redirigir al Customer Portal de
+      // Stripe para que el user vea el cambio reflejado nativamente.
+      // Como las mejores plataformas — siempre integrado con Stripe.
+      // Si el endpoint NO devolvió portalUrl (caso COMP / TRIAL sin
+      // sub Stripe / portal session falló), cerramos normal y dejamos
+      // que el polling de la billing page muestre el nuevo seat count.
+      if (data.portalUrl) {
+        window.location.href = data.portalUrl;
+        return; // no cerramos el dialog — el redirect se lleva la página
+      }
+
+      // Fallback: callback + cerrar.
       onConfirmed?.();
       onOpenChange(false);
     } catch (e: any) {

@@ -20,7 +20,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
-import { getStripeClient } from "@/lib/stripe";
+import { getStripeClient, createBillingPortalSession } from "@/lib/stripe";
 import { safeErrorMessage } from "@/lib/safe-error";
 import * as Sentry from "@sentry/nextjs";
 
@@ -171,9 +171,38 @@ export async function POST(request: Request) {
       data: { seats: requestedSeats },
     });
 
+    // Decisión 2026-06-22 con Nicolás: después de procesar el cambio
+    // en Stripe, redirigir al Customer Portal para que el user vea el
+    // cambio reflejado nativamente (invoice upcoming actualizada,
+    // billing details, etc.). Como las mejores plataformas — el
+    // cambio ya está hecho con el método de pago actual, pero queremos
+    // que sea "siempre integrado con Stripe" visualmente.
+    let portalUrl: string | null = null;
+    try {
+      const customerId = (
+        await prisma.subscription.findUnique({
+          where: { organizationId: ctx.organizationId },
+          select: { stripeCustomerId: true },
+        })
+      )?.stripeCustomerId;
+      if (customerId && !customerId.startsWith("pending_")) {
+        const portalSession = await createBillingPortalSession(customerId);
+        portalUrl = portalSession.url;
+      }
+    } catch (portalErr) {
+      // Si el Portal session falla, NO bloqueamos: el cambio ya está
+      // procesado en Stripe + DB. El user vuelve a la billing page y
+      // ve el polling pickear el cambio. Solo logueamos para Sentry.
+      console.error(
+        "[update-seats] failed to create portal session:",
+        portalErr,
+      );
+    }
+
     return NextResponse.json({
       seats: requestedSeats,
       synced: true,
+      portalUrl,
     });
   } catch (error: any) {
     Sentry.captureException(error, {
