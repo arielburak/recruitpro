@@ -225,6 +225,14 @@ function BillingContent() {
   // Pool seat model: activeUsersCount viene del endpoint /api/admin/subscription
   const activeUsers = subscription?.activeUsersCount ?? 0;
   const seatsAvailable = Math.max(0, seats - activeUsers);
+  // Durante TRIAL, `subscription.seats` queda stuck en lo último que se
+  // sincronizó con Stripe (default 1 al signup) — no refleja invitar
+  // teammates en vivo. Para el hero y la proyección post-trial, usamos
+  // el active users count real. Post-trial (ACTIVE) sí confiamos en
+  // subscription.seats porque ya está autoritativo en Stripe.
+  const projectedSeats =
+    status === "TRIALING" && !isComp ? Math.max(activeUsers, 1) : seats;
+  const projectedMonthlyCost = monthlyTotalCents(projectedSeats);
   const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
   // Stripe flag: cancela al final del periodo actual. Sub sigue
   // ACTIVE hasta ese día pero NO se renueva. UI distinto.
@@ -407,11 +415,11 @@ function BillingContent() {
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
-                ${dollars(monthlyCost)}
+                ${dollars(projectedMonthlyCost)}
                 <span className="text-base font-normal text-gray-500">/month</span>
               </p>
               <p className="text-sm text-gray-600 mt-1">
-                {seats} {seats === 1 ? "seat" : "seats"} × ${dollars(perSeatCents(seats))}/seat
+                {projectedSeats} {projectedSeats === 1 ? "seat" : "seats"} × ${dollars(perSeatCents(projectedSeats))}/seat
               </p>
             </div>
             <p className="text-sm text-gray-700">{heroPalette.labelTone}</p>
@@ -583,7 +591,7 @@ function BillingContent() {
             <>
               <p className="text-2xl font-bold text-gray-900">{dateStr(trialEnd)}</p>
               <p className="text-xs text-gray-500 mt-1">
-                After that, ${dollars(monthlyCost)}/month
+                After that, ${dollars(projectedMonthlyCost)}/month
               </p>
             </>
           ) : status === "ACTIVE" && subscription?.currentPeriodEnd ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { CalendarClock, Zap, Users, AlertTriangle, Check } from "lucide-react";
+import { Users, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,16 +15,22 @@ import {
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
 
-// Dialog para subscribirse desde trial:
-//   1. Counter de seats (default = active users count).
-//   2. Si seats < active users: el admin elige explícitamente quién
-//      mantiene acceso (checkboxes por teammate). Los no seleccionados
-//      quedan deactivated automáticamente al subscribirse.
-//   3. 2 opciones de billing: pay now / save card at trial end.
+// Dialog para subscribirse desde trial.
 //
-// Decisión 2026-06-22 con Nicolás: el admin elige quién, NO el sistema
-// por antigüedad. Cualquier teammate deactivado se puede reactivar
-// comprando más seats después.
+// Pivote 2026-06-23 (feedback Nicolás): "el free trial es free siempre,
+// el periodo de facturacion comienza despues — como cualquier otra
+// plataforma". Antes había 2 opciones: Pay now (cobra inmediato) Y
+// Save card for later (trial end nativo Stripe). El usuario sentia
+// que pedir tarjeta con doble-opcion durante trial era agresivo.
+//
+// Ahora: una sola opcion. Si está en TRIAL la card se guarda pero NO
+// se cobra hasta que termine el trial (Stripe trial_end nativo). La
+// opcion "Pay now and activate" se retiró — quien quiera activar
+// antes que el trial termine, espera al cambio de estado en lugar de
+// forzar cobro temprano.
+//
+// El backend (/api/admin/billing/checkout) ya soporta payNow=false
+// como el flujo principal — solo dejamos de exponer el toggle.
 
 const PRICE_PER_SEAT = SOLO_PRICE_PER_SEAT_CENTS / 100;
 const SEAT_HARD_CAP = 100;
@@ -71,16 +77,14 @@ export function SubscribeOptionsDialog({
   const [keepIds, setKeepIds] = useState<Set<string>>(
     () => new Set(teammates.map((t) => t.id)),
   );
-  const [loadingOption, setLoadingOption] = useState<"now" | "later" | null>(
-    null,
-  );
+  const [loading, setLoading] = useState(false);
 
   // Reset state cada vez que se abre — sino el estado anterior persiste.
   useEffect(() => {
     if (open) {
       setSeats(Math.max(1, activeCount));
       setKeepIds(new Set(teammates.map((t) => t.id)));
-      setLoadingOption(null);
+      setLoading(false);
     }
   }, [open, activeCount, teammates]);
 
@@ -134,17 +138,19 @@ export function SubscribeOptionsDialog({
 
   const inputInvalid =
     !Number.isFinite(seats) || seats < 1 || seats > SEAT_HARD_CAP;
-  const canConfirm = !inputInvalid && selectionIsValid && loadingOption === null;
+  const canConfirm = !inputInvalid && selectionIsValid && !loading;
 
-  async function handleSubscribe(payNow: boolean) {
+  async function handleSubscribe() {
     if (!canConfirm) return;
-    setLoadingOption(payNow ? "now" : "later");
+    setLoading(true);
     try {
       const res = await fetch("/api/admin/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          payNow,
+          // Siempre payNow=false: la card queda guardada en Stripe pero
+          // el cobro arranca recién en trial_end (Slack/Notion model).
+          payNow: false,
           seats,
           keepUserIds: needsTeammateSelection ? Array.from(keepIds) : undefined,
         }),
@@ -154,11 +160,11 @@ export function SubscribeOptionsDialog({
         window.location.href = data.url;
       } else {
         alert(data?.error || "Couldn't start checkout. Please try again.");
-        setLoadingOption(null);
+        setLoading(false);
       }
     } catch (e: any) {
       alert(e?.message || "Couldn't start checkout.");
-      setLoadingOption(null);
+      setLoading(false);
     }
   }
 
@@ -196,7 +202,7 @@ export function SubscribeOptionsDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => setSeats((s) => Math.max(1, s - 1))}
-                disabled={loadingOption !== null || seats <= 1}
+                disabled={loading || seats <= 1}
               >
                 −
               </Button>
@@ -209,7 +215,7 @@ export function SubscribeOptionsDialog({
                   const v = parseInt(e.target.value, 10);
                   setSeats(Number.isFinite(v) ? v : NaN);
                 }}
-                disabled={loadingOption !== null}
+                disabled={loading}
                 className="w-20 text-center font-semibold"
               />
               <Button
@@ -219,7 +225,7 @@ export function SubscribeOptionsDialog({
                 onClick={() =>
                   setSeats((s) => Math.min(SEAT_HARD_CAP, s + 1))
                 }
-                disabled={loadingOption !== null || seats >= SEAT_HARD_CAP}
+                disabled={loading || seats >= SEAT_HARD_CAP}
               >
                 +
               </Button>
@@ -306,85 +312,34 @@ export function SubscribeOptionsDialog({
           </div>
         )}
 
-        <p className="text-xs text-gray-500 mt-1">
-          You have{" "}
-          <strong>
-            {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"}
-          </strong>{" "}
-          left in your trial.
-        </p>
+        {/* Reassurance copy — el corazon del pivote 2026-06-23. Antes
+            la doble opcion (pay now / save card later) sugeria que la
+            card era condicion para mantener el trial. Ahora dejamos
+            super claro: trial sigue siendo gratis hasta que se termine
+            solo. */}
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mt-2">
+          <p className="text-sm text-emerald-900 leading-relaxed">
+            <strong>Your card won&apos;t be charged today.</strong> You have{" "}
+            {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} of free trial
+            left — billing of <strong>${fmt(monthly)}/mo</strong> starts on{" "}
+            <strong>{trialEndStr}</strong>. Cancel anytime before then.
+          </p>
+        </div>
 
-        {/* Option A — Pay now */}
-        <button
-          type="button"
-          onClick={() => handleSubscribe(true)}
-          disabled={!canConfirm}
-          className="text-left w-full rounded-xl border-2 border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 p-4 transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2"
-        >
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 p-2 rounded-lg bg-indigo-100 text-indigo-700">
-              <Zap className="h-5 w-5" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-gray-900">
-                  Pay now and activate
-                </p>
-                <span className="text-sm font-semibold text-indigo-700">
-                  ${fmt(monthly)} today
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1 leading-snug">
-                Start your billing right away.
-              </p>
-              {loadingOption === "now" && (
-                <p className="text-xs text-indigo-600 mt-2">Opening Stripe…</p>
-              )}
-            </div>
-          </div>
-        </button>
-
-        {/* Option B — Save card for later */}
-        <button
-          type="button"
-          onClick={() => handleSubscribe(false)}
-          disabled={!canConfirm}
-          className="text-left w-full rounded-xl border border-gray-200 hover:border-gray-400 bg-white p-4 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 p-2 rounded-lg bg-gray-100 text-gray-700">
-              <CalendarClock className="h-5 w-5" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-gray-900">
-                  Save card, charge at {trialEndStr}
-                </p>
-                <span className="text-sm font-medium text-gray-500">
-                  ${fmt(monthly)}/mo
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mt-1 leading-snug">
-                Keep your free trial through the end.
-              </p>
-              {loadingOption === "later" && (
-                <p className="text-xs text-gray-500 mt-2">Opening Stripe…</p>
-              )}
-            </div>
-          </div>
-        </button>
-
-        <div className="flex items-center justify-end mt-2">
+        <div className="flex items-center justify-end gap-2 mt-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={loadingOption !== null}
+            disabled={loading}
           >
             Cancel
           </Button>
+          <Button onClick={handleSubscribe} disabled={!canConfirm}>
+            {loading ? "Opening Stripe…" : "Continue to checkout"}
+          </Button>
         </div>
 
-        <p className="text-[11px] text-gray-400 text-center mt-1">
+        <p className="text-[11px] text-gray-400 text-center mt-2">
           ${PRICE_PER_SEAT}/seat per month · Cancel anytime
         </p>
       </DialogContent>
