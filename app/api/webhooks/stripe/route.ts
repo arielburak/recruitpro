@@ -223,7 +223,12 @@ export async function POST(request: Request) {
       break;
     }
 
-    case "invoice.paid": {
+    case "invoice.paid":
+    case "invoice.payment_succeeded": {
+      // invoice.paid y invoice.payment_succeeded son siblings que Stripe
+      // dispara en paralelo. Operators que configuren el endpoint via
+      // Dashboard suelen subscribir uno u otro. Manejamos ambos →
+      // robust ante config inconsistente. Audit 2026-06-23.
       const invoice = event.data.object as any;
       const subId = getInvoiceSubscriptionId(invoice);
       if (subId) {
@@ -240,6 +245,54 @@ export async function POST(request: Request) {
           await syncSubFromStripe(sub.organizationId);
         }
       }
+      break;
+    }
+
+    case "customer.subscription.created": {
+      // Subs creadas out-of-band (Dashboard manual, migración, etc.) NO
+      // pasan por checkout.session.completed. Sin este handler, la sub
+      // queda orphan: stripeSubscriptionId nunca se attacha a la DB row
+      // y syncSubFromStripe falla con "no_stripe_subscription_yet"
+      // forever. Lookup por stripeCustomerId, attach subId y pull
+      // estado completo. Audit 2026-06-23.
+      const subscription = event.data.object as any;
+      const customerId =
+        typeof subscription.customer === "string"
+          ? subscription.customer
+          : subscription.customer?.id;
+      if (customerId) {
+        const dbSub = await prisma.subscription.findFirst({
+          where: { stripeCustomerId: customerId },
+          select: { id: true, organizationId: true, stripeSubscriptionId: true },
+        });
+        if (dbSub && !dbSub.stripeSubscriptionId) {
+          await prisma.subscription.update({
+            where: { id: dbSub.id },
+            data: { stripeSubscriptionId: subscription.id },
+          });
+          // Ahora que está attacheado, pull full state.
+          await syncSubFromStripe(dbSub.organizationId);
+        }
+      }
+      break;
+    }
+
+    case "customer.deleted": {
+      // Stripe customer borrado desde Dashboard (raro pero pasa: el
+      // operador "limpia" un cliente sin entender que es la única
+      // ancla a nuestra org). Sin este handler, la org queda con un
+      // stripeCustomerId que apunta a vacío → cualquier portal /
+      // checkout fallaba con 404 sin mensaje claro. Marcamos sub como
+      // CANCELED y limpiamos los ids. Audit 2026-06-23.
+      const customer = event.data.object as any;
+      await prisma.subscription.updateMany({
+        where: { stripeCustomerId: customer.id },
+        data: {
+          status: "CANCELED",
+          stripeSubscriptionId: null,
+          cancelAtPeriodEnd: false,
+        },
+      });
       break;
     }
 

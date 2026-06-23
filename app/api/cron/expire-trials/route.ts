@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
+import { syncSubFromStripe } from "@/lib/sync-stripe-seats";
 
 // Daily cron que limpia trials expirados sin payment method.
 //
@@ -51,9 +52,34 @@ export async function GET(request: Request) {
       data: { status: "CANCELED" },
     });
 
+    // Re-sync trials con stripeSubscriptionId pero todavía status
+    // TRIALING después de trialEndsAt. Si el webhook de transición
+    // ACTIVE/PAST_DUE se perdió o llegó tarde, este path lo repara
+    // pulleando el estado real de Stripe. Audit 2026-06-23.
+    const stalePaidTrials = await prisma.subscription.findMany({
+      where: {
+        status: "TRIALING",
+        trialEndsAt: { lt: now },
+        stripeSubscriptionId: { not: null },
+        isComp: false,
+      },
+      select: { organizationId: true },
+    });
+    let resynced = 0;
+    for (const sub of stalePaidTrials) {
+      try {
+        const r = await syncSubFromStripe(sub.organizationId);
+        if (r.synced) resynced++;
+      } catch (e) {
+        console.error("[cron expire-trials] sync failed:", sub.organizationId, e);
+      }
+    }
+
     return NextResponse.json({
       processedAt: now.toISOString(),
       bumped: result.count,
+      resynced,
+      checked: stalePaidTrials.length,
     });
   } catch (error: any) {
     console.error("[cron expire-trials] failed:", error);

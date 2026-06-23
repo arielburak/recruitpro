@@ -53,8 +53,17 @@ export function mapStripeStatus(
     return "CANCELED";
   if (stripeStatus === "unpaid") return "UNPAID";
   if (stripeStatus === "trialing") return "TRIALING";
+  // 'paused' = collection paused desde Dashboard. Stripe deja de cobrar
+  // pero la sub no está cancelada. Mapeamos a PAST_DUE para que el
+  // guard bloquee el acceso al ATS — sin esto, una sub pausada
+  // quedaba con DB.status ACTIVE y el user seguía usando todo
+  // mientras no se le cobraba. Audit 2026-06-23.
+  if (stripeStatus === "paused") return "PAST_DUE";
   // 'incomplete' y cualquier otro estado desconocido → undefined.
   // El caller debe usar spread condicional: `...(mapped && { status: mapped })`.
+  // 'incomplete' es intencional: solo fires durante el primer charge
+  // post-checkout (3DS pending, declined). La sub queda en el estado
+  // previo (TRIALING) hasta que invoice.paid resuelva.
   return undefined;
 }
 
