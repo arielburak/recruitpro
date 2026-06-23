@@ -544,23 +544,26 @@ export default function AdminUsersPage() {
                             destructivo. Cancel sigue ADMIN-only porque
                             revoca el invite. */}
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() =>
                             resendInvite(inv.email, inv.role, inv.id, inv.name)
                           }
                           title="Resend invite"
                         >
-                          <Send className="h-4 w-4" />
+                          <Send className="mr-1.5 h-3.5 w-3.5" />
+                          Resend
                         </Button>
                         {isAdmin && (
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => cancelInvite(inv.id)}
                             title="Cancel invite"
+                            className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
                           >
-                            <XCircle className="h-4 w-4 text-red-400" />
+                            <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                            Cancel
                           </Button>
                         )}
                       </div>
