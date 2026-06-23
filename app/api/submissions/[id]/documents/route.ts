@@ -66,6 +66,20 @@ export async function GET(
     if (!submission) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    // Mismo gate que PUT: USER asignado al job O owner del candidato.
+    // Sin esto, un USER del mismo org sin acceso al job podía leer la
+    // lista de docs del candidato + ver qué eligió la agencia compartir
+    // con el cliente (isShared flags). Audit 2026-06-23.
+    const isAssigned = await canAccessJob(
+      submission.jobId,
+      ctx.organizationId,
+      ctx.userId,
+      ctx.role,
+    );
+    const isCandidateOwner = submission.candidate.ownerId === ctx.userId;
+    if (!isAssigned && !isCandidateOwner) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     const sharedIds = new Set<string>(
       submission.sharedDocuments.map((s: { documentId: string }) => s.documentId),
     );

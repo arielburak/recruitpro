@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { parseDocumentBuffer } from "@/lib/parse-document";
 import { requireAdminResponse } from "@/lib/permissions";
+import { canAccessClientJob } from "@/lib/client-job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -24,13 +25,20 @@ export async function GET(
     const ctx = await getClientContext();
     const { id } = await params;
 
-    // Verify the job belongs to this client
+    // Per-JO membership gate. Antes solo se chequeaba clientId — un
+    // ClientUser del mismo cliente, NO miembro del JO, podía listar
+    // docs (incluyendo PDFs de JD) de cualquier JO del cliente.
+    // Audit 2026-06-23.
     const job = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
-      select: { id: true },
+      select: {
+        id: true,
+        clientId: true,
+        members: { select: { clientUserId: true } },
+      },
     });
 
-    if (!job) {
+    if (!job || !canAccessClientJob(ctx, job)) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
@@ -72,10 +80,16 @@ export async function POST(
 
     const job = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
-      select: { id: true, title: true, createdByAgency: true },
+      select: {
+        id: true,
+        clientId: true,
+        title: true,
+        createdByAgency: true,
+        members: { select: { clientUserId: true } },
+      },
     });
 
-    if (!job) {
+    if (!job || !canAccessClientJob(ctx, job)) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
     if (job.createdByAgency) {
@@ -187,15 +201,19 @@ export async function DELETE(
       return NextResponse.json({ error: "documentId required" }, { status: 400 });
     }
 
-    // Verify the job belongs to this client AND isn't an agency-
-    // pushed mirror — deleting docs the firm uploaded would feel
-    // like sabotage from their side.
+    // Verify the job belongs to this client + caller es miembro del
+    // JO + no es mirror-from-agency.
     const job = await prisma.clientJob.findFirst({
       where: { id, clientId: ctx.clientId },
-      select: { id: true, createdByAgency: true },
+      select: {
+        id: true,
+        clientId: true,
+        createdByAgency: true,
+        members: { select: { clientUserId: true } },
+      },
     });
 
-    if (!job) {
+    if (!job || !canAccessClientJob(ctx, job)) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
     if (job.createdByAgency) {

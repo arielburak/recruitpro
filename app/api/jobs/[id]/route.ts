@@ -185,11 +185,34 @@ export async function GET(
     let mentioned = false;
     let engaged = false;
     if (!isAdminBypass && !isAssigned) {
+      // Mention fallback hardened: el author del comment tiene que ser
+      // ADMIN o estar asignado al job. Sin este check, un USER sin
+      // acceso podía postear un comment con self-mention y auto-
+      // gatillar el fallback de "fui mencionado → abro el job".
+      // Audit 2026-06-23 + el comments POST ya gatea canAccessJob.
+      const assigneeIds = new Set<string>(job.assignments.map((a: any) => a.user.id));
+      const orgAdmins = await prisma.user.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          role: "ADMIN",
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      for (const a of orgAdmins) assigneeIds.add(a.id);
+      const validAuthors = Array.from(assigneeIds);
+
       const [m, e] = await Promise.all([
-        prisma.comment.findFirst({
-          where: { jobId: id, mentions: { has: ctx.userId } },
-          select: { id: true },
-        }),
+        validAuthors.length > 0
+          ? prisma.comment.findFirst({
+              where: {
+                jobId: id,
+                mentions: { has: ctx.userId },
+                userId: { in: validAuthors },
+              },
+              select: { id: true },
+            })
+          : Promise.resolve(null),
         prisma.firmEngagement.findFirst({
           where: { jobId: id, invitedUserId: ctx.userId, status: "ACCEPTED" },
           select: { id: true },

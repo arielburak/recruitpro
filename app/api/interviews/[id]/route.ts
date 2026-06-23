@@ -35,6 +35,23 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Per-user visibility: mirror del gate de PUT/DELETE. USER ve solo
+    // si es el creator, si es interviewer asignado, o si tiene acceso
+    // al job. Sin este check, un USER del mismo org podía leer el
+    // detalle de cualquier interview (candidate email, notes, contacts)
+    // con solo conocer el id. Audit 2026-06-23.
+    const isCreator = interview.createdBy === ctx.userId;
+    const isInterviewer = interview.interviewers.some(
+      (a: { user: { id: string } | null }) => a.user?.id === ctx.userId,
+    );
+    const hasJobAccess =
+      isCreator ||
+      isInterviewer ||
+      (await canAccessJob(interview.jobId, ctx.organizationId, ctx.userId, ctx.role));
+    if (!hasJobAccess) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     return NextResponse.json(interview);
   } catch (error: any) {
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 401 });
