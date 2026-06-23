@@ -252,10 +252,7 @@ export function SubscribeOptionsDialog({
               </span>
             </div>
             <p className="text-xs text-gray-500 leading-relaxed">
-              You take 1 seat as admin. Pick {teammateSlotsAvailable} more
-              teammate{teammateSlotsAvailable === 1 ? "" : "s"} who&apos;ll
-              keep access. The others will be deactivated and can be
-              reactivated later.
+              {`You take 1 seat as admin. Pick ${teammateSlotsAvailable} more teammate${teammateSlotsAvailable === 1 ? "" : "s"} who'll keep access. The others will be deactivated and can be reactivated later.`}
             </p>
             <div className="space-y-1.5 max-h-56 overflow-y-auto">
               {teammates.map((t) => {
@@ -302,10 +299,7 @@ export function SubscribeOptionsDialog({
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-900 leading-relaxed">
-              <strong>
-                {willDeactivate} teammate
-                {willDeactivate === 1 ? "" : "s"} will lose access.
-              </strong>{" "}
+              <strong>{`${willDeactivate} teammate${willDeactivate === 1 ? "" : "s"} will lose access.`}</strong>{" "}
               Their data stays intact — reactivate them later by buying more
               seats.
             </p>
