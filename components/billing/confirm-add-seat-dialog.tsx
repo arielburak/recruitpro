@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Users, AlertCircle, Sparkles } from "lucide-react";
 import {
   Dialog,
@@ -88,13 +87,11 @@ export function ConfirmAddSeatDialog({
   const isTrial = status === "TRIALING";
   const seatsAfter = activeUsers + 1;
   const available = Math.max(0, currentSeats - activeUsers);
-  // Trial = limit 1 user (admin solo). Para invitar teammates, hay
-  // que subscribirse. Decisión 2026-06-22.
-  const isTrialLimitHit = isTrial && !isComp && activeUsers >= 1;
-  // Pool full en ACTIVE = no hay seats libres en el pool comprado.
+  // Pivote final 2026-06-22: durante TRIAL los invites son libres
+  // (admin arma el equipo gratis). Al subscribirse elige cuántos seats
+  // comprar y quién mantiene acceso. No hay límite de 1 user.
+  // Pool full solo aplica en ACTIVE (no hay seats libres en el pool).
   const isPoolFull = !isTrial && !isComp && available < 1;
-  // Cualquiera de los 2 bloquea el invite — pero el CTA es distinto.
-  const isBlocked = isTrialLimitHit || isPoolFull;
 
   // "Buy seat & invite" flow: si pool full, este botón compra 1 seat
   // adicional + después dispara el invite en una sola acción. Una
@@ -140,13 +137,11 @@ export function ConfirmAddSeatDialog({
               {mode === "invite"
                 ? "will give them access to the ATS"
                 : "will restore their access to the ATS"}
-              {isTrialLimitHit
-                ? ". Subscribe to bring your team in."
-                : isPoolFull
-                  ? " once you have an available seat."
-                  : isTrial
-                    ? "."
-                    : " with a seat from your pool."}
+              {isPoolFull
+                ? " once you have an available seat."
+                : isTrial
+                  ? " — no charge during your trial."
+                  : " with a seat from your pool."}
             </>
           ) : (
             <>
@@ -183,18 +178,7 @@ export function ConfirmAddSeatDialog({
         )}
 
         {/* Contextual notes */}
-        {isTrialLimitHit ? (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-            <p className="text-xs text-amber-900 leading-relaxed flex items-start gap-2">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>
-                <strong>Trial is limited to 1 user.</strong> Subscribe to
-                bring your team in — you&apos;ll be able to invite as many
-                teammates as you have seats for.
-              </span>
-            </p>
-          </div>
-        ) : isPoolFull ? (
+        {isPoolFull ? (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
             <p className="text-xs text-amber-900 leading-relaxed flex items-start gap-2">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -209,8 +193,9 @@ export function ConfirmAddSeatDialog({
         ) : isTrial ? (
           <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3">
             <p className="text-xs text-indigo-900 leading-relaxed">
-              <strong>You&apos;re in trial</strong> — no charge yet. Subscribe
-              before the trial ends to keep using the ATS.
+              <strong>You&apos;re in trial</strong> — invite as many teammates
+              as you want. When you subscribe, you&apos;ll choose how many
+              seats to keep.
             </p>
           </div>
         ) : null}
@@ -231,14 +216,7 @@ export function ConfirmAddSeatDialog({
           >
             Cancel
           </Button>
-          {isTrialLimitHit ? (
-            <Link href="/settings/billing">
-              <Button onClick={() => onOpenChange(false)}>
-                <Sparkles className="h-4 w-4 mr-1.5" />
-                Subscribe to invite
-              </Button>
-            </Link>
-          ) : isPoolFull ? (
+          {isPoolFull ? (
             <Button
               onClick={handleBuyAndInvite}
               disabled={loading || buyAndInviteLoading}
