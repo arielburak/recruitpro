@@ -3,7 +3,12 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
+// invitar/aceptar/deactivar ya NO suma/resta seats automático. El
+// admin compra seats explícitamente desde /settings/billing → Manage
+// seats. Al accept del invite asumimos que el admin ya tenía un seat
+// libre en el pool — la validación se hace en /api/admin/invites POST
+// cuando se crea el invite (checkSeatAvailability).
 
 // GET - validate invite and return info
 export async function GET(
@@ -143,10 +148,13 @@ export async function POST(
       }),
     ]);
 
-    // Recalcular seats + sync con Stripe. Sin esto, Stripe seguía
-    // cobrando el quantity original del checkout aunque el equipo
-    // creciera con invites aceptados.
-    void recalculateAndSyncSeats(invite.organizationId);
+    // Pool seat model 2026-06-22: el accept NO toca seats. El admin
+    // ya validó disponibilidad cuando creó el invite. Si por race
+    // condition se llenó el pool entre crear y aceptar, igual dejamos
+    // pasar el accept (mejor agregar 1 seat extra esa vez que rechazar
+    // a un invitado válido). El admin lo va a ver en /settings/billing
+    // como "5 of 4 seats in use — buy 1 more" y la próxima factura
+    // lo cobra correcto.
 
     // Memoria total (2026-06-17): si el mismo email tambien recibio un
     // PendingFirmInvite (un cliente lo invito a una busqueda especifica

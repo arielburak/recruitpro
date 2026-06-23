@@ -3,7 +3,11 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { checkSeatAvailability } from "@/lib/seat-availability";
+// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
+// create/reactivate/delete YA NO mueven seats automático. El admin
+// compra el pool explícitamente desde Manage seats. El gate de
+// disponibilidad se enforced acá con checkSeatAvailability.
 
 export async function GET() {
   try {
@@ -44,6 +48,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email already in use" }, { status: 400 });
     }
 
+    // Pool seat check antes del create — si la org está ACTIVE y no
+    // hay seats disponibles, bloquear. TRIAL/COMP pasan libre.
+    const seatCheck = await checkSeatAvailability(ctx.organizationId);
+    if (!seatCheck.ok) {
+      return NextResponse.json(
+        {
+          error: seatCheck.message,
+          code: "seat_pool_full",
+          current: seatCheck.current,
+          pool: seatCheck.pool,
+        },
+        { status: 402 },
+      );
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
       data: {
@@ -54,11 +73,6 @@ export async function POST(request: Request) {
         organizationId: ctx.organizationId,
       },
     });
-
-    // Recalcula seats desde scratch (active users) + sync con Stripe.
-    // Fire-and-forget: si Stripe falla, el create del user se devuelve
-    // OK igual. Sync se intenta de nuevo en el próximo cambio.
-    void recalculateAndSyncSeats(ctx.organizationId);
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
@@ -108,6 +122,23 @@ export async function PATCH(request: Request) {
 
     const normalizedRole = role === "ADMIN" ? "ADMIN" : role === "USER" ? "USER" : undefined;
 
+    // Reactivate: chequear pool. Si está siendo reactivado y no hay
+    // seat libre, bloquear. Deactivate y role change pasan libre.
+    if (isActive === true && user.isActive === false) {
+      const seatCheck = await checkSeatAvailability(ctx.organizationId);
+      if (!seatCheck.ok) {
+        return NextResponse.json(
+          {
+            error: seatCheck.message,
+            code: "seat_pool_full",
+            current: seatCheck.current,
+            pool: seatCheck.pool,
+          },
+          { status: 402 },
+        );
+      }
+    }
+
     const updateData: any = {};
     if (typeof isActive === "boolean") updateData.isActive = isActive;
     if (normalizedRole) updateData.role = normalizedRole;
@@ -118,12 +149,9 @@ export async function PATCH(request: Request) {
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
-    // Si el cambio fue isActive (deactivar o reactivar), recalcular
-    // seats para que el billing matchee la cantidad de active users.
-    // Sin esto: deactivar a alguien NO bajaba el cobro de Stripe.
-    if (typeof isActive === "boolean") {
-      void recalculateAndSyncSeats(ctx.organizationId);
-    }
+    // Pool seat model 2026-06-22: deactivate libera el seat al pool
+    // (billing igual). Reactivate ocupa uno (checkeado arriba). NO
+    // se modifica subscription.seats automático.
 
     return NextResponse.json(updated);
   } catch (error: any) {
@@ -170,8 +198,9 @@ export async function DELETE(request: Request) {
 
     await prisma.user.delete({ where: { id: userId } });
 
-    // Recalcula seats + sync con Stripe (fire-and-forget).
-    void recalculateAndSyncSeats(ctx.organizationId);
+    // Pool seat model 2026-06-22: hard delete libera el seat al pool,
+    // billing no cambia hasta que el admin saque el seat desde
+    // /settings/billing → Manage seats.
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

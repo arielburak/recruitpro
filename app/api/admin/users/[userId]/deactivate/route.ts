@@ -23,7 +23,9 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
+// deactivate libera el seat al pool — billing no cambia automático.
+// Admin saca seats explícitamente desde /settings/billing.
 
 export async function GET(
   _request: Request,
@@ -249,10 +251,9 @@ export async function POST(
       data: { isActive: false },
     });
 
-    // Recalcular seats + sync con Stripe (fire-and-forget).
-    // Sin esto el cliente sigue pagando por el seat del user que ya
-    // no usa el ATS.
-    void recalculateAndSyncSeats(ctx.organizationId);
+    // Pool seat model 2026-06-22: el seat queda libre en el pool,
+    // disponible para asignar a otro user. Billing no cambia hasta
+    // que el admin saque el seat manualmente desde Manage seats.
 
     await logActivity({
       action: "user.deactivated",

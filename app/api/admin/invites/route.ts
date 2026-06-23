@@ -5,6 +5,7 @@ import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/req
 import { sendTeamInviteEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkSeatAvailability } from "@/lib/seat-availability";
 
 export async function POST(request: Request) {
   try {
@@ -53,6 +54,23 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "An invite is already pending for this email" },
         { status: 400 }
+      );
+    }
+
+    // Pool seat check: si la org está ACTIVE, validar que hay seats
+    // disponibles antes de crear el invite. Si no hay, devolver 400
+    // con mensaje claro — el frontend dispara CTA "Buy more seats".
+    // TRIAL/COMP pasan libre (checkSeatAvailability lo gestiona).
+    const seatCheck = await checkSeatAvailability(ctx.organizationId);
+    if (!seatCheck.ok) {
+      return NextResponse.json(
+        {
+          error: seatCheck.message,
+          code: "seat_pool_full",
+          current: seatCheck.current,
+          pool: seatCheck.pool,
+        },
+        { status: 402 },
       );
     }
 
