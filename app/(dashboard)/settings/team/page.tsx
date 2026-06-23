@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { DeactivateUserDialog } from "@/components/settings/deactivate-user-dialog";
 import { ConfirmAddSeatDialog } from "@/components/billing/confirm-add-seat-dialog";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
@@ -87,6 +88,18 @@ export default function AdminUsersPage() {
   // guardamos el mensaje + mostramos banner con CTA "Buy seats"
   // que linka a /settings/billing en lugar del toast genérico.
   const [poolFullError, setPoolFullError] = useState<string | null>(null);
+
+  // Destructive confirms (audit 2026-06-23): cancel invite + role
+  // change abren dialog en vez de click único silencioso.
+  const [cancelInviteTarget, setCancelInviteTarget] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{
+    id: string;
+    name: string;
+    newRole: "ADMIN" | "USER";
+  } | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -587,14 +600,26 @@ export default function AdminUsersPage() {
                         <DropdownMenuContent align="end">
                           {u.role === "USER" ? (
                             <DropdownMenuItem
-                              onClick={() => changeUserRole(u.id, "ADMIN")}
+                              onClick={() =>
+                                setRoleChangeTarget({
+                                  id: u.id,
+                                  name: u.name,
+                                  newRole: "ADMIN",
+                                })
+                              }
                             >
                               <Shield className="mr-2 h-4 w-4" />
                               Promote to Admin
                             </DropdownMenuItem>
                           ) : (
                             <DropdownMenuItem
-                              onClick={() => changeUserRole(u.id, "USER")}
+                              onClick={() =>
+                                setRoleChangeTarget({
+                                  id: u.id,
+                                  name: u.name,
+                                  newRole: "USER",
+                                })
+                              }
                             >
                               <User className="mr-2 h-4 w-4" />
                               Demote to User
@@ -660,7 +685,12 @@ export default function AdminUsersPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => cancelInvite(inv.id)}
+                            onClick={() =>
+                              setCancelInviteTarget({
+                                id: inv.id,
+                                email: inv.email,
+                              })
+                            }
                             title="Cancel invite"
                             className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
                           >
@@ -745,6 +775,62 @@ export default function AdminUsersPage() {
         onConfirm={() => {
           if (pendingReactivate) {
             void doReactivate(pendingReactivate.id, pendingReactivate.name);
+          }
+        }}
+      />
+
+      {/* Cancel invite confirm — antes era click único silencioso.
+          Revoke afecta a un mail real que ya salió; merece un freno
+          consciente. Audit 2026-06-23. */}
+      <DeleteConfirmDialog
+        open={!!cancelInviteTarget}
+        onOpenChange={(open) => {
+          if (!open) setCancelInviteTarget(null);
+        }}
+        itemLabel={cancelInviteTarget?.email || "invite"}
+        title="Cancel this invitation?"
+        description={
+          cancelInviteTarget
+            ? `The invite for ${cancelInviteTarget.email} will be revoked. They won't be able to use the original link anymore — you'll need to send a new invite if you change your mind.`
+            : "The invite will be revoked."
+        }
+        confirmLabel="Yes, cancel invite"
+        onConfirm={async () => {
+          if (cancelInviteTarget) {
+            await cancelInvite(cancelInviteTarget.id);
+            setCancelInviteTarget(null);
+          }
+        }}
+      />
+
+      {/* Role change confirm — single click cambiaba permisos
+          de un user sin freno. Promote/Demote tienen impacto real
+          (acceso a billing, deletes, etc.). Audit 2026-06-23. */}
+      <DeleteConfirmDialog
+        open={!!roleChangeTarget}
+        onOpenChange={(open) => {
+          if (!open) setRoleChangeTarget(null);
+        }}
+        itemLabel={roleChangeTarget?.name || ""}
+        title={
+          roleChangeTarget?.newRole === "ADMIN"
+            ? `Promote ${roleChangeTarget?.name} to admin?`
+            : `Demote ${roleChangeTarget?.name} to user?`
+        }
+        description={
+          roleChangeTarget?.newRole === "ADMIN"
+            ? "Admins can manage billing, invite and remove teammates, change roles, and access every job in the workspace."
+            : "They'll lose admin powers (billing, member management, full job access). Their job assignments stay intact."
+        }
+        confirmLabel={
+          roleChangeTarget?.newRole === "ADMIN"
+            ? "Yes, promote"
+            : "Yes, demote"
+        }
+        onConfirm={async () => {
+          if (roleChangeTarget) {
+            await changeUserRole(roleChangeTarget.id, roleChangeTarget.newRole);
+            setRoleChangeTarget(null);
           }
         }}
       />

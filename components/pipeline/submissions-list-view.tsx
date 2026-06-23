@@ -14,6 +14,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { ShareCandidateDialog } from "./share-candidate-dialog";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 // Notion-style list view of a job's pipeline. Same data and same
 // transitions as the board — `onMove` runs through `moveSubmission`,
@@ -67,6 +68,10 @@ export function SubmissionsListView({
 }: Props) {
   const [shareDialogFor, setShareDialogFor] = useState<Submission | null>(null);
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+  // Unshare confirm dialog — antes era window.confirm browser nativo,
+  // ahora DeleteConfirmDialog en línea con el resto de destructive
+  // actions del ATS (memoria feedback_confirm_destructive_clicks).
+  const [unshareTarget, setUnshareTarget] = useState<Submission | null>(null);
 
   if (submissions.length === 0) {
     return (
@@ -88,10 +93,9 @@ export function SubmissionsListView({
     }
   }
 
-  async function handleUnshare(submission: Submission) {
-    if (!confirm("Stop sharing this candidate with the client? They will lose access.")) return;
+  function handleUnshare(submission: Submission) {
     setMenuOpenFor(null);
-    await onToggleShare(submission.id, false);
+    setUnshareTarget(submission);
   }
 
   return (
@@ -308,6 +312,34 @@ export function SubmissionsListView({
           }}
         />
       )}
+
+      <DeleteConfirmDialog
+        open={!!unshareTarget}
+        onOpenChange={(open) => {
+          if (!open) setUnshareTarget(null);
+        }}
+        itemLabel={
+          unshareTarget
+            ? `${unshareTarget.candidate.firstName} ${unshareTarget.candidate.lastName}`
+            : ""
+        }
+        title={
+          unshareTarget
+            ? `Stop sharing ${unshareTarget.candidate.firstName} ${unshareTarget.candidate.lastName}?`
+            : undefined
+        }
+        description={
+          clientName
+            ? `${clientName} will lose access to this candidate's profile, documents and chat. Internal history is preserved.`
+            : "The client will lose access to this candidate's profile, documents and chat. Internal history is preserved."
+        }
+        confirmLabel="Yes, stop sharing"
+        onConfirm={async () => {
+          if (unshareTarget) {
+            await onToggleShare(unshareTarget.id, false);
+          }
+        }}
+      />
     </>
   );
 }

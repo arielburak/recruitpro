@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Share2, MessageSquare, Star, GripVertical, X, CheckCircle2, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { ShareCandidateDialog } from "./share-candidate-dialog";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 interface KanbanCardProps {
   submission: any;
@@ -35,6 +36,9 @@ export function KanbanCard({
   // cuando se entra desde el menu "Manage shared docs".
   const [editDocsMode, setEditDocsMode] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // Confirm unshare en dialog en vez de window.confirm browser (audit
+  // 2026-06-23, memoria feedback_confirm_destructive_clicks).
+  const [showUnshareConfirm, setShowUnshareConfirm] = useState(false);
 
   const style = transform
     ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
@@ -44,10 +48,9 @@ export function KanbanCard({
   const isShared = submission.isSharedWithClient;
   const clientStage = submission.clientStage;
 
-  async function handleUnshare() {
-    if (!confirm("Stop sharing this candidate with the client? They will lose access.")) return;
+  function handleUnshare() {
     setShowMenu(false);
-    await onToggleShare(submission.id, false);
+    setShowUnshareConfirm(true);
   }
 
   async function handleShareClick(e: React.MouseEvent) {
@@ -231,6 +234,22 @@ export function KanbanCard({
           // it with current value to trigger a refresh. But that re-shares. Instead,
           // we trigger a custom event the parent can listen to.
           window.dispatchEvent(new CustomEvent("kanban:refresh"));
+        }}
+      />
+
+      <DeleteConfirmDialog
+        open={showUnshareConfirm}
+        onOpenChange={setShowUnshareConfirm}
+        itemLabel={`${candidate.firstName} ${candidate.lastName}`}
+        title={`Stop sharing ${candidate.firstName} ${candidate.lastName}?`}
+        description={
+          clientName
+            ? `${clientName} will lose access to this candidate's profile, documents and chat. Internal history is preserved.`
+            : "The client will lose access to this candidate's profile, documents and chat. Internal history is preserved."
+        }
+        confirmLabel="Yes, stop sharing"
+        onConfirm={async () => {
+          await onToggleShare(submission.id, false);
         }}
       />
     </>

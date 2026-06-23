@@ -354,6 +354,12 @@ export default function JobsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
+  // Terminal-status flip confirm (audit 2026-06-23).
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    id: string;
+    jobTitle: string;
+    newStatus: string;
+  } | null>(null);
   const [deletingJob, setDeletingJob] = useState<{ id: string; title: string } | null>(null);
 
   function toggleSelected(id: string) {
@@ -565,7 +571,26 @@ export default function JobsPage() {
   // Inline status change from the list. Optimistic update, rollback on
   // failure — the row is just a status badge so the recruiter doesn't
   // need to drop into the job detail just to flip Open → On Hold.
+  // Terminal statuses cierran la búsqueda y disparan flows colaterales
+  // (notif al cliente, freeze del pipeline, etc.). Audit 2026-06-23:
+  // un click en el inline select cambiaba a FILLED/LOST/CANCELLED sin
+  // freno. Ahora interceptamos y pedimos confirm.
+  const TERMINAL_JOB_STATUSES = new Set(["FILLED", "CANCELLED", "LOST", "CLOSED"]);
+
   async function changeStatus(id: string, status: string) {
+    if (TERMINAL_JOB_STATUSES.has(status)) {
+      const job = jobs.find((j) => j.id === id);
+      setPendingStatusChange({
+        id,
+        jobTitle: job?.title || "this search",
+        newStatus: status,
+      });
+      return;
+    }
+    await applyStatusChange(id, status);
+  }
+
+  async function applyStatusChange(id: string, status: string) {
     const previous = jobs;
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status } : j)));
     try {
@@ -1023,6 +1048,35 @@ export default function JobsPage() {
           setDeletingJob(null);
         }}
         confirmLabel="Yes, delete"
+      />
+
+      {/* Terminal-status confirm — FILLED / CANCELLED / LOST / CLOSED
+          cierran la búsqueda. Antes el inline select flipea sin freno.
+          Audit 2026-06-23. */}
+      <DeleteConfirmDialog
+        open={!!pendingStatusChange}
+        onOpenChange={(open) => { if (!open) setPendingStatusChange(null); }}
+        itemLabel={pendingStatusChange?.jobTitle || ""}
+        title={
+          pendingStatusChange
+            ? `Mark "${pendingStatusChange.jobTitle}" as ${JOB_STATUS_LABELS[pendingStatusChange.newStatus] || pendingStatusChange.newStatus}?`
+            : undefined
+        }
+        description={
+          pendingStatusChange?.newStatus === "FILLED"
+            ? "The search closes. Active candidates stay in the pipeline (history preserved), but the kanban freezes and the job stops accepting new submissions."
+            : "The search closes. You'll still see the history but it stops accepting new submissions and disappears from the active list."
+        }
+        confirmLabel="Yes, change status"
+        onConfirm={async () => {
+          if (pendingStatusChange) {
+            await applyStatusChange(
+              pendingStatusChange.id,
+              pendingStatusChange.newStatus,
+            );
+            setPendingStatusChange(null);
+          }
+        }}
       />
 
       {/* Save view dialog — reemplaza window.prompt anti-pattern.
