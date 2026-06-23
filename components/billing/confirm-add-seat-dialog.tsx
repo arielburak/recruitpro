@@ -102,8 +102,12 @@ export function ConfirmAddSeatDialog({
               {copy.actionVerb} <strong>{teammateName}</strong>{" "}
               {mode === "invite"
                 ? "will give them access to the ATS"
-                : "will restore their access to the ATS"}{" "}
-              {isPoolFull ? "once you have an available seat." : "with a seat from your pool."}
+                : "will restore their access to the ATS"}
+              {isTrial
+                ? "."
+                : isPoolFull
+                  ? " once you have an available seat."
+                  : " with a seat from your pool."}
             </>
           ) : (
             <>
@@ -112,29 +116,32 @@ export function ConfirmAddSeatDialog({
           )}
         </p>
 
-        {/* Seat usage breakdown — sin billing impact */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3 mt-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Seat usage
-          </p>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 flex items-center gap-2">
-              <Users className="h-4 w-4 text-gray-400" />
-              Currently in use
-            </span>
-            <span className="text-gray-900 font-medium">
-              {activeUsers} of {currentSeats}
-            </span>
-          </div>
-          {!isPoolFull && (
-            <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
-              <span className="text-gray-600">After this {mode}</span>
-              <span className="text-indigo-700 font-semibold">
-                {seatsAfter} of {currentSeats}
+        {/* Seat usage breakdown — solo cuando NO es trial. Durante
+            trial el pool no se enforcen, mostrarlo confunde con "2 of 1". */}
+        {!isTrial && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3 mt-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Seat usage
+            </p>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 flex items-center gap-2">
+                <Users className="h-4 w-4 text-gray-400" />
+                Currently in use
+              </span>
+              <span className="text-gray-900 font-medium">
+                {activeUsers} of {currentSeats}
               </span>
             </div>
-          )}
-        </div>
+            {!isPoolFull && (
+              <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
+                <span className="text-gray-600">After this {mode}</span>
+                <span className="text-indigo-700 font-semibold">
+                  {seatsAfter} of {currentSeats}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Contextual notes */}
         {isPoolFull ? (
@@ -150,9 +157,9 @@ export function ConfirmAddSeatDialog({
         ) : isTrial ? (
           <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3">
             <p className="text-xs text-indigo-900 leading-relaxed">
-              <strong>You&apos;re in trial</strong> — no charge yet. When the
-              trial ends you&apos;ll pay for the seats you have purchased at
-              that time.
+              <strong>You&apos;re in trial</strong> — invite as many teammates
+              as you want for free. When the trial ends you&apos;ll buy seats
+              for the team size you have at that point.
             </p>
           </div>
         ) : null}
