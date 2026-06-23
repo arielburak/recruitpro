@@ -23,7 +23,7 @@ export type SeatAvailability =
   | { ok: true; current: number; pool: number; available: number }
   | {
       ok: false;
-      reason: "pool_full" | "no_active_sub" | "no_subscription_row";
+      reason: "pool_full" | "trial_limit" | "no_active_sub" | "no_subscription_row";
       current?: number;
       pool?: number;
       message: string;
@@ -55,7 +55,29 @@ export async function checkSeatAvailability(
     return { ok: true, current: 0, pool: 9999, available: 9999 };
   }
   if (subscription.status === "TRIALING") {
-    return { ok: true, current: 0, pool: subscription.seats, available: 9999 };
+    // Trial = 1 active user (admin solo). Para invitar al equipo, se
+    // subscriben. Decisión 2026-06-22 con Nicolás (modelo Linear/
+    // Notion/Slack): el trial es para que el admin pruebe el ATS,
+    // no para armar equipos gratis.
+    const currentActiveUsers = await prisma.user.count({
+      where: { organizationId, isActive: true },
+    });
+    if (currentActiveUsers + additionalSeats > 1) {
+      return {
+        ok: false,
+        reason: "trial_limit",
+        current: currentActiveUsers,
+        pool: 1,
+        message:
+          "Trial is limited to 1 user. Subscribe to invite teammates.",
+      };
+    }
+    return {
+      ok: true,
+      current: currentActiveUsers,
+      pool: 1,
+      available: 1 - currentActiveUsers,
+    };
   }
   if (subscription.status === "CANCELED") {
     return {

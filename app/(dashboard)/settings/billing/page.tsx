@@ -494,7 +494,10 @@ function BillingContent() {
               <Users className="h-3.5 w-3.5" />
               Seats
             </div>
-            {!isComp && (
+            {/* Manage seats: solo en ACTIVE (no en COMP ni TRIAL).
+                Durante trial el pool no aplica — el admin invita a
+                teammates subscribiéndose, no comprando pool. */}
+            {!isComp && status === "ACTIVE" && (
               <button
                 type="button"
                 onClick={() => setSeatsDialogOpen(true)}
