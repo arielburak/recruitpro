@@ -22,13 +22,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Plus,
   Shield,
   User,
   MoreVertical,
   Mail,
   Clock,
-  UserMinus,
   Send,
   XCircle,
   UserPlus,
@@ -284,22 +282,58 @@ export default function AdminUsersPage() {
   // Decisión 2026-06-22 con Nicolás (pivote final).
   const isTrialLimited = false;
 
+  // Pool seat summary: X of Y in use · Z available — visible header.
+  // Decisión 2026-06-22 con Nicolás (modelo LinkedIn): el admin
+  // gestiona acceso por user con toggle individual. La summary arriba
+  // muestra el pool comprado vs en uso.
+  const pool = subscription?.seats ?? 1;
+  const inUse = activeUsers.length;
+  const available = Math.max(0, pool - inUse);
+  const showPoolSummary =
+    !subscription?.isComp && subscription?.status === "ACTIVE";
+
   return (
     <div className="space-y-6">
-      {/* Header row — keeps the Invite button, drops the doubled h1 since
-          the Settings layout already provides the page title. */}
+      {/* Pool seat summary — solo en ACTIVE (no en TRIAL ni COMP). */}
+      {showPoolSummary && (
+        <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-indigo-50/40 to-white p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Seats
+              </p>
+              <p className="text-2xl font-bold text-gray-900">
+                {inUse}{" "}
+                <span className="text-gray-400 font-medium">/ {pool}</span>
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                {available === 0
+                  ? "All seats in use"
+                  : `${available} available to assign`}
+              </p>
+            </div>
+            <a
+              href="/settings/billing"
+              className="text-sm font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
+            >
+              Manage seats →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Header row */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">
           {activeUsers.length} active user
-          {activeUsers.length !== 1 ? "s" : ""} &middot; $
-          {(monthlyTotalCents(activeUsers.length) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}/mo
+          {activeUsers.length !== 1 ? "s" : ""}
+          {subscription?.status === "ACTIVE" && !subscription?.isComp && (
+            <>
+              {" "}
+              &middot; ${(monthlyTotalCents(pool) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}/mo
+            </>
+          )}
         </p>
-        {/* Invite teammate accesible para todos los miembros del org.
-            Decisión 2026-06-17: el invite no es destructivo; ADMIN sigue
-            siendo el unico que puede borrar/revocar invites + sembrar
-            roles ADMIN. Para USER, el dialog esconde el selector de role
-            y manda role=USER hardcodeado al backend (que ademas re-fuerza
-            esa regla server-side). */}
         <Button onClick={() => setShowInvite(true)}>
           <Mail className="mr-2 h-4 w-4" /> Invite Team Member
         </Button>
@@ -499,7 +533,36 @@ export default function AdminUsersPage() {
                       <p className="text-sm text-gray-500">{u.email}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
+                    {/* Seat toggle — visible solo para ADMIN viewer, y
+                        deshabilitado para el admin actual (no puede sacar
+                        su propio seat). Click: deactivate (con dialog si
+                        tiene work activo) o reactivate (con check pool). */}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          toggleUserActive(u.id, u.isActive, u.name)
+                        }
+                        disabled={u.id === (session?.user as any)?.id}
+                        title={
+                          u.id === (session?.user as any)?.id
+                            ? "You can't remove your own seat"
+                            : u.isActive
+                              ? "Click to deactivate (frees seat)"
+                              : "Click to reactivate (uses 1 seat)"
+                        }
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          u.isActive ? "bg-emerald-600" : "bg-gray-300"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${
+                            u.isActive ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    )}
                     <Badge
                       variant={
                         u.role === "ADMIN" ? "default" : "secondary"
@@ -537,15 +600,6 @@ export default function AdminUsersPage() {
                               Demote to User
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem
-                            onClick={() =>
-                              toggleUserActive(u.id, u.isActive, u.name)
-                            }
-                            className={u.isActive ? "text-red-600" : undefined}
-                          >
-                            <UserMinus className="mr-2 h-4 w-4" />
-                            {u.isActive ? "Deactivate" : "Reactivate"}
-                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
