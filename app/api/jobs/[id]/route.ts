@@ -48,7 +48,14 @@ export async function GET(
           },
         },
         stages: { orderBy: { order: "asc" } },
-        assignments: { include: { user: { select: { id: true, name: true } } } },
+        // Solo assignees activos. Antes el listing incluía users
+        // deactivated que ya no podían loguearse pero seguían
+        // figurando como "Assigned to" en el header del job. Audit
+        // 2026-06-23.
+        assignments: {
+          where: { user: { isActive: true } },
+          include: { user: { select: { id: true, name: true } } },
+        },
         // ClientJob mirror (creado cuando la agencia comparte el job
         // con el cliente). Lo incluimos solo para listar los client
         // users con acceso desde la vista de agencia. Si la JO tiene

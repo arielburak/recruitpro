@@ -557,14 +557,14 @@ export default function JobsPage() {
         setJobs(previous);
         try {
           const data = await res.json();
-          alert(data?.error || "Couldn't delete the job. Please try again.");
+          showToast(data?.error || "Couldn't delete the job. Please try again.");
         } catch {
-          alert("Couldn't delete the job. Please try again.");
+          showToast("Couldn't delete the job. Please try again.");
         }
       }
     } catch {
       setJobs(previous);
-      alert("Couldn't delete the job. Please try again.");
+      showToast("Couldn't delete the job. Please try again.");
     }
   }
 

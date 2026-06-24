@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Building2, Trash2, Upload } from "lucide-react";
 import { DateRangeFilter, type DateRange, dateInRange } from "@/components/ui/date-range-filter";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { showToast } from "@/components/ui/toast";
 
 export default function ClientsPage() {
   const { data: session } = useSession();
@@ -102,14 +103,14 @@ export default function ClientsPage() {
         setClients(previous);
         try {
           const data = await res.json();
-          alert(data?.error || "Couldn't delete the client. Please try again.");
+          showToast(data?.error || "Couldn't delete the client. Please try again.");
         } catch {
-          alert("Couldn't delete the client. Please try again.");
+          showToast("Couldn't delete the client. Please try again.");
         }
       }
     } catch {
       setClients(previous);
-      alert("Couldn't delete the client. Please try again.");
+      showToast("Couldn't delete the client. Please try again.");
     }
   }
 
@@ -148,7 +149,14 @@ export default function ClientsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-sm text-gray-500">{clients.length} companies</p>
+          <p className="text-sm text-gray-500">
+            {/* Mismo patrón que /jobs: si hay filtro activo mostramos
+                "X of Y" para que el header no contradiga la lista
+                renderizada. Audit 2026-06-23. */}
+            {filtered.length !== clients.length
+              ? `${filtered.length} of ${clients.length} compan${clients.length === 1 ? "y" : "ies"}`
+              : `${clients.length} compan${clients.length === 1 ? "y" : "ies"}`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <ExportCsvButton type="clients" disabled={clients.length === 0} />

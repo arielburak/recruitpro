@@ -35,9 +35,28 @@ export async function POST(request: Request) {
     // abajo. Si no pasó, este recalc deja seats = active users count.
     await recalculateAndSyncSeats(ctx.organizationId);
 
-    // Si el admin pasó `seats` y es menor que active users, deactivar
-    // los teammates que el admin NO eligió mantener (keepUserIds).
-    // El admin actual nunca se deactiva (su seat es obligatorio).
+    // ── Pre-validación: calcular toDeactivate ANTES de tocar nada ──
+    //
+    // Audit 2026-06-23: antes, el deactivate + subscription.update
+    // corrían arriba en 2 writes separadas (no tx). Si createCheckout
+    // Session fallaba después, los users quedaban deactivated sin
+    // Stripe sub creada — el admin re-clickeaba y veía un equipo
+    // gutted sin haber pagado nada.
+    //
+    // Nuevo orden:
+    //   1. Validar inputs + computar toDeactivate (sin mutar nada).
+    //   2. Crear Stripe checkout session.
+    //   3. Solo si Stripe respondió OK, atomic tx con deactivate +
+    //      subscription.seats update.
+    //   4. Devolver URL.
+    //
+    // Si el server muere entre 2 y 3: la sub queda creada en Stripe
+    // pero los users no quedan deactivated. El admin va a ver "X of Y
+    // seats in use" con X > Y en /settings/team y va a tener que
+    // re-correr el flow o sacar seats manualmente. Trade-off aceptable
+    // para MVP: prefiero over-provisioned que team gutted sin pagar.
+    let toDeactivate: string[] = [];
+    let finalSeats: number | null = null;
     if (hasSeatsParam) {
       const activeUsersAll = await prisma.user.findMany({
         where: { organizationId: ctx.organizationId, isActive: true },
@@ -46,8 +65,7 @@ export async function POST(request: Request) {
       const activeUsersCount = activeUsersAll.length;
 
       if (requestedSeats < activeUsersCount) {
-        // Validar que el admin pasó keepUserIds + tiene el count correcto.
-        const adminSlot = 1; // siempre el admin actual
+        const adminSlot = 1;
         const expectedKeepCount = requestedSeats - adminSlot;
         if (keepUserIds.length !== expectedKeepCount) {
           return NextResponse.json(
@@ -58,8 +76,6 @@ export async function POST(request: Request) {
           );
         }
 
-        // Validar que todos los keepUserIds pertenezcan al org + estén
-        // activos + no sean el admin. Sino son ids spoofed.
         const validKeepIds = new Set(
           activeUsersAll
             .map((u) => u.id)
@@ -74,24 +90,13 @@ export async function POST(request: Request) {
           }
         }
 
-        // Deactivar los que NO están en keepUserIds (y no son el admin).
         const keepSet = new Set([...keepUserIds, ctx.userId]);
-        const toDeactivate = activeUsersAll
+        toDeactivate = activeUsersAll
           .map((u) => u.id)
           .filter((id) => !keepSet.has(id));
-        if (toDeactivate.length > 0) {
-          await prisma.user.updateMany({
-            where: { id: { in: toDeactivate } },
-            data: { isActive: false },
-          });
-        }
       }
 
-      // Update subscription.seats al target final.
-      await prisma.subscription.update({
-        where: { organizationId: ctx.organizationId },
-        data: { seats: requestedSeats },
-      });
+      finalSeats = requestedSeats;
     }
 
     const subscription = await prisma.subscription.findUnique({
@@ -134,7 +139,12 @@ export async function POST(request: Request) {
       }
     }
 
-    if (subscription.seats > TEAM_MAX_SEATS) {
+    // El target final es lo que el admin eligió (finalSeats) si pasó,
+    // o el actual de la sub (que recalculateAndSyncSeats ya alineó
+    // con active users count) si no.
+    const seatsForCheckout = finalSeats ?? subscription.seats;
+
+    if (seatsForCheckout > TEAM_MAX_SEATS) {
       return NextResponse.json(
         { error: `Self-serve plans top out at ${TEAM_MAX_SEATS} seats — contact us for more.` },
         { status: 400 }
@@ -173,11 +183,37 @@ export async function POST(request: Request) {
 
     const session = await createCheckoutSession(
       customerId,
-      stripePriceIdForSeats(subscription.seats),
-      subscription.seats,
+      stripePriceIdForSeats(seatsForCheckout),
+      seatsForCheckout,
       ctx.organizationId,
       trialEnd,
     );
+
+    // Stripe respondió OK. Recién ahora aplicamos los cambios locales
+    // de forma atómica. Si la tx falla, el checkout en Stripe queda
+    // creado pero no se deactivó a nadie ni se cambió DB.seats — el
+    // admin va a ver mismatch en /settings/team y va a tener que
+    // re-correr. Mejor que team-gutted-sin-pago. Audit 2026-06-23.
+    if (toDeactivate.length > 0 || finalSeats !== null) {
+      await prisma.$transaction([
+        ...(toDeactivate.length > 0
+          ? [
+              prisma.user.updateMany({
+                where: { id: { in: toDeactivate } },
+                data: { isActive: false },
+              }),
+            ]
+          : []),
+        ...(finalSeats !== null
+          ? [
+              prisma.subscription.update({
+                where: { organizationId: ctx.organizationId },
+                data: { seats: finalSeats },
+              }),
+            ]
+          : []),
+      ]);
+    }
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
