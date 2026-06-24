@@ -93,7 +93,12 @@ export default function StaffingProfilePage() {
       const res = await fetch("/api/admin/users");
       if (res.ok) {
         const data = await res.json();
-        setTeamMembers(Array.isArray(data) ? data : data.users || []);
+        const all = Array.isArray(data) ? data : data.users || [];
+        // El endpoint devuelve users activos + deactivated (lo usa
+        // tambien /settings/team para poder reactivar). Aca el card
+        // "Your Team" solo debe mostrar los activos — un user
+        // deactivado no es del equipo. Feedback Nicolas 2026-06-24.
+        setTeamMembers(all.filter((u: { isActive?: boolean }) => u.isActive !== false));
       }
     } catch {}
   }
