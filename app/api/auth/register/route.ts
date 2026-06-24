@@ -8,9 +8,20 @@ import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
 import { sendWelcomeEmail, sendGettingStartedEmail, sendEmailVerificationEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // Rate limit por IP — bloquea bots intentando enumerar emails
+    // o crear cuentas fake en bulk.
+    const rl = await checkRateLimit("auth:register", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many signup attempts. Please try again in a minute." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const body = await request.json();
     const data = registerSchema.parse(body);
 

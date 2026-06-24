@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth-options";
 import { sendEmailVerificationEmail } from "@/lib/email";
 import { findStaffingUserByEmail } from "@/lib/email-canonical";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // Resend the verification email. Two callers:
 //
@@ -23,6 +24,17 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     const authedUserId = session?.user?.id;
+
+    // Rate limit por IP — cada request manda mail (costo + abuso del
+    // inbox del target). 3 por hora. Authed users tampoco se libran:
+    // un atacante con session válida podría seguir spammeando.
+    const rl = await checkRateLimit("auth:resend-verification", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many resend attempts. Please wait an hour." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
 
     let user: { id: string; name: string; email: string; emailVerifiedAt: Date | null } | null = null;
 

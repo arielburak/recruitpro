@@ -37,7 +37,7 @@ Lo que encontré faltando antes de promote a `main`. Ordenado por bloqueante →
 
 ### Bloqueantes legales / operacionales
 
-- [ ] **Rate limiting en `/api/auth/*`** (login, register, forgot-password, verify). Hoy no hay nada — un atacante puede hacer brute force sin freno. Solución estándar: `@upstash/ratelimit` + Vercel KV (gratis hasta 30k requests/día). 2 horas de trabajo.
+- [~] **Rate limiting en `/api/auth/*`** — implementado vía `@upstash/ratelimit` + `@upstash/redis` (`lib/rate-limit.ts`). Buckets por endpoint: register 5/min, login 10/min, forgot-password 3/10min, reset-password 5/min, resend-verification 3/hora, verify-email 30/min. Aplicado en agency Y client portal. Login bucket envuelve el catch-all de NextAuth ANTES de bcrypt para no quemar CPU del server con brute force. Fallback graceful: si las env vars de Upstash no están seteadas, el limiter es no-op (no rompe deploy). **Setup pendiente vos**: crear DB en https://console.upstash.com/redis (free tier alcanza), agregar `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` en Vercel env vars de prod + preview.
 - [ ] **DKIM/SPF/DMARC para `recruitingats.com` en Resend**. Sin esto los mails caen en spam de Gmail/Outlook → onboarding fail. Resend dashboard → Domains → verificá que tu dominio tiene los 3 records DNS verdes. 15 min.
 - [ ] **Privacy + ToS pages**: existen (`/privacy`, `/terms`) pero verificar que el contenido es legalmente correcto para tu caso (procesamiento de CVs = PII, datos de candidatos = GDPR si tenés un europeo). Revisar con abogado. Recomendación: Termly o Iubenda para generar templates ($10-30/mes).
 
