@@ -453,7 +453,7 @@ export default async function DashboardPage() {
                   <ArrowRight className="h-3 w-3" />
                 </Link>
                 <span className="text-[11px] text-sky-700/70">
-                  Your first day — 7 days left
+                  Your first day — 6 days left
                 </span>
               </div>
             </div>
@@ -497,7 +497,10 @@ export default async function DashboardPage() {
                   <ArrowRight className="h-3 w-3" />
                 </Link>
                 <span className="text-[11px] text-violet-700/70">
-                  {7 - daysSinceSignup} day{7 - daysSinceSignup === 1 ? "" : "s"} left in your first week
+                  {/* "X days left" se lee como "X dias completos despues de
+                      hoy" — por eso restamos 1 al diff (el dia de hoy no
+                      cuenta como "left"). Feedback Nicolas 2026-06-23. */}
+                  {Math.max(0, 7 - daysSinceSignup - 1)} day{Math.max(0, 7 - daysSinceSignup - 1) === 1 ? "" : "s"} left in your first week
                 </span>
               </div>
             </div>

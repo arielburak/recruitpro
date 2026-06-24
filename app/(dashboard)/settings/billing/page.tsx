@@ -250,7 +250,11 @@ function BillingContent() {
     : null;
   const now = new Date();
   const trialMsLeft = trialEnd ? trialEnd.getTime() - now.getTime() : 0;
-  const trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
+  // Math.floor en lugar de Math.ceil: el usuario lee "X days left" como
+  // "X días COMPLETOS después de hoy". Math.ceil cuenta cualquier fracción
+  // como un día más — fresh signup mostraba 7 cuando intuitivamente faltan
+  // 6 (el día de hoy ya se está usando). Feedback Nicolás 2026-06-23.
+  const trialDaysLeft = Math.max(0, Math.floor(trialMsLeft / (1000 * 60 * 60 * 24)));
   // Trial total duration calculado dinámicamente desde createdAt →
   // trialEndsAt en lugar de hardcoded 7d. Antes (hardcoded) si más
   // adelante cambiamos TRIAL_DAYS en constants.ts, el progress bar
@@ -310,6 +314,23 @@ function BillingContent() {
         border: "border-emerald-200",
         label: "Active",
         labelTone: "Your subscription is current.",
+      }
+    : status === "TRIALING" && hasStripeSub
+    ? {
+        // Caso "ya subscribí pero el trial sigue corriendo" — Stripe
+        // mantiene status=trialing hasta que el trial_end pase. Antes
+        // este estado caía al branch genérico "Free trial · Subscribe
+        // now", lo que confundía al usuario (acaba de subscribir y le
+        // seguía apareciendo el botón Subscribe). Feedback Nicolás
+        // 2026-06-23: "acabo de suscribirme y no cambia nada".
+        bg: "bg-emerald-50",
+        accent: "text-emerald-700",
+        accentSoft: "bg-emerald-100",
+        border: "border-emerald-200",
+        label: "Subscribed",
+        labelTone: trialEnd
+          ? `Trial active through ${dateStr(trialEnd)} — billing starts then. Cancel anytime.`
+          : "Your subscription is current.",
       }
     : status === "PAST_DUE"
     ? {
@@ -401,7 +422,7 @@ function BillingContent() {
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${heroPalette.accentSoft} ${heroPalette.accent}`}
               >
-                {status === "ACTIVE" || isComp ? (
+                {status === "ACTIVE" || isComp || (status === "TRIALING" && hasStripeSub) ? (
                   <CheckCircle className="h-3.5 w-3.5" />
                 ) : trialExpired ? (
                   <AlertTriangle className="h-3.5 w-3.5" />
@@ -442,7 +463,7 @@ function BillingContent() {
                   {actionLoading ? "Reactivating…" : "Reactivate subscription"}
                 </Button>
               )}
-              {!scheduledToCancel && (!hasStripeSub || status === "TRIALING") && (
+              {!scheduledToCancel && !hasStripeSub && (
                 <Button
                   size="lg"
                   onClick={() => {

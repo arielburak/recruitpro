@@ -77,6 +77,10 @@ export function TrialCountdown() {
     if (subscription.status !== "TRIALING") return;
     if (subscription.isComp) return;
     if (!subscription.trialEndsAt) return;
+    // Ya subscribió: trial sigue corriendo (Stripe trial_end) pero no
+    // tiene sentido empujarlo a "Subscribe now" — ya lo hizo. Feedback
+    // Nicolás 2026-06-23.
+    if (subscription.stripeSubscriptionId) return;
 
     // Si el trial ya expiró, el SubscriptionGate maneja el bloqueo
     // — no abrir el popup chico por arriba.
@@ -102,6 +106,8 @@ export function TrialCountdown() {
   if (subscription.status !== "TRIALING") return null;
   if (subscription.isComp) return null;
   if (!subscription.trialEndsAt) return null;
+  // Ya subscribió: el popup empuja "Subscribe now" que ya esta hecho.
+  if (subscription.stripeSubscriptionId) return null;
 
   const trialEnd = new Date(subscription.trialEndsAt).getTime();
   const now = Date.now();
@@ -121,7 +127,11 @@ export function TrialCountdown() {
     if (minutesSinceSignup < SIGNUP_GRACE_MINUTES) return null;
   }
 
-  const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+  // Math.floor en lugar de Math.ceil: "X days left" se lee como "X dias
+  // completos despues de hoy". Math.ceil contaba cualquier fraccion como
+  // un dia mas — fresh signup mostraba 7 cuando intuitivamente faltan 6
+  // (el dia de hoy ya se esta usando). Feedback Nicolas 2026-06-23.
+  const daysLeft = Math.max(0, Math.floor(msLeft / (1000 * 60 * 60 * 24)));
 
   const isUrgent = daysLeft <= 2;
   const isHeadsUp = daysLeft >= 3 && daysLeft <= 6;
