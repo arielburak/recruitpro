@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
-import { createCheckoutSession, createStripeCustomer } from "@/lib/stripe";
+import { createCheckoutSession, createStripeCustomer, getStripeClient } from "@/lib/stripe";
 import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
@@ -101,6 +101,37 @@ export async function POST(request: Request) {
 
     if (!subscription) {
       return NextResponse.json({ error: "No subscription found" }, { status: 404 });
+    }
+
+    // Bloquear doble-subscribe. Si ya hay un stripeSubscriptionId
+    // valido en Stripe (active / trialing / past_due), no creamos
+    // otra checkout session — sino el user termina con N subs
+    // paralelas cobrandole N veces. Bug reportado por Nicolas
+    // 2026-06-24 (vio 2 "Active trials" en Customer Portal).
+    // Allowed states para re-checkout: canceled, incomplete_expired,
+    // o sub que ya no existe en Stripe (404).
+    if (subscription.stripeSubscriptionId) {
+      try {
+        const existing = await getStripeClient().subscriptions.retrieve(
+          subscription.stripeSubscriptionId,
+        );
+        const blocked = ["active", "trialing", "past_due", "incomplete"];
+        if (blocked.includes(existing.status)) {
+          return NextResponse.json(
+            {
+              error: "You already have an active subscription. Use Manage billing to make changes.",
+              code: "subscription_already_active",
+              status: existing.status,
+            },
+            { status: 409 },
+          );
+        }
+      } catch (err: any) {
+        // Sub borrada del lado Stripe — seguir con el flow nuevo. El
+        // stripeSubscriptionId se va a sobreescribir con el de la
+        // sesión nueva cuando llegue el webhook.
+        if (err?.code !== "resource_missing") throw err;
+      }
     }
 
     if (subscription.seats > TEAM_MAX_SEATS) {
