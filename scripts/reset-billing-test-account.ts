@@ -85,17 +85,56 @@ async function main() {
   console.log(`Org: ${user.organization.name} (${orgId})`);
   console.log("");
 
-  // Modo EXPIRE: solo backdatear trialEndsAt. No wipe, no Stripe.
-  // Util para testear el "Trial expired" UX sin esperar 7 dias.
+  // Modo EXPIRE: backdate trialEndsAt local + si hay Stripe sub
+  // trialing, también pedirle a Stripe que termine el trial AHORA
+  // (trial_end: 'now'). Stripe va a:
+  //   · cobrar la tarjeta de prueba → invoice.paid → webhook
+  //     customer.subscription.updated con status=active → DB pasa a
+  //     ACTIVE → el usuario sigue accediendo normalmente.
+  //   · O fallar el cobro → past_due → webhook → DB pasa a PAST_DUE
+  //     (3-day grace).
+  //
+  // Sin la parte de Stripe el backdate local solo, contra una sub
+  // que tiene card on file en Stripe, deja al user falsamente
+  // bloqueado: el guard ve trialEndsAt vencido y tira "Trial expired"
+  // aunque Stripe pudiera haber cobrado sin drama.
   if (mode === "expire") {
     const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000); // ayer
+    const subRow = await prisma.subscription.findUnique({
+      where: { organizationId: orgId },
+      select: { stripeSubscriptionId: true },
+    });
+
     await prisma.subscription.update({
       where: { organizationId: orgId },
       data: { trialEndsAt: expiredAt },
     });
     console.log(`Subscription.trialEndsAt backdateado a ${expiredAt.toISOString()}.`);
-    console.log("");
-    console.log("Refrescá /settings/billing en el browser — deberías ver el banner rojo 'Trial expired'.");
+
+    if (subRow?.stripeSubscriptionId) {
+      try {
+        const { getStripeClient } = await import("../lib/stripe");
+        const stripe = getStripeClient();
+        const stripeSub = await stripe.subscriptions.retrieve(subRow.stripeSubscriptionId);
+        if (stripeSub.status === "trialing") {
+          await stripe.subscriptions.update(subRow.stripeSubscriptionId, {
+            trial_end: "now",
+          });
+          console.log(`Stripe: trial_end='now' enviado a ${subRow.stripeSubscriptionId}.`);
+          console.log("Stripe va a cobrar la tarjeta y disparar el webhook subscription.updated.");
+          console.log("Esperá ~10s y refrescá /settings/billing — deberías ver ACTIVE.");
+        } else {
+          console.log(`Stripe sub ${subRow.stripeSubscriptionId} no está en trialing (status=${stripeSub.status}). Skipping trial_end.`);
+        }
+      } catch (e: any) {
+        console.error(`Stripe trial_end failed: ${e?.message || e}`);
+        console.error("La DB local quedó con trial vencido. Si tenías card on file, vas a ver el banner 'Trial expired' por error. Investigá Stripe state manualmente.");
+      }
+    } else {
+      console.log("No hay Stripe sub asociada — solo backdate local.");
+      console.log("Refrescá /settings/billing — deberías ver el banner rojo 'Trial expired'.");
+    }
+
     await prisma.$disconnect();
     return;
   }

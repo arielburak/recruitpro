@@ -40,13 +40,51 @@ export async function POST(request: Request) {
   const log: string[] = [];
 
   // ── EXPIRE MODE ────────────────────────────────────────────────
+  // Backdate trialEndsAt local + si hay Stripe sub en trialing,
+  // también pedirle a Stripe que termine el trial AHORA (trial_end:
+  // 'now') así Stripe cobra la card y dispara el webhook que pasa la
+  // sub a ACTIVE. Sin la parte de Stripe, una sub con card on file
+  // queda falsamente bloqueada por el guard (que solo mira el campo
+  // local trialEndsAt).
   if (mode === "expire") {
     const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const subRow = await prisma.subscription.findUnique({
+      where: { organizationId: orgId },
+      select: { stripeSubscriptionId: true },
+    });
+
     await prisma.subscription.update({
       where: { organizationId: orgId },
       data: { trialEndsAt: expiredAt },
     });
     log.push(`Subscription.trialEndsAt backdateado a ${expiredAt.toISOString()}.`);
+
+    if (subRow?.stripeSubscriptionId) {
+      try {
+        const stripe = getStripeClient();
+        const stripeSub = await stripe.subscriptions.retrieve(
+          subRow.stripeSubscriptionId,
+        );
+        if (stripeSub.status === "trialing") {
+          await stripe.subscriptions.update(subRow.stripeSubscriptionId, {
+            trial_end: "now",
+          });
+          log.push(
+            `Stripe: trial_end='now' enviado a ${subRow.stripeSubscriptionId}. Webhook va a actualizar status.`,
+          );
+        } else {
+          log.push(
+            `Stripe sub ${subRow.stripeSubscriptionId} no está en trialing (status=${stripeSub.status}). Skipping trial_end.`,
+          );
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.push(`Stripe trial_end failed: ${msg}`);
+      }
+    } else {
+      log.push("No hay Stripe sub asociada — solo backdate local.");
+    }
+
     return NextResponse.json({ ok: true, mode, log });
   }
 
