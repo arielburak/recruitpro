@@ -191,16 +191,16 @@ export async function POST(request: Request) {
         await prisma.clientJobMember.deleteMany({
           where: { clientJobId: { in: clientJobIds } },
         });
-        await prisma.clientPipelineStage.deleteMany({
-          where: { clientJobId: { in: clientJobIds } },
-        });
       }
+      // ClientPipelineStage cascade-deletea desde Client (Cascade en
+      // la relation), asi que se limpia al borrar el orphan client.
       await prisma.clientJob.deleteMany({ where: { clientId: { in: orphanIds } } });
       await prisma.clientNotification.deleteMany({
         where: { clientId: { in: orphanIds } },
       });
+      // ClientPortalToken referencia clientId directo (no via clientUser).
       await prisma.clientPortalToken.deleteMany({
-        where: { clientUser: { clientId: { in: orphanIds } } },
+        where: { clientId: { in: orphanIds } },
       });
       await prisma.clientUser.deleteMany({
         where: { clientId: { in: orphanIds } },
