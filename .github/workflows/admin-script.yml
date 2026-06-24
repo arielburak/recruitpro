@@ -26,7 +26,6 @@ on:
         options:
           - delete-test-account
           - wipe-tenant-data
-          - reset-billing-test-account
           - audit-email
           - check-mail-config
       args:
@@ -76,10 +75,6 @@ jobs:
           # o production segun inputs.environment). Si el secret no
           # esta seteado, el step falla con error claro abajo.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # STRIPE_SECRET_KEY opcional — solo lo necesita reset-billing-
-          # test-account para cancelar subs del cliente via Stripe API.
-          # Si el script no lo usa, no pasa nada que esté vacio.
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL secret is not set for environment '${{ inputs.environment }}'. Add it under Settings → Environments → ${{ inputs.environment }} → Add secret."
@@ -87,7 +82,7 @@ jobs:
           fi
 
           case "${{ inputs.script }}" in
-            delete-test-account|wipe-tenant-data|reset-billing-test-account|audit-email|check-mail-config)
+            delete-test-account|wipe-tenant-data|audit-email|check-mail-config)
               echo "Running scripts/${{ inputs.script }}.ts with args: ${{ inputs.args }}"
               npx tsx "scripts/${{ inputs.script }}.ts" ${{ inputs.args }}
               ;;
