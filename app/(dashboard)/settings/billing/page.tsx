@@ -530,17 +530,16 @@ function BillingContent() {
 
       {/* ──────── DETAILS ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* SEATS card. Durante TRIAL el pool no aplica — la sub tiene
-            seats=1 hardcoded pero el admin puede invitar lo que quiera
-            porque el cobro arranca recién post-trial. Mostrar "3 / 1
-            All seats in use" en trial confunde porque sugiere un límite
-            que no existe. Branch dedicado para trial: solo count + copy
-            específica. El pool X/Y se reserva a ACTIVE/COMP. */}
+        {/* Licenses card — patrón LinkedIn/Microsoft 365: tripleta
+            de metricas Purchased | Assigned | Available + copy con
+            el cap. Reemplaza el card SEATS viejo con su "X of Y"
+            que confundia. Durante TRIAL el concepto "Purchased" no
+            aplica (no hay sub), asi que mostramos copy distinto. */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
               <Users className="h-3.5 w-3.5" />
-              Seats
+              Your licenses
             </div>
             {/* Manage seats: solo en ACTIVE (no en COMP ni TRIAL).
                 Durante trial el pool no aplica — el admin invita a
@@ -558,12 +557,19 @@ function BillingContent() {
           </div>
           {status === "TRIALING" && !isComp ? (
             <>
-              <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
-              <p className="text-xs text-gray-500 mt-1">
-                {activeUsers === 1 ? "Active recruiter" : "Active recruiters"}{" "}
-                · Unlimited during trial
-              </p>
-              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+              {/* TRIAL: no hay "purchased" todavia. Solo Assigned. */}
+              <div className="flex items-baseline gap-6 text-sm">
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Assigned
+                  </p>
+                </div>
+                <div className="text-gray-300 text-xs font-medium uppercase tracking-wide">
+                  Unlimited during trial
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-4 leading-relaxed">
                 Invite teammates from{" "}
                 <a href="/settings/team" className="text-indigo-600 hover:underline">
                   the Team page
@@ -580,20 +586,50 @@ function BillingContent() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-bold text-gray-900">
-                {activeUsers} <span className="text-gray-400 font-medium">of {seats}</span>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {seatsAvailable === 0
-                  ? "All seats in use"
-                  : `${seatsAvailable} available to assign`}
-              </p>
-              <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                Invite or deactivate teammates from{" "}
-                <a href="/settings/team" className="text-indigo-600 hover:underline">
-                  the Team page
-                </a>
-                . Seats freed by deactivating stay in your pool.
+              {/* ACTIVE / COMP / CANCELED / PAST_DUE: triplete completo. */}
+              <div className="flex items-baseline gap-6 text-sm">
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{seats}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Purchased
+                  </p>
+                </div>
+                <div className="h-8 w-px bg-gray-200" />
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Assigned
+                  </p>
+                </div>
+                <div className="h-8 w-px bg-gray-200" />
+                <div>
+                  <p className={`text-2xl font-bold ${seatsAvailable === 0 ? "text-amber-600" : "text-gray-900"}`}>
+                    {seatsAvailable}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Available
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-4 leading-relaxed">
+                {seatsAvailable === 0 ? (
+                  <>
+                    All licenses are in use. Add more seats from Manage seats
+                    above, or deactivate teammates from{" "}
+                    <a href="/settings/team" className="text-indigo-600 hover:underline">
+                      the Team page
+                    </a>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Assign teammates from{" "}
+                    <a href="/settings/team" className="text-indigo-600 hover:underline">
+                      the Team page
+                    </a>
+                    . Deactivated members free their seat to the pool.
+                  </>
+                )}
               </p>
             </>
           )}

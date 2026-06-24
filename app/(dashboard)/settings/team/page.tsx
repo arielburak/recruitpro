@@ -53,12 +53,14 @@ export default function AdminUsersPage() {
   >(null);
 
   // Estado del billing — necesario para decidir si mostrar el
-  // confirm-add-seat dialog al invitar. Solo se interrumpe el flow
-  // si el workspace ya está paying (ACTIVE, no comp, no trial).
+  // confirm-add-seat dialog al invitar Y para renderizar la strip
+  // "Purchased | Assigned | Available" al inicio (estilo LinkedIn
+  // Recruiter). Por eso tambien guardamos activeUsersCount.
   const [subscription, setSubscription] = useState<{
     status?: string;
     isComp?: boolean;
     seats?: number;
+    activeUsersCount?: number;
   } | null>(null);
 
   // Confirm-add-seat dialog state. Cuando admin clickea "Send
@@ -295,35 +297,63 @@ export default function AdminUsersPage() {
   // Decisión 2026-06-22 con Nicolás (pivote final).
   const isTrialLimited = false;
 
-  // Pool seat summary: X of Y in use · Z available — visible header.
-  // Decisión 2026-06-22 con Nicolás (modelo LinkedIn): el admin
-  // gestiona acceso por user con toggle individual. La summary arriba
-  // muestra el pool comprado vs en uso.
+  // Licenses strip — patrón LinkedIn Recruiter: tripleta Purchased |
+  // Assigned | Available al inicio de la pagina. En TRIAL no aplica
+  // "Purchased" (no hay sub paga), asi que solo muestra "Assigned".
   const pool = subscription?.seats ?? 1;
   const inUse = activeUsers.length;
   const available = Math.max(0, pool - inUse);
-  const showPoolSummary =
-    !subscription?.isComp && subscription?.status === "ACTIVE";
+  const isTrial = subscription?.status === "TRIALING";
+  const isCompPlan = subscription?.isComp;
+  const showLicensesStrip = !isCompPlan;
 
   return (
     <div className="space-y-6">
-      {/* Pool seat summary — solo en ACTIVE (no en TRIAL ni COMP). */}
-      {showPoolSummary && (
-        <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-indigo-50/40 to-white p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                Seats
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {inUse}{" "}
-                <span className="text-gray-400 font-medium">/ {pool}</span>
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                {available === 0
-                  ? "All seats in use"
-                  : `${available} available to assign`}
-              </p>
+      {/* Licenses strip estilo LinkedIn Recruiter. En TRIAL muestra
+          solo Assigned + "Unlimited during trial"; en ACTIVE/CANCELED/
+          etc muestra Purchased | Assigned | Available. */}
+      {showLicensesStrip && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-baseline gap-6">
+              {isTrial ? (
+                <>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{inUse}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                      Assigned
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+                    Unlimited during trial
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{pool}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                      Purchased
+                    </p>
+                  </div>
+                  <div className="h-8 w-px bg-gray-200" />
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{inUse}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                      Assigned
+                    </p>
+                  </div>
+                  <div className="h-8 w-px bg-gray-200" />
+                  <div>
+                    <p className={`text-2xl font-bold ${available === 0 ? "text-amber-600" : "text-gray-900"}`}>
+                      {available}
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                      Available
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
             <a
               href="/settings/billing"
@@ -508,15 +538,36 @@ export default function AdminUsersPage() {
             </div>
           </div>
 
-          {/* Active Users */}
-          <div className="space-y-2">
-            {users.map((u) => (
-              <Card
-                key={u.id}
-                className={!u.isActive ? "opacity-60" : ""}
-              >
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+          {/* Users — tabla estilo LinkedIn Recruiter. Cabeceras:
+              User details | License type | License status | Actions.
+              Cada row es un usuario con su avatar, badge de rol,
+              status (Active/Inactive) + fecha de activacion. */}
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-12 gap-4 px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+              <div className="col-span-5">User details</div>
+              <div className="col-span-3">License type</div>
+              <div className="col-span-3">License status</div>
+              <div className="col-span-1 text-right" />
+            </div>
+            {/* Rows */}
+            {users.map((u) => {
+              const activatedAt = u.createdAt
+                ? new Date(u.createdAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : null;
+              return (
+                <div
+                  key={u.id}
+                  className={`grid grid-cols-12 gap-4 px-4 py-3 items-center border-b border-gray-100 last:border-b-0 ${
+                    !u.isActive ? "opacity-60" : ""
+                  }`}
+                >
+                  {/* User details */}
+                  <div className="col-span-5 flex items-center gap-3 min-w-0">
                     <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
                       {u.name
                         ?.split(" ")
@@ -533,105 +584,126 @@ export default function AdminUsersPage() {
                         </span>
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium">
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 truncate">
                         {u.name}
-                        {!u.isActive && (
-                          <span className="ml-2 text-xs text-gray-400 font-normal">
-                            (deactivated)
-                          </span>
-                        )}
                       </p>
-                      {u.title && <p className="text-xs text-gray-500">{u.title}</p>}
-                      <p className="text-sm text-gray-500">{u.email}</p>
+                      {u.title && (
+                        <p className="text-xs text-gray-500 truncate">{u.title}</p>
+                      )}
+                      <p className="text-xs text-gray-400 truncate">{u.email}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {/* Seat toggle — visible solo para ADMIN viewer, y
-                        deshabilitado para el admin actual (no puede sacar
-                        su propio seat). Click: deactivate (con dialog si
-                        tiene work activo) o reactivate (con check pool). */}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleUserActive(u.id, u.isActive, u.name)
-                        }
-                        disabled={u.id === (session?.user as any)?.id}
-                        title={
-                          u.id === (session?.user as any)?.id
-                            ? "You can't remove your own seat"
-                            : u.isActive
-                              ? "Click to deactivate (frees seat)"
-                              : "Click to reactivate (uses 1 seat)"
-                        }
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                          u.isActive ? "bg-emerald-600" : "bg-gray-300"
-                        }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${
-                            u.isActive ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    )}
+
+                  {/* License type */}
+                  <div className="col-span-3">
                     <Badge
-                      variant={
-                        u.role === "ADMIN" ? "default" : "secondary"
-                      }
+                      variant={u.role === "ADMIN" ? "default" : "secondary"}
                     >
                       {u.role === "ADMIN" ? "Admin" : "User"}
                     </Badge>
-                    <span className="text-xs text-gray-400">
-                      {u._count.candidates} candidates
-                    </span>
-                    {isAdmin && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {u.role === "USER" ? (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setRoleChangeTarget({
-                                  id: u.id,
-                                  name: u.name,
-                                  newRole: "ADMIN",
-                                })
-                              }
-                            >
-                              <Shield className="mr-2 h-4 w-4" />
-                              Promote to Admin
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setRoleChangeTarget({
-                                  id: u.id,
-                                  name: u.name,
-                                  newRole: "USER",
-                                })
-                              }
-                            >
-                              <User className="mr-2 h-4 w-4" />
-                              Demote to User
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {u._count.candidates}{" "}
+                      {u._count.candidates === 1 ? "candidate" : "candidates"}
+                    </p>
+                  </div>
+
+                  {/* License status */}
+                  <div className="col-span-3">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`inline-block h-1.5 w-1.5 rounded-full ${
+                          u.isActive ? "bg-emerald-500" : "bg-gray-300"
+                        }`}
+                      />
+                      <span
+                        className={`text-sm font-medium ${
+                          u.isActive ? "text-emerald-700" : "text-gray-400"
+                        }`}
+                      >
+                        {u.isActive ? "Active" : "Deactivated"}
+                      </span>
+                    </div>
+                    {activatedAt && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Activated on {activatedAt}
+                      </p>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+
+                  {/* Actions */}
+                  <div className="col-span-1 flex items-center justify-end gap-1">
+                    {isAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleUserActive(u.id, u.isActive, u.name)
+                          }
+                          disabled={u.id === (session?.user as any)?.id}
+                          title={
+                            u.id === (session?.user as any)?.id
+                              ? "You can't remove your own seat"
+                              : u.isActive
+                                ? "Click to deactivate (frees seat)"
+                                : "Click to reactivate (uses 1 seat)"
+                          }
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            u.isActive ? "bg-emerald-600" : "bg-gray-300"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform ${
+                              u.isActive ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {u.role === "USER" ? (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setRoleChangeTarget({
+                                    id: u.id,
+                                    name: u.name,
+                                    newRole: "ADMIN",
+                                  })
+                                }
+                              >
+                                <Shield className="mr-2 h-4 w-4" />
+                                Promote to Admin
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setRoleChangeTarget({
+                                    id: u.id,
+                                    name: u.name,
+                                    newRole: "USER",
+                                  })
+                                }
+                              >
+                                <User className="mr-2 h-4 w-4" />
+                                Demote to User
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Pending Invites */}
