@@ -33,13 +33,22 @@ export async function createCheckoutSession(
   // inmediato, no trial).
   trialEnd?: Date | null,
 ) {
-  // Stripe acepta trial_end como Unix timestamp en segundos. Solo lo
-  // incluimos si está en el futuro — si es pasado/null, Stripe falla
-  // o lo ignora, mejor no pasarlo.
-  const trialEndTs =
-    trialEnd && trialEnd.getTime() > Date.now()
-      ? Math.floor(trialEnd.getTime() / 1000)
-      : null;
+  // Stripe acepta trial_end como Unix timestamp en segundos.
+  //
+  // Audit 2026-06-24 HIGH: antes el guard `trialEnd > Date.now()` se
+  // saltaba SILENCIOSO cuando trialEnd era past, y Stripe cobraba al
+  // toque — pero el caller le había prometido al user "won't be charged
+  // today". Ahora throw para que el route lo capture y devuelva 409
+  // "trial expired, refresh and retry" en vez de cobrar a destiempo.
+  let trialEndTs: number | null = null;
+  if (trialEnd) {
+    if (trialEnd.getTime() <= Date.now()) {
+      const err: any = new Error("Trial has already expired — refresh and retry");
+      err.code = "trial_already_expired";
+      throw err;
+    }
+    trialEndTs = Math.floor(trialEnd.getTime() / 1000);
+  }
 
   return getStripeClient().checkout.sessions.create({
     customer: customerId,

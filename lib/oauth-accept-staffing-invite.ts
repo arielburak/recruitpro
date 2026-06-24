@@ -11,6 +11,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { checkSeatAvailability } from "@/lib/seat-availability";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 // Mismo patrón canonical de canonicalizeGmail / findStaffingUserByOAuthEmail
 // en auth-options.ts. Duplicado a propósito para que el módulo sea
@@ -142,13 +143,12 @@ export async function acceptStaffingInviteOnOAuth(
     return null;
   }
 
-  // Pool seat model 2026-06-22: el accept NO toca seats. El admin ya
-  // validó disponibilidad cuando creó el invite (checkSeatAvailability
-  // en /api/admin/invites POST). Antes este path tenía
-  // `subscription.update({ seats: { increment: 1 } })` heredado del
-  // modelo viejo — eso causaba que DB.seats drift contra Stripe.quantity
-  // y que el path OAuth diverja del path manual (que no toca seats).
-  // Audit 2026-06-23.
+  // Auto-sync invariant (Batch H 2026-06-24): mismo patrón que el
+  // accept manual (app/api/invite/[token] POST). El OAuth path estuvo
+  // drifteado del manual hasta 2026-06-23 porque hacía un seats++
+  // directo sin tocar Stripe. Ahora ambos paths llaman al mismo helper
+  // idempotente — el invariant Stripe===active-users vale en los dos.
+  void recalculateAndSyncSeats(invite.organizationId);
 
   // Memoria total (2026-06-17): si ademas del UserInvite el mismo email
   // tiene un PendingFirmInvite (un cliente lo invito a una busqueda),

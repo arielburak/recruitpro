@@ -122,6 +122,7 @@ export async function syncSubFromStripe(
         seats: true,
         cancelAtPeriodEnd: true,
         status: true,
+        trialEndsAt: true,
       },
     });
 
@@ -147,6 +148,18 @@ export async function syncSubFromStripe(
     const quantity = firstItem?.quantity || 1;
     const willCancel = isStripeSubScheduledToCancel(stripeSub);
     const mappedStatus = mapStripeStatus(stripeSub.status as string | undefined);
+    // trial_end de Stripe → DB. Si Stripe-side extiende/cambia el trial
+    // (Customer Portal trial extension, Dashboard edit, Stripe Smart
+    // Retries), antes la DB se quedaba con el valor original y el
+    // SubscriptionGate lockeaba al user antes de tiempo. Audit
+    // 2026-06-24. Solo overrideamos cuando Stripe efectivamente
+    // reporta trial_end (durante trialing) — sino dejamos lo que hay
+    // en DB para no perder el valor en transiciones a active.
+    const stripeTrialEnd =
+      stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000) : null;
+    const sameTrialEnd =
+      !stripeTrialEnd ||
+      (subscription.trialEndsAt?.getTime() ?? null) === stripeTrialEnd.getTime();
 
     // Detectar si hace falta actualizar. Si todo coincide, skip el
     // write (idempotente, evita updatedAt churn).
@@ -157,7 +170,38 @@ export async function syncSubFromStripe(
       (subscription.currentPeriodEnd?.getTime() ?? null) ===
       (periodEnd?.getTime() ?? null);
 
-    if (sameStatus && sameSeats && sameCancel && samePeriodEnd) {
+    if (sameStatus && sameSeats && sameCancel && samePeriodEnd && sameTrialEnd) {
+      // Stripe y DB están alineados — pero el invariant requiere que
+      // ADEMÁS coincidan con count(active users). Si no, hubo drift y
+      // hay que push DB→Stripe. Audit 2026-06-24 con Nicolás.
+      const activeUsers = await prisma.user.count({
+        where: { organizationId, isActive: true },
+      });
+      const stripeSyncable =
+        mappedStatus === "ACTIVE" ||
+        mappedStatus === "TRIALING" ||
+        mappedStatus === "PAST_DUE";
+      if (stripeSyncable && quantity !== activeUsers) {
+        Sentry.captureMessage(
+          "stripe drift detected: quantity != active users — auto-fixing",
+          {
+            level: "warning",
+            tags: { area: "stripe-sync", reason: "active_users_drift" },
+            extra: { organizationId, stripeQuantity: quantity, activeUsers },
+          },
+        );
+        const pushResult = await syncStripeSeats(organizationId, activeUsers);
+        if (pushResult.synced) {
+          await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: { seats: activeUsers },
+          });
+          return { synced: true, reason: "drift_fixed" };
+        }
+        // Si el push a Stripe falló, dejamos DB como está y devolvemos
+        // notSynced — el cron diario va a reintentar.
+        return { synced: false, reason: "drift_push_failed" };
+      }
       return { synced: false, reason: "already_in_sync" };
     }
 
@@ -168,6 +212,7 @@ export async function syncSubFromStripe(
         cancelAtPeriodEnd: willCancel,
         ...(periodEnd && { currentPeriodEnd: periodEnd }),
         ...(mappedStatus && { status: mappedStatus }),
+        ...(stripeTrialEnd && { trialEndsAt: stripeTrialEnd }),
       },
     });
 

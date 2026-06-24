@@ -5,6 +5,7 @@ import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/e
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkSeatAvailability } from "@/lib/seat-availability";
 import { findStaffingUserByEmail } from "@/lib/email-canonical";
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 // Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
 // resta seats automático. El admin compra seats explícitamente desde
 // /settings/billing → Manage seats. Al accept del invite re-corremos
@@ -171,13 +172,13 @@ export async function POST(
       }),
     ]);
 
-    // Pool seat model 2026-06-22: el accept NO toca seats. El admin
-    // ya validó disponibilidad cuando creó el invite. Si por race
-    // condition se llenó el pool entre crear y aceptar, igual dejamos
-    // pasar el accept (mejor agregar 1 seat extra esa vez que rechazar
-    // a un invitado válido). El admin lo va a ver en /settings/billing
-    // como "5 of 4 seats in use — buy 1 more" y la próxima factura
-    // lo cobra correcto.
+    // Auto-sync invariant (Batch H 2026-06-24): el accept agrega 1
+    // active user, así que Stripe quantity debe sumar 1 para que el
+    // próximo cobro refleje el equipo real. Fire-and-forget: si Stripe
+    // falla, syncSubFromStripe en el próximo GET de /settings/billing
+    // lo corrige, y el cron diario de drift también. checkSeatAvailability
+    // ya corrió arriba como gate, así que en ACTIVE no over-provision.
+    void recalculateAndSyncSeats(invite.organizationId);
 
     // Memoria total (2026-06-17): si el mismo email tambien recibio un
     // PendingFirmInvite (un cliente lo invito a una busqueda especifica

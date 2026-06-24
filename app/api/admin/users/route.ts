@@ -4,10 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkSeatAvailability } from "@/lib/seat-availability";
-// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
-// create/reactivate/delete YA NO mueven seats automático. El admin
-// compra el pool explícitamente desde Manage seats. El gate de
-// disponibilidad se enforced acá con checkSeatAvailability.
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+// Auto-sync invariant (Batch H 2026-06-24 con Nicolás): Stripe.quantity
+// debe coincidir SIEMPRE con count(active users). Cada mutación que
+// agrega/saca un active user dispara recalculateAndSyncSeats —
+// idempotente, no-op si ya coinciden.
+// checkSeatAvailability sigue cumpliendo el gate antes del create para
+// que el admin no pueda over-provision el pool en ACTIVE sin pasar
+// por el flow de "buy seat & invite".
 
 export async function GET() {
   try {
@@ -73,6 +77,11 @@ export async function POST(request: Request) {
         organizationId: ctx.organizationId,
       },
     });
+
+    // Auto-sync: agregar un active user empuja Stripe quantity para
+    // que el invariant Stripe===active-users no drift. Fire-and-forget:
+    // errores se logean pero no rompen el create.
+    void recalculateAndSyncSeats(ctx.organizationId);
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
@@ -149,9 +158,14 @@ export async function PATCH(request: Request) {
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
-    // Pool seat model 2026-06-22: deactivate libera el seat al pool
-    // (billing igual). Reactivate ocupa uno (checkeado arriba). NO
-    // se modifica subscription.seats automático.
+    // Auto-sync invariant: si esta PATCH cambió isActive, el count de
+    // active users cambió y Stripe quantity tiene que coincidir.
+    // recalculateAndSyncSeats es idempotente: si no hubo cambio en
+    // isActive (solo role change), corre el count, ve que matchea,
+    // y devuelve no-op.
+    if (typeof isActive === "boolean") {
+      void recalculateAndSyncSeats(ctx.organizationId);
+    }
 
     return NextResponse.json(updated);
   } catch (error: any) {

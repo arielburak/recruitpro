@@ -71,6 +71,7 @@ export async function POST(request: Request) {
         stripeSubscriptionId: true,
         isComp: true,
         status: true,
+        cancelAtPeriodEnd: true,
       },
     });
 
@@ -138,6 +139,21 @@ export async function POST(request: Request) {
         {
           error:
             "Subscription is canceled. Resubscribe before purchasing more seats.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // Cancel scheduled: comprar seats sobre una sub que va a cancelar
+    // termina con seats inflados que nunca se cobran (no hay próxima
+    // factura), y al final del período TODOS pierden acceso. Audit
+    // 2026-06-24. El admin tiene que reactivar primero.
+    if (subscription.cancelAtPeriodEnd) {
+      return NextResponse.json(
+        {
+          error:
+            "Your subscription is set to cancel at period end. Reactivate it before adding seats.",
+          code: "subscription_pending_cancellation",
         },
         { status: 400 },
       );

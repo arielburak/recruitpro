@@ -23,9 +23,10 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
-// recalculateAndSyncSeats deprecado en pool seat model (2026-06-22):
-// deactivate libera el seat al pool — billing no cambia automático.
-// Admin saca seats explícitamente desde /settings/billing.
+import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+// Auto-sync invariant (Batch H 2026-06-24): deactivar baja active
+// user count → Stripe quantity tiene que bajar para coincidir.
+// Fire-and-forget desde el call site.
 
 export async function GET(
   _request: Request,
@@ -251,9 +252,12 @@ export async function POST(
       data: { isActive: false },
     });
 
-    // Pool seat model 2026-06-22: el seat queda libre en el pool,
-    // disponible para asignar a otro user. Billing no cambia hasta
-    // que el admin saque el seat manualmente desde Manage seats.
+    // Auto-sync invariant: ahora hay 1 active user menos → Stripe
+    // quantity tiene que decrementar para que la próxima factura
+    // refleje la nueva realidad. proration_behavior='none' en
+    // syncStripeSeats hace que el cambio se aplique al próximo ciclo
+    // sin generar credit notes raros mid-period.
+    void recalculateAndSyncSeats(ctx.organizationId);
 
     await logActivity({
       action: "user.deactivated",

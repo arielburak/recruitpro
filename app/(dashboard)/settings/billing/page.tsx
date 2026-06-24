@@ -235,8 +235,14 @@ function BillingContent() {
   const projectedMonthlyCost = monthlyTotalCents(projectedSeats);
   const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
   // Stripe flag: cancela al final del periodo actual. Sub sigue
-  // ACTIVE hasta ese día pero NO se renueva. UI distinto.
-  const scheduledToCancel = !!subscription?.cancelAtPeriodEnd && status === "ACTIVE";
+  // ACTIVE (o TRIALING-con-card) hasta ese día pero NO se renueva. UI
+  // distinto. Audit 2026-06-24: incluir TRIALING — el user puede
+  // suscribir con card durante el trial y después cancelar; en ese
+  // caso la sub queda TRIALING+cancelAtPeriodEnd y la UI necesita
+  // mostrar "won't renew" + botón Reactivate igual que en ACTIVE.
+  const scheduledToCancel =
+    !!subscription?.cancelAtPeriodEnd &&
+    (status === "ACTIVE" || status === "TRIALING");
   const periodEnd = subscription?.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd)
     : null;

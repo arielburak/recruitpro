@@ -108,35 +108,83 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No subscription found" }, { status: 404 });
     }
 
-    // Bloquear doble-subscribe. Si ya hay un stripeSubscriptionId
-    // valido en Stripe (active / trialing / past_due), no creamos
-    // otra checkout session — sino el user termina con N subs
-    // paralelas cobrandole N veces. Bug reportado por Nicolas
-    // 2026-06-24 (vio 2 "Active trials" en Customer Portal).
-    // Allowed states para re-checkout: canceled, incomplete_expired,
-    // o sub que ya no existe en Stripe (404).
+    // Bloquear doble-subscribe (Audit 2026-06-24 HIGH refuerzo).
+    // Antes solo chequeábamos por stripeSubscriptionId en DB — pero
+    // hay un window entre completar el Stripe Checkout y que el
+    // webhook checkout.session.completed attache el subId. Si el
+    // admin re-clickea en ese window, la guard del DB está null y
+    // creaba una 2da sub silenciosa (caso real reportado por Nicolás).
+    //
+    // Fix: doble guard.
+    //   1. Si hay subId en DB: retrieve la sub específica.
+    //   2. Si NO hay subId (o sub fue deleted en Stripe): list todas
+    //      las subs del customer y bloquear si hay alguna activa/
+    //      trialing/past_due. Captura subs creadas out-of-band
+    //      (Dashboard manual) y el race del webhook lag.
+    const blocked = ["active", "trialing", "past_due", "incomplete"];
+
+    let blockingSubStatus: string | null = null;
     if (subscription.stripeSubscriptionId) {
       try {
         const existing = await getStripeClient().subscriptions.retrieve(
           subscription.stripeSubscriptionId,
         );
-        const blocked = ["active", "trialing", "past_due", "incomplete"];
         if (blocked.includes(existing.status)) {
-          return NextResponse.json(
-            {
-              error: "You already have an active subscription. Use Manage billing to make changes.",
-              code: "subscription_already_active",
-              status: existing.status,
-            },
-            { status: 409 },
-          );
+          blockingSubStatus = existing.status;
         }
       } catch (err: any) {
-        // Sub borrada del lado Stripe — seguir con el flow nuevo. El
-        // stripeSubscriptionId se va a sobreescribir con el de la
-        // sesión nueva cuando llegue el webhook.
         if (err?.code !== "resource_missing") throw err;
+        // Sub deleted en Stripe — caemos al fallback abajo.
       }
+    }
+
+    // Fallback: enumerar subs por customer (atrapa out-of-band + race
+    // del webhook lag). `customerId` se setea más abajo, así que acá
+    // usamos directamente subscription.stripeCustomerId (que es la
+    // source). El check de "pending_" prefix skipea customers que
+    // todavía no fueron creados en Stripe (signup sin checkout).
+    if (
+      !blockingSubStatus &&
+      subscription.stripeCustomerId &&
+      !subscription.stripeCustomerId.startsWith("pending_")
+    ) {
+      try {
+        const subsForCustomer = await getStripeClient().subscriptions.list({
+          customer: subscription.stripeCustomerId,
+          status: "all",
+          limit: 10,
+        });
+        for (const s of subsForCustomer.data) {
+          if (blocked.includes(s.status)) {
+            blockingSubStatus = s.status;
+            // Bonus: si encontramos una active sub que NO matchea
+            // nuestro subId en DB, attacheamos esa para evitar drift.
+            if (!subscription.stripeSubscriptionId) {
+              await prisma.subscription.update({
+                where: { id: subscription.id },
+                data: { stripeSubscriptionId: s.id },
+              });
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        // Si Stripe falla acá, NO bloqueamos (fail-open) — caemos al
+        // flow normal de creación. El webhook va a alertar cuando
+        // detecte 2 subs en el mismo customer.
+        console.error("[checkout] subscriptions.list fallback failed:", err);
+      }
+    }
+
+    if (blockingSubStatus) {
+      return NextResponse.json(
+        {
+          error: "You already have an active subscription. Use Manage billing to make changes.",
+          code: "subscription_already_active",
+          status: blockingSubStatus,
+        },
+        { status: 409 },
+      );
     }
 
     // El target final es lo que el admin eligió (finalSeats) si pasó,
@@ -181,13 +229,32 @@ export async function POST(request: Request) {
         ? subscription.trialEndsAt
         : null;
 
-    const session = await createCheckoutSession(
-      customerId,
-      stripePriceIdForSeats(seatsForCheckout),
-      seatsForCheckout,
-      ctx.organizationId,
-      trialEnd,
-    );
+    let session;
+    try {
+      session = await createCheckoutSession(
+        customerId,
+        stripePriceIdForSeats(seatsForCheckout),
+        seatsForCheckout,
+        ctx.organizationId,
+        trialEnd,
+      );
+    } catch (err: any) {
+      // Trial expiró entre la decisión del cliente y el procesamiento.
+      // Antes Stripe lo creaba ACTIVE y cobraba al toque sin avisar
+      // (HIGH audit 2026-06-24). Ahora rechazamos con un mensaje
+      // claro para que el front pueda re-renderizar la página con el
+      // dialog correcto ("Trial expired — subscribe to keep access").
+      if (err?.code === "trial_already_expired") {
+        return NextResponse.json(
+          {
+            error: "Your trial expired while you were on this page. Refresh to continue.",
+            code: "trial_already_expired",
+          },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
 
     // Stripe respondió OK. Recién ahora aplicamos los cambios locales
     // de forma atómica. Si la tx falla, el checkout en Stripe queda
