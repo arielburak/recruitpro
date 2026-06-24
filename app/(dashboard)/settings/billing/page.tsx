@@ -502,8 +502,12 @@ function BillingContent() {
           )}
         </div>
 
-        {/* Trial progress bar — solo cuando TRIALING activo (no expirado) */}
-        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && (
+        {/* Trial progress bar — solo cuando TRIALING activo (no expirado)
+            Y el user NO se subscribio todavia. Una vez que hay sub en
+            Stripe, el countdown urgente sobra: el copy del hero ya dice
+            "Trial active through X — billing starts then". Feedback
+            Nicolas 2026-06-24. */}
+        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && !hasStripeSub && (
           <div className="mt-6 space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-600">
               <span>Trial progress</span>
