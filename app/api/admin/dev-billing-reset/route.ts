@@ -131,9 +131,8 @@ export async function POST(request: Request) {
     await prisma.document.deleteMany({
       where: { candidateId: { in: candidateIds } },
     });
-    await prisma.candidateRating.deleteMany({
-      where: { candidateId: { in: candidateIds } },
-    });
+    // CandidateRating no tiene candidateId directo (vive en submission).
+    // Lo borra el cascade al deletear candidateSubmission mas abajo.
     await prisma.comment.deleteMany({
       where: { candidateId: { in: candidateIds } },
     });
