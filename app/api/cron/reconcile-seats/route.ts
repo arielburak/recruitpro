@@ -1,22 +1,19 @@
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/prisma";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { syncStripeSeats } from "@/lib/sync-stripe-seats";
+import { getStripeClient } from "@/lib/stripe";
 
-// Drift detection diario: scan todas las orgs ACTIVE/TRIALING (con
-// stripeSubscriptionId) y verifica que Stripe.quantity === active
-// users. Si difiere, dispara recalculateAndSyncSeats — que cuenta DB,
-// actualiza Subscription.seats y push a Stripe.
+// Drift detection diario: scan todas las orgs con stripeSubscriptionId
+// y verifica que Stripe.quantity === Subscription.seats (= Purchased).
+// Si difiere, push DB→Stripe.
 //
-// Por qué este cron a pesar de tener auto-sync en cada mutation:
-//   · Robustez. Si un webhook se pierde, un lambda muere mid-flight,
-//     o Vercel mata el background promise antes de que termine
-//     syncStripeSeats, el drift queda hasta el próximo cron.
-//   · COMP / outliers — orgs que cambiaron entre ACTIVE/TRIALING/etc.
-//   · Self-healing post-deploy: si tocamos el flow de seats sin querer,
-//     el cron detecta y corrige.
+// Modelo Purchased (H5 2026-06-24): Stripe siempre cobra el "Purchased"
+// que el admin compró explícitamente. Assigned (= count active users)
+// puede ser menor (= hay Available en el pool) y eso es válido. El
+// cron solo asegura que Stripe coincida con el Purchased almacenado
+// en DB.
 //
-// Idempotente: si todo coincide, no hace nada.
 // Auth: Bearer ${CRON_SECRET} — mismo patrón que /cron/expire-trials.
 
 export const dynamic = "force-dynamic";
@@ -41,22 +38,41 @@ export async function GET(request: Request) {
         isComp: false,
         status: { in: ["ACTIVE", "TRIALING", "PAST_DUE"] },
       },
-      select: { organizationId: true, seats: true, status: true },
+      select: {
+        organizationId: true,
+        seats: true,
+        status: true,
+        stripeSubscriptionId: true,
+      },
     });
 
     let checked = 0;
     let drifted = 0;
     let fixed = 0;
     const errors: Array<{ organizationId: string; reason: string }> = [];
+    const stripe = getStripeClient();
 
     for (const sub of subs) {
       checked++;
-      const activeUsers = await prisma.user.count({
-        where: { organizationId: sub.organizationId, isActive: true },
-      });
-      if (activeUsers === sub.seats) continue;
 
-      // Drift detectado. Loguear y empujar a Stripe.
+      // Leer Stripe quantity actual y compararla con DB.seats (Purchased).
+      let stripeQuantity: number | null = null;
+      try {
+        const stripeSub = (await stripe.subscriptions.retrieve(
+          sub.stripeSubscriptionId!,
+        )) as any;
+        stripeQuantity = stripeSub.items?.data?.[0]?.quantity ?? null;
+      } catch (e: any) {
+        errors.push({
+          organizationId: sub.organizationId,
+          reason: "stripe_retrieve_failed: " + (e?.message || "exception"),
+        });
+        continue;
+      }
+
+      if (stripeQuantity === null || stripeQuantity === sub.seats) continue;
+
+      // Drift: DB.seats (= Purchased autoritativo) != Stripe.quantity.
       drifted++;
       Sentry.captureMessage(
         "seat drift detected by reconcile cron",
@@ -66,15 +82,15 @@ export async function GET(request: Request) {
           extra: {
             organizationId: sub.organizationId,
             dbSeats: sub.seats,
-            activeUsers,
+            stripeQuantity,
             status: sub.status,
           },
         },
       );
 
       try {
-        const result = await recalculateAndSyncSeats(sub.organizationId);
-        if (result.stripeSynced) {
+        const result = await syncStripeSeats(sub.organizationId, sub.seats);
+        if (result.synced) {
           fixed++;
         } else {
           errors.push({

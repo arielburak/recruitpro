@@ -5,7 +5,6 @@ import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/e
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkSeatAvailability } from "@/lib/seat-availability";
 import { findStaffingUserByEmail } from "@/lib/email-canonical";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 // Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
 // resta seats automático. El admin compra seats explícitamente desde
 // /settings/billing → Manage seats. Al accept del invite re-corremos
@@ -104,22 +103,15 @@ export async function POST(
       );
     }
 
-    // Re-check pool al accept. Cierra el bypass de 7 días: si el admin
-    // redujo seats entre crear el invite y este accept, el pool puede
-    // estar full ahora. Sin este check, el accept agregaba un user que
-    // excedía DB.seats (y Stripe seguía facturando la cantidad menor).
-    // TRIAL/COMP siempre pasan libres. Audit 2026-06-23.
+    // Modelo Purchased (Batch H5 2026-06-24): el invitee SIEMPRE entra
+    // al workspace cuando acepta — incluso si no hay seat disponible.
+    // Si hay Available > 0, el user entra ACTIVO (con seat asignado);
+    // si no, entra inactivo y ve "Ask your admin to assign you a seat"
+    // hasta que el admin lo active manualmente. Esto cierra el flow de
+    // LinkedIn / Microsoft 365: invitar y asignar son acciones
+    // separadas.
     const seatCheck = await checkSeatAvailability(invite.organizationId);
-    if (!seatCheck.ok && seatCheck.reason === "pool_full") {
-      return NextResponse.json(
-        {
-          error:
-            "All seats are in use right now. Ask the admin to add a seat before accepting.",
-          code: "seat_pool_full",
-        },
-        { status: 402 },
-      );
-    }
+    const hasAvailableSeat = seatCheck.ok;
 
     // Check if user already exists with this email. Tolerante a Gmail
     // aliases. Si existe pero NO en la org del invite, devolvemos el
@@ -157,12 +149,13 @@ export async function POST(
           passwordHash,
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
+          // isActive = has seat assigned. Si el admin tiene seats
+          // libres en el pool, le asignamos uno al toque (UX más
+          // natural). Si no hay Available, el user entra inactivo
+          // y el admin tiene que asignarle un seat desde Manage seats.
+          isActive: hasAvailableSeat,
           // Accepting the invite from the inbox already proves the
-          // address. Mirrors the client-portal /set-password flow
-          // which also marks emailVerifiedAt on completion. Without
-          // this, invited members landed on /login and bounced off
-          // the EMAIL_NOT_VERIFIED hard-block (now a soft-block,
-          // but the in-app banner is still noise they don't need).
+          // address. Mirrors the client-portal /set-password flow.
           emailVerifiedAt: new Date(),
         },
       }),
@@ -172,13 +165,10 @@ export async function POST(
       }),
     ]);
 
-    // Auto-sync invariant (Batch H 2026-06-24): el accept agrega 1
-    // active user, así que Stripe quantity debe sumar 1 para que el
-    // próximo cobro refleje el equipo real. Fire-and-forget: si Stripe
-    // falla, syncSubFromStripe en el próximo GET de /settings/billing
-    // lo corrige, y el cron diario de drift también. checkSeatAvailability
-    // ya corrió arriba como gate, así que en ACTIVE no over-provision.
-    void recalculateAndSyncSeats(invite.organizationId);
+    // Modelo Purchased: el accept NO toca Stripe.quantity. Si el
+    // admin tenía Available > 0 esto consumió 1 seat del pool (sigue
+    // pagando lo mismo). Si pool full, el user entró sin seat y el
+    // admin tiene que liberarle uno o comprar más desde Manage seats.
 
     // Memoria total (2026-06-17): si el mismo email tambien recibio un
     // PendingFirmInvite (un cliente lo invito a una busqueda especifica

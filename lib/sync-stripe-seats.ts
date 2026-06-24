@@ -171,37 +171,11 @@ export async function syncSubFromStripe(
       (periodEnd?.getTime() ?? null);
 
     if (sameStatus && sameSeats && sameCancel && samePeriodEnd && sameTrialEnd) {
-      // Stripe y DB están alineados — pero el invariant requiere que
-      // ADEMÁS coincidan con count(active users). Si no, hubo drift y
-      // hay que push DB→Stripe. Audit 2026-06-24 con Nicolás.
-      const activeUsers = await prisma.user.count({
-        where: { organizationId, isActive: true },
-      });
-      const stripeSyncable =
-        mappedStatus === "ACTIVE" ||
-        mappedStatus === "TRIALING" ||
-        mappedStatus === "PAST_DUE";
-      if (stripeSyncable && quantity !== activeUsers) {
-        Sentry.captureMessage(
-          "stripe drift detected: quantity != active users — auto-fixing",
-          {
-            level: "warning",
-            tags: { area: "stripe-sync", reason: "active_users_drift" },
-            extra: { organizationId, stripeQuantity: quantity, activeUsers },
-          },
-        );
-        const pushResult = await syncStripeSeats(organizationId, activeUsers);
-        if (pushResult.synced) {
-          await prisma.subscription.update({
-            where: { id: subscription.id },
-            data: { seats: activeUsers },
-          });
-          return { synced: true, reason: "drift_fixed" };
-        }
-        // Si el push a Stripe falló, dejamos DB como está y devolvemos
-        // notSynced — el cron diario va a reintentar.
-        return { synced: false, reason: "drift_push_failed" };
-      }
+      // Modelo Purchased (Batch H5 2026-06-24): el invariant es
+      // Stripe.quantity === Subscription.seats (lo que el admin compró).
+      // Si están alineados, OK — no chequeamos active users (= Assigned)
+      // porque puede ser < Purchased y eso es válido (seats Available
+      // en el pool).
       return { synced: false, reason: "already_in_sync" };
     }
 

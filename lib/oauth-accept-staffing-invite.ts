@@ -11,7 +11,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { checkSeatAvailability } from "@/lib/seat-availability";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
 
 // Mismo patrón canonical de canonicalizeGmail / findStaffingUserByOAuthEmail
 // en auth-options.ts. Duplicado a propósito para que el módulo sea
@@ -99,18 +98,13 @@ export async function acceptStaffingInviteOnOAuth(
 ): Promise<{ userId: string } | null> {
   const name = (googleProfile.name || invite.name || "Member").trim();
 
-  // Re-check pool en OAuth path también — mismo bypass de 7 días que
-  // el path manual. Si pool full en ACTIVE, abortamos y dejamos que
-  // el callback de signIn caiga al lookup normal (que va a 404 sin
-  // user). Audit 2026-06-23.
+  // Modelo Purchased (Batch H5 2026-06-24): el OAuth accept SIEMPRE
+  // entra al workspace. Si hay Available > 0, isActive=true (seat
+  // auto-asignado). Si no, isActive=false (entró sin seat; el admin
+  // le asigna después desde Manage seats). Mismo flow que el accept
+  // manual.
   const seatCheck = await checkSeatAvailability(invite.organizationId);
-  if (!seatCheck.ok && seatCheck.reason === "pool_full") {
-    console.warn(
-      "[oauth invite accept] pool full, aborting accept for invite",
-      invite.id,
-    );
-    return null;
-  }
+  const hasAvailableSeat = seatCheck.ok;
 
   let createdUserId: string | null = null;
   try {
@@ -125,6 +119,9 @@ export async function acceptStaffingInviteOnOAuth(
           passwordHash: "",
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
+          // Mismo seat-assignment behavior que el manual accept:
+          // si hay Available > 0 entra con seat, sino entra inactivo.
+          isActive: hasAvailableSeat,
           emailVerifiedAt: new Date(),
         },
         select: { id: true },
@@ -143,12 +140,8 @@ export async function acceptStaffingInviteOnOAuth(
     return null;
   }
 
-  // Auto-sync invariant (Batch H 2026-06-24): mismo patrón que el
-  // accept manual (app/api/invite/[token] POST). El OAuth path estuvo
-  // drifteado del manual hasta 2026-06-23 porque hacía un seats++
-  // directo sin tocar Stripe. Ahora ambos paths llaman al mismo helper
-  // idempotente — el invariant Stripe===active-users vale en los dos.
-  void recalculateAndSyncSeats(invite.organizationId);
+  // Modelo Purchased: el OAuth accept NO toca Stripe.quantity. Si
+  // hubo Available > 0, el isActive=true consumió 1 seat del pool.
 
   // Memoria total (2026-06-17): si ademas del UserInvite el mismo email
   // tiene un PendingFirmInvite (un cliente lo invito a una busqueda),
