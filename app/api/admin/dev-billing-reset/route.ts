@@ -131,9 +131,8 @@ export async function POST(request: Request) {
     await prisma.document.deleteMany({
       where: { candidateId: { in: candidateIds } },
     });
-    await prisma.candidateRating.deleteMany({
-      where: { candidateId: { in: candidateIds } },
-    });
+    // CandidateRating no tiene candidateId directo (vive en submission).
+    // Lo borra el cascade al deletear candidateSubmission mas abajo.
     await prisma.comment.deleteMany({
       where: { candidateId: { in: candidateIds } },
     });
@@ -158,8 +157,9 @@ export async function POST(request: Request) {
 
   log.push(`Wiped: ${candidateIds.length} candidates, ${jobIds.length} jobs.`);
 
-  // 3. Wipe client data scoped al org
-  await prisma.pendingFirmInvite.deleteMany({ where: { organizationId: orgId } });
+  // 3. Wipe client data scoped al org. PendingFirmInvites no se
+  // tocan — no estan scoped por organizationId (existen por email
+  // antes que el firm las acepte) y son ruido limpio.
   await prisma.firmEngagement.deleteMany({ where: { organizationId: orgId } });
 
   const orgClients = await prisma.organizationClient.findMany({
