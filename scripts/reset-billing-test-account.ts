@@ -40,8 +40,16 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 async function main() {
   const email = process.argv[2]?.trim().toLowerCase();
+  const mode = process.argv[3]?.trim().toLowerCase() || "reset";
   if (!email) {
-    console.error("Usage: reset-billing-test-account <email>");
+    console.error("Usage: reset-billing-test-account <email> [mode]");
+    console.error("Modes:");
+    console.error("  reset   (default) — wipe data + cancel Stripe subs + reset to fresh TRIAL");
+    console.error("  expire  — solo setea trialEndsAt en el pasado (no wipea nada)");
+    process.exit(1);
+  }
+  if (mode !== "reset" && mode !== "expire") {
+    console.error(`Unknown mode "${mode}". Use "reset" or "expire".`);
     process.exit(1);
   }
 
@@ -49,6 +57,7 @@ async function main() {
   console.log(" Reset billing test account");
   console.log("================================================");
   console.log(` Email: ${email}`);
+  console.log(` Mode:  ${mode}`);
   console.log(` DB:    ${maskDbHost(process.env.DATABASE_URL)}`);
   console.log("");
 
@@ -75,6 +84,21 @@ async function main() {
   console.log(`Found user: ${user.name} (${user.email})`);
   console.log(`Org: ${user.organization.name} (${orgId})`);
   console.log("");
+
+  // Modo EXPIRE: solo backdatear trialEndsAt. No wipe, no Stripe.
+  // Util para testear el "Trial expired" UX sin esperar 7 dias.
+  if (mode === "expire") {
+    const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000); // ayer
+    await prisma.subscription.update({
+      where: { organizationId: orgId },
+      data: { trialEndsAt: expiredAt },
+    });
+    console.log(`Subscription.trialEndsAt backdateado a ${expiredAt.toISOString()}.`);
+    console.log("");
+    console.log("Refrescá /settings/billing en el browser — deberías ver el banner rojo 'Trial expired'.");
+    await prisma.$disconnect();
+    return;
+  }
 
   // Sanity: contar team antes para confirmar que NO los tocamos.
   const teamBefore = await prisma.user.count({
