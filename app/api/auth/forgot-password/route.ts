@@ -6,11 +6,23 @@ import {
   findClientUserByEmail,
 } from "@/lib/email-canonical";
 import crypto from "crypto";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 const TOKEN_TTL_MINUTES = 60;
 
 export async function POST(request: Request) {
   try {
+    // Rate limit por IP — cada request manda mail (costo $$$ + abuse
+    // del inbox del target). 3 por 10 min es generoso para retries
+    // legítimos.
+    const rl = await checkRateLimit("auth:forgot-password", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many password reset requests. Please wait a few minutes." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const { email, isClient } = await request.json();
 
     if (!email || typeof email !== "string") {
