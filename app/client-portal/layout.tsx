@@ -6,6 +6,7 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { LayoutDashboard, FolderOpen, LogOut, List, User, Users, Users2, Building2, Home } from "lucide-react";
 import { NotificationBell } from "@/components/client-portal/notification-bell";
+import { SessionGate } from "@/components/auth/session-gate";
 
 const PUBLIC_PATHS = ["/client-portal/login", "/client-portal/set-password", "/client-portal/reset-password", "/client-portal/complete-profile"];
 
@@ -140,6 +141,11 @@ export default function ClientPortalLayout({
       </header>
 
       <main className="flex-1">{children}</main>
+
+      {/* Idle auto-logout (30min) + session-revoked detection. Solo
+          montamos cuando hay sesión — los public paths no necesitan
+          el tracker y montarlo ahí dispararía polls innecesarios. */}
+      {showNav && session?.user && <SessionGate />}
 
       <footer className="bg-white border-t border-gray-200 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">

@@ -15,19 +15,21 @@ import { SOLO_PRICE_PER_SEAT_CENTS } from "@/lib/constants";
 
 const pricePerSeatDollars = SOLO_PRICE_PER_SEAT_CENTS / 100;
 
-// Modal popup que se muestra al cargar el dashboard si el workspace
-// está en trial. Estilo overlay para que sea bien prominente — el
-// admin lo ve apenas entra.
+// Modal popup que se muestra al loguearse si el workspace está en
+// trial. Estilo overlay para que sea bien prominente — el admin lo
+// ve apenas entra.
 //
-// Decisión 2026-06-19 con Nicolás: aparece SIEMPRE cada vez que se
-// monta el componente (cada login / refresh). No persiste dismiss en
-// storage. Modos no-urgent: user puede cerrar con X o esc para usar
-// el ATS, pero al refresh / próximo login reaparece.
+// Decisión 2026-06-24 con Nicolás (refinamiento): aparece UNA VEZ por
+// login session — no en cada refresh ni navegación. Usamos
+// sessionStorage para marcar "ya mostrado en esta pestaña". El flag
+// se borra al cerrar la tab o hacer logout, así el próximo login lo
+// vuelve a disparar. Modo refresh F5 lo respeta (el user ya lo vio
+// y no quiere ver el mismo popup cada vez que recarga).
 //
-// Excepción 2026-06-22: NO mostrar durante los primeros 5min después
-// del signup. La primera vez que el user entra al dashboard recién
-// creó la cuenta — el popup interrumpe el onboarding. A partir del
-// próximo login (o refresh después de la ventana) aparece normal.
+// Excepción: NO mostrar durante el PRIMER DÍA después del signup. El
+// user recién armó su workspace, el popup interrumpe el onboarding
+// y le mete urgencia donde todavía no la hay. A partir del segundo
+// login después del signup, aparece normal.
 //
 // Visual escalado por urgencia:
 //   · 7d+ → indigo (gentle reminder, dismissible esta carga)
@@ -52,10 +54,16 @@ type Subscription = {
 };
 
 // Ventana en minutos desde el signup donde NO se muestra el popup.
-// 5 minutos cubre el flow normal de signup → verify email → complete
-// profile → dashboard (~2min típico). Si el user demora más por
-// alguna razón, va a ver el popup — aceptable.
-const SIGNUP_GRACE_MINUTES = 5;
+// 1 día completo cubre la primera sesión + cualquier login del mismo
+// día. El user recién armó su workspace, no le metemos urgencia hasta
+// que pase 24h. A partir del 2do día sí: ya tuvo tiempo de explorar
+// y cualquier nuevo login dispara el popup (una vez por session).
+const SIGNUP_GRACE_MINUTES = 24 * 60;
+
+// sessionStorage key. La presencia indica "ya mostré el popup en
+// esta pestaña" — se borra solo al cerrar la tab / logout, así el
+// próximo login lo vuelve a disparar.
+const SESSION_FLAG_KEY = "trial_countdown_shown";
 
 export function TrialCountdown() {
   const { data: session } = useSession();
@@ -87,7 +95,7 @@ export function TrialCountdown() {
     const trialEndMs = new Date(subscription.trialEndsAt).getTime();
     if (trialEndMs <= Date.now()) return;
 
-    // Skipear durante la ventana de gracia post-signup.
+    // Skipear durante la ventana de gracia post-signup (24h).
     if (subscription.userCreatedAt) {
       const minutesSinceSignup =
         (Date.now() - new Date(subscription.userCreatedAt).getTime()) /
@@ -96,9 +104,21 @@ export function TrialCountdown() {
       if (minutesSinceSignup < SIGNUP_GRACE_MINUTES) return;
     }
 
-    // Sin persistencia de dismiss: abre cada vez que el componente
-    // se monta (cada login / refresh). User puede cerrar para usar
-    // el ATS, pero al recargar reaparece.
+    // One-per-session: si ya lo mostramos en esta pestaña, skip.
+    // sessionStorage persiste durante refresh pero se borra al
+    // cerrar tab o hacer logout — exactamente lo que queremos.
+    if (typeof window !== "undefined") {
+      try {
+        if (window.sessionStorage.getItem(SESSION_FLAG_KEY) === "1") {
+          return;
+        }
+        window.sessionStorage.setItem(SESSION_FLAG_KEY, "1");
+      } catch {
+        // sessionStorage puede fallar (private mode, etc.) — fallback
+        // al comportamiento viejo (mostrar igual).
+      }
+    }
+
     setOpen(true);
   }, [loaded, subscription]);
 
@@ -118,9 +138,10 @@ export function TrialCountdown() {
   // no aporta nada arriba de eso — solo confunde.
   if (msLeft <= 0) return null;
 
-  // Skipear si el user recién se creó la cuenta (<5min). Evita que
-  // el popup interrumpa el primer momento del onboarding. Apenas
-  // pase la ventana, cualquier refresh o próximo login lo dispara.
+  // Skipear durante el primer día post-signup (SIGNUP_GRACE_MINUTES).
+  // Evita meter urgencia mientras el user todavía está explorando el
+  // workspace recién creado. A partir del segundo login después de
+  // pasar la ventana, el popup aparece una vez por session.
   if (subscription.userCreatedAt) {
     const minutesSinceSignup =
       (now - new Date(subscription.userCreatedAt).getTime()) / 1000 / 60;
