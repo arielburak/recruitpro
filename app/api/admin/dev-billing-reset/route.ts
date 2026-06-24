@@ -157,8 +157,9 @@ export async function POST(request: Request) {
 
   log.push(`Wiped: ${candidateIds.length} candidates, ${jobIds.length} jobs.`);
 
-  // 3. Wipe client data scoped al org
-  await prisma.pendingFirmInvite.deleteMany({ where: { organizationId: orgId } });
+  // 3. Wipe client data scoped al org. PendingFirmInvites no se
+  // tocan — no estan scoped por organizationId (existen por email
+  // antes que el firm las acepte) y son ruido limpio.
   await prisma.firmEngagement.deleteMany({ where: { organizationId: orgId } });
 
   const orgClients = await prisma.organizationClient.findMany({
