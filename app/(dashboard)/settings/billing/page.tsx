@@ -380,11 +380,6 @@ function BillingContent() {
     if (!confirm("This will backdate your trial end + cancel any active Stripe sub. Continue?")) return;
     setEndTrialLoading(true);
     try {
-      // Mode "reset" haría wipe de candidates/jobs/etc — no queremos
-      // eso para el test. Mode "expire" solo backdate. Igual cancelamos
-      // las subs Stripe a mano vía un fetch separado al endpoint
-      // (que ya las cancela en mode reset). Para Test 2 (sin tarjeta)
-      // probablemente no hay sub Stripe — expire alcanza.
       const res = await fetch("/api/admin/dev-billing-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -396,9 +391,33 @@ function BillingContent() {
         setEndTrialLoading(false);
         return;
       }
-      // Forzar reload — el SubscriptionGate corre en el layout y solo
-      // se enciende al next render. router.refresh() solo bumpea data
-      // client-side; necesitamos volver a hacer el server check.
+      window.location.reload();
+    } catch (e: any) {
+      alert("Failed: " + (e?.message || "exception"));
+      setEndTrialLoading(false);
+    }
+  }
+
+  async function endSubscriptionNow() {
+    if (
+      !confirm(
+        "This will cancel your Stripe subscription IMMEDIATELY (skipping the scheduled period end) and mark DB as CANCELED. Continue?",
+      )
+    )
+      return;
+    setEndTrialLoading(true);
+    try {
+      const res = await fetch("/api/admin/dev-billing-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "end-subscription" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed: " + (data?.error || "unknown"));
+        setEndTrialLoading(false);
+        return;
+      }
       window.location.reload();
     } catch (e: any) {
       alert("Failed: " + (e?.message || "exception"));
@@ -408,9 +427,9 @@ function BillingContent() {
 
   return (
     <div className="space-y-6">
-      {/* Dev-only: terminate trial inmediatamente para testing. Solo
-          visible en non-production. */}
-      {isDevEnv && status === "TRIALING" && !isComp && (
+      {/* Dev-only widgets para testing del lifecycle de billing.
+          Solo visibles en non-production. */}
+      {isDevEnv && !isComp && status === "TRIALING" && (
         <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50 p-3 flex items-center justify-between gap-3">
           <p className="text-xs text-orange-900">
             <strong>DEV:</strong> backdate trial end to test the
@@ -423,6 +442,23 @@ function BillingContent() {
             className="text-xs font-semibold bg-orange-600 text-white px-3 py-1.5 rounded-md hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
           >
             {endTrialLoading ? "Ending…" : "End trial now (dev)"}
+          </button>
+        </div>
+      )}
+      {isDevEnv && !isComp && status === "ACTIVE" && (
+        <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50 p-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-orange-900">
+            <strong>DEV:</strong> end subscription IMMEDIATELY (skipping
+            period end). Cancels Stripe sub + marks DB CANCELED — to
+            test the post-cancellation overlay + Resubscribe flow.
+          </p>
+          <button
+            type="button"
+            onClick={endSubscriptionNow}
+            disabled={endTrialLoading}
+            className="text-xs font-semibold bg-orange-600 text-white px-3 py-1.5 rounded-md hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {endTrialLoading ? "Ending…" : "End subscription now (dev)"}
           </button>
         </div>
       )}

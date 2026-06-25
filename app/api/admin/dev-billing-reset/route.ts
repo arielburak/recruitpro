@@ -18,7 +18,7 @@ import { getStripeClient } from "@/lib/stripe";
 //   reset  → cancela Stripe subs + wipea data + reset Subscription
 //   expire → solo backdatea trialEndsAt (no wipea, no toca Stripe)
 
-type Mode = "reset" | "expire";
+type Mode = "reset" | "expire" | "end-subscription";
 
 export async function POST(request: Request) {
   const ctx = await getOrgContext();
@@ -34,10 +34,55 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const mode: Mode = body?.mode === "expire" ? "expire" : "reset";
+  const mode: Mode =
+    body?.mode === "expire"
+      ? "expire"
+      : body?.mode === "end-subscription"
+        ? "end-subscription"
+        : "reset";
 
   const orgId = ctx.organizationId;
   const log: string[] = [];
+
+  // ── END-SUBSCRIPTION MODE ──────────────────────────────────────
+  // Simula el final del período de una sub ACTIVE/cancelada-scheduled:
+  // cancela inmediato en Stripe + marca CANCELED en DB + limpia
+  // stripeSubscriptionId. Equivalente al outcome del webhook
+  // customer.subscription.deleted que normalmente llega cuando termina
+  // el período (Jul 24 en tu caso). Sin tener que esperar la fecha real.
+  if (mode === "end-subscription") {
+    const subRow = await prisma.subscription.findUnique({
+      where: { organizationId: orgId },
+      select: { stripeSubscriptionId: true, stripeCustomerId: true },
+    });
+
+    if (subRow?.stripeSubscriptionId) {
+      try {
+        const stripe = getStripeClient();
+        await stripe.subscriptions.cancel(subRow.stripeSubscriptionId, {
+          prorate: false,
+        });
+        log.push(`Stripe sub ${subRow.stripeSubscriptionId} cancelled inmediato.`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.push(`Stripe cancel failed (continuing anyway): ${msg}`);
+      }
+    } else {
+      log.push("No Stripe sub atacheada — solo marcamos CANCELED en DB.");
+    }
+
+    await prisma.subscription.update({
+      where: { organizationId: orgId },
+      data: {
+        status: "CANCELED",
+        stripeSubscriptionId: null,
+        cancelAtPeriodEnd: false,
+      },
+    });
+    log.push("DB: status=CANCELED, stripeSubscriptionId=null.");
+
+    return NextResponse.json({ ok: true, mode, log });
+  }
 
   // ── EXPIRE MODE ────────────────────────────────────────────────
   // Backdate trialEndsAt local + si hay Stripe sub en trialing,
