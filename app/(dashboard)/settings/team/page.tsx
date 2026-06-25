@@ -549,7 +549,7 @@ export default function AdminUsersPage() {
             <div className="grid grid-cols-12 gap-4 px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
               <div className="col-span-5">Member</div>
               <div className="col-span-3">Role</div>
-              <div className="col-span-3">Seat access</div>
+              <div className="col-span-3">Status</div>
               <div className="col-span-1 text-right" />
             </div>
             {/* Rows */}
@@ -627,7 +627,7 @@ export default function AdminUsersPage() {
                           u.isActive ? "text-emerald-700" : "text-gray-400"
                         }`}
                       >
-                        {u.isActive ? "Has seat" : "No seat"}
+                        {u.isActive ? "Active" : "Inactive"}
                       </span>
                     </div>
                     {activatedAt && (
