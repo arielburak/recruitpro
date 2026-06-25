@@ -43,6 +43,11 @@ function BillingContent() {
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
   const fromPortal = searchParams.get("from") === "portal";
+  // ?subscribe=1 → auto-abrir el SubscribeOptionsDialog al cargar.
+  // Llega de los overlays "Trial ended" / "Subscription ended" para
+  // que el admin no tenga que clickear Subscribe DOS veces (overlay +
+  // billing page). Decisión Nicolás 2026-06-25.
+  const autoOpenSubscribe = searchParams.get("subscribe") === "1";
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -110,6 +115,19 @@ function BillingContent() {
       }, 1500);
     });
   }, [fromPortal]);
+
+  // Auto-abrir el SubscribeOptionsDialog cuando ?subscribe=1 llega
+  // del overlay SubscriptionGate (trial expired / sub canceled). Sin
+  // esto el admin clickea "Subscribe now" del overlay y aterriza en
+  // /settings/billing teniendo que clickear OTRO botón Subscribe. UX
+  // duplicada. Decisión Nicolás 2026-06-25.
+  // Esperamos a que termine el load para que el dialog reciba la
+  // activeUsersList completa.
+  useEffect(() => {
+    if (autoOpenSubscribe && !loading && subscription) {
+      setSubscribeOptionsOpen(true);
+    }
+  }, [autoOpenSubscribe, loading, subscription]);
 
   async function retryLoad() {
     setLoading(true);

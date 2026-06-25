@@ -104,8 +104,12 @@ export function SubscriptionGate({
         <div className="p-6 space-y-4">
           {isAdmin ? (
             <>
+              {/* ?subscribe=1 → la billing page auto-abre el dialog de
+                  Subscribe con el seat picker. Sino el admin clickeaba
+                  Subscribe acá + Subscribe otra vez adentro = 2 clicks
+                  para lo mismo. Fix Nicolás 2026-06-25. */}
               <Link
-                href="/settings/billing"
+                href="/settings/billing?subscribe=1"
                 className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors text-base"
               >
                 Subscribe now
