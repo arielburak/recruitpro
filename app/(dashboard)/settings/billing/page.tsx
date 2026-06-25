@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,10 @@ import {
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
 import { ManageSeatsDialog } from "@/components/billing/manage-seats-dialog";
-import { SubscribeOptionsDialog } from "@/components/billing/subscribe-options-dialog";
+import {
+  SubscribeOptionsDialog,
+  SUBSCRIBE_DIALOG_STORAGE_KEY,
+} from "@/components/billing/subscribe-options-dialog";
 
 // Rediseño Linear/Vercel style: hero card con estado visual claro,
 // progress bar del trial cuando aplica, breakdown desglosado del costo,
@@ -128,6 +131,29 @@ function BillingContent() {
       setSubscribeOptionsOpen(true);
     }
   }, [autoOpenSubscribe, loading, subscription]);
+
+  // Restore-from-redirect: si el admin venía mid-flow de "Change
+  // payment method" → Stripe portal → back/Return, el dialog persistió
+  // sus seats/keepIds a sessionStorage. Acá re-abrimos el dialog para
+  // que el restore-on-open recupere todo y el admin no tenga que volver
+  // a elegir seats. Single-shot via ref para no re-disparar después de
+  // que el user cierre manualmente.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (loading || !subscription) return;
+    restoredRef.current = true;
+    try {
+      const raw = sessionStorage.getItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed?.open === true) {
+        setSubscribeOptionsOpen(true);
+      }
+    } catch {
+      // ignore (private browsing, JSON parse error)
+    }
+  }, [loading, subscription]);
 
   async function retryLoad() {
     setLoading(true);

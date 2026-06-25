@@ -22,6 +22,17 @@ type SavedCard = {
   expYear: number;
 };
 
+// sessionStorage token usado como "redirect-back": cuando el admin
+// clickea "Change payment method" persistimos { seats, keepIds }
+// porque algunos browsers fuerzan same-tab navigation a Stripe portal
+// (popup blocker, user-gesture timing) y al volver con back/Return el
+// dialog perdía la selección. La billing page chequea este flag on
+// mount y re-abre el dialog con el mismo state. Se consume on read
+// (después de restaurar lo borramos) — no queremos auto-reopen días
+// después.
+export const SUBSCRIBE_DIALOG_STORAGE_KEY = "ats:subscribe-dialog-state";
+const STORAGE_EXPIRY_MS = 60 * 60 * 1000; // 1h hard cap por las dudas
+
 // Dialog para subscribirse desde trial.
 //
 // Pivote 2026-06-23 (feedback Nicolás): "el free trial es free siempre,
@@ -98,13 +109,51 @@ export function SubscribeOptionsDialog({
   );
 
   // Reset state cada vez que se abre — sino el estado anterior persiste.
+  //
+  // Restore-from-redirect: si el admin venía de "Change payment
+  // method" (que persiste el state antes de redirect a Stripe), acá
+  // restauramos seats + keepIds en vez de resetear. Consume-on-read:
+  // borramos sessionStorage después de leer para no auto-reopen días
+  // después.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+
+    let restored: { seats: number; keepIds: string[] } | null = null;
+    try {
+      const raw = sessionStorage.getItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed?.open === true &&
+          Number.isFinite(parsed.seats) &&
+          parsed.seats >= 1 &&
+          typeof parsed.savedAt === "number" &&
+          Date.now() - parsed.savedAt < STORAGE_EXPIRY_MS
+        ) {
+          restored = {
+            seats: parsed.seats,
+            keepIds: Array.isArray(parsed.keepIds) ? parsed.keepIds : [],
+          };
+        }
+        sessionStorage.removeItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+      }
+    } catch {
+      // ignore (private browsing, quota exceeded, JSON parse error)
+    }
+
+    if (restored) {
+      // Filtrar keepIds restaurados a teammates actuales — si alguien
+      // fue deactivated mientras el admin estaba en Stripe portal, su
+      // id ya no es válido.
+      const validIds = new Set(teammates.map((t) => t.id));
+      setSeats(restored.seats);
+      setKeepIds(new Set(restored.keepIds.filter((id) => validIds.has(id))));
+    } else {
       setSeats(Math.max(1, activeCount));
       setKeepIds(new Set(teammates.map((t) => t.id)));
-      setLoading(false);
-      setSavedCard(undefined);
     }
+    setLoading(false);
+    setSavedCard(undefined);
   }, [open, activeCount, teammates]);
 
   // Fetch card guardada cada vez que se abre el dialog. Aborta si el
@@ -238,10 +287,15 @@ export function SubscribeOptionsDialog({
       });
       const data = await res.json();
 
-      // Backend creó la sub directo. Redirigimos al billing page con
-      // ?success=true para que renderee el banner de éxito (mismo path
-      // que usaba el flow de Stripe Checkout post-redirect).
+      // Backend creó la sub directo. Limpiamos el storage flag (sino
+      // el restore on mount re-abriría el dialog post-success) y
+      // redirigimos al billing page con ?success=true.
       if (data.ok && data.inline) {
+        try {
+          sessionStorage.removeItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
         window.location.href = "/settings/billing?success=true";
         return;
       }
@@ -282,42 +336,99 @@ export function SubscribeOptionsDialog({
     }
   }
 
-  // "Change payment method" → abre Stripe Billing Portal en una tab
-  // nueva. No usamos redirect en la misma ventana porque perderiamos
-  // la selección de seats/teammates del dialog. Cuando vuelvan a esta
-  // tab el useEffect [open] no se re-dispara (sigue open) pero a mano
-  // refrescamos el state de card.
+  // "Change payment method" → abre Stripe Billing Portal.
+  //
+  // Triple-defensa contra perder el state del dialog:
+  //   1. Persistir { seats, keepIds } a sessionStorage ANTES de abrir.
+  //      Si terminamos en same-tab nav, el restore on mount recupera.
+  //   2. Abrir popup SÍNCRONO (about:blank) en el click handler
+  //      — preserva el user-gesture así el browser no fuerza
+  //      same-tab. Después del fetch updateamos popup.location.
+  //   3. Si el popup quedó null (popup blocker explícito), intentamos
+  //      window.open con la URL real. Last resort: location.href con
+  //      el state ya persistido.
   async function handleChangeCard() {
     if (changingCard) return;
     setChangingCard(true);
+
+    // Step 1: persist state.
+    try {
+      sessionStorage.setItem(
+        SUBSCRIBE_DIALOG_STORAGE_KEY,
+        JSON.stringify({
+          open: true,
+          seats,
+          keepIds: Array.from(keepIds),
+          savedAt: Date.now(),
+        }),
+      );
+    } catch {
+      // ignore — fail al persistir es OK, peor caso perdés la selección
+    }
+
+    // Step 2: abrir popup sincronico antes del await.
+    const popup = window.open("about:blank", "_blank");
+
     try {
       const res = await fetch("/api/admin/billing/portal", { method: "POST" });
       const data = await res.json();
-      if (data.url) {
-        window.open(data.url, "_blank", "noopener,noreferrer");
-        // Cuando el user vuelve a la tab del ATS, refresca la card.
-        // No es 100% confiable (depende de focus event) pero es mejor
-        // que dejar la card vieja indefinidamente.
-        const onFocus = () => {
-          fetch("/api/admin/billing/payment-method")
-            .then((r) => (r.ok ? r.json() : { card: null }))
-            .then((d) => setSavedCard(d?.card ?? null))
-            .catch(() => {});
-          window.removeEventListener("focus", onFocus);
-        };
-        window.addEventListener("focus", onFocus);
-      } else {
+
+      if (!data?.url) {
         alert(data?.error || "Couldn't open billing portal.");
+        if (popup && !popup.closed) popup.close();
+        setChangingCard(false);
+        return;
       }
+
+      if (popup && !popup.closed) {
+        popup.location.href = data.url;
+      } else {
+        // Step 3: popup bloqueado. Intentamos otra apertura con URL real.
+        const w = window.open(data.url, "_blank");
+        if (!w) {
+          // Last resort: same-tab nav. El state está persistido en
+          // sessionStorage — el restore al volver lo recupera.
+          window.location.href = data.url;
+          return;
+        }
+      }
+
+      // Refresh card cuando vuelvan al tab (focus event).
+      const onFocus = () => {
+        fetch("/api/admin/billing/payment-method")
+          .then((r) => (r.ok ? r.json() : { card: null }))
+          .then((d) => setSavedCard(d?.card ?? null))
+          .catch(() => {});
+        window.removeEventListener("focus", onFocus);
+      };
+      window.addEventListener("focus", onFocus);
     } catch (e: any) {
       alert(e?.message || "Couldn't open billing portal.");
+      if (popup && !popup.closed) popup.close();
     } finally {
       setChangingCard(false);
     }
   }
 
+  // Wrapper de onOpenChange: cuando se cierra el dialog (Cancel, X,
+  // Esc, click-outside) limpiamos el sessionStorage. Sin esto, si el
+  // admin clickea Change card y después Cancel sin completar la sub,
+  // el storage persistiría — y al próximo mount restauraría
+  // automáticamente. El restore SOLO debe pasar cuando volvés de
+  // Stripe portal mid-flow.
+  function handleOpenChange(next: boolean) {
+    if (!next) {
+      try {
+        sessionStorage.removeItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+    onOpenChange(next);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Subscribe</DialogTitle>
@@ -592,7 +703,7 @@ export function SubscribeOptionsDialog({
         <div className="flex items-center justify-end gap-2 mt-1">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={loading}
           >
             Cancel
