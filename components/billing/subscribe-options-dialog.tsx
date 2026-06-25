@@ -346,14 +346,28 @@ export function SubscribeOptionsDialog({
             la doble opcion (pay now / save card later) sugeria que la
             card era condicion para mantener el trial. Ahora dejamos
             super claro: trial sigue siendo gratis hasta que se termine
-            solo. */}
+            solo.
+
+            Edge case (2026-06-25): si trialDaysLeft === 0 el trial
+            termina hoy/ya terminó. Decir "won't be charged today"
+            mientras "billing starts on <hoy>" es contradictorio —
+            usamos copy distinto que reconoce que el cobro arranca
+            ya mismo cuando termine el trial. */}
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mt-2">
-          <p className="text-sm text-emerald-900 leading-relaxed">
-            <strong>Your card won&apos;t be charged today.</strong> You have{" "}
-            {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} of free trial
-            left — billing of <strong>${fmt(monthly)}/mo</strong> starts on{" "}
-            <strong>{trialEndStr}</strong>. Cancel anytime before then.
-          </p>
+          {trialDaysLeft > 0 ? (
+            <p className="text-sm text-emerald-900 leading-relaxed">
+              <strong>Your card won&apos;t be charged today.</strong> You have{" "}
+              {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} of free trial
+              left — billing of <strong>${fmt(monthly)}/mo</strong> starts on{" "}
+              <strong>{trialEndStr}</strong>. Cancel anytime before then.
+            </p>
+          ) : (
+            <p className="text-sm text-emerald-900 leading-relaxed">
+              <strong>Your trial ends today.</strong> Billing of{" "}
+              <strong>${fmt(monthly)}/mo</strong> starts as soon as the trial
+              ends. Cancel anytime from billing settings.
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-4">
