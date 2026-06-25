@@ -40,6 +40,12 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const requestedSeats = Number(body?.seats);
+    // Opcional: cuando admin baja seats < active users, lista de
+    // userIds que mantienen acceso. El admin actual siempre keep (slot
+    // implícito). Mismo patrón que /api/admin/billing/checkout.
+    const keepUserIds: string[] = Array.isArray(body?.keepUserIds)
+      ? body.keepUserIds.filter((x: unknown): x is string => typeof x === "string")
+      : [];
 
     // Validations sanity
     if (!Number.isFinite(requestedSeats) || requestedSeats < 1) {
@@ -98,33 +104,81 @@ export async function POST(request: Request) {
       });
     }
 
-    // Cap inferior: no se pueden tener menos seats que active users.
-    // Sino algunos users quedarían sin seat asignado (modelo de pool
-    // se rompe). Si el admin quiere bajar más, primero tiene que
-    // deactivar users en /settings/team.
-    const activeUsersCount = await prisma.user.count({
+    // Si el admin pide menos seats que active users, le pedimos que
+    // explícitamente elija quién mantiene acceso (keepUserIds). Los
+    // que NO están en la lista (y NO son el admin actual) se
+    // desactivan. Mismo patrón que el subscribe-options-dialog —
+    // evita el dead-end UX del "deactivate from Team first". Fix
+    // 2026-06-25 con Nicolás.
+    const activeUsersAll = await prisma.user.findMany({
       where: { organizationId: ctx.organizationId, isActive: true },
+      select: { id: true },
     });
+    const activeUsersCount = activeUsersAll.length;
+    let toDeactivate: string[] = [];
 
     if (requestedSeats < activeUsersCount) {
-      return NextResponse.json(
-        {
-          error: `You have ${activeUsersCount} active teammates. Deactivate ${
-            activeUsersCount - requestedSeats
-          } from Team settings before reducing seats below ${activeUsersCount}.`,
-          activeUsers: activeUsersCount,
-        },
-        { status: 400 },
+      const adminSlot = 1; // el admin actual SIEMPRE keep
+      const expectedKeepCount = requestedSeats - adminSlot;
+      if (expectedKeepCount < 0) {
+        return NextResponse.json(
+          { error: "Cannot reduce seats below 1 (your own seat)." },
+          { status: 400 },
+        );
+      }
+      if (keepUserIds.length !== expectedKeepCount) {
+        return NextResponse.json(
+          {
+            error: `Select exactly ${expectedKeepCount} teammate${expectedKeepCount === 1 ? "" : "s"} to keep before reducing seats.`,
+            code: "missing_keep_user_ids",
+            expectedKeepCount,
+            activeUsers: activeUsersCount,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Validar que todos los keepUserIds pertenezcan al org + estén
+      // activos + no sean el admin actual. Sino son ids spoofed.
+      const validKeepIds = new Set(
+        activeUsersAll
+          .map((u) => u.id)
+          .filter((id) => id !== ctx.userId),
       );
+      for (const id of keepUserIds) {
+        if (!validKeepIds.has(id)) {
+          return NextResponse.json(
+            { error: "Invalid teammate selection. Please retry." },
+            { status: 400 },
+          );
+        }
+      }
+
+      const keepSet = new Set([...keepUserIds, ctx.userId]);
+      toDeactivate = activeUsersAll
+        .map((u) => u.id)
+        .filter((id) => !keepSet.has(id));
     }
 
-    // Si NO hay Stripe sub (trial sin tarjeta): solo update DB. Cuando
-    // el admin haga checkout, la cantidad correcta se passes a Stripe.
+    // Si NO hay Stripe sub (trial sin tarjeta): solo update DB +
+    // deactivate los users que el admin no eligió mantener (si aplica).
+    // Cuando el admin haga checkout, la cantidad correcta se pasa a
+    // Stripe con el count nuevo.
     if (!subscription.stripeSubscriptionId) {
-      await prisma.subscription.update({
-        where: { organizationId: ctx.organizationId },
-        data: { seats: requestedSeats },
-      });
+      await prisma.$transaction([
+        prisma.subscription.update({
+          where: { organizationId: ctx.organizationId },
+          data: { seats: requestedSeats },
+        }),
+        ...(toDeactivate.length > 0
+          ? [
+              prisma.user.updateMany({
+                where: { id: { in: toDeactivate } },
+                data: { isActive: false },
+              }),
+            ]
+          : []),
+      ]);
       return NextResponse.json({
         seats: requestedSeats,
         synced: false,
@@ -180,12 +234,24 @@ export async function POST(request: Request) {
       proration_behavior: "none",
     });
 
-    // Update DB optimisticamente. El webhook subscription.updated va
-    // a llegar después y reconcilia (no-op si ya match).
-    await prisma.subscription.update({
-      where: { organizationId: ctx.organizationId },
-      data: { seats: requestedSeats },
-    });
+    // Stripe OK → ahora atomic tx para DB.seats + deactivate de los
+    // users que el admin no eligió mantener (si aplica). Si falla la
+    // tx, Stripe ya tiene el quantity nuevo y vamos a ver drift que el
+    // cron reconcile-seats corrige al día siguiente. Trade-off de MVP.
+    await prisma.$transaction([
+      prisma.subscription.update({
+        where: { organizationId: ctx.organizationId },
+        data: { seats: requestedSeats },
+      }),
+      ...(toDeactivate.length > 0
+        ? [
+            prisma.user.updateMany({
+              where: { id: { in: toDeactivate } },
+              data: { isActive: false },
+            }),
+          ]
+        : []),
+    ]);
 
     // Decisión 2026-06-22 con Nicolás: después de procesar el cambio
     // en Stripe, redirigir al Customer Portal para que el user vea el

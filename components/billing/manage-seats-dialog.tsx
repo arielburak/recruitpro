@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Users, TrendingUp, TrendingDown, AlertCircle, Shield } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,11 +36,21 @@ const SEAT_HARD_CAP = 100;
 const fmt = (cents: number) =>
   (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
+type ActiveUser = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentSeats: number;
   activeUsers: number;
+  // Lista completa de active users — necesaria para que el admin
+  // elija quién mantiene seat cuando baja seats < active count.
+  activeUsersList?: ActiveUser[];
   status: string; // "ACTIVE" | "TRIALING" | etc.
   isComp: boolean;
   onConfirmed?: () => void;
@@ -50,13 +61,20 @@ export function ManageSeatsDialog({
   onOpenChange,
   currentSeats,
   activeUsers,
+  activeUsersList,
   status,
   isComp,
   onConfirmed,
 }: Props) {
+  const { data: session } = useSession();
+  const currentUserId = (session?.user as any)?.id as string | undefined;
   const [seats, setSeats] = useState(currentSeats);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Lista de userIds que el admin elige MANTENER cuando baja seats <
+  // activeUsers. El admin actual es slot implícito (no aparece en la
+  // lista — siempre keep). Reset cuando cambia el seats target.
+  const [keepUserIds, setKeepUserIds] = useState<string[]>([]);
 
   // Reset state cada vez que abre — sino el N anterior persiste.
   useEffect(() => {
@@ -64,15 +82,30 @@ export function ManageSeatsDialog({
       setSeats(currentSeats);
       setError("");
       setLoading(false);
+      setKeepUserIds([]);
     }
   }, [open, currentSeats]);
+
+  // Si bajaron a un número que YA NO requiere choice (seats >=
+  // activeUsers), limpiar la lista de keeps. Sino quedaba con ids
+  // viejos cuando subían y bajaban el counter.
+  useEffect(() => {
+    if (seats >= activeUsers) {
+      setKeepUserIds([]);
+    }
+  }, [seats, activeUsers]);
 
   if (isComp) {
     // Edge case: no debería abrirse en COMP, pero por safety.
     return null;
   }
 
-  const minSeats = Math.max(1, activeUsers);
+  // minSeats = 1: el admin actual ocupa 1 seat siempre. Si baja a 1,
+  // todos los demás active users quedan desactivados (con choice
+  // explícito via checklist abajo). Antes era Math.max(1, activeUsers)
+  // que bloqueaba el flow — el admin tenía que ir a Team primero a
+  // deactivar manual. Fix 2026-06-25.
+  const minSeats = 1;
   const isTrial = status === "TRIALING";
   const monthlyNow = monthlyTotalCents(currentSeats);
   const monthlyNew = monthlyTotalCents(Math.max(1, seats));
@@ -80,19 +113,36 @@ export function ManageSeatsDialog({
   const isIncreasing = delta > 0;
   const isDecreasing = delta < 0;
 
+  // Si baja por debajo de active count, el admin debe elegir quién
+  // mantiene. Lista de candidatos = otros active users (no el admin).
+  const needsKeepChoice = seats < activeUsers;
+  const otherActiveUsers = (activeUsersList || []).filter(
+    (u) => u.id !== currentUserId,
+  );
+  const expectedKeepCount = Math.max(0, seats - 1); // -1 admin slot
+  const keepListValid =
+    !needsKeepChoice || keepUserIds.length === expectedKeepCount;
+
   const inputInvalid =
     !Number.isFinite(seats) ||
     seats < minSeats ||
-    seats > SEAT_HARD_CAP;
+    seats > SEAT_HARD_CAP ||
+    !keepListValid;
 
   const inputError = (() => {
     if (!Number.isFinite(seats) || seats < 1) return "Must be at least 1 seat.";
-    if (seats < activeUsers)
-      return `You have ${activeUsers} active teammates. Deactivate ${activeUsers - seats} from Team first.`;
     if (seats > SEAT_HARD_CAP)
       return `Above ${SEAT_HARD_CAP} requires manual setup — contact support.`;
     return null;
   })();
+
+  function toggleKeep(userId: string) {
+    setKeepUserIds((curr) =>
+      curr.includes(userId)
+        ? curr.filter((id) => id !== userId)
+        : [...curr, userId],
+    );
+  }
 
   async function handleConfirm() {
     if (inputInvalid) return;
@@ -102,7 +152,12 @@ export function ManageSeatsDialog({
       const res = await fetch("/api/admin/billing/update-seats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seats }),
+        body: JSON.stringify({
+          seats,
+          // Solo enviamos keepUserIds cuando hace falta (bajar < active).
+          // Sino el endpoint lo ignora.
+          ...(needsKeepChoice && { keepUserIds }),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -169,7 +224,7 @@ export function ManageSeatsDialog({
               </Button>
               <Input
                 type="number"
-                min={minSeats}
+                min={1}
                 max={SEAT_HARD_CAP}
                 value={Number.isFinite(seats) ? seats : ""}
                 onChange={(e) => {
@@ -233,6 +288,96 @@ export function ManageSeatsDialog({
             </div>
           )}
         </div>
+
+        {/* Choice de quién mantiene seat cuando baja < activeUsers */}
+        {needsKeepChoice && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-900">
+                  Pick who keeps a seat
+                </p>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  You're going from {activeUsers} to {seats} seat
+                  {seats === 1 ? "" : "s"}. Select{" "}
+                  <strong>{expectedKeepCount}</strong> teammate
+                  {expectedKeepCount === 1 ? "" : "s"} below — the rest
+                  will lose access (you can reassign their seat anytime
+                  from the Team page).
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
+              {otherActiveUsers.length === 0 ? (
+                <p className="text-xs text-amber-900 italic px-1">
+                  No other teammates to deactivate.
+                </p>
+              ) : (
+                otherActiveUsers.map((u) => {
+                  const checked = keepUserIds.includes(u.id);
+                  const wouldBeKept = checked;
+                  return (
+                    <label
+                      key={u.id}
+                      className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors ${
+                        wouldBeKept
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-gray-200 bg-white hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleKeep(u.id)}
+                        disabled={loading}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {u.name || u.email}
+                        </p>
+                        {u.name && (
+                          <p className="text-xs text-gray-500 truncate">
+                            {u.email}
+                          </p>
+                        )}
+                      </div>
+                      {u.role === "ADMIN" && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                          Admin
+                        </span>
+                      )}
+                      <span
+                        className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                          wouldBeKept
+                            ? "text-emerald-700 bg-emerald-100"
+                            : "text-gray-500 bg-gray-100"
+                        }`}
+                      >
+                        {wouldBeKept ? "Keeps seat" : "Loses seat"}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <p className="text-[11px] text-amber-700 flex items-center gap-1 pt-1 border-t border-amber-200">
+              <Shield className="h-3 w-3" />
+              You (admin) always keep your own seat — not shown above.
+            </p>
+
+            {keepUserIds.length !== expectedKeepCount && (
+              <p className="text-xs text-amber-900 font-medium">
+                {keepUserIds.length < expectedKeepCount
+                  ? `Select ${expectedKeepCount - keepUserIds.length} more.`
+                  : `Unselect ${keepUserIds.length - expectedKeepCount}.`}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Contextual note */}
         {isTrial ? (

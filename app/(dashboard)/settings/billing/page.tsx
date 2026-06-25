@@ -822,6 +822,7 @@ function BillingContent() {
         onOpenChange={setSeatsDialogOpen}
         currentSeats={seats}
         activeUsers={activeUsers}
+        activeUsersList={subscription?.activeUsersList || []}
         status={status}
         isComp={!!isComp}
         onConfirmed={() => {
