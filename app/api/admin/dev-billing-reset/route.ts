@@ -50,25 +50,50 @@ export async function POST(request: Request) {
   // stripeSubscriptionId. Equivalente al outcome del webhook
   // customer.subscription.deleted que normalmente llega cuando termina
   // el período (Jul 24 en tu caso). Sin tener que esperar la fecha real.
+  //
+  // CRÍTICO: cancela TODAS las subs no-canceladas del customer, no solo
+  // la del DB. Sin esto, si hay subs duplicadas en Stripe (caso real
+  // del bug que Nicolás vio el 2026-06-24 con 2 trials activos), el
+  // guard del checkout endpoint las detecta vía subscriptions.list y
+  // bloquea el Subscribe con 409 'subscription_already_active'.
   if (mode === "end-subscription") {
     const subRow = await prisma.subscription.findUnique({
       where: { organizationId: orgId },
       select: { stripeSubscriptionId: true, stripeCustomerId: true },
     });
 
-    if (subRow?.stripeSubscriptionId) {
+    if (
+      subRow?.stripeCustomerId &&
+      !subRow.stripeCustomerId.startsWith("pending_")
+    ) {
       try {
         const stripe = getStripeClient();
-        await stripe.subscriptions.cancel(subRow.stripeSubscriptionId, {
-          prorate: false,
+        const subs = await stripe.subscriptions.list({
+          customer: subRow.stripeCustomerId,
+          status: "all",
+          limit: 100,
         });
-        log.push(`Stripe sub ${subRow.stripeSubscriptionId} cancelled inmediato.`);
+        const cancellable = subs.data.filter((s) =>
+          ["active", "trialing", "past_due", "incomplete"].includes(s.status),
+        );
+        log.push(
+          `Stripe: ${subs.data.length} subs total, ${cancellable.length} to cancel.`,
+        );
+        for (const s of cancellable) {
+          try {
+            await stripe.subscriptions.cancel(s.id, { prorate: false });
+            log.push(`  cancelled ${s.id} (was ${s.status})`);
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            log.push(`  failed to cancel ${s.id}: ${msg}`);
+          }
+        }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        log.push(`Stripe cancel failed (continuing anyway): ${msg}`);
+        log.push(`Stripe list/cancel failed (continuing anyway): ${msg}`);
       }
     } else {
-      log.push("No Stripe sub atacheada — solo marcamos CANCELED en DB.");
+      log.push("No real Stripe customer — solo marcamos CANCELED en DB.");
     }
 
     await prisma.subscription.update({
