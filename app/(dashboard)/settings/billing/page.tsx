@@ -365,8 +365,66 @@ function BillingContent() {
         labelTone: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left to try everything.`,
       };
 
+  // Dev-only widget para testear flows de billing sin esperar 7 días.
+  // Solo visible cuando VERCEL_ENV != production (lo mismo que gatea el
+  // endpoint dev-billing-reset). Cierra el lazo: 1 click backdate
+  // trialEndsAt + cancela cualquier sub Stripe activa, después
+  // refrescamos y el SubscriptionGate se enciende.
+  const isDevEnv =
+    process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
+    typeof window !== "undefined";
+  const [endTrialLoading, setEndTrialLoading] = useState(false);
+  async function endTrialNow() {
+    if (!confirm("This will backdate your trial end + cancel any active Stripe sub. Continue?")) return;
+    setEndTrialLoading(true);
+    try {
+      // Mode "reset" haría wipe de candidates/jobs/etc — no queremos
+      // eso para el test. Mode "expire" solo backdate. Igual cancelamos
+      // las subs Stripe a mano vía un fetch separado al endpoint
+      // (que ya las cancela en mode reset). Para Test 2 (sin tarjeta)
+      // probablemente no hay sub Stripe — expire alcanza.
+      const res = await fetch("/api/admin/dev-billing-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "expire" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed: " + (data?.error || "unknown"));
+        setEndTrialLoading(false);
+        return;
+      }
+      // Forzar reload — el SubscriptionGate corre en el layout y solo
+      // se enciende al next render. router.refresh() solo bumpea data
+      // client-side; necesitamos volver a hacer el server check.
+      window.location.reload();
+    } catch (e: any) {
+      alert("Failed: " + (e?.message || "exception"));
+      setEndTrialLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Dev-only: terminate trial inmediatamente para testing. Solo
+          visible en non-production. */}
+      {isDevEnv && status === "TRIALING" && !isComp && (
+        <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50 p-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-orange-900">
+            <strong>DEV:</strong> backdate trial end to test the
+            post-trial flow (SubscriptionGate, Subscribe CTA, etc).
+          </p>
+          <button
+            type="button"
+            onClick={endTrialNow}
+            disabled={endTrialLoading}
+            className="text-xs font-semibold bg-orange-600 text-white px-3 py-1.5 rounded-md hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {endTrialLoading ? "Ending…" : "End trial now (dev)"}
+          </button>
+        </div>
+      )}
+
       {/* Action error banner: cuando handleCheckout / handleManageBilling
           / handleReactivate fallaron al contactar Stripe. Antes el
           botón se quedaba en "Loading..." sin feedback visible.
