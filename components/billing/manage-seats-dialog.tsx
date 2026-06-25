@@ -2,7 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { Users, TrendingUp, TrendingDown, AlertCircle, Shield } from "lucide-react";
+import {
+  Users,
+  TrendingUp,
+  TrendingDown,
+  AlertCircle,
+  Shield,
+  CreditCard,
+  ExternalLink,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -166,25 +174,34 @@ export function ManageSeatsDialog({
         return;
       }
 
-      // Decisión 2026-06-22 con Nicolás: después del cambio (que ya
-      // se procesó en Stripe + DB), redirigir al Customer Portal de
-      // Stripe para que el user vea el cambio reflejado nativamente.
-      // Como las mejores plataformas — siempre integrado con Stripe.
-      // Si el endpoint NO devolvió portalUrl (caso COMP / TRIAL sin
-      // sub Stripe / portal session falló), cerramos normal y dejamos
-      // que el polling de la billing page muestre el nuevo seat count.
-      if (data.portalUrl) {
-        window.location.href = data.portalUrl;
-        return; // no cerramos el dialog — el redirect se lleva la página
-      }
-
-      // Fallback: callback + cerrar.
+      // Decisión Nicolás 2026-06-25: NO redirigimos al Portal después
+      // del cambio. Era confuso porque parecía que el cambio se
+      // ejecutaba en el Portal cuando ya estaba hecho. Ahora cerramos
+      // el dialog y dejamos que la billing page refresque con polling.
       onConfirmed?.();
       onOpenChange(false);
     } catch (e: any) {
       setError(e?.message || "Couldn't update seats.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Abrir Stripe Portal en una nueva tab para que el admin cambie
+  // payment method ANTES de confirmar el cambio de seats. Si el admin
+  // necesita cambiar la card por una con más fondos antes de que
+  // Stripe le cobre $X/mo nuevo, este es el momento. El dialog queda
+  // abierto en la tab original — vuelve y confirma cuando termina.
+  async function handleOpenPortal() {
+    try {
+      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      }
+    } catch {
+      // Silent — si Portal falla, el admin ve el dialog igual con el
+      // payment method actual y puede cancelar / proceder a su criterio.
     }
   }
 
@@ -406,6 +423,34 @@ export function ManageSeatsDialog({
           </div>
         ) : null}
 
+        {/* Payment method — el admin necesita poder cambiar el método
+            de pago ANTES de confirmar el cambio. Sino la diferencia se
+            cobra a una card que capaz quiere cambiar. Memoria
+            feedback_billing_transparency. Solo aplica a ACTIVE — en
+            TRIAL todavía no hay sub Stripe ni payment method. */}
+        {!isTrial && seats !== currentSeats && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <CreditCard className="h-4 w-4 text-gray-500 shrink-0" />
+              <p className="text-xs text-gray-700">
+                <span className="font-medium">Charged to</span> your card on
+                file at Stripe.{" "}
+                {isIncreasing
+                  ? `Next invoice: $${fmt(monthlyNew)}/mo.`
+                  : `Lower charge starts next billing cycle.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenPortal}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap flex items-center gap-1 shrink-0"
+            >
+              Change
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
             {error}
@@ -424,13 +469,16 @@ export function ManageSeatsDialog({
             onClick={handleConfirm}
             disabled={loading || inputInvalid || seats === currentSeats}
           >
+            {/* Botón con monto explícito para que el click no sea sorpresa.
+                "Confirm — $80/mo" deja en claro qué se está confirmando
+                vs el ambiguo "Buy seats" anterior. */}
             {loading
               ? "Updating…"
               : seats === currentSeats
                 ? "No change"
-                : isIncreasing
-                  ? "Buy seats"
-                  : "Reduce seats"}
+                : isTrial
+                  ? `Save (${seats} seat${seats === 1 ? "" : "s"})`
+                  : `Confirm — $${fmt(monthlyNew)}/mo`}
           </Button>
         </div>
       </DialogContent>
