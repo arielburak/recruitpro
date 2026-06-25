@@ -39,8 +39,12 @@ function LoginContent() {
   // session pertenece a un user con isActive=false. Mostramos un
   // banner amigable en lugar del 401 silencioso que veian antes.
   const deactivatedError = searchParams.get("error") === "deactivated";
+  // Sesión cerrada por inactividad — InactivityLogout redirige acá con
+  // ?reason=inactivity para mostrar un mensaje claro en lugar de un
+  // login en blanco como si el user nunca hubiera iniciado sesión.
+  const inactivityReason = searchParams.get("reason") === "inactivity";
   const [step, setStep] = useState<"select" | "agency">(
-    portalParam === "agency" || registered || fromInviteUsed || deactivatedError ? "agency" : "select"
+    portalParam === "agency" || registered || fromInviteUsed || deactivatedError || inactivityReason ? "agency" : "select"
   );
 
   // If a staffing user is already signed in, go to dashboard
@@ -277,6 +281,11 @@ function LoginContent() {
             {deactivatedError && (
               <div className="bg-amber-50 text-amber-800 text-sm p-3 rounded-lg border border-amber-200">
                 Your account has been deactivated. Please contact your workspace admin to regain access.
+              </div>
+            )}
+            {inactivityReason && (
+              <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded-lg border border-blue-200">
+                You were signed out after 30 minutes of inactivity. Sign in to continue where you left off.
               </div>
             )}
             {error && (
