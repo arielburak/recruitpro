@@ -16,7 +16,42 @@ export function getStripeClient() {
 }
 
 export async function createStripeCustomer(email: string, name: string) {
-  return getStripeClient().customers.create({ email, name });
+  const stripe = getStripeClient();
+
+  // En non-production atachamos un Test Clock al customer. Eso nos
+  // deja "viajar en el tiempo" desde el Stripe Dashboard:
+  //   Stripe Dashboard → Test data → Test clocks → Advance →
+  //   eligen +8 días → Stripe dispara TODOS los webhooks que
+  //   hubieran sucedido naturalmente (trial → ACTIVE, invoice.paid,
+  //   etc.). Es el patrón que usan Slack/Linear/Notion para QA
+  //   billing sin esperar fechas reales.
+  // En production: no test clock (el customer corre en tiempo real).
+  const isProduction = process.env.VERCEL_ENV === "production";
+  let testClockId: string | undefined;
+  if (!isProduction) {
+    try {
+      const clock = await stripe.testHelpers.testClocks.create({
+        frozen_time: Math.floor(Date.now() / 1000),
+        name: `test-clock-${email}`,
+      });
+      testClockId = clock.id;
+      console.log(
+        `[stripe] created test clock ${testClockId} for customer ${email} (non-production)`,
+      );
+    } catch (e) {
+      // Si test_clocks falla (e.g. live mode por error, o feature
+      // deshabilitada), seguimos con customer normal — no rompemos
+      // el signup. El user simplemente no va a tener time-travel
+      // disponible para esta cuenta.
+      console.warn("[stripe] test clock creation failed (continuing):", e);
+    }
+  }
+
+  return stripe.customers.create({
+    email,
+    name,
+    ...(testClockId && { test_clock: testClockId }),
+  });
 }
 
 export async function createCheckoutSession(
