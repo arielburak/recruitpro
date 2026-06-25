@@ -209,35 +209,75 @@ export function SubscribeOptionsDialog({
 
   const inputInvalid =
     !Number.isFinite(seats) || seats < 1 || seats > SEAT_HARD_CAP;
-  const canConfirm = !inputInvalid && selectionIsValid && !loading;
+  // savedCard=undefined → todavía cargando la card. Bloqueamos el CTA
+  // para no mostrar "Continue to add card" cuando realmente sí hay una.
+  const cardKnown = savedCard !== undefined;
+  const canConfirm =
+    !inputInvalid && selectionIsValid && !loading && cardKnown;
 
   async function handleSubscribe() {
     if (!canConfirm) return;
     setLoading(true);
+    // Decide flow basado en card on file (Linkedin-style 2026-06-25):
+    //   · Hay card → pedimos inline=true. Backend crea sub directo
+    //     via stripe.subscriptions.create. Sin redirect — el dialog
+    //     queda como confirm final. La sub vive en Stripe igual.
+    //   · No hay card → inline=false. Backend devuelve URL de Stripe
+    //     Checkout (path original) para que el admin agregue card.
+    const inline = !!savedCard;
     try {
       const res = await fetch("/api/admin/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Siempre payNow=false: la card queda guardada en Stripe pero
-          // el cobro arranca recién en trial_end (Slack/Notion model).
           payNow: false,
+          inline,
           seats,
-          // Siempre enviamos la lista — el backend desactiva a los que
-          // NO están en keepUserIds. Modelo LinkedIn: el admin elige
-          // EXACTAMENTE quién mantiene, no inferimos por count.
           keepUserIds: Array.from(keepIds),
         }),
       });
       const data = await res.json();
+
+      // Backend creó la sub directo. Redirigimos al billing page con
+      // ?success=true para que renderee el banner de éxito (mismo path
+      // que usaba el flow de Stripe Checkout post-redirect).
+      if (data.ok && data.inline) {
+        window.location.href = "/settings/billing?success=true";
+        return;
+      }
+
+      // Backend nos pidió fallback a Checkout (no había PM). Volvemos
+      // a llamar al endpoint sin inline para conseguir la URL.
+      if (data?.needsCheckout) {
+        const res2 = await fetch("/api/admin/billing/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payNow: false,
+            inline: false,
+            seats,
+            keepUserIds: Array.from(keepIds),
+          }),
+        });
+        const data2 = await res2.json();
+        if (data2.url) {
+          window.location.href = data2.url;
+          return;
+        }
+        alert(data2?.error || "Couldn't start checkout. Please try again.");
+        setLoading(false);
+        return;
+      }
+
       if (data.url) {
         window.location.href = data.url;
-      } else {
-        alert(data?.error || "Couldn't start checkout. Please try again.");
-        setLoading(false);
+        return;
       }
+
+      alert(data?.error || "Couldn't complete subscription. Please try again.");
+      setLoading(false);
     } catch (e: any) {
-      alert(e?.message || "Couldn't start checkout.");
+      alert(e?.message || "Couldn't complete subscription.");
       setLoading(false);
     }
   }
@@ -559,8 +599,12 @@ export function SubscribeOptionsDialog({
           </Button>
           <Button onClick={handleSubscribe} disabled={!canConfirm}>
             {loading
-              ? "Opening Stripe…"
-              : `Subscribe for $${fmt(monthly)}/mo`}
+              ? savedCard
+                ? "Subscribing…"
+                : "Opening Stripe…"
+              : savedCard
+                ? `Confirm subscription · $${fmt(monthly)}/mo`
+                : `Continue to add card · $${fmt(monthly)}/mo`}
           </Button>
         </div>
 

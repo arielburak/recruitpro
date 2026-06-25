@@ -4,7 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { createCheckoutSession, createStripeCustomer, getStripeClient } from "@/lib/stripe";
 import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { recalculateAndSyncSeats, mapStripeStatus } from "@/lib/sync-stripe-seats";
 
 export async function POST(request: Request) {
   try {
@@ -23,6 +23,13 @@ export async function POST(request: Request) {
     //     que NO están en la lista (y NO son el admin) se deactivan.
     const body = await request.json().catch(() => ({}));
     const payNow = body?.payNow === true;
+    // inline=true: nuevo flow Linkedin-style (2026-06-25). El admin
+    // confirma en NUESTRO dialog, el backend crea la sub directo via
+    // stripe.subscriptions.create usando la card guardada — sin
+    // bouncear a checkout.stripe.com. Solo aplica si el customer tiene
+    // un PaymentMethod attached; sino devolvemos { needsCheckout: true }
+    // y el front cae al flow viejo (Stripe Checkout redirect).
+    const inline = body?.inline === true;
     const requestedSeats = Number(body?.seats);
     const hasSeatsParam = Number.isFinite(requestedSeats) && requestedSeats >= 1;
     // Distinguir presencia vs ausencia: el frontend nuevo SIEMPRE manda
@@ -249,6 +256,140 @@ export async function POST(request: Request) {
         ? subscription.trialEndsAt
         : null;
 
+    // ── INLINE FLOW (Linkedin-style 2026-06-25) ────────────────────
+    // Si el caller pidió inline Y hay PaymentMethod attached al
+    // customer, creamos la sub directo via stripe.subscriptions.create
+    // y devolvemos {ok:true, subscriptionId, status}. El frontend
+    // cierra el dialog y redirige a /settings/billing?success=true
+    // sin pasar por checkout.stripe.com.
+    //
+    // Si NO hay PM attached (signup sin checkout previo) devolvemos
+    // {needsCheckout: true, ...} con 400 — el front cae al flow viejo
+    // de Stripe Checkout (que sí pide card).
+    //
+    // 3DS / SCA: en TRIALING con trial_end futuro Stripe NO cobra al
+    // crear la sub — la primera factura fire en trial_end y si pide
+    // 3DS off-session ahí, Stripe maneja el dunning + recovery email
+    // automáticamente. No hace falta confirmCardPayment client-side
+    // para este flow.
+    if (inline) {
+      const stripe = getStripeClient();
+      let paymentMethodId: string | null = null;
+      try {
+        const customer = await stripe.customers.retrieve(customerId, {
+          expand: ["invoice_settings.default_payment_method"],
+        });
+        if (!customer.deleted) {
+          const defaultPm = customer.invoice_settings?.default_payment_method;
+          if (defaultPm) {
+            paymentMethodId =
+              typeof defaultPm === "string" ? defaultPm : defaultPm.id;
+          }
+        }
+        if (!paymentMethodId) {
+          const list = await stripe.paymentMethods.list({
+            customer: customerId,
+            type: "card",
+            limit: 1,
+          });
+          paymentMethodId = list.data[0]?.id ?? null;
+        }
+      } catch (err) {
+        console.error("[checkout inline] PM lookup failed:", err);
+      }
+
+      if (!paymentMethodId) {
+        return NextResponse.json(
+          {
+            error: "No payment method on file. Add a card to continue.",
+            needsCheckout: true,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Validar trial_end no pasado (mismo guard que createCheckoutSession).
+      let trialEndTs: number | null = null;
+      if (trialEnd) {
+        if (trialEnd.getTime() <= Date.now()) {
+          return NextResponse.json(
+            {
+              error: "Your trial expired while you were on this page. Refresh to continue.",
+              code: "trial_already_expired",
+            },
+            { status: 409 },
+          );
+        }
+        trialEndTs = Math.floor(trialEnd.getTime() / 1000);
+      }
+
+      let stripeSub;
+      try {
+        stripeSub = await stripe.subscriptions.create({
+          customer: customerId,
+          items: [
+            {
+              price: stripePriceIdForSeats(seatsForCheckout),
+              quantity: seatsForCheckout,
+            },
+          ],
+          default_payment_method: paymentMethodId,
+          ...(trialEndTs ? { trial_end: trialEndTs } : {}),
+          metadata: { organizationId: ctx.organizationId },
+          expand: ["latest_invoice.payment_intent"],
+        });
+      } catch (err: any) {
+        console.error("[checkout inline] subscriptions.create failed:", err);
+        return NextResponse.json(
+          {
+            error: err?.message || "Subscription creation failed. Please retry.",
+            code: err?.code || "stripe_error",
+          },
+          { status: 502 },
+        );
+      }
+
+      // Sub creada OK en Stripe. Aplicamos cambios locales en tx atómica.
+      const stripeSubAny = stripeSub as any;
+      const firstItem = stripeSubAny.items?.data?.[0];
+      const periodEndTs =
+        firstItem?.current_period_end || stripeSubAny.current_period_end;
+      const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
+      const mappedStatus = mapStripeStatus(
+        stripeSubAny.status as string | undefined,
+      );
+
+      await prisma.$transaction([
+        prisma.subscription.update({
+          where: { organizationId: ctx.organizationId },
+          data: {
+            stripeSubscriptionId: stripeSub.id,
+            ...(mappedStatus ? { status: mappedStatus } : {}),
+            ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
+            ...(finalSeats !== null ? { seats: finalSeats } : {}),
+          },
+        }),
+        ...(toDeactivate.length > 0
+          ? [
+              prisma.user.updateMany({
+                where: { id: { in: toDeactivate } },
+                data: { isActive: false },
+              }),
+            ]
+          : []),
+      ]);
+
+      return NextResponse.json({
+        ok: true,
+        inline: true,
+        subscriptionId: stripeSub.id,
+        status: stripeSubAny.status,
+      });
+    }
+
+    // ── REDIRECT FLOW (Stripe Checkout) ────────────────────────────
+    // Path original: cuando NO hay card on file (o el front no pidió
+    // inline) creamos una Checkout Session de Stripe y devolvemos URL.
     let session;
     try {
       session = await createCheckoutSession(
