@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Users, AlertTriangle } from "lucide-react";
+import { Users, AlertTriangle, CreditCard } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,13 @@ import {
   monthlyTotalCents,
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
+
+type SavedCard = {
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+};
 
 // Dialog para subscribirse desde trial.
 //
@@ -78,6 +85,17 @@ export function SubscribeOptionsDialog({
     () => new Set(teammates.map((t) => t.id)),
   );
   const [loading, setLoading] = useState(false);
+  const [changingCard, setChangingCard] = useState(false);
+  // Card guardada en Stripe customer (si la hay). Linkedin-style review:
+  // el admin la ve EXPLICITA en el dialog antes de confirmar — sin esto
+  // se sentia que "el sistema asumió" qué tarjeta usar. Memory
+  // "Billing transparency obligatoria" 2026-06-22.
+  //   undefined → todavia no fetcheado (mostramos placeholder)
+  //   null      → fetcheado, no hay card on file
+  //   SavedCard → fetcheado, mostramos brand + last4
+  const [savedCard, setSavedCard] = useState<SavedCard | null | undefined>(
+    undefined,
+  );
 
   // Reset state cada vez que se abre — sino el estado anterior persiste.
   useEffect(() => {
@@ -85,8 +103,30 @@ export function SubscribeOptionsDialog({
       setSeats(Math.max(1, activeCount));
       setKeepIds(new Set(teammates.map((t) => t.id)));
       setLoading(false);
+      setSavedCard(undefined);
     }
   }, [open, activeCount, teammates]);
+
+  // Fetch card guardada cada vez que se abre el dialog. Aborta si el
+  // dialog se cierra antes de la respuesta — sino seteamos state sobre
+  // un componente unmounted (warning React).
+  useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    fetch("/api/admin/billing/payment-method", { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : { card: null }))
+      .then((data) => {
+        setSavedCard(data?.card ?? null);
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        // Fail-soft: si el endpoint falla, mostramos "no card on file"
+        // (que es el estado más conservador — Stripe Checkout va a
+        // pedir card como siempre).
+        setSavedCard(null);
+      });
+    return () => ctrl.abort();
+  }, [open]);
 
   const monthly = monthlyTotalCents(seats);
   const trialEndStr = trialEndsAt
@@ -96,6 +136,29 @@ export function SubscribeOptionsDialog({
         year: "numeric",
       })
     : "trial end";
+
+  // Billing schedule derivado de trialEndsAt. Linkedin/Stripe Atlas
+  // pattern: el admin tiene que ver EXPLICITO cuando cobra la primera
+  // factura, cuándo recurre, y por qué monto.
+  //   firstChargeLabel — fecha humana de la primera factura.
+  //   monthlyAnchorLabel — "monthly on the Nth" derivado del día de
+  //     trialEndsAt (o del día actual si trial termina hoy).
+  const firstChargeIsToday = trialDaysLeft <= 0;
+  const firstChargeLabel = firstChargeIsToday ? "today" : trialEndStr;
+  const anchorDate = trialEndsAt ? new Date(trialEndsAt) : new Date();
+  const anchorDay = anchorDate.getDate();
+  function ordinal(n: number) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+  const monthlyAnchorLabel = `the ${ordinal(anchorDay)}`;
+
+  // Card preview helpers.
+  const brandLabel = (brand: string) =>
+    brand.charAt(0).toUpperCase() + brand.slice(1);
+  const expLabel = (m: number, y: number) =>
+    `${String(m).padStart(2, "0")}/${String(y).slice(-2)}`;
 
   // Modelo LinkedIn explícito (2026-06-25): el admin SIEMPRE elige
   // quién mantiene seat — incluso si compra MÁS seats que active users
@@ -176,6 +239,40 @@ export function SubscribeOptionsDialog({
     } catch (e: any) {
       alert(e?.message || "Couldn't start checkout.");
       setLoading(false);
+    }
+  }
+
+  // "Change payment method" → abre Stripe Billing Portal en una tab
+  // nueva. No usamos redirect en la misma ventana porque perderiamos
+  // la selección de seats/teammates del dialog. Cuando vuelvan a esta
+  // tab el useEffect [open] no se re-dispara (sigue open) pero a mano
+  // refrescamos el state de card.
+  async function handleChangeCard() {
+    if (changingCard) return;
+    setChangingCard(true);
+    try {
+      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+        // Cuando el user vuelve a la tab del ATS, refresca la card.
+        // No es 100% confiable (depende de focus event) pero es mejor
+        // que dejar la card vieja indefinidamente.
+        const onFocus = () => {
+          fetch("/api/admin/billing/payment-method")
+            .then((r) => (r.ok ? r.json() : { card: null }))
+            .then((d) => setSavedCard(d?.card ?? null))
+            .catch(() => {});
+          window.removeEventListener("focus", onFocus);
+        };
+        window.addEventListener("focus", onFocus);
+      } else {
+        alert(data?.error || "Couldn't open billing portal.");
+      }
+    } catch (e: any) {
+      alert(e?.message || "Couldn't open billing portal.");
+    } finally {
+      setChangingCard(false);
     }
   }
 
@@ -342,35 +439,117 @@ export function SubscribeOptionsDialog({
           </div>
         )}
 
-        {/* Reassurance copy — el corazon del pivote 2026-06-23. Antes
-            la doble opcion (pay now / save card later) sugeria que la
-            card era condicion para mantener el trial. Ahora dejamos
-            super claro: trial sigue siendo gratis hasta que se termine
-            solo.
+        {/* Order summary + billing schedule + payment method.
+            Linkedin/Stripe Atlas pattern (2026-06-25 con Nicolás):
+            antes de redirect a Stripe el admin tiene que ver
+            EXPLICITO qué se cobra, cuándo, y con qué tarjeta. Antes
+            era un solo párrafo verde + "Continue to checkout" — el
+            admin sentía que el sistema "asumía" la tarjeta y la
+            fecha. */}
 
-            Edge case (2026-06-25): si trialDaysLeft === 0 el trial
-            termina hoy/ya terminó. Decir "won't be charged today"
-            mientras "billing starts on <hoy>" es contradictorio —
-            usamos copy distinto que reconoce que el cobro arranca
-            ya mismo cuando termine el trial. */}
-        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 mt-2">
-          {trialDaysLeft > 0 ? (
-            <p className="text-sm text-emerald-900 leading-relaxed">
-              <strong>Your card won&apos;t be charged today.</strong> You have{" "}
-              {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} of free trial
-              left — billing of <strong>${fmt(monthly)}/mo</strong> starts on{" "}
-              <strong>{trialEndStr}</strong>. Cancel anytime before then.
-            </p>
+        {/* Order summary */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 mt-2 space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Order summary
+          </p>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-700">
+              Recruiting ATS — Per Seat
+              <span className="text-gray-400">
+                {" · "}
+                {seats} seat{seats === 1 ? "" : "s"} × ${PRICE_PER_SEAT}
+              </span>
+            </span>
+            <span className="font-semibold text-gray-900">
+              ${fmt(monthly)}/mo
+            </span>
+          </div>
+        </div>
+
+        {/* Billing schedule */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Billing schedule
+          </p>
+          <div className="space-y-1 text-sm text-gray-700">
+            <div className="flex items-start gap-2">
+              <span className="text-gray-400 mt-0.5">•</span>
+              <span>
+                First charge:{" "}
+                <strong className="text-gray-900">
+                  ${fmt(monthly)} {firstChargeIsToday ? "" : "on "}
+                  {firstChargeLabel}
+                </strong>
+                {firstChargeIsToday ? (
+                  <span className="text-gray-500">
+                    {" "}
+                    (as soon as your trial ends)
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-gray-400 mt-0.5">•</span>
+              <span>
+                Then{" "}
+                <strong className="text-gray-900">${fmt(monthly)}</strong>{" "}
+                monthly on {monthlyAnchorLabel}
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-gray-400 mt-0.5">•</span>
+              <span className="text-gray-500">
+                Cancel anytime from billing settings
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment method */}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Payment method
+          </p>
+          {savedCard === undefined ? (
+            <div className="flex items-center gap-3 text-sm text-gray-400">
+              <CreditCard className="h-4 w-4" />
+              Loading saved card…
+            </div>
+          ) : savedCard ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-8 w-12 rounded bg-indigo-100 flex items-center justify-center shrink-0">
+                  <CreditCard className="h-4 w-4 text-indigo-700" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {brandLabel(savedCard.brand)} •••• {savedCard.last4}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Expires {expLabel(savedCard.expMonth, savedCard.expYear)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleChangeCard}
+                disabled={changingCard}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50 whitespace-nowrap"
+              >
+                {changingCard ? "Opening…" : "Change"}
+              </button>
+            </div>
           ) : (
-            <p className="text-sm text-emerald-900 leading-relaxed">
-              <strong>Your trial ends today.</strong> Billing of{" "}
-              <strong>${fmt(monthly)}/mo</strong> starts as soon as the trial
-              ends. Cancel anytime from billing settings.
-            </p>
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <CreditCard className="h-4 w-4 text-gray-400" />
+              <span>
+                No card on file — you&apos;ll add one in the next step.
+              </span>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 mt-4">
+        <div className="flex items-center justify-end gap-2 mt-1">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -379,12 +558,18 @@ export function SubscribeOptionsDialog({
             Cancel
           </Button>
           <Button onClick={handleSubscribe} disabled={!canConfirm}>
-            {loading ? "Opening Stripe…" : "Continue to checkout"}
+            {loading
+              ? "Opening Stripe…"
+              : `Subscribe for $${fmt(monthly)}/mo`}
           </Button>
         </div>
 
-        <p className="text-[11px] text-gray-400 text-center mt-2">
-          ${PRICE_PER_SEAT}/seat per month · Cancel anytime
+        <p className="text-[11px] text-gray-500 text-center leading-relaxed mt-1">
+          By subscribing you authorize Recruiting ATS to charge{" "}
+          {savedCard
+            ? `${brandLabel(savedCard.brand)} •••• ${savedCard.last4}`
+            : "your card"}{" "}
+          ${fmt(monthly)} monthly until you cancel.
         </p>
       </DialogContent>
     </Dialog>
