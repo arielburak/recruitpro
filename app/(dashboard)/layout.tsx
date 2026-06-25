@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { EmailVerificationBanner } from "@/components/auth/email-verification-banner";
 import { SessionGate } from "@/components/auth/session-gate";
+import { InactivityLogout } from "@/components/auth/inactivity-logout";
 import { SubscriptionGate } from "@/components/billing/subscription-gate";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
@@ -96,6 +97,10 @@ export default async function DashboardLayout({
           Gate (60 vs 50) para asegurar que tape todo si los 2 se
           dispararan simultáneo. */}
       <SessionGate />
+      {/* Inactivity logout: 30 min sin actividad → signOut + redirect
+          al login con reason=inactivity. Igual que cualquier plataforma
+          seria (banking, healthcare). Decisión 2026-06-24 con Nicolás. */}
+      <InactivityLogout redirectTo="/login" />
     </div>
   );
 }
