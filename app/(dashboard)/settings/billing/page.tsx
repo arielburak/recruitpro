@@ -60,6 +60,11 @@ function BillingContent() {
   // su API. Sin esto el primer fetch traía data vieja y el user veía
   // 'Active' después de cancelar hasta que refrescara manualmente.
   const [syncing, setSyncing] = useState(false);
+  // Dev widget loading state. DEBE estar acá arriba con el resto de
+  // hooks — si lo declaro abajo del primer `if (loading) return`,
+  // React tira "Rendered more hooks than during the previous render"
+  // y rompe toda la página con el genérico "Oops" del error boundary.
+  const [endTrialLoading, setEndTrialLoading] = useState(false);
 
   async function fetchSubWithErrorState() {
     try {
@@ -365,15 +370,12 @@ function BillingContent() {
         labelTone: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left to try everything.`,
       };
 
-  // Dev-only widget para testear flows de billing sin esperar 7 días.
-  // Solo visible cuando VERCEL_ENV != production (lo mismo que gatea el
-  // endpoint dev-billing-reset). Cierra el lazo: 1 click backdate
-  // trialEndsAt + cancela cualquier sub Stripe activa, después
-  // refrescamos y el SubscriptionGate se enciende.
+  // Dev-only widget — variables que NO son hooks (el useState ya se
+  // declaró arriba junto con los demás hooks, antes de los early returns,
+  // para respetar Rules of Hooks).
   const isDevEnv =
     process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
     typeof window !== "undefined";
-  const [endTrialLoading, setEndTrialLoading] = useState(false);
   async function endTrialNow() {
     if (!confirm("This will backdate your trial end + cancel any active Stripe sub. Continue?")) return;
     setEndTrialLoading(true);
