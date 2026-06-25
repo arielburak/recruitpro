@@ -25,7 +25,12 @@ export async function POST(request: Request) {
     const payNow = body?.payNow === true;
     const requestedSeats = Number(body?.seats);
     const hasSeatsParam = Number.isFinite(requestedSeats) && requestedSeats >= 1;
-    const keepUserIds: string[] = Array.isArray(body?.keepUserIds)
+    // Distinguir presencia vs ausencia: el frontend nuevo SIEMPRE manda
+    // la lista (incluso si el admin no marcó a nadie = []). El frontend
+    // viejo / caller programático puede no mandarla y queremos hacer
+    // backward-compat (todos mantienen) en ese caso.
+    const callerSentList = Array.isArray(body?.keepUserIds);
+    const keepUserIds: string[] = callerSentList
       ? body.keepUserIds.filter((x: unknown): x is string => typeof x === "string")
       : [];
 
@@ -62,39 +67,54 @@ export async function POST(request: Request) {
         where: { organizationId: ctx.organizationId, isActive: true },
         select: { id: true },
       });
-      const activeUsersCount = activeUsersAll.length;
 
-      if (requestedSeats < activeUsersCount) {
-        const adminSlot = 1;
-        const expectedKeepCount = requestedSeats - adminSlot;
-        if (keepUserIds.length !== expectedKeepCount) {
+      // Modelo LinkedIn explícito (2026-06-25 con Nicolás): el admin
+      // SIEMPRE elige quién mantiene seat al subscribirse, incluso si
+      // compra MÁS seats que los active users actuales (puede querer
+      // dejar 2 Available en el pool para invitar después).
+      //
+      // Caller envía keepUserIds = lista de userIds que MANTIENEN seat
+      // (el admin actual es slot implícito, no aparece en la lista).
+      // Si keepUserIds NO vino o vino vacío y hay >1 active users,
+      // asumimos backward-compat: todos los active mantienen.
+      const adminSlot = 1;
+      const maxKeepCount = requestedSeats - adminSlot;
+
+      if (keepUserIds.length > maxKeepCount) {
+        return NextResponse.json(
+          {
+            error: `You can keep at most ${maxKeepCount} teammate${maxKeepCount === 1 ? "" : "s"} with ${requestedSeats} seat${requestedSeats === 1 ? "" : "s"}.`,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Anti-spoofing: cada keepUserId debe pertenecer a un active
+      // user del org Y no ser el admin actual.
+      const validKeepIds = new Set(
+        activeUsersAll.map((u) => u.id).filter((id) => id !== ctx.userId),
+      );
+      for (const id of keepUserIds) {
+        if (!validKeepIds.has(id)) {
           return NextResponse.json(
-            {
-              error: `Select exactly ${expectedKeepCount} teammate${expectedKeepCount === 1 ? "" : "s"} to keep before subscribing with fewer seats.`,
-            },
+            { error: "Invalid teammate selection. Please retry." },
             { status: 400 },
           );
         }
-
-        const validKeepIds = new Set(
-          activeUsersAll
-            .map((u) => u.id)
-            .filter((id) => id !== ctx.userId),
-        );
-        for (const id of keepUserIds) {
-          if (!validKeepIds.has(id)) {
-            return NextResponse.json(
-              { error: "Invalid teammate selection. Please retry." },
-              { status: 400 },
-            );
-          }
-        }
-
-        const keepSet = new Set([...keepUserIds, ctx.userId]);
-        toDeactivate = activeUsersAll
-          .map((u) => u.id)
-          .filter((id) => !keepSet.has(id));
       }
+
+      // Si el caller envió la lista (aunque sea vacía) → respetar la
+      // elección explícita del admin: el admin + los marcados mantienen,
+      // resto se desactiva.
+      // Si NO la envió → backward-compat: todos los active actuales
+      // mantienen (incluido el admin).
+      const keepSet = callerSentList
+        ? new Set([...keepUserIds, ctx.userId])
+        : new Set([...activeUsersAll.map((u) => u.id)]);
+
+      toDeactivate = activeUsersAll
+        .map((u) => u.id)
+        .filter((id) => !keepSet.has(id));
 
       finalSeats = requestedSeats;
     }

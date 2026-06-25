@@ -97,17 +97,25 @@ export function SubscribeOptionsDialog({
       })
     : "trial end";
 
-  // Cuántos teammates puede mantener (sin contar al admin).
+  // Modelo LinkedIn explícito (2026-06-25): el admin SIEMPRE elige
+  // quién mantiene seat — incluso si compra MÁS seats que active users
+  // (puede querer dejar 2 Available en pool para invitar después).
+  //
+  //   teammateSlotsAvailable = cuántos teammates PUEDE marcar (admin slot
+  //     no cuenta — el admin actual siempre keep).
+  //   teammatesKept = cuántos marcó.
+  //   pickerVisible = mostrar la sección. Cuando hay teammates, sí.
+  //   selectionIsValid = nunca puede marcar MÁS que slots disponibles.
+  //     Marcar menos es válido (los seats sobrantes quedan Available).
   const teammateSlotsAvailable = Math.max(0, seats - 1);
   const teammatesKept = keepIds.size;
-  const needsTeammateSelection = teammates.length > teammateSlotsAvailable;
-  const selectionIsValid =
-    !needsTeammateSelection || teammatesKept === teammateSlotsAvailable;
+  const pickerVisible = teammates.length > 0;
+  const selectionIsValid = teammatesKept <= teammateSlotsAvailable;
 
-  // Si elige menos seats que active users, los no marcados se deactivan.
-  const willDeactivate = needsTeammateSelection
-    ? teammates.length - teammatesKept
-    : 0;
+  // Quiénes pierden acceso al subscribir: teammates NO marcados.
+  const willDeactivate = teammates.length - teammatesKept;
+  // Seats sobrantes (Available) post-subscribe.
+  const availableAfter = teammateSlotsAvailable - teammatesKept;
 
   function toggleKeep(id: string) {
     setKeepIds((prev) => {
@@ -115,8 +123,9 @@ export function SubscribeOptionsDialog({
       if (next.has(id)) {
         next.delete(id);
       } else {
-        // Si llenó el cupo, no permitir más selecciones.
-        if (needsTeammateSelection && next.size >= teammateSlotsAvailable) {
+        // Cap dur: nunca permitir marcar MÁS que slots disponibles.
+        // Aplica siempre, no solo cuando seats < activeUsers.
+        if (next.size >= teammateSlotsAvailable) {
           return prev;
         }
         next.add(id);
@@ -127,14 +136,13 @@ export function SubscribeOptionsDialog({
 
   // Si bajan seats y queda con más keepIds que slots, recortar al límite.
   useEffect(() => {
-    if (needsTeammateSelection && teammatesKept > teammateSlotsAvailable) {
+    if (teammatesKept > teammateSlotsAvailable) {
       setKeepIds((prev) => {
         const arr = Array.from(prev);
-        // Mantener los primeros N (orden de selección original).
         return new Set(arr.slice(0, teammateSlotsAvailable));
       });
     }
-  }, [seats, teammateSlotsAvailable, needsTeammateSelection, teammatesKept]);
+  }, [seats, teammateSlotsAvailable, teammatesKept]);
 
   const inputInvalid =
     !Number.isFinite(seats) || seats < 1 || seats > SEAT_HARD_CAP;
@@ -152,7 +160,10 @@ export function SubscribeOptionsDialog({
           // el cobro arranca recién en trial_end (Slack/Notion model).
           payNow: false,
           seats,
-          keepUserIds: needsTeammateSelection ? Array.from(keepIds) : undefined,
+          // Siempre enviamos la lista — el backend desactiva a los que
+          // NO están en keepUserIds. Modelo LinkedIn: el admin elige
+          // EXACTAMENTE quién mantiene, no inferimos por count.
+          keepUserIds: Array.from(keepIds),
         }),
       });
       const data = await res.json();
@@ -236,23 +247,34 @@ export function SubscribeOptionsDialog({
           </p>
         </div>
 
-        {/* Teammate selector — solo si seats < activeUsers */}
-        {needsTeammateSelection && teammates.length > 0 && (
+        {/* Teammate selector — siempre visible cuando hay teammates.
+            Modelo LinkedIn: el admin elige explícitamente. Puede dejar
+            seats sin asignar (Available) para invitar después. */}
+        {pickerVisible && (
           <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Choose who keeps access
+                Assign seats to teammates
               </p>
               <span
                 className={`text-xs font-semibold ${
                   selectionIsValid ? "text-gray-600" : "text-amber-700"
                 }`}
               >
-                {teammatesKept} / {teammateSlotsAvailable} selected
+                {teammatesKept} / {teammateSlotsAvailable} assigned
               </span>
             </div>
             <p className="text-xs text-gray-500 leading-relaxed">
-              {`You take 1 seat as admin. Pick ${teammateSlotsAvailable} more teammate${teammateSlotsAvailable === 1 ? "" : "s"} who'll keep access. The others will be deactivated and can be reactivated later.`}
+              You take 1 seat as admin (automatic). Pick up to{" "}
+              <strong>
+                {teammateSlotsAvailable} teammate
+                {teammateSlotsAvailable === 1 ? "" : "s"}
+              </strong>{" "}
+              to assign the remaining seat
+              {teammateSlotsAvailable === 1 ? "" : "s"}. Unassigned seats
+              stay available — you can give them out anytime from the Team
+              page. Teammates without a seat lose access but their data
+              stays intact.
             </p>
             <div className="space-y-1.5 max-h-56 overflow-y-auto">
               {teammates.map((t) => {
@@ -299,9 +321,23 @@ export function SubscribeOptionsDialog({
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-900 leading-relaxed">
-              <strong>{`${willDeactivate} teammate${willDeactivate === 1 ? "" : "s"} will lose access.`}</strong>{" "}
-              Their data stays intact — reactivate them later by buying more
-              seats.
+              <strong>{`${willDeactivate} teammate${willDeactivate === 1 ? "" : "s"} won't get a seat.`}</strong>{" "}
+              They lose access but their data (candidates, jobs, history)
+              stays intact. Give them a seat anytime from the Team page.
+            </p>
+          </div>
+        )}
+
+        {availableAfter > 0 && (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 flex items-start gap-2">
+            <Users className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+            <p className="text-xs text-emerald-900 leading-relaxed">
+              <strong>
+                {availableAfter} seat{availableAfter === 1 ? "" : "s"} will
+                stay available.
+              </strong>{" "}
+              Reserved for new invites. You can assign them whenever you
+              want from the Team page.
             </p>
           </div>
         )}
