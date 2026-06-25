@@ -539,15 +539,17 @@ export default function AdminUsersPage() {
           </div>
 
           {/* Users — tabla estilo LinkedIn Recruiter. Cabeceras:
-              User details | License type | License status | Actions.
-              Cada row es un usuario con su avatar, badge de rol,
-              status (Active/Inactive) + fecha de activacion. */}
+              Member | Role | Seat access | Actions.
+              Cambiamos "License type/status" por "Role" y "Seat access"
+              para que sea más directo: el header dice exactamente lo que
+              importa al admin — quién tiene seat (= acceso al ATS) vs
+              quién no. Decisión Nicolás 2026-06-25. */}
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
             {/* Header */}
             <div className="grid grid-cols-12 gap-4 px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
-              <div className="col-span-5">User details</div>
-              <div className="col-span-3">License type</div>
-              <div className="col-span-3">License status</div>
+              <div className="col-span-5">Member</div>
+              <div className="col-span-3">Role</div>
+              <div className="col-span-3">Seat access</div>
               <div className="col-span-1 text-right" />
             </div>
             {/* Rows */}
@@ -608,7 +610,11 @@ export default function AdminUsersPage() {
                     </p>
                   </div>
 
-                  {/* License status */}
+                  {/* Seat access — el badge dice claramente si el user
+                      tiene acceso al ATS (= tiene seat asignado) o no.
+                      "Has seat" / "No seat" en lugar de "Active /
+                      Deactivated" porque el admin piensa en términos
+                      de seats, no de license-status. */}
                   <div className="col-span-3">
                     <div className="flex items-center gap-1.5">
                       <span
@@ -621,12 +627,12 @@ export default function AdminUsersPage() {
                           u.isActive ? "text-emerald-700" : "text-gray-400"
                         }`}
                       >
-                        {u.isActive ? "Active" : "Deactivated"}
+                        {u.isActive ? "Has seat" : "No seat"}
                       </span>
                     </div>
                     {activatedAt && (
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        Activated on {activatedAt}
+                        {u.isActive ? "Since" : "Joined"} {activatedAt}
                       </p>
                     )}
                   </div>

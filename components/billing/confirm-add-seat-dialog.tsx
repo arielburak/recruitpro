@@ -193,23 +193,42 @@ export function ConfirmAddSeatDialog({
             after bill explícito así el admin sabe exactamente qué le
             va a pasar a la próxima factura. */}
         {!isTrial && !isComp && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-2 mt-2">
-            <p className="text-xs font-semibold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+          <div
+            className={`rounded-xl border p-4 space-y-2 mt-2 ${
+              isPoolFull
+                ? "border-amber-300 bg-amber-50"
+                : "border-indigo-200 bg-indigo-50/50"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${
+                isPoolFull ? "text-amber-900" : "text-indigo-900"
+              }`}
+            >
               <Receipt className="h-3.5 w-3.5" />
               Billing impact
             </p>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-700">Current bill</span>
+              <span className="text-gray-700">
+                Current bill ({currentSeats} seat{currentSeats === 1 ? "" : "s"})
+              </span>
               <span className="text-gray-900 font-medium">
                 ${fmtDollars(monthlyTotalCents(currentSeats))}/mo
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm border-t border-indigo-100 pt-2">
-              <span className="text-gray-700">After this {mode}</span>
+            <div
+              className={`flex items-center justify-between text-sm border-t pt-2 ${
+                isPoolFull ? "border-amber-200" : "border-indigo-100"
+              }`}
+            >
+              <span className="text-gray-700">
+                After this {mode} ({isPoolFull ? currentSeats + 1 : currentSeats}{" "}
+                seat{(isPoolFull ? currentSeats + 1 : currentSeats) === 1 ? "" : "s"})
+              </span>
               {isPoolFull ? (
-                <span className="text-indigo-900 font-bold">
+                <span className="text-amber-900 font-bold">
                   ${fmtDollars(monthlyTotalCents(currentSeats + 1))}/mo
-                  <span className="text-xs font-medium text-indigo-700 ml-1">
+                  <span className="text-xs font-semibold text-amber-700 ml-1">
                     (+${PRICE_PER_SEAT_DOLLARS})
                   </span>
                 </span>
@@ -222,15 +241,30 @@ export function ConfirmAddSeatDialog({
                 </span>
               )}
             </div>
-            {!isPoolFull && (
-              <p className="text-[11px] text-gray-600 pt-1">
-                {teammateName || "This teammate"} uses 1 of your available
-                seats — no extra charge.
-              </p>
-            )}
+            <p
+              className={`text-[11px] pt-1 ${
+                isPoolFull ? "text-amber-800" : "text-gray-600"
+              }`}
+            >
+              {isPoolFull ? (
+                <>
+                  Pool is full — confirming will add 1 seat to your
+                  subscription. Your next invoice will reflect the new total.
+                </>
+              ) : (
+                <>
+                  {teammateName || "This teammate"} uses 1 of your available
+                  seats — no extra charge.
+                </>
+              )}
+            </p>
             <Link
               href="/settings/billing"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 hover:text-indigo-900 pt-1"
+              className={`inline-flex items-center gap-1 text-[11px] font-medium pt-1 ${
+                isPoolFull
+                  ? "text-amber-900 hover:text-amber-950"
+                  : "text-indigo-700 hover:text-indigo-900"
+              }`}
             >
               <CreditCard className="h-3 w-3" />
               Update payment method
@@ -238,20 +272,9 @@ export function ConfirmAddSeatDialog({
           </div>
         )}
 
-        {/* Contextual notes */}
-        {isPoolFull ? (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-            <p className="text-xs text-amber-900 leading-relaxed flex items-start gap-2">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>
-                <strong>All seats are in use.</strong> Buying 1 more seat adds{" "}
-                <strong>${PRICE_PER_SEAT_DOLLARS}/mo</strong> to your
-                subscription and {mode === "invite" ? "invites" : "reactivates"}{" "}
-                {teammateName || "this teammate"} automatically.
-              </span>
-            </p>
-          </div>
-        ) : isTrial ? (
+        {/* Contextual notes — solo trial. El caso pool-full ya está
+            cubierto por el Billing impact box arriba (más explícito). */}
+        {isTrial && (
           <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3">
             <p className="text-xs text-indigo-900 leading-relaxed">
               <strong>You&apos;re in trial</strong> — invite as many teammates
@@ -259,7 +282,7 @@ export function ConfirmAddSeatDialog({
               seats to keep.
             </p>
           </div>
-        ) : null}
+        )}
 
         {/* Error display */}
         {buyError && (
