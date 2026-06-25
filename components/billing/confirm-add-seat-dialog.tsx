@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Users, AlertCircle, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Users, AlertCircle, Sparkles, Receipt, CreditCard } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +10,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  monthlyTotalCents,
+  SOLO_PRICE_PER_SEAT_CENTS,
+} from "@/lib/constants";
+
+const fmtDollars = (cents: number) =>
+  (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const PRICE_PER_SEAT_DOLLARS = SOLO_PRICE_PER_SEAT_CENTS / 100;
 
 // Pool seat model 2026-06-22 (refactor): el dialog de confirmación
 // para invite/reactivate ya NO muestra "+$20/mo" en el momento del
@@ -177,6 +186,58 @@ export function ConfirmAddSeatDialog({
           </div>
         )}
 
+        {/* Billing impact — SIEMPRE visible cuando aplica (no trial, no
+            comp). Memoria feedback_billing_transparency: cualquier
+            acción que cambie seat/billing debe mostrar desglose +
+            opción de cambiar payment method. Mostramos current bill +
+            after bill explícito así el admin sabe exactamente qué le
+            va a pasar a la próxima factura. */}
+        {!isTrial && !isComp && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-2 mt-2">
+            <p className="text-xs font-semibold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Receipt className="h-3.5 w-3.5" />
+              Billing impact
+            </p>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-700">Current bill</span>
+              <span className="text-gray-900 font-medium">
+                ${fmtDollars(monthlyTotalCents(currentSeats))}/mo
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm border-t border-indigo-100 pt-2">
+              <span className="text-gray-700">After this {mode}</span>
+              {isPoolFull ? (
+                <span className="text-indigo-900 font-bold">
+                  ${fmtDollars(monthlyTotalCents(currentSeats + 1))}/mo
+                  <span className="text-xs font-medium text-indigo-700 ml-1">
+                    (+${PRICE_PER_SEAT_DOLLARS})
+                  </span>
+                </span>
+              ) : (
+                <span className="text-emerald-700 font-bold">
+                  ${fmtDollars(monthlyTotalCents(currentSeats))}/mo
+                  <span className="text-xs font-medium text-emerald-600 ml-1">
+                    (no change)
+                  </span>
+                </span>
+              )}
+            </div>
+            {!isPoolFull && (
+              <p className="text-[11px] text-gray-600 pt-1">
+                {teammateName || "This teammate"} uses 1 of your available
+                seats — no extra charge.
+              </p>
+            )}
+            <Link
+              href="/settings/billing"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700 hover:text-indigo-900 pt-1"
+            >
+              <CreditCard className="h-3 w-3" />
+              Update payment method
+            </Link>
+          </div>
+        )}
+
         {/* Contextual notes */}
         {isPoolFull ? (
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
@@ -184,9 +245,9 @@ export function ConfirmAddSeatDialog({
               <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
                 <strong>All seats are in use.</strong> Buying 1 more seat adds{" "}
-                <strong>$20/mo</strong> to your subscription and{" "}
-                {mode === "invite" ? "invites" : "reactivates"} {teammateName || "this teammate"}{" "}
-                automatically.
+                <strong>${PRICE_PER_SEAT_DOLLARS}/mo</strong> to your
+                subscription and {mode === "invite" ? "invites" : "reactivates"}{" "}
+                {teammateName || "this teammate"} automatically.
               </span>
             </p>
           </div>
