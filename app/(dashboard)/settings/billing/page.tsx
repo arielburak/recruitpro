@@ -20,6 +20,7 @@ import {
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
 import { ManageSeatsDialog } from "@/components/billing/manage-seats-dialog";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   SubscribeOptionsDialog,
   SUBSCRIBE_DIALOG_STORAGE_KEY,
@@ -73,6 +74,12 @@ function BillingContent() {
   // React tira "Rendered more hooks than during the previous render"
   // y rompe toda la página con el genérico "Oops" del error boundary.
   const [endTrialLoading, setEndTrialLoading] = useState(false);
+  // Cancel subscription dialog state. Cuando el admin cliquea "Cancel
+  // subscription", abrimos un confirm dialog con copy estilo ChatGPT
+  // que dice "stays active until Jul 25" — sin sustos. Decisión
+  // Nicolás 2026-06-25.
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   async function fetchSubWithErrorState() {
     try {
@@ -215,6 +222,30 @@ function BillingContent() {
   // Decisión 2026-06-22 con Nicolás: un toggle silencioso en el ATS
   // es amateur. Los SaaS pro siempre llevan al user a Stripe para
   // que reconfirme y mantenga el flow visible end-to-end.
+  async function confirmCancelSubscription() {
+    setCancelLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/billing/cancel-subscription", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data?.error || "Couldn't cancel the subscription.");
+        setCancelLoading(false);
+        return;
+      }
+      setCancelDialogOpen(false);
+      setCancelLoading(false);
+      // Refresh para que UI muestre el banner "Scheduled to cancel".
+      const fresh = await fetchSubWithErrorState();
+      if (fresh) setSubscription(fresh);
+    } catch {
+      setActionError("Network error. Please try again.");
+      setCancelLoading(false);
+    }
+  }
+
   async function handleReactivate() {
     setActionLoading(true);
     setActionError(null);
@@ -644,6 +675,20 @@ function BillingContent() {
                   {actionLoading ? "Loading…" : "Manage billing"}
                 </Button>
               )}
+              {/* Cancel button — solo cuando ACTIVE sin cancel scheduled
+                  + no pending customer. Estilo discreto (link-ish) para
+                  no confundirse con destructivo "delete". El miedo va
+                  en el dialog confirmatorio. */}
+              {status === "ACTIVE" && !scheduledToCancel && hasStripeSub && !customerIsPending && (
+                <button
+                  type="button"
+                  onClick={() => setCancelDialogOpen(true)}
+                  disabled={actionLoading || cancelLoading}
+                  className="w-full sm:w-auto text-xs text-gray-500 hover:text-red-600 transition-colors py-1 disabled:opacity-50"
+                >
+                  Cancel subscription
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -876,6 +921,24 @@ function BillingContent() {
             .then((data) => setSubscription(data))
             .catch(() => {});
         }}
+      />
+
+      {/* Cancel subscription dialog — patrón ChatGPT Plus: copy con
+          "stays active until Jul 25" para que el admin entienda que
+          no se apaga YA. Button primario rojo destructivo, secundario
+          neutro "Back" (no "Cancel" — confunde). */}
+      <DeleteConfirmDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        itemLabel="subscription"
+        title="Cancel subscription"
+        description={
+          periodEnd
+            ? `Your subscription will be canceled but stays active until your billing period ends on ${dateStr(periodEnd)}. You'll keep full access until then. Your candidates, jobs and pipeline data stays intact — you can resubscribe any time.`
+            : "Your subscription will be canceled at the end of your current billing period. You'll keep access until then. Your candidates, jobs and pipeline data stays intact — you can resubscribe any time."
+        }
+        confirmLabel="Cancel subscription"
+        onConfirm={confirmCancelSubscription}
       />
     </div>
   );
