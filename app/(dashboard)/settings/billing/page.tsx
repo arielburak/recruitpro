@@ -126,17 +126,38 @@ function BillingContent() {
     });
   }, [fromPortal]);
 
-  // Auto-abrir el SubscribeOptionsDialog cuando ?subscribe=1 llega
-  // del overlay SubscriptionGate (trial expired / sub canceled). Sin
-  // esto el admin clickea "Subscribe now" del overlay y aterriza en
-  // /settings/billing teniendo que clickear OTRO botón Subscribe. UX
-  // duplicada. Decisión Nicolás 2026-06-25.
-  // Esperamos a que termine el load para que el dialog reciba la
-  // activeUsersList completa.
+  // Auto-abrir el flow de Subscribe cuando ?subscribe=1 llega del
+  // overlay SubscriptionGate (trial expired / sub canceled). Sin esto
+  // el admin clickea "Subscribe now" del overlay y aterriza en
+  // /settings/billing teniendo que clickear OTRO botón Subscribe.
+  //
+  // IMPORTANTE (launch audit 2026-06-26): replica EXACTAMENTE el
+  // branch del botón Subscribe. El dialog (con copy "won't be charged
+  // today" + payNow:false) SOLO aplica a trial VIVO. Para trial
+  // expirado / CANCELED el cobro es inmediato → checkout directo.
+  // Antes abría el dialog siempre: a un user con trial vencido le
+  // prometía "no charge today" y el POST payNow:false loopeaba en el
+  // 409 trial_already_expired.
   useEffect(() => {
-    if (autoOpenSubscribe && !loading && subscription) {
+    if (!autoOpenSubscribe || loading || !subscription) return;
+    // One-shot: subscription se re-fetchea con el polling y sin este
+    // guard handleCheckout() se dispararía en cada refetch → múltiples
+    // checkout sessions en Stripe.
+    if (autoSubscribeFiredRef.current) return;
+    autoSubscribeFiredRef.current = true;
+    const subStatus = subscription?.status;
+    const subTrialEnd = subscription?.trialEndsAt
+      ? new Date(subscription.trialEndsAt)
+      : null;
+    const subTrialExpired =
+      subStatus === "TRIALING" && subTrialEnd && subTrialEnd.getTime() <= Date.now();
+    if (subStatus === "TRIALING" && !subTrialExpired) {
       setSubscribeOptionsOpen(true);
+    } else {
+      // Trial vencido / canceled / sin sub → cobro inmediato.
+      handleCheckout();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSubscribe, loading, subscription]);
 
   // Restore-from-redirect: si el admin venía mid-flow de "Change
@@ -146,6 +167,8 @@ function BillingContent() {
   // a elegir seats. Single-shot via ref para no re-disparar después de
   // que el user cierre manualmente.
   const restoredRef = useRef(false);
+  // One-shot guard para el auto-subscribe de ?subscribe=1.
+  const autoSubscribeFiredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
     if (loading || !subscription) return;

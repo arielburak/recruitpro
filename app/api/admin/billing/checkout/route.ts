@@ -249,10 +249,19 @@ export async function POST(request: Request) {
     //     (permite agregar seats / usar todas las features que requieren
     //     billing activo).
     //   · No-TRIAL → siempre cobro inmediato (no aplica).
+    // Solo preservar el trial si le queda tiempo REAL. Si trialEndsAt
+    // ya pasó (ventana de hasta 24h antes de que el cron expire-trials
+    // flippee el status a CANCELED), el user con trial vencido que
+    // clickea Subscribe DEBE ir a cobro inmediato — no hay trial que
+    // preservar. Sin este check, createCheckoutSession tiraba
+    // trial_already_expired → 409 → refresh → mismo estado → LOOP:
+    // el user no podía pagar hasta las 3AM del cron. Launch audit
+    // 2026-06-26.
     const trialEnd =
       !payNow &&
       subscription.status === "TRIALING" &&
-      subscription.trialEndsAt
+      subscription.trialEndsAt &&
+      subscription.trialEndsAt.getTime() > Date.now()
         ? subscription.trialEndsAt
         : null;
 
