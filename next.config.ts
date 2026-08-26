@@ -2,7 +2,17 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  env: {
+    // Vercel setea VERCEL_ENV solo del lado server. Para gatear UI de
+    // dev en el cliente hace falta una NEXT_PUBLIC_*, y esa NO se crea
+    // automáticamente: sin este mapeo valía `undefined` en el bundle y
+    // los widgets dev de /settings/billing se renderizaban en
+    // producción (el endpoint igual devuelve 403, pero el cliente veía
+    // botones "DEV: backdate trial end" en su página de billing).
+    // El fallback "development" solo aplica a `next dev` local, donde
+    // VERCEL_ENV no existe. Launch audit 2026-06-26.
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "development",
+  },
 };
 
 // `withSentryConfig` wires up source-map upload at build time and
