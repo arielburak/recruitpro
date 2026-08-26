@@ -46,6 +46,8 @@ type Subscription = {
   trialEndsAt: string | null;
   isComp: boolean;
   stripeSubscriptionId: string | null;
+  // Payload de USER: booleano en vez del id (ver /api/admin/subscription).
+  hasStripeSubscription?: boolean;
   // userCreatedAt viene del endpoint /api/admin/subscription. Si el
   // user se acaba de crear (<5min), skipeamos el popup para no
   // interrumpir el primer momento del onboarding. Logins posteriores
@@ -88,7 +90,7 @@ export function TrialCountdown() {
     // Ya subscribió: trial sigue corriendo (Stripe trial_end) pero no
     // tiene sentido empujarlo a "Subscribe now" — ya lo hizo. Feedback
     // Nicolás 2026-06-23.
-    if (subscription.stripeSubscriptionId) return;
+    if (subscription.stripeSubscriptionId || subscription.hasStripeSubscription) return;
 
     // Si el trial ya expiró, el SubscriptionGate maneja el bloqueo
     // — no abrir el popup chico por arriba.
@@ -127,7 +129,7 @@ export function TrialCountdown() {
   if (subscription.isComp) return null;
   if (!subscription.trialEndsAt) return null;
   // Ya subscribió: el popup empuja "Subscribe now" que ya esta hecho.
-  if (subscription.stripeSubscriptionId) return null;
+  if (subscription.stripeSubscriptionId || subscription.hasStripeSubscription) return null;
 
   const trialEnd = new Date(subscription.trialEndsAt).getTime();
   const now = Date.now();
