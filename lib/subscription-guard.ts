@@ -1,5 +1,24 @@
 import { prisma } from "@/lib/prisma";
 
+// Ventana de gracia cuando Stripe no pudo cobrar la renovación. Los
+// Smart Retries de Stripe resuelven la mayoría de los declines
+// transitorios (banco que bloquea por fraude, tarjeta vencida) dentro
+// de las 72h, y lockear al equipo entero por eso era razón de churn.
+//
+// El ancla es `updatedAt`, NO `currentPeriodEnd`: para una sub impaga
+// Stripe deja current_period_end en el fin del período que NO se pagó,
+// o sea ~un mes en el futuro. Anclar ahí daba un mes largo de acceso
+// gratis en vez de 3 días — fuga de plata silenciosa. `updatedAt` es
+// el momento en que el webhook la marcó PAST_DUE, que es exactamente
+// cuando falló el cobro. syncSubFromStripe es idempotente (no escribe
+// si nada cambió), así que no se corre solo. Audit 2026-06-26.
+const PAST_DUE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function isWithinPastDueGrace(sub: { updatedAt: Date | null }): boolean {
+  if (!sub.updatedAt) return false;
+  return Date.now() < sub.updatedAt.getTime() + PAST_DUE_GRACE_MS;
+}
+
 export class SubscriptionError extends Error {
   constructor(message: string) {
     super(message);
@@ -49,17 +68,10 @@ export async function requireActiveSubscription(organizationId: string) {
   // grace counting desde currentPeriodEnd (el momento que Stripe
   // empezó a fallar el cobro). Audit 2026-06-24 con Nicolás.
   if (subscription.status === "PAST_DUE") {
-    const graceEnd = subscription.currentPeriodEnd
-      ? new Date(
-          subscription.currentPeriodEnd.getTime() + 3 * 24 * 60 * 60 * 1000,
-        )
-      : null;
-    if (graceEnd && new Date() < graceEnd) {
-      // En grace: dejar pasar como ACTIVE. La UI muestra banner
-      // amarillo "Payment failed — update card to keep access" para
-      // que el admin lo arregle sin urgencia tóxica.
-      return subscription;
-    }
+    // En grace: dejar pasar como ACTIVE. La UI muestra banner
+    // amarillo "Payment failed — update card to keep access" para
+    // que el admin lo arregle sin urgencia tóxica.
+    if (isWithinPastDueGrace(subscription)) return subscription;
     throw new SubscriptionError(
       "Your payment is past due. Please update your billing information.",
     );
@@ -107,7 +119,9 @@ export async function getSubscriptionStatus(
       status: true,
       trialEndsAt: true,
       isComp: true,
-      currentPeriodEnd: true,
+      // updatedAt es el ancla del grace de PAST_DUE (ver
+      // isWithinPastDueGrace). currentPeriodEnd ya no se usa acá.
+      updatedAt: true,
     },
   });
 
@@ -121,15 +135,9 @@ export async function getSubscriptionStatus(
     return { ok: true, reason: null };
   }
   if (subscription.status === "PAST_DUE") {
-    // 3-day grace post currentPeriodEnd.
-    const graceEnd = subscription.currentPeriodEnd
-      ? new Date(
-          subscription.currentPeriodEnd.getTime() + 3 * 24 * 60 * 60 * 1000,
-        )
-      : null;
-    if (graceEnd && new Date() < graceEnd) {
-      return { ok: true, reason: null };
-    }
+    // Mismo helper que requireActiveSubscription — antes eran dos
+    // copias de la misma cuenta y podían divergir.
+    if (isWithinPastDueGrace(subscription)) return { ok: true, reason: null };
     return { ok: false, reason: "past_due" };
   }
   if (subscription.status === "CANCELED") return { ok: false, reason: "canceled" };
