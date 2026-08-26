@@ -4,15 +4,16 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/utils";
-import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS, TRIAL_DAYS } from "@/lib/constants";
+import { COMPANY_SIZE_OPTIONS, TRIAL_DAYS } from "@/lib/constants";
 import { sendWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 const onboardingSchema = z.object({
   orgName: z.string().trim().min(2, "Company name must be at least 2 characters"),
-  industry: z
-    .string()
-    .refine((v) => INDUSTRY_OPTIONS.includes(v), "Please pick your industry"),
+  // Free-text igual que registerSchema — este form es LA pantalla
+  // entre el signup con Google y el dashboard, y el Combobox ofrece
+  // valor custom. Audit 2026-06-26.
+  industry: z.string().trim().min(2, "Please pick or type your industry"),
   companySize: z
     .string()
     .refine((v) => COMPANY_SIZE_OPTIONS.includes(v), "Please pick your team size"),

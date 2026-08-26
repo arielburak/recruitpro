@@ -97,7 +97,7 @@ function LoginContent() {
           setError("");
         } else if (result.error.includes("DEACTIVATED")) {
           setError(
-            "Your account has been deactivated. Please contact your workspace admin to regain access.",
+            "Your account doesn't have an active seat. Ask your workspace admin to assign you one to regain access.",
           );
           setUnverifiedEmail(null);
         } else {
@@ -280,7 +280,7 @@ function LoginContent() {
             )}
             {deactivatedError && (
               <div className="bg-amber-50 text-amber-800 text-sm p-3 rounded-lg border border-amber-200">
-                Your account has been deactivated. Please contact your workspace admin to regain access.
+                Your account doesn't have an active seat. Ask your workspace admin to assign you one to regain access.
               </div>
             )}
             {inactivityReason && (

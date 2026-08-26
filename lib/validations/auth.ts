@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COMPANY_SIZE_OPTIONS, INDUSTRY_OPTIONS } from "@/lib/constants";
+import { COMPANY_SIZE_OPTIONS } from "@/lib/constants";
 
 // Emails se normalizan a lowercase en TODA entrada (signup, login, invite,
 // forgot-password). Sin esto, "John@gmail" y "john@gmail" pueden crear
@@ -16,9 +16,14 @@ export const registerSchema = z.object({
   title: z.string().optional(),
   email: normalizedEmail,
   password: z.string().min(8, "Password must be at least 8 characters"),
-  industry: z
-    .string()
-    .refine((v) => INDUSTRY_OPTIONS.includes(v), "Please pick your industry"),
+  // El Combobox de industry ofrece explícitamente 'Or use "X" as a
+  // custom value'. Con el refine contra INDUSTRY_OPTIONS, quien
+  // escribía su propio rubro (ej. "Fintech") llenaba todo el form y
+  // comía un 400 "Please pick your industry" — en el PRIMER formulario
+  // del funnel. Aceptamos free-text; la lista sigue siendo la sugerida.
+  // companySize sí es un select cerrado, ese refine se queda.
+  // Audit 2026-06-26.
+  industry: z.string().trim().min(2, "Please pick or type your industry"),
   companySize: z
     .string()
     .refine((v) => COMPANY_SIZE_OPTIONS.includes(v), "Please pick your team size"),

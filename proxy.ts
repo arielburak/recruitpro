@@ -22,7 +22,7 @@ export async function proxy(request: NextRequest) {
   // El gate real de esos endpoints es su propio check de CRON_SECRET,
   // que es fail-closed (sin la env var responden 401).
   // Audit 2026-06-26.
-  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/cron", "/api/client-portal/register"];
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/invite", "/api/cron", "/api/client-portal/register"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
   const isLandingPage = pathname === "/";
 

@@ -148,7 +148,7 @@ export default function ClientPortalLayout({
           el tracker y montarlo ahí dispararía polls innecesarios. */}
       {showNav && session?.user && (
         <>
-          <SessionGate />
+          <SessionGate loginPath="/client-portal/login" />
           <InactivityLogout redirectTo="/client-portal/login" />
         </>
       )}

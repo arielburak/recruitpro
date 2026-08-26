@@ -267,6 +267,11 @@ function RegisterContent() {
                   name="title"
                   placeholder="e.g. Senior Recruiter"
                   className="focus-visible:ring-indigo-500"
+                  /* required: sin title el layout del dashboard
+                     redirige a /complete-profile, así que el user
+                     terminaba el signup y caía en otro form pidiendo
+                     lo mismo. Audit 2026-06-26. */
+                  required
                 />
               </div>
             </div>
@@ -315,6 +320,20 @@ function RegisterContent() {
             >
               {loading ? "Creating your workspace..." : "Start Free Trial"}
             </Button>
+
+            {/* El form no linkeaba Terms ni Privacy en ningún lado —
+                las páginas existen y son públicas. Audit 2026-06-26. */}
+            <p className="text-[11px] text-center text-gray-400 leading-relaxed">
+              By creating an account you agree to our{" "}
+              <Link href="/terms" className="underline hover:text-gray-600">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="underline hover:text-gray-600">
+                Privacy Policy
+              </Link>
+              .
+            </p>
           </form>
 
           <div className="mt-6 space-y-2">

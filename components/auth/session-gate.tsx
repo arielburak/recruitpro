@@ -33,7 +33,13 @@ const POLL_INTERVAL_MS = 10_000;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
 const IDLE_ACTIVITY_DEBOUNCE_MS = 5_000;
 
-export function SessionGate() {
+export function SessionGate({
+  // Adonde mandamos al user cuando cierra sesion desde el overlay. El
+  // portal del cliente tiene su propio login: sin esto un cliente
+  // terminaba en el login de agencias, que no lo reconoce.
+  // Audit 2026-06-26.
+  loginPath = "/login",
+}: { loginPath?: string } = {}) {
   const [blocked, setBlocked] = useState(false);
   const [idleOut, setIdleOut] = useState(false);
 
@@ -177,7 +183,7 @@ export function SessionGate() {
           <div className="p-6">
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: "/login?error=deactivated" })}
+              onClick={() => signOut({ callbackUrl: `${loginPath}?error=deactivated` })}
               className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-semibold transition-colors text-base"
             >
               <LogOut className="h-5 w-5" />
@@ -216,7 +222,7 @@ export function SessionGate() {
           <div className="p-6">
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => signOut({ callbackUrl: loginPath })}
               className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-semibold transition-colors text-base"
             >
               <LogOut className="h-5 w-5" />
