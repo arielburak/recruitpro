@@ -154,7 +154,13 @@ export function TrialCountdown() {
   // (el dia de hoy ya se esta usando). Feedback Nicolas 2026-06-23.
   const daysLeft = Math.max(0, Math.floor(msLeft / (1000 * 60 * 60 * 24)));
 
-  const isUrgent = daysLeft <= 2;
+  // Un teammate USER no puede subscribirse: /settings/billing es
+  // admin-only. Dejarlo frente a un modal sin X ni esc cuyo unico
+  // boton lleva a una pagina que no puede usar es una trampa. Para
+  // USER el modal siempre se puede cerrar y la copy le dice que hable
+  // con su admin. Audit 2026-06-26.
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const isUrgent = daysLeft <= 2 && isAdmin;
   const isHeadsUp = daysLeft >= 3 && daysLeft <= 6;
 
   // Color + iconografía según urgencia.
@@ -190,6 +196,12 @@ export function TrialCountdown() {
 
   const Icon = styles.icon;
 
+  // Para USER reemplazamos subtitulo y CTA: no puede pagar, solo
+  // avisarle a quien si puede.
+  const subtitle = isAdmin
+    ? styles.subtitle
+    : "Your workspace admin needs to subscribe to keep the team working after the trial ends.";
+
   function handleDismiss() {
     if (isUrgent) return; // urgent no se puede dismissar
     // Cierre transitorio solamente — no persistimos nada. Al refresh
@@ -224,21 +236,32 @@ export function TrialCountdown() {
           </DialogTitle>
         </DialogHeader>
 
-        <p className="text-sm text-gray-700">{styles.subtitle}</p>
+        <p className="text-sm text-gray-700">{subtitle}</p>
 
-        {/* Big CTA */}
-        <Link
-          href="/settings/billing"
-          className={`mt-2 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${styles.button}`}
-        >
-          <Sparkles className="h-5 w-5" />
-          Subscribe now
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        {/* CTA solo para ADMIN: /settings/billing es admin-only, así
+            que mandar ahí a un USER era mandarlo a una pared. */}
+        {isAdmin ? (
+          <Link
+            href="/settings/billing"
+            className={`mt-2 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-base font-semibold transition-colors ${styles.button}`}
+          >
+            <Sparkles className="h-5 w-5" />
+            Subscribe now
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        ) : (
+          <Button
+            variant="outline"
+            className="mt-2"
+            onClick={() => setOpen(false)}
+          >
+            Got it
+          </Button>
+        )}
 
         {isUrgent && (
           <p className="text-xs text-red-600 text-center mt-2">
-            You'll lose access to the ATS when the trial ends. Subscribe now to keep working.
+            You&apos;ll lose access to the ATS when the trial ends. Subscribe now to keep working.
           </p>
         )}
       </DialogContent>

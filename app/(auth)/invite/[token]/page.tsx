@@ -20,6 +20,9 @@ export default function InvitePage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Cuenta creada pero el pool de seats del workspace estaba lleno:
+  // el user existe e isActive=false hasta que el admin le asigne uno.
+  const [needsSeat, setNeedsSeat] = useState(false);
 
   useEffect(() => {
     fetch(`/api/invite/${token}`)
@@ -81,6 +84,17 @@ export default function InvitePage({
         return;
       }
 
+      // Cuenta creada pero sin seat libre en el pool: no tiene sentido
+      // intentar el login (authorize() lo rechaza y aterriza en el
+      // cartel de "deactivated", que para alguien que recién se sumó
+      // no significa nada). Le explicamos qué pasó y qué tiene que
+      // pedir. Audit 2026-06-26.
+      if (data.seatAssigned === false) {
+        setNeedsSeat(true);
+        setSubmitting(false);
+        return;
+      }
+
       // Auto sign in
       const result = await signIn("credentials", {
         email: invite.email,
@@ -119,6 +133,36 @@ export default function InvitePage({
           </h1>
           <p className="text-gray-500 mb-6">{error}</p>
           <Button onClick={() => router.push("/login")}>Go to Login</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Cuenta creada, pero el workspace no tenía seats libres. El user
+  // existe: cuando el admin le asigne uno, entra con estas mismas
+  // credenciales. Tono neutro — no hizo nada mal.
+  if (needsSeat) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-8">
+        <div className="max-w-md text-center">
+          <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-6 h-6 text-amber-600" />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">
+            You&apos;re on the team
+          </h1>
+          <p className="text-gray-600 mb-2">
+            Your account for{" "}
+            <span className="font-medium">{invite?.organizationName}</span> is
+            ready, but all seats are currently in use.
+          </p>
+          <p className="text-gray-500 text-sm mb-6">
+            Ask your workspace admin to assign you a seat. Once they do, sign
+            in with the email and password you just set — nothing else to do.
+          </p>
+          <Button onClick={() => router.push("/login?portal=agency")}>
+            Go to Login
+          </Button>
         </div>
       </div>
     );
@@ -171,11 +215,17 @@ export default function InvitePage({
             </div>
 
             <div className="space-y-2">
+              {/* required: el layout del dashboard manda a
+                  /complete-profile si title está vacío. Dejarlo
+                  opcional acá significaba terminar el signup y caer
+                  en OTRO formulario pidiendo lo mismo. Audit
+                  2026-06-26. */}
               <Label htmlFor="title">Job Title</Label>
               <Input
                 id="title"
                 name="title"
                 placeholder="e.g. Senior Recruiter"
+                required
               />
             </div>
 

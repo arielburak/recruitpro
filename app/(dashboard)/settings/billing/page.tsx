@@ -155,18 +155,10 @@ function BillingContent() {
       url.searchParams.delete("subscribe");
       window.history.replaceState({}, "", url.toString());
     }
-    const subStatus = subscription?.status;
-    const subTrialEnd = subscription?.trialEndsAt
-      ? new Date(subscription.trialEndsAt)
-      : null;
-    const subTrialExpired =
-      subStatus === "TRIALING" && subTrialEnd && subTrialEnd.getTime() <= Date.now();
-    if (subStatus === "TRIALING" && !subTrialExpired) {
-      setSubscribeOptionsOpen(true);
-    } else {
-      // Trial vencido / canceled / sin sub → cobro inmediato.
-      handleCheckout();
-    }
+    // Mismo criterio que el botón Subscribe: el dialog siempre, así el
+    // admin elige seats y asignación con el cap aplicado, en vez de un
+    // checkout ciego que puede pedir más seats de los permitidos.
+    setSubscribeOptionsOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSubscribe, loading, subscription]);
 
@@ -688,11 +680,18 @@ function BillingContent() {
                     // (pay now / save card). En cualquier otro estado
                     // (trial expirado, canceled, no-sub), checkout
                     // directo con cobro inmediato.
-                    if (status === "TRIALING" && !trialExpired) {
-                      setSubscribeOptionsOpen(true);
-                    } else {
-                      handleCheckout();
-                    }
+                    // Siempre el dialog, también con el trial vencido.
+                    // El checkout ciego usaba seats = active users, así
+                    // que un workspace con 11+ activos (el trial deja
+                    // invitar sin límite) comía un 400 "top out at 10
+                    // seats" y no tenía salida: el gate le bloquea
+                    // /settings/team, o sea que tampoco podía desactivar
+                    // a nadie. Con el dialog elige cuántos seats compra
+                    // y a quién se los asigna, con el cap ya aplicado.
+                    // El dialog detecta trialDaysLeft<=0 y dice "charged
+                    // today" en vez de prometer que no se cobra.
+                    // Audit 2026-06-26.
+                    setSubscribeOptionsOpen(true);
                   }}
                   disabled={actionLoading}
                   className={`w-full sm:w-auto ${trialExpired ? "bg-red-600 hover:bg-red-700" : ""}`}

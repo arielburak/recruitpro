@@ -183,8 +183,21 @@ export default function AdminUsersPage() {
     setShowInvite(false);
     setPendingInvite(null);
     setInviteLoading(false);
-    setSuccess("Invitation sent!");
-    setTimeout(() => setSuccess(""), 3000);
+
+    // El invite se creó siempre; el mail puede haber fallado (Resend
+    // caído, API key faltante). Antes decíamos "sent!" igual y el
+    // teammate no recibía nada, sin que el admin se enterara nunca.
+    // Audit 2026-06-26.
+    const body = await res.json().catch(() => ({}) as any);
+    if (body?.emailSent === false) {
+      setError(
+        "Invite created, but we couldn't send the email. Use Resend on the pending invite below, or share the link with them directly.",
+      );
+      setTimeout(() => setError(""), 8000);
+    } else {
+      setSuccess("Invitation sent!");
+      setTimeout(() => setSuccess(""), 3000);
+    }
     fetchData();
   }
 

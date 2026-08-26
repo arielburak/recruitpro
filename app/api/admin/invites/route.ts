@@ -109,21 +109,32 @@ export async function POST(request: Request) {
         : "http://localhost:3000");
     const inviteUrl = `${baseUrl}/invite/${invite.token}`;
 
+    // El invite ya existe en DB, así que el mail que falla NO invalida
+    // la operación — pero el admin tiene que enterarse. Antes tragábamos
+    // el error y respondíamos "success" igual: si Resend estaba caído o
+    // faltaba la API key (que devuelve {skipped:true} sin tirar), el
+    // admin veía "Invitation sent!" y el teammate nunca recibía nada,
+    // sin forma de saberlo. Devolvemos emailSent para que la UI pueda
+    // ofrecer copiar el link o reintentar. Audit 2026-06-26.
+    let emailSent = false;
     try {
-      await sendTeamInviteEmail({
+      const result: any = await sendTeamInviteEmail({
         to: email,
         inviteUrl,
         inviterName: ctx.userName,
         organizationName: org?.name || "the team",
         recipientName: name || undefined,
       });
+      emailSent = !result?.skipped;
+      if (result?.skipped) {
+        console.warn("[invites] email skipped:", result.reason);
+      }
     } catch (emailError) {
       console.error("Failed to send invite email:", emailError);
-      // Still return success - invite was created
     }
 
     return NextResponse.json(
-      { success: true, inviteId: invite.id },
+      { success: true, inviteId: invite.id, emailSent, inviteUrl },
       { status: 201 }
     );
   } catch (error: any) {

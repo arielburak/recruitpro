@@ -255,7 +255,13 @@ export async function POST(
     }
 
     return NextResponse.json(
-      { success: true, userId: user.id },
+      // seatAssigned le dice al front si puede loguear derecho o si
+      // tiene que mostrar "estás adentro, pediles un seat". Sin esto
+      // el front intentaba signIn(), authorize() tiraba DEACTIVATED y
+      // el recién invitado veía "your account has been deactivated" —
+      // copy de revocación para alguien que nunca tuvo acceso.
+      // Audit 2026-06-26.
+      { success: true, userId: user.id, seatAssigned: hasAvailableSeat },
       { status: 201 }
     );
   } catch (error: any) {
