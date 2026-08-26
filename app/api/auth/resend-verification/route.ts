@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { sendEmailVerificationEmail } from "@/lib/email";
+import { findStaffingUserByEmail } from "@/lib/email-canonical";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // Resend the verification email. Two callers:
 //
@@ -23,6 +25,17 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
     const authedUserId = session?.user?.id;
 
+    // Rate limit por IP — cada request manda mail (costo + abuso del
+    // inbox del target). 3 por hora. Authed users tampoco se libran:
+    // un atacante con session válida podría seguir spammeando.
+    const rl = await checkRateLimit("auth:resend-verification", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many resend attempts. Please wait an hour." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     let user: { id: string; name: string; email: string; emailVerifiedAt: Date | null } | null = null;
 
     if (authedUserId) {
@@ -32,16 +45,23 @@ export async function POST(request: Request) {
       });
     } else {
       // Unauthenticated path — accept { email }. Always return success
-      // shape to avoid leaking whether an account exists.
+      // shape to avoid leaking whether an account exists. Audit 2026-06-23:
+      // pasamos por findStaffingUserByEmail para tolerar Gmail aliases
+      // (sin esto, un user creado con casing distinto al input se perdía).
       const body = await request.json().catch(() => ({}));
       const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
       if (!email) {
         return NextResponse.json({ success: true });
       }
-      user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, name: true, email: true, emailVerifiedAt: true },
-      });
+      const found = await findStaffingUserByEmail(email);
+      user = found
+        ? {
+            id: found.id,
+            name: found.name,
+            email: found.email,
+            emailVerifiedAt: found.emailVerifiedAt,
+          }
+        : null;
     }
 
     if (!user) {

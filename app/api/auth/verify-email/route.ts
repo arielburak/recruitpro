@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // Marks the user as verified when the token from the verification
 // email is presented. Public endpoint — the only auth required is
@@ -13,6 +14,17 @@ import { safeErrorMessage } from "@/lib/safe-error";
 // requests a new one.
 export async function POST(request: Request) {
   try {
+    // Rate limit por IP — token es random 32 bytes (no brute-forceable)
+    // pero evita que un atacante haga DDoS al endpoint. 30/min generoso
+    // para retries legítimos cuando un user clickea varias veces.
+    const rl = await checkRateLimit("auth:verify-email", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a minute." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const body = await request.json();
     const token = typeof body.token === "string" ? body.token : "";
 

@@ -554,6 +554,76 @@ export default function ClientDetailPage() {
               {contactError && (
                 <div className="bg-red-50 text-red-600 text-sm p-3 rounded-md mb-4">{contactError}</div>
               )}
+
+              {/* Add-Inline mini-form: arriba de la tabla en lugar de
+                  meter una row con 7 inputs adentro. Antes se rompía:
+                  los inputs forzaban un width mayor al del viewport y
+                  la tabla scrolleaba horizontalmente con el header
+                  cortado. Ahora un grid responsive (md:grid-cols-5) +
+                  acciones en su propia fila — fluido en cualquier
+                  viewport. Audit 2026-06-24. */}
+              {addingContact && (
+                <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
+                  <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wider mb-3">
+                    New contact
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="flex gap-2 lg:col-span-1">
+                      <Input
+                        className="h-9"
+                        placeholder="First name"
+                        value={newContact.firstName}
+                        onChange={(e) => setNewContact({ ...newContact, firstName: e.target.value })}
+                      />
+                      <Input
+                        className="h-9"
+                        placeholder="Last name"
+                        value={newContact.lastName}
+                        onChange={(e) => setNewContact({ ...newContact, lastName: e.target.value })}
+                      />
+                    </div>
+                    <Input
+                      className="h-9"
+                      placeholder="Title"
+                      value={newContact.title}
+                      onChange={(e) => setNewContact({ ...newContact, title: e.target.value })}
+                    />
+                    <Input
+                      className="h-9"
+                      placeholder="Email"
+                      value={newContact.email}
+                      onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                    />
+                    <PhoneInput
+                      value={newContact.phone}
+                      onChange={(val) => setNewContact({ ...newContact, phone: val })}
+                    />
+                    <label className="flex items-center gap-2 text-sm text-gray-700 px-1">
+                      <input
+                        type="checkbox"
+                        checked={newContact.isPrimary}
+                        onChange={(e) => setNewContact({ ...newContact, isPrimary: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                      />
+                      Primary contact
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 mt-4">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setAddingContact(false)}
+                      disabled={savingContact}
+                    >
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={createContact} disabled={savingContact}>
+                      {savingContact ? "Saving…" : "Save contact"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {contactsLoading ? (
                 <div className="space-y-2">
                   {[...Array(2)].map((_, i) => (
@@ -565,7 +635,7 @@ export default function ClientDetailPage() {
                   <UserCircle className="block h-10 w-10 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-400">No contacts yet for this client.</p>
                 </div>
-              ) : (
+              ) : contacts.length === 0 ? null : (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -579,68 +649,6 @@ export default function ClientDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {addingContact && (
-                      <TableRow>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Input
-                              className="h-8 w-20"
-                              placeholder="First"
-                              value={newContact.firstName}
-                              onChange={(e) => setNewContact({ ...newContact, firstName: e.target.value })}
-                            />
-                            <Input
-                              className="h-8 w-20"
-                              placeholder="Last"
-                              value={newContact.lastName}
-                              onChange={(e) => setNewContact({ ...newContact, lastName: e.target.value })}
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            className="h-8"
-                            placeholder="Title"
-                            value={newContact.title}
-                            onChange={(e) => setNewContact({ ...newContact, title: e.target.value })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            className="h-8"
-                            placeholder="Email"
-                            value={newContact.email}
-                            onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <PhoneInput
-                            compact
-                            value={newContact.phone}
-                            onChange={(val) => setNewContact({ ...newContact, phone: val })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <input
-                            type="checkbox"
-                            checked={newContact.isPrimary}
-                            onChange={(e) => setNewContact({ ...newContact, isPrimary: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-300 text-indigo-600"
-                          />
-                        </TableCell>
-                        <TableCell />
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={createContact} disabled={savingContact}>
-                              {savingContact ? "..." : "Save"}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setAddingContact(false)}>
-                              X
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
                     {contacts.map((contact) =>
                       editingContactId === contact.id ? (
                         <TableRow key={contact.id}>

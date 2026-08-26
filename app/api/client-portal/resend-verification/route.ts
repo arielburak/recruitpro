@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendEmailVerificationEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // Re-issue a fresh verification token for a portal user who hasn't
 // clicked the original yet. Public on purpose — the login page hits
@@ -11,6 +12,14 @@ import { safeErrorMessage } from "@/lib/safe-error";
 // success response either way so we don't leak which addresses exist.
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit("auth:resend-verification", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many resend attempts. Please wait an hour." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const body = await request.json();
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     if (!email) {

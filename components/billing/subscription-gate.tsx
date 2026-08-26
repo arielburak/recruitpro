@@ -19,7 +19,6 @@ import {
   Lock,
   ArrowRight,
   LogOut,
-  Mail,
 } from "lucide-react";
 import type { SubscriptionStatusResult } from "@/lib/subscription-guard";
 
@@ -62,12 +61,10 @@ const copyByReason: Record<
 export function SubscriptionGate({
   status,
   isAdmin,
-  adminEmail,
   children,
 }: {
   status: SubscriptionStatusResult;
   isAdmin: boolean;
-  adminEmail: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -107,8 +104,12 @@ export function SubscriptionGate({
         <div className="p-6 space-y-4">
           {isAdmin ? (
             <>
+              {/* ?subscribe=1 → la billing page auto-abre el dialog de
+                  Subscribe con el seat picker. Sino el admin clickeaba
+                  Subscribe acá + Subscribe otra vez adentro = 2 clicks
+                  para lo mismo. Fix Nicolás 2026-06-25. */}
               <Link
-                href="/settings/billing"
+                href="/settings/billing?subscribe=1"
                 className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors text-base"
               >
                 Subscribe now
@@ -121,19 +122,14 @@ export function SubscriptionGate({
           ) : (
             <>
               <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                {/* No mostramos el email del admin (PII) — la agencia
+                    puede no querer que cualquier teammate lo vea
+                    expuesto en un overlay. El user contacta al admin
+                    por sus canales internos. Audit Nicolás 2026-06-25. */}
                 <p className="text-sm text-gray-700">
                   Only your workspace admin can subscribe. Reach out to them to
                   restore access.
                 </p>
-                {adminEmail && (
-                  <a
-                    href={`mailto:${adminEmail}?subject=Recruiting%20ATS%20%E2%80%94%20subscription%20needed`}
-                    className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                  >
-                    <Mail className="h-4 w-4" />
-                    Email {adminEmail}
-                  </a>
-                )}
               </div>
             </>
           )}

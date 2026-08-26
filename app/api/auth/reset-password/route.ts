@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // Rate limit por IP. Token es random 32 bytes (no brute-forceable)
+    // pero defensivo igual contra DDoS al endpoint.
+    const rl = await checkRateLimit("auth:reset-password", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a minute." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const { token, password } = await request.json();
 
     if (!token || typeof token !== "string") {

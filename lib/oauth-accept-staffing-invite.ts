@@ -10,6 +10,7 @@
 // el user hizo Sign in with Google y le pidió company name.
 
 import { prisma } from "@/lib/prisma";
+import { checkSeatAvailability } from "@/lib/seat-availability";
 
 // Mismo patrón canonical de canonicalizeGmail / findStaffingUserByOAuthEmail
 // en auth-options.ts. Duplicado a propósito para que el módulo sea
@@ -97,6 +98,14 @@ export async function acceptStaffingInviteOnOAuth(
 ): Promise<{ userId: string } | null> {
   const name = (googleProfile.name || invite.name || "Member").trim();
 
+  // Modelo Purchased (Batch H5 2026-06-24): el OAuth accept SIEMPRE
+  // entra al workspace. Si hay Available > 0, isActive=true (seat
+  // auto-asignado). Si no, isActive=false (entró sin seat; el admin
+  // le asigna después desde Manage seats). Mismo flow que el accept
+  // manual.
+  const seatCheck = await checkSeatAvailability(invite.organizationId);
+  const hasAvailableSeat = seatCheck.ok;
+
   let createdUserId: string | null = null;
   try {
     const [user] = await prisma.$transaction([
@@ -110,6 +119,9 @@ export async function acceptStaffingInviteOnOAuth(
           passwordHash: "",
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
+          // Mismo seat-assignment behavior que el manual accept:
+          // si hay Available > 0 entra con seat, sino entra inactivo.
+          isActive: hasAvailableSeat,
           emailVerifiedAt: new Date(),
         },
         select: { id: true },
@@ -128,15 +140,8 @@ export async function acceptStaffingInviteOnOAuth(
     return null;
   }
 
-  // Increment subscription seats (best effort).
-  try {
-    await prisma.subscription.update({
-      where: { organizationId: invite.organizationId },
-      data: { seats: { increment: 1 } },
-    });
-  } catch {
-    // Subscription puede no existir (org sin Stripe wired) — no es fatal
-  }
+  // Modelo Purchased: el OAuth accept NO toca Stripe.quantity. Si
+  // hubo Available > 0, el isActive=true consumió 1 seat del pool.
 
   // Memoria total (2026-06-17): si ademas del UserInvite el mismo email
   // tiene un PendingFirmInvite (un cliente lo invito a una busqueda),

@@ -683,6 +683,13 @@ export default function CalendarPage() {
     fetchInterviews();
   }
 
+  // Cancelar una interview es destructivo (notifica al candidate, libera
+  // el slot, rompe el agendamiento con el cliente). Audit 2026-06-23:
+  // un click único disparaba el flip sin freno. Ahora pide confirm.
+  const [pendingCancelInterviewId, setPendingCancelInterviewId] = useState<
+    string | null
+  >(null);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1436,7 +1443,7 @@ export default function CalendarPage() {
                   )}
                   <div className="flex gap-2">
                     {selectedInterview.status === "SCHEDULED" && (
-                      <Button size="sm" variant="outline" className="flex-1 text-red-500" onClick={() => handleStatusChange(selectedInterview.id, "CANCELLED")}>
+                      <Button size="sm" variant="outline" className="flex-1 text-red-500" onClick={() => setPendingCancelInterviewId(selectedInterview.id)}>
                         Cancel
                       </Button>
                     )}
@@ -1900,6 +1907,24 @@ export default function CalendarPage() {
           if (selectedInterview) await handleDelete(selectedInterview.id);
         }}
         confirmLabel="Yes, delete"
+      />
+
+      {/* Cancel interview confirm. Antes era click único en el botón
+          "Cancel" del detail card — cambiaba el status a CANCELLED sin
+          freno. Audit 2026-06-23. */}
+      <DeleteConfirmDialog
+        open={!!pendingCancelInterviewId}
+        onOpenChange={(open) => { if (!open) setPendingCancelInterviewId(null); }}
+        itemLabel={selectedInterview?.title || "this interview"}
+        title="Cancel this interview?"
+        description="The interview will be marked as cancelled. You'll still need to notify the candidate and any client contacts manually."
+        confirmLabel="Yes, cancel interview"
+        onConfirm={async () => {
+          if (pendingCancelInterviewId) {
+            await handleStatusChange(pendingCancelInterviewId, "CANCELLED");
+            setPendingCancelInterviewId(null);
+          }
+        }}
       />
 
       <DeleteConfirmDialog

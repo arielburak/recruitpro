@@ -17,25 +17,66 @@ Aplican a cualquier feature nueva o existente:
 - `- [ ]` pendiente / nuevo
 - Acceso rápido: `/roadmap` desde Claude Code
 
-**Última actualización**: 2026-06-19
+**Última actualización**: 2026-06-23
 
 ---
 
-## 💳 Próximo sprint — Stripe live (post deploys actuales)
+## 📅 Mañana con Ari (2026-06-24)
 
-Decisión 2026-06-19: después de cerrar el bloque actual de deploys (los 7 items del feedback de testing + el rework del job header), activar pagos reales con Stripe. Hasta hoy el código de billing existe pero ningún user puede ser cobrado (env vars test, no live; trial nunca expira en la práctica).
+Items que vos + Ari tienen que decidir / activar — todo 5 min cada uno desde el dashboard de Stripe, sin código.
 
-Pasos en orden:
+- [ ] **Activar Stripe Tax** (Dashboard → Tax → Settings → enable). Calcula automáticamente sales tax US / VAT EU según address del customer. Costo: 0.5% del monto cobrado. Vale prenderlo aunque facturen $0 — US tiene nexus apenas pasen ciertos umbrales por estado y si no lo activás ahora hay que pagar retroactivo. Recomendación: ON.
+- [ ] **Activar Promotion Codes** (Dashboard → Settings → Customer Portal → Promotion codes ON). Te permite dar discount codes (para partners, early customers, refunds parciales) sin tocar código. Stripe Checkout los acepta automáticamente. Recomendación: ON.
+- [ ] **Decidir annual pricing** (sí / no / esperar). Si sí: crear segundo Price con `interval=year` y descuento 15-20%. Mi sugerencia: esperar — sin data de retention monthly no sabés qué descuento ofrecer.
 
-- [ ] **Definir pricing**. Decisión vos + Ari: precio por seat, mensual vs anual, si hay tier SOLO vs TEAM diferenciados (el código ya soporta los dos), descuento por anual. Mientras no haya número definido, no se puede crear product en Stripe.
-- [ ] **Crear products + prices en Stripe dashboard** (live mode, no test). Anotar los `price_id` que devuelva Stripe.
-- [ ] **Setear env vars en Vercel production**: `STRIPE_SECRET_KEY` (live), `STRIPE_PUBLISHABLE_KEY` (live), `STRIPE_PRICE_ID_SOLO`, `STRIPE_PRICE_ID_TEAM`, `STRIPE_WEBHOOK_SECRET` (del endpoint live, NO del CLI test).
-- [ ] **Configurar webhook en Stripe dashboard** → URL `https://recruitingats.com/api/webhooks/stripe` (o el dominio real de producción), eventos suscriptos: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`, `invoice.payment_failed`.
-- [ ] **Wirear `requireActiveSubscription` en endpoints sensibles**. Hoy el guard existe (`lib/subscription-guard.ts`) pero solo se usa en `/api/engagements/[id]`. Falta agregarlo a: POST `/api/candidates`, POST `/api/jobs`, POST `/api/submissions`, POST `/api/interviews`, POST `/api/placements`. Sin esto, trial vencido = sigue usando todo gratis = nunca cobramos. Probable mejor approach: middleware o helper que envuelva los handlers para no duplicar el check.
-- [ ] **Fixear webhook `customer.subscription.updated` con status="canceled"** (gap del audit anterior). Hoy solo mapea active/past_due → si Stripe manda update con canceled la sub queda como ACTIVE.
-- [ ] **Test E2E con cuenta real**: crear cuenta nueva → dejar pasar el trial (o hacerlo expirar manualmente) → upgrade desde `/settings/billing` → pagar con tarjeta test→ cancelar desde Customer Portal → re-activar. Confirmar que en cada paso el state de la `Subscription` row matchea lo que muestra Stripe dashboard.
-- [ ] **Configurar Stripe Customer Portal** desde el dashboard de Stripe: branding (logo, color), qué pueden hacer los customers (cambiar payment method, ver invoices, cancelar, downgrade). Sin esto el botón "Manage billing" del ATS lleva a un portal con defaults sin marca.
-- [ ] **Tax handling**: definir si Stripe Tax se prende (USA = nexus, EU = VAT). Si target es US-only, en MVP queda OFF; revisar cuando aparezca primer customer fuera de US.
+---
+
+## 🚦 Pre-launch readiness audit (auditoría 2026-06-23)
+
+Lo que encontré faltando antes de promote a `main`. Ordenado por bloqueante → nice-to-have.
+
+### Bloqueantes legales / operacionales
+
+- [~] **Rate limiting en `/api/auth/*`** — implementado vía `@upstash/ratelimit` + `@upstash/redis` (`lib/rate-limit.ts`). Buckets por endpoint: register 5/min, login 10/min, forgot-password 3/10min, reset-password 5/min, resend-verification 3/hora, verify-email 30/min. Aplicado en agency Y client portal. Login bucket envuelve el catch-all de NextAuth ANTES de bcrypt para no quemar CPU del server con brute force. Fallback graceful: si las env vars de Upstash no están seteadas, el limiter es no-op (no rompe deploy). **Setup pendiente vos**: crear DB en https://console.upstash.com/redis (free tier alcanza), agregar `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` en Vercel env vars de prod + preview.
+- [ ] **DKIM/SPF/DMARC para `recruitingats.com` en Resend**. Sin esto los mails caen en spam de Gmail/Outlook → onboarding fail. Resend dashboard → Domains → verificá que tu dominio tiene los 3 records DNS verdes. 15 min.
+- [ ] **Privacy + ToS pages**: existen (`/privacy`, `/terms`) pero verificar que el contenido es legalmente correcto para tu caso (procesamiento de CVs = PII, datos de candidatos = GDPR si tenés un europeo). Revisar con abogado. Recomendación: Termly o Iubenda para generar templates ($10-30/mes).
+
+### Alto impacto operacional
+
+- [ ] **Analytics**: cero tracking hoy (sin PostHog, Plausible, GA). No vas a saber qué features se usan, dónde se caen los signups, qué % completa el trial. Sin esto vas a launchear a ciegas. PostHog free tier alcanza para los primeros 6 meses, 30 min de setup.
+- [ ] **Support channel definido**: hoy todos los mails responden a `contact@alphabridgepartners.com`. ¿Vas a contestar vos? ¿Compartido con Ari? ¿Necesitás un helpdesk (Crisp / Plain / Help Scout)? Decisión + setup.
+- [ ] **Status page** (status.recruitingats.com): cuando se cae prod, ¿dónde miran los customers? Vercel + UptimeRobot tienen integraciones gratis con status pages.
+
+### Nice-to-have pre-launch
+
+- [ ] **Sentry release tracking + source maps**. Sentry está conectado pero los stack traces de prod vienen minificados (lo vimos hoy con el "p is not iterable"). Configurar `@sentry/nextjs` para upload de source maps en cada build = stack traces legibles.
+- [ ] **Backups verificados**. Neon hace backups automáticos, pero ¿alguna vez probaste restore? Pre-launch hacer un dry-run: spin up branch desde un point-in-time + verificar que la data está OK. 30 min.
+- [ ] **Account deletion + data export** (GDPR right). Hoy no hay UI para "delete my account" ni "export my data". Si tenés un solo customer europeo te lo van a pedir. Implementar antes que lleguen.
+- [ ] **2FA opcional**. Para admins con acceso a candidate PII + Stripe billing. NextAuth soporta TOTP con un plugin.
+
+
+
+Activado 2026-06-23. Pricing definitivo: **$20/seat/mes flat** (mismo precio SOLO y TEAM). Trial de 7 días sin tarjeta, hard paywall después vía `requireActiveSubscription`.
+
+### Código
+- [x] **Pricing $20/seat/mes**. `SOLO_PRICE_PER_SEAT_CENTS` = `TEAM_PRICE_PER_SEAT_CENTS` = 2000. Estructura de tiers SOLO/TEAM preservada por backwards compat — si más adelante queremos volume discount, solo se toca la constante TEAM.
+- [x] **`requireActiveSubscription` wireado en 30+ endpoints** vía `getOrgContextWithActiveSub()` (`lib/require-active-sub.ts`). Cubre todos los mutation endpoints sensibles: candidates, jobs, submissions, interviews, placements, contacts, clients, events, comments, documents, admin invites, import, parse-resume. GETs quedan abiertos por diseño (el user ve su data aunque haya vencido).
+- [x] **Webhook handler completo** (`app/api/webhooks/stripe/route.ts`) — `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.payment_succeeded/failed`. Sweep de hardening: signature verification, idempotency, sub reconciliation via `syncSubFromStripe`.
+- [x] **Webhook `canceled` mapeado bien**. `mapStripeStatus()` traduce `"canceled"` + `"incomplete_expired"` → `CANCELED`. La sub se actualiza al recibir el evento. No queda como ACTIVE fantasma.
+- [x] **Trial expire cron** (`app/api/cron/expire-trials/route.ts`) + hard-lock del dashboard cuando expira.
+
+### Config externa (vos lo hiciste)
+- [x] Products + prices en Stripe live mode
+- [x] Env vars live en Vercel production (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRICE_ID_SOLO`, `STRIPE_PRICE_ID_TEAM`, `STRIPE_WEBHOOK_SECRET`)
+- [x] Webhook configurado en Stripe dashboard apuntando a producción
+- [x] Customer Portal configurado con branding propio
+
+### Verificación
+- [x] **Test E2E con cuenta real**. Crear cuenta → trial → upgrade → pagar con tarjeta test → cancelar → re-activar. Confirmado que cada paso refleja correctamente en DB vs Stripe dashboard.
+
+### Diferido (post-launch)
+- [ ] **Tax handling**: definir si Stripe Tax se prende (USA = nexus, EU = VAT). MVP US-only queda OFF; revisar cuando aparezca primer customer fuera de US.
+- [ ] **Pricing experiments**: descuento anual, volume discount sobre TEAM tier, free tier para sourcers individuales — todo cuando haya datos de conversion del trial.
 
 ## 🚨 Crítico
 

@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const ctx = await getOrgContext();
+    const isAdmin = ctx.role === "ADMIN";
 
     // Self-healing: si hay sub en Stripe, hacemos pull para corregir
     // cualquier drift (currentPeriodEnd null post-checkout, cancel
@@ -34,10 +35,42 @@ export async function GET() {
       select: { createdAt: true },
     });
 
+    // Privacy: USER recibe SOLO campos non-sensitive necesarios para
+    // banners de trial countdown y gating de UX. ADMIN recibe todo
+    // (stripeCustomerId, períodos, lista de active users con emails)
+    // para el subscribe/portal flow. Audit 2026-06-23.
+    if (!isAdmin) {
+      return NextResponse.json(
+        {
+          status: subscription?.status ?? null,
+          trialEndsAt: subscription?.trialEndsAt ?? null,
+          isComp: subscription?.isComp ?? false,
+          userCreatedAt: user?.createdAt ?? null,
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+          },
+        },
+      );
+    }
+
+    // Pool seat model 2026-06-22: front necesita active users count Y
+    // la lista completa (para el subscribe dialog donde el admin elige
+    // quién mantiene acceso si compra menos seats que active users).
+    const activeUsersList = await prisma.user.findMany({
+      where: { organizationId: ctx.organizationId, isActive: true },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const activeUsersCount = activeUsersList.length;
+
     return NextResponse.json(
       {
         ...subscription,
         userCreatedAt: user?.createdAt ?? null,
+        activeUsersCount,
+        activeUsersList,
       },
       {
         headers: {

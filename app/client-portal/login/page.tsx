@@ -109,6 +109,9 @@ function ClientPortalLoginInner() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
+  // Sesión cerrada por inactividad — InactivityLogout redirige acá
+  // con ?reason=inactivity. Mensaje azul (info), no rojo (error).
+  const inactivityReason = searchParams.get("reason") === "inactivity";
   const [error, setError] = useState(() => {
     const e = searchParams.get("error");
     if (e === "no-client-account")
@@ -379,6 +382,11 @@ function ClientPortalLoginInner() {
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
+                {inactivityReason && (
+                  <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded-lg border border-blue-200">
+                    You were signed out after 30 minutes of inactivity. Sign in to continue where you left off.
+                  </div>
+                )}
                 {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg">{error}</div>}
                 {success && <div className="bg-green-50 text-green-600 text-sm p-3 rounded-lg">{success}</div>}
                 {unverifiedEmail && (

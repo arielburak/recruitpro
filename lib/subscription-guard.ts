@@ -42,11 +42,31 @@ export async function requireActiveSubscription(organizationId: string) {
     return subscription;
   }
 
-  // PAST_DUE, CANCELED, UNPAID
+  // PAST_DUE: 3-day grace window. Stripe Smart Retries cubren la
+  // mayoría de declines transients (banco bloquea por fraude, expiry
+  // mid-period, etc.) en 24-72h. Lockear al toque el equipo entero
+  // por un bank glitch transient era razón fuerte de churn. Damos
+  // grace counting desde currentPeriodEnd (el momento que Stripe
+  // empezó a fallar el cobro). Audit 2026-06-24 con Nicolás.
+  if (subscription.status === "PAST_DUE") {
+    const graceEnd = subscription.currentPeriodEnd
+      ? new Date(
+          subscription.currentPeriodEnd.getTime() + 3 * 24 * 60 * 60 * 1000,
+        )
+      : null;
+    if (graceEnd && new Date() < graceEnd) {
+      // En grace: dejar pasar como ACTIVE. La UI muestra banner
+      // amarillo "Payment failed — update card to keep access" para
+      // que el admin lo arregle sin urgencia tóxica.
+      return subscription;
+    }
+    throw new SubscriptionError(
+      "Your payment is past due. Please update your billing information.",
+    );
+  }
+
   throw new SubscriptionError(
-    subscription.status === "PAST_DUE"
-      ? "Your payment is past due. Please update your billing information."
-      : "Your subscription is inactive. Please subscribe to continue."
+    "Your subscription is inactive. Please subscribe to continue.",
   );
 }
 
@@ -83,7 +103,12 @@ export async function getSubscriptionStatus(
 ): Promise<SubscriptionStatusResult> {
   const subscription = await prisma.subscription.findUnique({
     where: { organizationId },
-    select: { status: true, trialEndsAt: true, isComp: true },
+    select: {
+      status: true,
+      trialEndsAt: true,
+      isComp: true,
+      currentPeriodEnd: true,
+    },
   });
 
   if (!subscription) return { ok: false, reason: "no_sub" };
@@ -95,7 +120,18 @@ export async function getSubscriptionStatus(
     }
     return { ok: true, reason: null };
   }
-  if (subscription.status === "PAST_DUE") return { ok: false, reason: "past_due" };
+  if (subscription.status === "PAST_DUE") {
+    // 3-day grace post currentPeriodEnd.
+    const graceEnd = subscription.currentPeriodEnd
+      ? new Date(
+          subscription.currentPeriodEnd.getTime() + 3 * 24 * 60 * 60 * 1000,
+        )
+      : null;
+    if (graceEnd && new Date() < graceEnd) {
+      return { ok: true, reason: null };
+    }
+    return { ok: false, reason: "past_due" };
+  }
   if (subscription.status === "CANCELED") return { ok: false, reason: "canceled" };
   if (subscription.status === "UNPAID") return { ok: false, reason: "unpaid" };
   return { ok: false, reason: "inactive" };

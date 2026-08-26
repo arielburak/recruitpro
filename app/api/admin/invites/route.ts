@@ -5,6 +5,11 @@ import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/req
 import { sendTeamInviteEmail } from "@/lib/email";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkSeatAvailability } from "@/lib/seat-availability";
+import {
+  findStaffingUserByEmail,
+  findPendingInviteByEmail,
+} from "@/lib/email-canonical";
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +19,13 @@ export async function POST(request: Request) {
     const ctx = await getOrgContextWithActiveSub();
 
     const body = await request.json();
-    const email = body.email;
+    // Normalize email: lowercase + trim. Sin esto, un mismo mailbox
+    // recibía invites duplicados por casing o por dot/+tag variations
+    // y terminaba creando rows User separadas que después rompían el
+    // login. Audit 2026-06-23.
+    const rawEmail = body.email;
+    const email =
+      typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : rawEmail;
     // Cualquier miembro del org puede invitar a un teammate. Decisión 2026-06-17:
     // los invites NO son destructivos y abrirlos a USER baja la fricción del
     // onboarding cuando el admin no esta cerca. La unica restriccion: si quien
@@ -29,30 +40,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
-    // Check if user already exists in org
-    const existingUser = await prisma.user.findFirst({
-      where: { email, organizationId: ctx.organizationId },
-    });
-    if (existingUser) {
+    // Dup-check tolerante a Gmail aliases y case. Antes findFirst con
+    // email exacto se perdía aliases ("Nico@gmail.com" vs "nico@gmail.com",
+    // "first.last@gmail.com" vs "firstlast@gmail.com") y dejaba que el
+    // admin creara invites duplicados que después producían rows User
+    // separadas. Audit 2026-06-23.
+    const existingUser = await findStaffingUserByEmail(email);
+    if (existingUser && existingUser.organizationId === ctx.organizationId) {
       return NextResponse.json(
         { error: "User already exists in your organization" },
         { status: 400 }
       );
     }
 
-    // Check for existing pending invite
-    const existingInvite = await prisma.userInvite.findFirst({
-      where: {
-        email,
-        organizationId: ctx.organizationId,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
+    const existingInvite = await findPendingInviteByEmail(
+      email,
+      ctx.organizationId,
+    );
     if (existingInvite) {
       return NextResponse.json(
         { error: "An invite is already pending for this email" },
         { status: 400 }
+      );
+    }
+
+    // Pool seat check: si la org está ACTIVE, validar que hay seats
+    // disponibles antes de crear el invite. Si no hay, devolver 400
+    // con mensaje claro — el frontend dispara CTA "Buy more seats".
+    // TRIAL/COMP pasan libre (checkSeatAvailability lo gestiona).
+    const seatCheck = await checkSeatAvailability(ctx.organizationId);
+    if (!seatCheck.ok) {
+      return NextResponse.json(
+        {
+          error: seatCheck.message,
+          code: "seat_pool_full",
+          current: seatCheck.current,
+          pool: seatCheck.pool,
+        },
+        { status: 402 },
       );
     }
 

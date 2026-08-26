@@ -94,7 +94,15 @@ export async function DELETE(
       }
     }
 
-    await prisma.clientUser.delete({ where: { id } });
+    // Soft-delete vía isActive=false. Antes hacíamos hard-delete que
+    // rompe con FK si el ClientUser tiene Comments, CandidateRatings,
+    // ClientJobMember rows, etc. (Audit 2026-06-23). Preservamos
+    // historial: el handle del user en comments queda navegable como
+    // "deactivated", mismo patrón que User staffing-side.
+    await prisma.clientUser.update({
+      where: { id },
+      data: { isActive: false },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

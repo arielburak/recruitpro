@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CreditCard, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { Users, AlertCircle, Sparkles, Receipt, CreditCard } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,36 +10,44 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { BillingImpactBlock } from "@/components/billing/billing-impact-block";
+import {
+  monthlyTotalCents,
+  SOLO_PRICE_PER_SEAT_CENTS,
+} from "@/lib/constants";
 
-// Dialog que confirma al admin el impacto en billing antes de agregar
-// un seat. Cubre 2 modos:
+const fmtDollars = (cents: number) =>
+  (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const PRICE_PER_SEAT_DOLLARS = SOLO_PRICE_PER_SEAT_CENTS / 100;
+
+// Pool seat model 2026-06-22 (refactor): el dialog de confirmación
+// para invite/reactivate ya NO muestra "+$20/mo" en el momento del
+// invite — el billing solo cambia cuando el admin compra/saca seats
+// explícitamente desde /settings/billing → Manage seats.
 //
-//   · invite     → "Inviting X will add a seat..." (default)
-//   · reactivate → "Reactivating X will add a seat back..."
+// Lógica nueva:
+//   · Hay seats disponibles → confirmar la asignación: "Assigning
+//     seat — X of Y will be in use". Sin billing impact.
+//   · Pool full → bloquear el confirm. CTA "Buy more seats" lleva
+//     a /settings/billing.
+//   · TRIAL: pool no limita (invite libre). Mostrar info que cuando
+//     subscriba va a pagar por todos los seats activos.
+//   · COMP: el caller no debería abrir el dialog (no aplica billing).
 //
-// Aparece para ACTIVE y TRIALING. Para COMP el caller decide skipearlo
-// (BillingImpactBlock no renderiza igual, así que el dialog quedaría
-// con info breakdown vacío — el ConfirmAddSeatDialog NO se debe abrir
-// en COMP).
-//
-// Decisión 2026-06-22 con Nicolás: incluir secondary link "Change
-// payment method" que abre el Customer Portal de Stripe en nueva tab.
-// Razón: si el admin va a pagar más, puede querer cambiar la tarjeta
-// (corporativa vs personal). Antes de eso el flow no le daba la
-// oportunidad — silent toggle hacia más cobro.
+// El admin invita/reactiva con confianza — el costo lo decidió antes
+// cuando compró el pool. Como las mejores plataformas SaaS.
 
 type Mode = "invite" | "reactivate";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Pool comprado (Subscription.seats en DB).
   currentSeats: number;
+  // Active users count actual del workspace.
+  activeUsers: number;
   status: string;
   isComp: boolean;
-  // Nombre del teammate involucrado (para personalizar el copy).
   teammateName?: string;
-  // Determina copy + label del botón confirmar.
   mode?: Mode;
   onConfirm: () => void;
   loading?: boolean;
@@ -46,23 +55,22 @@ type Props = {
 
 const copyByMode: Record<
   Mode,
-  { title: string; bodyWithName: (n: string) => string; bodyWithoutName: string; confirmLabel: string; loadingLabel: string }
+  {
+    title: string;
+    actionVerb: string; // "invite" | "reactivate"
+    confirmLabel: string;
+    loadingLabel: string;
+  }
 > = {
   invite: {
-    title: "Add a seat to your subscription",
-    bodyWithName: (n) =>
-      `Inviting <strong>${n}</strong> will add a seat to your subscription as soon as they accept.`,
-    bodyWithoutName:
-      "This will add a seat to your subscription as soon as the teammate accepts.",
+    title: "Confirm invite",
+    actionVerb: "Inviting",
     confirmLabel: "Confirm and invite",
     loadingLabel: "Sending invite…",
   },
   reactivate: {
-    title: "Reactivate teammate",
-    bodyWithName: (n) =>
-      `Reactivating <strong>${n}</strong> will add a seat back to your subscription. They'll regain access immediately.`,
-    bodyWithoutName:
-      "Reactivating this teammate will add a seat back to your subscription. They'll regain access immediately.",
+    title: "Confirm reactivation",
+    actionVerb: "Reactivating",
     confirmLabel: "Confirm and reactivate",
     loadingLabel: "Reactivating…",
   },
@@ -72,6 +80,7 @@ export function ConfirmAddSeatDialog({
   open,
   onOpenChange,
   currentSeats,
+  activeUsers,
   status,
   isComp,
   teammateName,
@@ -79,40 +88,48 @@ export function ConfirmAddSeatDialog({
   onConfirm,
   loading,
 }: Props) {
-  const [portalLoading, setPortalLoading] = useState(false);
   const copy = copyByMode[mode];
+  const [buyAndInviteLoading, setBuyAndInviteLoading] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
 
-  async function openBillingPortal() {
-    setPortalLoading(true);
+  // Pool calculations.
+  const isTrial = status === "TRIALING";
+  const seatsAfter = activeUsers + 1;
+  const available = Math.max(0, currentSeats - activeUsers);
+  // Pivote final 2026-06-22: durante TRIAL los invites son libres
+  // (admin arma el equipo gratis). Al subscribirse elige cuántos seats
+  // comprar y quién mantiene acceso. No hay límite de 1 user.
+  // Pool full solo aplica en ACTIVE (no hay seats libres en el pool).
+  const isPoolFull = !isTrial && !isComp && available < 1;
+
+  // "Buy seat & invite" flow: si pool full, este botón compra 1 seat
+  // adicional + después dispara el invite en una sola acción. Una
+  // cosa habilita la otra — feedback de Nicolás 2026-06-22.
+  async function handleBuyAndInvite() {
+    setBuyAndInviteLoading(true);
+    setBuyError(null);
     try {
-      const res = await fetch("/api/admin/billing/portal", { method: "POST" });
+      const res = await fetch("/api/admin/billing/update-seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seats: currentSeats + 1 }),
+      });
       const data = await res.json();
-      if (data.url) {
-        // Abrir en nueva tab para que el user vuelva al dialog
-        // después de cambiar el método. El dialog queda abierto.
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      } else {
-        // QA Medium: antes el portal failure (e.g. customerId pending_*,
-        // 403 non-admin, 500 Stripe down) era silent — el botón paraba
-        // de cargar y nada pasaba. Surface el error al user.
-        alert(
-          data?.error ||
-            "Couldn't open billing portal. Try /settings/billing directly."
-        );
+      if (!res.ok) {
+        setBuyError(data?.error || "Couldn't buy seat. Try again.");
+        setBuyAndInviteLoading(false);
+        return;
       }
-    } catch {
-      alert("Couldn't open billing portal. Please try again.");
-    } finally {
-      setPortalLoading(false);
+      // Seat comprado. Ahora disparamos el invite normal — el caller
+      // hace el POST a /api/admin/invites. El gate ya pasa porque
+      // ahora hay 1 seat disponible.
+      onConfirm();
+      // No cerramos manual — el caller cierra cuando termine.
+    } catch (e: any) {
+      setBuyError(e?.message || "Couldn't buy seat. Try again.");
+      setBuyAndInviteLoading(false);
     }
   }
-
-  // Mostrar el link "Change payment method" SOLO cuando aplica billing
-  // (no en COMP) y hay método existente (no en pure TRIAL sin sub Stripe).
-  // Como no recibimos hasStripeSubscriptionId acá, lo asumimos por status:
-  // ACTIVE → ya hay tarjeta; TRIALING → solo si el caller la pasó (default
-  // skip — durante trial no se cobra ahora, no hace falta cambiarla).
-  const showChangePayment = status === "ACTIVE" && !isComp;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,48 +138,185 @@ export function ConfirmAddSeatDialog({
           <DialogTitle>{copy.title}</DialogTitle>
         </DialogHeader>
 
-        <p
-          className="text-sm text-gray-600"
-          dangerouslySetInnerHTML={{
-            __html: teammateName
-              ? copy.bodyWithName(teammateName)
-              : copy.bodyWithoutName,
-          }}
-        />
+        {/* Header text */}
+        <p className="text-sm text-gray-600">
+          {teammateName ? (
+            <>
+              {copy.actionVerb} <strong>{teammateName}</strong>{" "}
+              {mode === "invite"
+                ? "will give them access to the ATS"
+                : "will restore their access to the ATS"}
+              {isPoolFull
+                ? " once you have an available seat."
+                : isTrial
+                  ? " — no charge during your trial."
+                  : " with a seat from your pool."}
+            </>
+          ) : (
+            <>
+              {copy.actionVerb} this teammate will give them ATS access.
+            </>
+          )}
+        </p>
 
-        <BillingImpactBlock
-          currentSeats={currentSeats}
-          delta={1}
-          status={status}
-          isComp={isComp}
-        />
-
-        {showChangePayment && (
-          <button
-            type="button"
-            onClick={openBillingPortal}
-            disabled={portalLoading || loading}
-            className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium mt-1 disabled:opacity-50"
-          >
-            <CreditCard className="h-4 w-4" />
-            {portalLoading
-              ? "Opening Stripe…"
-              : "Change payment method first"}
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
+        {/* Seat usage breakdown — solo cuando NO es trial. Durante
+            trial el pool no se enforcen, mostrarlo confunde con "2 of 1". */}
+        {!isTrial && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3 mt-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Seat usage
+            </p>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 flex items-center gap-2">
+                <Users className="h-4 w-4 text-gray-400" />
+                Currently in use
+              </span>
+              <span className="text-gray-900 font-medium">
+                {activeUsers} of {currentSeats}
+              </span>
+            </div>
+            {!isPoolFull && (
+              <div className="flex items-center justify-between text-sm border-t border-gray-200 pt-2">
+                <span className="text-gray-600">After this {mode}</span>
+                <span className="text-indigo-700 font-semibold">
+                  {seatsAfter} of {currentSeats}
+                </span>
+              </div>
+            )}
+          </div>
         )}
 
+        {/* Billing impact — SIEMPRE visible cuando aplica (no trial, no
+            comp). Memoria feedback_billing_transparency: cualquier
+            acción que cambie seat/billing debe mostrar desglose +
+            opción de cambiar payment method. Mostramos current bill +
+            after bill explícito así el admin sabe exactamente qué le
+            va a pasar a la próxima factura. */}
+        {!isTrial && !isComp && (
+          <div
+            className={`rounded-xl border p-4 space-y-2 mt-2 ${
+              isPoolFull
+                ? "border-amber-300 bg-amber-50"
+                : "border-indigo-200 bg-indigo-50/50"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${
+                isPoolFull ? "text-amber-900" : "text-indigo-900"
+              }`}
+            >
+              <Receipt className="h-3.5 w-3.5" />
+              Billing impact
+            </p>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-700">
+                Current bill ({currentSeats} seat{currentSeats === 1 ? "" : "s"})
+              </span>
+              <span className="text-gray-900 font-medium">
+                ${fmtDollars(monthlyTotalCents(currentSeats))}/mo
+              </span>
+            </div>
+            <div
+              className={`flex items-center justify-between text-sm border-t pt-2 ${
+                isPoolFull ? "border-amber-200" : "border-indigo-100"
+              }`}
+            >
+              <span className="text-gray-700">
+                After this {mode} ({isPoolFull ? currentSeats + 1 : currentSeats}{" "}
+                seat{(isPoolFull ? currentSeats + 1 : currentSeats) === 1 ? "" : "s"})
+              </span>
+              {isPoolFull ? (
+                <span className="text-amber-900 font-bold">
+                  ${fmtDollars(monthlyTotalCents(currentSeats + 1))}/mo
+                  <span className="text-xs font-semibold text-amber-700 ml-1">
+                    (+${PRICE_PER_SEAT_DOLLARS})
+                  </span>
+                </span>
+              ) : (
+                <span className="text-emerald-700 font-bold">
+                  ${fmtDollars(monthlyTotalCents(currentSeats))}/mo
+                  <span className="text-xs font-medium text-emerald-600 ml-1">
+                    (no change)
+                  </span>
+                </span>
+              )}
+            </div>
+            <p
+              className={`text-[11px] pt-1 ${
+                isPoolFull ? "text-amber-800" : "text-gray-600"
+              }`}
+            >
+              {isPoolFull ? (
+                <>
+                  Pool is full — confirming will add 1 seat to your
+                  subscription. Your next invoice will reflect the new total.
+                </>
+              ) : (
+                <>
+                  {teammateName || "This teammate"} uses 1 of your available
+                  seats — no extra charge.
+                </>
+              )}
+            </p>
+            <Link
+              href="/settings/billing"
+              className={`inline-flex items-center gap-1 text-[11px] font-medium pt-1 ${
+                isPoolFull
+                  ? "text-amber-900 hover:text-amber-950"
+                  : "text-indigo-700 hover:text-indigo-900"
+              }`}
+            >
+              <CreditCard className="h-3 w-3" />
+              Update payment method
+            </Link>
+          </div>
+        )}
+
+        {/* Contextual notes — solo trial. El caso pool-full ya está
+            cubierto por el Billing impact box arriba (más explícito). */}
+        {isTrial && (
+          <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3">
+            <p className="text-xs text-indigo-900 leading-relaxed">
+              <strong>You&apos;re in trial</strong> — invite as many teammates
+              as you want. When you subscribe, you&apos;ll choose how many
+              seats to keep.
+            </p>
+          </div>
+        )}
+
+        {/* Error display */}
+        {buyError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            {buyError}
+          </div>
+        )}
+
+        {/* Buttons */}
         <div className="flex items-center justify-end gap-2 mt-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={loading}
+            disabled={loading || buyAndInviteLoading}
           >
             Cancel
           </Button>
-          <Button onClick={onConfirm} disabled={loading}>
-            {loading ? copy.loadingLabel : copy.confirmLabel}
-          </Button>
+          {isPoolFull ? (
+            <Button
+              onClick={handleBuyAndInvite}
+              disabled={loading || buyAndInviteLoading}
+            >
+              <Sparkles className="h-4 w-4 mr-1.5" />
+              {buyAndInviteLoading
+                ? "Buying seat…"
+                : loading
+                  ? copy.loadingLabel
+                  : `Buy seat & ${mode === "invite" ? "invite" : "reactivate"}`}
+            </Button>
+          ) : (
+            <Button onClick={onConfirm} disabled={loading}>
+              {loading ? copy.loadingLabel : copy.confirmLabel}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

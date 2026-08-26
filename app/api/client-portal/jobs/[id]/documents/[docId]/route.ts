@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
+import { canAccessClientJob } from "@/lib/client-job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 // GET — stream a client-portal job document.
@@ -18,16 +19,28 @@ export async function GET(
     const ctx = await getClientContext();
     const { id, docId } = await params;
 
+    // Per-JO membership gate. Sin este check, un ClientUser del mismo
+    // cliente NO miembro del JO podía stremear los bytes (incluyendo
+    // PDF de Job Description) con solo conocer el docId. Audit 2026-06-23.
     const doc = await prisma.document.findFirst({
       where: {
         id: docId,
         clientJobId: id,
         clientJob: { clientId: ctx.clientId },
       },
-      select: { url: true, name: true },
+      select: {
+        url: true,
+        name: true,
+        clientJob: {
+          select: {
+            clientId: true,
+            members: { select: { clientUserId: true } },
+          },
+        },
+      },
     });
 
-    if (!doc) {
+    if (!doc || !doc.clientJob || !canAccessClientJob(ctx, doc.clientJob)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

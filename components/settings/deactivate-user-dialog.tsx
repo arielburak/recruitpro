@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Calendar, Briefcase, Users, UserCheck } from "lucide-react";
+import { AlertTriangle, Calendar, Briefcase, Users, UserCheck, ArmchairIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { BillingImpactBlock } from "@/components/billing/billing-impact-block";
 
 // Dialog que pide la decisión al admin antes de desactivar a un user.
 // Carga el impact info (counts + lista de upcoming interviews) cuando
@@ -302,16 +301,22 @@ export function DeactivateUserDialog({
               </div>
             )}
 
-            {/* Billing impact — muestra el cambio en el bill mensual
-                cuando se quita el seat. No aparece para comp ni si la
-                sub no está en ACTIVE/TRIALING (decide BillingImpactBlock). */}
-            {typeof currentSeats === "number" && subscriptionStatus && (
-              <BillingImpactBlock
-                currentSeats={currentSeats}
-                delta={-1}
-                status={subscriptionStatus}
-                isComp={!!isComp}
-              />
+            {/* Pool model 2026-06-22: deactivate ya NO toca billing —
+                el seat queda libre en el pool para ser asignado a otro.
+                El billing solo cambia cuando el admin saca/agrega seats
+                explícitamente desde /settings/billing → Manage seats.
+                Antes mostrábamos "Credited to your invoice" pero era
+                falso (Stripe no prorate, el bill se mantiene igual). */}
+            {!isComp && subscriptionStatus === "ACTIVE" && (
+              <div className="flex items-start gap-2 rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <ArmchairIcon className="h-4 w-4 text-gray-500 mt-0.5 shrink-0" />
+                <div className="text-xs text-gray-700">
+                  <strong>1 seat returns to your pool</strong> — your monthly
+                  bill won&apos;t change. You can assign it to a new teammate
+                  or remove it from your subscription anytime in{" "}
+                  <strong>Settings → Billing → Manage seats</strong>.
+                </div>
+              </div>
             )}
 
             {/* Lista de interviews afectadas, para que el admin sepa

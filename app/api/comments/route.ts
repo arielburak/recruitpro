@@ -9,6 +9,7 @@ import {
 } from "@/lib/chat-notifications";
 import { logActivity } from "@/lib/activity";
 import { validateCommentScope } from "@/lib/comment-access";
+import { canAccessJob } from "@/lib/job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: Request) {
@@ -35,8 +36,7 @@ export async function POST(request: Request) {
 
     // Server-side scope guard. Enforces: (a) CLIENT_VISIBLE only on
     // shared submissions, (b) mentions filtered to people with real
-    // access to the destination. Everything else falls back to the
-    // existing handler logic.
+    // access to the destination, (c) cross-tenant isolation.
     const scope = await validateCommentScope(
       prisma,
       { kind: "agency", userId: ctx.userId, organizationId: ctx.organizationId, role: ctx.role },
@@ -52,6 +52,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: scope.error }, { status: scope.status });
     }
     const mentions = scope.mentions;
+
+    // Access gate: el caller tiene que poder ver el job del target.
+    // Sin esto, un USER del mismo org sin asignación al job podía
+    // postear comments en submissions/jobs ajenos y, vía el fallback
+    // mention-based en /api/jobs/[id], auto-promocionarse a ver el
+    // job entero. Audit 2026-06-23.
+    let gateJobId: string | null = null;
+    if (body.submissionId) {
+      const sub = await prisma.candidateSubmission.findUnique({
+        where: { id: body.submissionId },
+        select: { jobId: true, job: { select: { organizationId: true } } },
+      });
+      if (sub && sub.job.organizationId === ctx.organizationId) {
+        gateJobId = sub.jobId;
+      }
+    } else if (body.jobId) {
+      gateJobId = body.jobId;
+    }
+    if (gateJobId) {
+      const allowed = await canAccessJob(
+        gateJobId,
+        ctx.organizationId,
+        ctx.userId,
+        ctx.role,
+      );
+      if (!allowed) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    } else if (body.candidateId) {
+      // Candidate-level chat: solo permitir si es ADMIN o el owner del
+      // candidato. Sino el USER podia auto-mencionarse en cualquier
+      // candidate del org para gatillar notificaciones cruzadas.
+      const cand = await prisma.candidate.findUnique({
+        where: { id: body.candidateId },
+        select: { organizationId: true, ownerId: true },
+      });
+      const sameOrg = cand?.organizationId === ctx.organizationId;
+      const isOwner = cand?.ownerId === ctx.userId;
+      if (!sameOrg || (ctx.role !== "ADMIN" && !isOwner)) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
 
     // When the agency posts a CLIENT_VISIBLE Job note, mirror the
     // row onto the ClientJob it backs (via accepted FirmEngagement)

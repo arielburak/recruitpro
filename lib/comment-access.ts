@@ -69,6 +69,20 @@ export async function validateCommentScope(
     });
     if (!sub) return { allowed: false, status: 404, error: "Submission not found" };
 
+    // Cross-tenant isolation: la submission tiene que pertenecer al
+    // tenant del actor. Sin este check, un user de org A con el id
+    // de una submission de org B podia escribir comments en el feed
+    // ajeno (audit 2026-06-23).
+    if (actor.kind === "agency") {
+      if (sub.job.organizationId !== actor.organizationId) {
+        return { allowed: false, status: 404, error: "Submission not found" };
+      }
+    } else {
+      if (sub.job.clientId !== actor.clientId) {
+        return { allowed: false, status: 404, error: "Submission not found" };
+      }
+    }
+
     // Rule 1: CLIENT_VISIBLE only after share.
     if (type === "CLIENT_VISIBLE" && !sub.isSharedWithClient) {
       return {
@@ -119,6 +133,17 @@ export async function validateCommentScope(
     });
     if (!job) return { allowed: false, status: 404, error: "Job not found" };
 
+    // Cross-tenant + cross-side isolation. Agency posts solo si el job
+    // es de su org; client side no debería siquiera llegar acá (estos
+    // jobs son agency-only) pero por defensa devolvemos 404.
+    if (actor.kind === "agency") {
+      if (job.organizationId !== actor.organizationId) {
+        return { allowed: false, status: 404, error: "Job not found" };
+      }
+    } else {
+      return { allowed: false, status: 404, error: "Job not found" };
+    }
+
     const validUserIds = await collectAgencyJobUserIds(prisma, {
       jobId: job.id,
       organizationId: job.organizationId,
@@ -133,9 +158,10 @@ export async function validateCommentScope(
       });
     }
 
+    // El guard arriba ya garantizó actor.kind === "agency" — agregamos
+    // al author directamente, sin else (sería unreachable).
     const valid = new Set([...validUserIds, ...validClientUserIds]);
-    if (actor.kind === "agency") valid.add(actor.userId);
-    else valid.add(actor.clientUserId);
+    valid.add(actor.userId);
 
     return { allowed: true, mentions: requested.filter((id) => valid.has(id)) };
   }
@@ -159,6 +185,30 @@ export async function validateCommentScope(
       },
     });
     if (!cj) return { allowed: false, status: 404, error: "Job not found" };
+
+    // Cross-tenant isolation. Client actor: el ClientJob debe pertenecer
+    // a su clientId, y además el caller tiene que ser miembro del JO
+    // (no admin bypass — política de client-job-access). Agency actor:
+    // tiene que haber un FirmEngagement aceptado entre su org y este
+    // ClientJob.
+    if (actor.kind === "client") {
+      if (cj.clientId !== actor.clientId) {
+        return { allowed: false, status: 404, error: "Job not found" };
+      }
+      const isMember = cj.members.some(
+        (m) => m.clientUserId === actor.clientUserId,
+      );
+      if (!isMember) {
+        return { allowed: false, status: 404, error: "Job not found" };
+      }
+    } else {
+      const hasEngagement = cj.engagements.some(
+        (e) => e.organizationId === actor.organizationId,
+      );
+      if (!hasEngagement) {
+        return { allowed: false, status: 404, error: "Job not found" };
+      }
+    }
 
     const validClientUserIds = new Set(cj.members.map((m) => m.clientUserId));
 
@@ -185,6 +235,11 @@ export async function validateCommentScope(
       select: { id: true, ownerId: true, organizationId: true },
     });
     if (!cand) return { allowed: false, status: 404, error: "Candidate not found" };
+
+    // Cross-tenant isolation: solo agency-side y solo dentro del mismo org.
+    if (actor.kind !== "agency" || cand.organizationId !== actor.organizationId) {
+      return { allowed: false, status: 404, error: "Candidate not found" };
+    }
 
     const admins = await prisma.user.findMany({
       where: { organizationId: cand.organizationId, role: "ADMIN", isActive: true },

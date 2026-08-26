@@ -10,8 +10,27 @@ export async function GET() {
   try {
     const ctx = await getOrgContext();
 
+    // Privacy: USER ve solo placements donde es recruiter o donde es
+    // owner del candidate. Sin este scope, el endpoint devolvía fees,
+    // comisiones y salarios de TODOS los recruiters al USER. La
+    // attribution sigue la misma regla que el dashboard widget:
+    // recruiterId explícito (override) → fallback candidate.ownerId.
+    // Audit 2026-06-23.
+    const where: any = { organizationId: ctx.organizationId };
+    if (ctx.role !== "ADMIN") {
+      where.OR = [
+        { recruiterId: ctx.userId },
+        {
+          AND: [
+            { recruiterId: null },
+            { submission: { candidate: { ownerId: ctx.userId } } },
+          ],
+        },
+      ];
+    }
+
     const placements = await prisma.placement.findMany({
-      where: { organizationId: ctx.organizationId },
+      where,
       include: {
         job: { select: { id: true, title: true, currency: true } },
         client: { select: { id: true, name: true } },

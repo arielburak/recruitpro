@@ -23,7 +23,10 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+// Modelo Purchased (Batch H5 2026-06-24): deactivar libera el seat al
+// pool — billing no cambia. Available sube en 1, Stripe sigue cobrando
+// lo mismo. Para reducir cobro, el admin baja Purchased explícitamente
+// desde Manage seats.
 
 export async function GET(
   _request: Request,
@@ -249,10 +252,9 @@ export async function POST(
       data: { isActive: false },
     });
 
-    // Recalcular seats + sync con Stripe (fire-and-forget).
-    // Sin esto el cliente sigue pagando por el seat del user que ya
-    // no usa el ATS.
-    void recalculateAndSyncSeats(ctx.organizationId);
+    // Modelo Purchased: deactivar libera el seat al pool (Available
+    // sube 1) pero NO toca Stripe.quantity. Próxima factura sigue
+    // cobrando los seats Purchased.
 
     await logActivity({
       action: "user.deactivated",

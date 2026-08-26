@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,19 @@ import {
   AlertTriangle,
   Users,
   Receipt,
+  Settings,
 } from "lucide-react";
 import {
   monthlyTotalCents,
   perSeatCents,
   SOLO_PRICE_PER_SEAT_CENTS,
 } from "@/lib/constants";
+import { ManageSeatsDialog } from "@/components/billing/manage-seats-dialog";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import {
+  SubscribeOptionsDialog,
+  SUBSCRIBE_DIALOG_STORAGE_KEY,
+} from "@/components/billing/subscribe-options-dialog";
 
 // Rediseño Linear/Vercel style: hero card con estado visual claro,
 // progress bar del trial cuando aplica, breakdown desglosado del costo,
@@ -40,10 +47,20 @@ function BillingContent() {
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
   const fromPortal = searchParams.get("from") === "portal";
+  // ?subscribe=1 → auto-abrir el SubscribeOptionsDialog al cargar.
+  // Llega de los overlays "Trial ended" / "Subscription ended" para
+  // que el admin no tenga que clickear Subscribe DOS veces (overlay +
+  // billing page). Decisión Nicolás 2026-06-25.
+  const autoOpenSubscribe = searchParams.get("subscribe") === "1";
   const [subscription, setSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Pool seat dialog: gestionar cuántos seats compra el admin.
+  const [seatsDialogOpen, setSeatsDialogOpen] = useState(false);
+  // Subscribe options dialog: durante trial, dar al user 2 opciones
+  // (pay now y activate / save card y cobro al fin del trial).
+  const [subscribeOptionsOpen, setSubscribeOptionsOpen] = useState(false);
   // Error de carga inicial — si /api/admin/subscription falla, mostramos
   // un banner con Retry en lugar de pretender que no hay sub.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -52,6 +69,17 @@ function BillingContent() {
   // su API. Sin esto el primer fetch traía data vieja y el user veía
   // 'Active' después de cancelar hasta que refrescara manualmente.
   const [syncing, setSyncing] = useState(false);
+  // Dev widget loading state. DEBE estar acá arriba con el resto de
+  // hooks — si lo declaro abajo del primer `if (loading) return`,
+  // React tira "Rendered more hooks than during the previous render"
+  // y rompe toda la página con el genérico "Oops" del error boundary.
+  const [endTrialLoading, setEndTrialLoading] = useState(false);
+  // Cancel subscription dialog state. Cuando el admin cliquea "Cancel
+  // subscription", abrimos un confirm dialog con copy estilo ChatGPT
+  // que dice "stays active until Jul 25" — sin sustos. Decisión
+  // Nicolás 2026-06-25.
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   async function fetchSubWithErrorState() {
     try {
@@ -97,6 +125,75 @@ function BillingContent() {
       }, 1500);
     });
   }, [fromPortal]);
+
+  // Auto-abrir el flow de Subscribe cuando ?subscribe=1 llega del
+  // overlay SubscriptionGate (trial expired / sub canceled). Sin esto
+  // el admin clickea "Subscribe now" del overlay y aterriza en
+  // /settings/billing teniendo que clickear OTRO botón Subscribe.
+  //
+  // IMPORTANTE (launch audit 2026-06-26): replica EXACTAMENTE el
+  // branch del botón Subscribe. El dialog (con copy "won't be charged
+  // today" + payNow:false) SOLO aplica a trial VIVO. Para trial
+  // expirado / CANCELED el cobro es inmediato → checkout directo.
+  // Antes abría el dialog siempre: a un user con trial vencido le
+  // prometía "no charge today" y el POST payNow:false loopeaba en el
+  // 409 trial_already_expired.
+  useEffect(() => {
+    if (!autoOpenSubscribe || loading || !subscription) return;
+    // One-shot: subscription se re-fetchea con el polling y sin este
+    // guard handleCheckout() se dispararía en cada refetch → múltiples
+    // checkout sessions en Stripe.
+    if (autoSubscribeFiredRef.current) return;
+    autoSubscribeFiredRef.current = true;
+    // Sacar ?subscribe=1 de la URL apenas disparamos. Sin esto, si el
+    // user vuelve del Stripe Checkout con el botón Back del browser y
+    // la página recarga (sin bfcache), el ref se resetea, el param
+    // sigue ahí y lo re-redirige a un checkout nuevo → loop del que
+    // solo salía editando la URL. Launch audit 2026-06-26.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("subscribe");
+      window.history.replaceState({}, "", url.toString());
+    }
+    const subStatus = subscription?.status;
+    const subTrialEnd = subscription?.trialEndsAt
+      ? new Date(subscription.trialEndsAt)
+      : null;
+    const subTrialExpired =
+      subStatus === "TRIALING" && subTrialEnd && subTrialEnd.getTime() <= Date.now();
+    if (subStatus === "TRIALING" && !subTrialExpired) {
+      setSubscribeOptionsOpen(true);
+    } else {
+      // Trial vencido / canceled / sin sub → cobro inmediato.
+      handleCheckout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSubscribe, loading, subscription]);
+
+  // Restore-from-redirect: si el admin venía mid-flow de "Change
+  // payment method" → Stripe portal → back/Return, el dialog persistió
+  // sus seats/keepIds a sessionStorage. Acá re-abrimos el dialog para
+  // que el restore-on-open recupere todo y el admin no tenga que volver
+  // a elegir seats. Single-shot via ref para no re-disparar después de
+  // que el user cierre manualmente.
+  const restoredRef = useRef(false);
+  // One-shot guard para el auto-subscribe de ?subscribe=1.
+  const autoSubscribeFiredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (loading || !subscription) return;
+    restoredRef.current = true;
+    try {
+      const raw = sessionStorage.getItem(SUBSCRIBE_DIALOG_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed?.open === true) {
+        setSubscribeOptionsOpen(true);
+      }
+    } catch {
+      // ignore (private browsing, JSON parse error)
+    }
+  }, [loading, subscription]);
 
   async function retryLoad() {
     setLoading(true);
@@ -158,6 +255,30 @@ function BillingContent() {
   // Decisión 2026-06-22 con Nicolás: un toggle silencioso en el ATS
   // es amateur. Los SaaS pro siempre llevan al user a Stripe para
   // que reconfirme y mantenga el flow visible end-to-end.
+  async function confirmCancelSubscription() {
+    setCancelLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/billing/cancel-subscription", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data?.error || "Couldn't cancel the subscription.");
+        setCancelLoading(false);
+        return;
+      }
+      setCancelDialogOpen(false);
+      setCancelLoading(false);
+      // Refresh para que UI muestre el banner "Scheduled to cancel".
+      const fresh = await fetchSubWithErrorState();
+      if (fresh) setSubscription(fresh);
+    } catch {
+      setActionError("Network error. Please try again.");
+      setCancelLoading(false);
+    }
+  }
+
   async function handleReactivate() {
     setActionLoading(true);
     setActionError(null);
@@ -214,10 +335,27 @@ function BillingContent() {
   const status = subscription?.status || "TRIALING";
   const isComp = subscription?.isComp;
   const hasStripeSub = !!subscription?.stripeSubscriptionId;
+  // Pool seat model: activeUsersCount viene del endpoint /api/admin/subscription
+  const activeUsers = subscription?.activeUsersCount ?? 0;
+  const seatsAvailable = Math.max(0, seats - activeUsers);
+  // Durante TRIAL, `subscription.seats` queda stuck en lo último que se
+  // sincronizó con Stripe (default 1 al signup) — no refleja invitar
+  // teammates en vivo. Para el hero y la proyección post-trial, usamos
+  // el active users count real. Post-trial (ACTIVE) sí confiamos en
+  // subscription.seats porque ya está autoritativo en Stripe.
+  const projectedSeats =
+    status === "TRIALING" && !isComp ? Math.max(activeUsers, 1) : seats;
+  const projectedMonthlyCost = monthlyTotalCents(projectedSeats);
   const customerIsPending = subscription?.stripeCustomerId?.startsWith("pending_");
   // Stripe flag: cancela al final del periodo actual. Sub sigue
-  // ACTIVE hasta ese día pero NO se renueva. UI distinto.
-  const scheduledToCancel = !!subscription?.cancelAtPeriodEnd && status === "ACTIVE";
+  // ACTIVE (o TRIALING-con-card) hasta ese día pero NO se renueva. UI
+  // distinto. Audit 2026-06-24: incluir TRIALING — el user puede
+  // suscribir con card durante el trial y después cancelar; en ese
+  // caso la sub queda TRIALING+cancelAtPeriodEnd y la UI necesita
+  // mostrar "won't renew" + botón Reactivate igual que en ACTIVE.
+  const scheduledToCancel =
+    !!subscription?.cancelAtPeriodEnd &&
+    (status === "ACTIVE" || status === "TRIALING");
   const periodEnd = subscription?.currentPeriodEnd
     ? new Date(subscription.currentPeriodEnd)
     : null;
@@ -231,7 +369,11 @@ function BillingContent() {
     : null;
   const now = new Date();
   const trialMsLeft = trialEnd ? trialEnd.getTime() - now.getTime() : 0;
-  const trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
+  // Math.floor en lugar de Math.ceil: el usuario lee "X days left" como
+  // "X días COMPLETOS después de hoy". Math.ceil cuenta cualquier fracción
+  // como un día más — fresh signup mostraba 7 cuando intuitivamente faltan
+  // 6 (el día de hoy ya se está usando). Feedback Nicolás 2026-06-23.
+  const trialDaysLeft = Math.max(0, Math.floor(trialMsLeft / (1000 * 60 * 60 * 24)));
   // Trial total duration calculado dinámicamente desde createdAt →
   // trialEndsAt en lugar de hardcoded 7d. Antes (hardcoded) si más
   // adelante cambiamos TRIAL_DAYS en constants.ts, el progress bar
@@ -292,6 +434,23 @@ function BillingContent() {
         label: "Active",
         labelTone: "Your subscription is current.",
       }
+    : status === "TRIALING" && hasStripeSub
+    ? {
+        // Caso "ya subscribí pero el trial sigue corriendo" — Stripe
+        // mantiene status=trialing hasta que el trial_end pase. Antes
+        // este estado caía al branch genérico "Free trial · Subscribe
+        // now", lo que confundía al usuario (acaba de subscribir y le
+        // seguía apareciendo el botón Subscribe). Feedback Nicolás
+        // 2026-06-23: "acabo de suscribirme y no cambia nada".
+        bg: "bg-emerald-50",
+        accent: "text-emerald-700",
+        accentSoft: "bg-emerald-100",
+        border: "border-emerald-200",
+        label: "Subscribed",
+        labelTone: trialEnd
+          ? `Trial active through ${dateStr(trialEnd)} — billing starts then. Cancel anytime.`
+          : "Your subscription is current.",
+      }
     : status === "PAST_DUE"
     ? {
         bg: "bg-amber-50",
@@ -319,8 +478,99 @@ function BillingContent() {
         labelTone: `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left to try everything.`,
       };
 
+  // Dev-only widget — variables que NO son hooks (el useState ya se
+  // declaró arriba junto con los demás hooks, antes de los early returns,
+  // para respetar Rules of Hooks).
+  const isDevEnv =
+    process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
+    typeof window !== "undefined";
+  async function endTrialNow() {
+    if (!confirm("This will backdate your trial end + cancel any active Stripe sub. Continue?")) return;
+    setEndTrialLoading(true);
+    try {
+      const res = await fetch("/api/admin/dev-billing-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "expire" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed: " + (data?.error || "unknown"));
+        setEndTrialLoading(false);
+        return;
+      }
+      window.location.reload();
+    } catch (e: any) {
+      alert("Failed: " + (e?.message || "exception"));
+      setEndTrialLoading(false);
+    }
+  }
+
+  async function endSubscriptionNow() {
+    if (
+      !confirm(
+        "This will cancel your Stripe subscription IMMEDIATELY (skipping the scheduled period end) and mark DB as CANCELED. Continue?",
+      )
+    )
+      return;
+    setEndTrialLoading(true);
+    try {
+      const res = await fetch("/api/admin/dev-billing-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "end-subscription" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed: " + (data?.error || "unknown"));
+        setEndTrialLoading(false);
+        return;
+      }
+      window.location.reload();
+    } catch (e: any) {
+      alert("Failed: " + (e?.message || "exception"));
+      setEndTrialLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Dev-only widgets para testing del lifecycle de billing.
+          Solo visibles en non-production. */}
+      {isDevEnv && !isComp && status === "TRIALING" && (
+        <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50 p-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-orange-900">
+            <strong>DEV:</strong> backdate trial end to test the
+            post-trial flow (SubscriptionGate, Subscribe CTA, etc).
+          </p>
+          <button
+            type="button"
+            onClick={endTrialNow}
+            disabled={endTrialLoading}
+            className="text-xs font-semibold bg-orange-600 text-white px-3 py-1.5 rounded-md hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {endTrialLoading ? "Ending…" : "End trial now (dev)"}
+          </button>
+        </div>
+      )}
+      {isDevEnv && !isComp && status === "ACTIVE" && (
+        <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50 p-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-orange-900">
+            <strong>DEV:</strong> end subscription IMMEDIATELY (skipping
+            period end). Cancels Stripe sub + marks DB CANCELED — to
+            test the post-cancellation overlay + Resubscribe flow.
+          </p>
+          <button
+            type="button"
+            onClick={endSubscriptionNow}
+            disabled={endTrialLoading}
+            className="text-xs font-semibold bg-orange-600 text-white px-3 py-1.5 rounded-md hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {endTrialLoading ? "Ending…" : "End subscription now (dev)"}
+          </button>
+        </div>
+      )}
+
       {/* Action error banner: cuando handleCheckout / handleManageBilling
           / handleReactivate fallaron al contactar Stripe. Antes el
           botón se quedaba en "Loading..." sin feedback visible.
@@ -382,7 +632,7 @@ function BillingContent() {
               <span
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${heroPalette.accentSoft} ${heroPalette.accent}`}
               >
-                {status === "ACTIVE" || isComp ? (
+                {status === "ACTIVE" || isComp || (status === "TRIALING" && hasStripeSub) ? (
                   <CheckCircle className="h-3.5 w-3.5" />
                 ) : trialExpired ? (
                   <AlertTriangle className="h-3.5 w-3.5" />
@@ -396,11 +646,11 @@ function BillingContent() {
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
-                ${dollars(monthlyCost)}
+                ${dollars(projectedMonthlyCost)}
                 <span className="text-base font-normal text-gray-500">/month</span>
               </p>
               <p className="text-sm text-gray-600 mt-1">
-                {seats} {seats === 1 ? "seat" : "seats"} × ${dollars(perSeatCents(seats))}/seat
+                {projectedSeats} {projectedSeats === 1 ? "seat" : "seats"} × ${dollars(perSeatCents(projectedSeats))}/seat
               </p>
             </div>
             <p className="text-sm text-gray-700">{heroPalette.labelTone}</p>
@@ -423,21 +673,27 @@ function BillingContent() {
                   {actionLoading ? "Reactivating…" : "Reactivate subscription"}
                 </Button>
               )}
-              {!scheduledToCancel && (!hasStripeSub || status === "TRIALING") && (
+              {!scheduledToCancel && !hasStripeSub && (
                 <Button
                   size="lg"
-                  onClick={handleCheckout}
+                  onClick={() => {
+                    // En trial activo: abrir el dialog con 2 opciones
+                    // (pay now / save card). En cualquier otro estado
+                    // (trial expirado, canceled, no-sub), checkout
+                    // directo con cobro inmediato.
+                    if (status === "TRIALING" && !trialExpired) {
+                      setSubscribeOptionsOpen(true);
+                    } else {
+                      handleCheckout();
+                    }
+                  }}
                   disabled={actionLoading}
                   className={`w-full sm:w-auto ${trialExpired ? "bg-red-600 hover:bg-red-700" : ""}`}
                 >
                   <Sparkles className="h-4 w-4 mr-1.5" />
                   {actionLoading
                     ? "Loading…"
-                    : trialExpired
-                    ? "Subscribe now"
-                    : status === "TRIALING"
-                    ? "Add payment method"
-                    : "Subscribe now"}
+                    : "Subscribe"}
                 </Button>
               )}
               {hasStripeSub && !customerIsPending && (
@@ -452,12 +708,30 @@ function BillingContent() {
                   {actionLoading ? "Loading…" : "Manage billing"}
                 </Button>
               )}
+              {/* Cancel button — solo cuando ACTIVE sin cancel scheduled
+                  + no pending customer. Estilo discreto (link-ish) para
+                  no confundirse con destructivo "delete". El miedo va
+                  en el dialog confirmatorio. */}
+              {status === "ACTIVE" && !scheduledToCancel && hasStripeSub && !customerIsPending && (
+                <button
+                  type="button"
+                  onClick={() => setCancelDialogOpen(true)}
+                  disabled={actionLoading || cancelLoading}
+                  className="w-full sm:w-auto text-xs text-gray-500 hover:text-red-600 transition-colors py-1 disabled:opacity-50"
+                >
+                  Cancel subscription
+                </button>
+              )}
             </div>
           )}
         </div>
 
-        {/* Trial progress bar — solo cuando TRIALING activo (no expirado) */}
-        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && (
+        {/* Trial progress bar — solo cuando TRIALING activo (no expirado)
+            Y el user NO se subscribio todavia. Una vez que hay sub en
+            Stripe, el countdown urgente sobra: el copy del hero ya dice
+            "Trial active through X — billing starts then". Feedback
+            Nicolas 2026-06-24. */}
+        {status === "TRIALING" && trialEnd && !isComp && !trialExpired && !hasStripeSub && (
           <div className="mt-6 space-y-2">
             <div className="flex items-center justify-between text-xs text-gray-600">
               <span>Trial progress</span>
@@ -480,22 +754,109 @@ function BillingContent() {
 
       {/* ──────── DETAILS ──────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Licenses card — patrón LinkedIn/Microsoft 365: tripleta
+            de metricas Purchased | Assigned | Available + copy con
+            el cap. Reemplaza el card SEATS viejo con su "X of Y"
+            que confundia. Durante TRIAL el concepto "Purchased" no
+            aplica (no hay sub), asi que mostramos copy distinto. */}
         <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-            <Users className="h-3.5 w-3.5" />
-            Team
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <Users className="h-3.5 w-3.5" />
+              Your licenses
+            </div>
+            {/* Manage seats: solo en ACTIVE (no en COMP ni TRIAL).
+                Durante trial el pool no aplica — el admin invita a
+                teammates subscribiéndose, no comprando pool. */}
+            {!isComp && status === "ACTIVE" && (
+              <button
+                type="button"
+                onClick={() => setSeatsDialogOpen(true)}
+                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                <Settings className="h-3 w-3" />
+                Manage seats
+              </button>
+            )}
           </div>
-          <p className="text-2xl font-bold text-gray-900">{seats}</p>
-          <p className="text-xs text-gray-500 mt-1">
-            {seats === 1 ? "Active recruiter" : "Active recruiters"}
-          </p>
-          <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-            Add or remove teammates from{" "}
-            <a href="/settings/team" className="text-indigo-600 hover:underline">
-              the Team page
-            </a>
-            . Billing updates automatically.
-          </p>
+          {status === "TRIALING" && !isComp ? (
+            <>
+              {/* TRIAL: no hay "purchased" todavia. Solo Assigned. */}
+              <div className="flex items-baseline gap-6 text-sm">
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Assigned
+                  </p>
+                </div>
+                <div className="text-gray-300 text-xs font-medium uppercase tracking-wide">
+                  Unlimited during trial
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-4 leading-relaxed">
+                Invite teammates from{" "}
+                <a href="/settings/team" className="text-indigo-600 hover:underline">
+                  the Team page
+                </a>
+                {trialEnd ? (
+                  <>
+                    . Per-seat billing kicks in on{" "}
+                    <strong>{dateStr(trialEnd)}</strong>.
+                  </>
+                ) : (
+                  <>. Per-seat billing kicks in after your trial ends.</>
+                )}
+              </p>
+            </>
+          ) : (
+            <>
+              {/* ACTIVE / COMP / CANCELED / PAST_DUE: triplete completo. */}
+              <div className="flex items-baseline gap-6 text-sm">
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{seats}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Purchased
+                  </p>
+                </div>
+                <div className="h-8 w-px bg-gray-200" />
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{activeUsers}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Assigned
+                  </p>
+                </div>
+                <div className="h-8 w-px bg-gray-200" />
+                <div>
+                  <p className={`text-2xl font-bold ${seatsAvailable === 0 ? "text-amber-600" : "text-gray-900"}`}>
+                    {seatsAvailable}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 uppercase tracking-wide">
+                    Available
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-4 leading-relaxed">
+                {seatsAvailable === 0 ? (
+                  <>
+                    All licenses are in use. Add more seats from Manage seats
+                    above, or deactivate teammates from{" "}
+                    <a href="/settings/team" className="text-indigo-600 hover:underline">
+                      the Team page
+                    </a>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Assign teammates from{" "}
+                    <a href="/settings/team" className="text-indigo-600 hover:underline">
+                      the Team page
+                    </a>
+                    . Deactivated members free their seat to the pool.
+                  </>
+                )}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -515,7 +876,7 @@ function BillingContent() {
             <>
               <p className="text-2xl font-bold text-gray-900">{dateStr(trialEnd)}</p>
               <p className="text-xs text-gray-500 mt-1">
-                After that, ${dollars(monthlyCost)}/month
+                After that, ${dollars(projectedMonthlyCost)}/month
               </p>
             </>
           ) : status === "ACTIVE" && subscription?.currentPeriodEnd ? (
@@ -562,6 +923,56 @@ function BillingContent() {
           </div>
         </div>
       </div>
+
+      {/* Subscribe options dialog — solo en TRIAL activo. Pay now
+          (cobro inmediato, ACTIVE) vs Save card for later (trial_end
+          nativo Stripe, cobro automático al fin del trial). */}
+      <SubscribeOptionsDialog
+        open={subscribeOptionsOpen}
+        onOpenChange={setSubscribeOptionsOpen}
+        activeUsers={subscription?.activeUsersList || []}
+        currentUserId={(session?.user as any)?.id || ""}
+        trialDaysLeft={trialDaysLeft}
+        trialEndsAt={trialEnd}
+      />
+
+      {/* Pool seat model: dialog para comprar/vender seats. Llama
+          /api/admin/billing/update-seats que pushea cambio a Stripe
+          y actualiza DB. onConfirmed re-fetcha la subscription. */}
+      <ManageSeatsDialog
+        open={seatsDialogOpen}
+        onOpenChange={setSeatsDialogOpen}
+        currentSeats={seats}
+        activeUsers={activeUsers}
+        activeUsersList={subscription?.activeUsersList || []}
+        status={status}
+        isComp={!!isComp}
+        onConfirmed={() => {
+          // Trigger re-fetch para que la card refleje el nuevo seats.
+          fetch("/api/admin/subscription", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((data) => setSubscription(data))
+            .catch(() => {});
+        }}
+      />
+
+      {/* Cancel subscription dialog — patrón ChatGPT Plus: copy con
+          "stays active until Jul 25" para que el admin entienda que
+          no se apaga YA. Button primario rojo destructivo, secundario
+          neutro "Back" (no "Cancel" — confunde). */}
+      <DeleteConfirmDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        itemLabel="subscription"
+        title="Cancel subscription"
+        description={
+          periodEnd
+            ? `Your subscription will be canceled but stays active until your billing period ends on ${dateStr(periodEnd)}. You'll keep full access until then. Your candidates, jobs and pipeline data stays intact — you can resubscribe any time.`
+            : "Your subscription will be canceled at the end of your current billing period. You'll keep access until then. Your candidates, jobs and pipeline data stays intact — you can resubscribe any time."
+        }
+        confirmLabel="Cancel subscription"
+        onConfirm={confirmCancelSubscription}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { logActivity } from "@/lib/activity";
 import { extractJobFields } from "@/lib/extract-job-fields";
+import { canAccessJob } from "@/lib/job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -31,6 +32,19 @@ export async function GET(
     });
 
     if (!job) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Assignment-based RBAC: USER no asignado al job no debe ver sus
+    // documentos (incluido JD PDF). ADMIN bypass por canAccessJob.
+    // Audit 2026-06-23.
+    const allowed = await canAccessJob(
+      job.id,
+      ctx.organizationId,
+      ctx.userId,
+      ctx.role,
+    );
+    if (!allowed) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -66,6 +80,20 @@ export async function POST(
     });
 
     if (!job) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
+    // Assignment-based RBAC: solo recruiters asignados al job (o ADMIN)
+    // pueden subir docs. Antes un USER no asignado podía hacer upload —
+    // peor: el upload de JD también reescribía job.description y
+    // mutaba location/workMode. Audit 2026-06-23.
+    const allowed = await canAccessJob(
+      job.id,
+      ctx.organizationId,
+      ctx.userId,
+      ctx.role,
+    );
+    if (!allowed) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 

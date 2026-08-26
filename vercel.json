@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/expire-trials",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-webhook-events",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-seats",
+      "schedule": "30 4 * * *"
     }
   ]
 }

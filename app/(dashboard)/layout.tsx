@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { EmailVerificationBanner } from "@/components/auth/email-verification-banner";
 import { SessionGate } from "@/components/auth/session-gate";
+import { InactivityLogout } from "@/components/auth/inactivity-logout";
 import { SubscriptionGate } from "@/components/billing/subscription-gate";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
@@ -21,7 +22,6 @@ export default async function DashboardLayout({
   let unverifiedEmail: string | null = null;
   let subStatus: SubscriptionStatusResult = { ok: true, reason: null };
   let isAdmin = false;
-  let adminEmailForUser: string | null = null;
   if (userId) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -54,22 +54,6 @@ export default async function DashboardLayout({
     if (user && user.isActive) {
       isAdmin = user.role === "ADMIN";
       subStatus = await getSubscriptionStatus(user.organizationId);
-
-      // Si el user actual NO es admin y la sub está bloqueada, le
-      // pasamos el email del admin para que pueda contactarlo desde
-      // el overlay. Solo lookup si hace falta.
-      if (!subStatus.ok && !isAdmin) {
-        const admin = await prisma.user.findFirst({
-          where: {
-            organizationId: user.organizationId,
-            role: "ADMIN",
-            isActive: true,
-          },
-          orderBy: { createdAt: "asc" },
-          select: { email: true },
-        });
-        adminEmailForUser = admin?.email || null;
-      }
     }
   }
 
@@ -81,11 +65,7 @@ export default async function DashboardLayout({
         {unverifiedEmail && <EmailVerificationBanner email={unverifiedEmail} />}
         <main className="min-h-screen">
           <div className="px-4 py-6 sm:px-6 lg:px-8">
-            <SubscriptionGate
-              status={subStatus}
-              isAdmin={isAdmin}
-              adminEmail={adminEmailForUser}
-            >
+            <SubscriptionGate status={subStatus} isAdmin={isAdmin}>
               {children}
             </SubscriptionGate>
           </div>
@@ -96,6 +76,10 @@ export default async function DashboardLayout({
           Gate (60 vs 50) para asegurar que tape todo si los 2 se
           dispararan simultáneo. */}
       <SessionGate />
+      {/* Inactivity logout: 30 min sin actividad → signOut + redirect
+          al login con reason=inactivity. Igual que cualquier plataforma
+          seria (banking, healthcare). Decisión 2026-06-24 con Nicolás. */}
+      <InactivityLogout redirectTo="/login" />
     </div>
   );
 }

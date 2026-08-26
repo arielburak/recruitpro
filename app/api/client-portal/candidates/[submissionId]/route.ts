@@ -100,10 +100,22 @@ export async function GET(
       },
       orderBy: { addedAt: "desc" },
     });
+    // Backwards-compat fallback: hardened para que el legacy share no
+    // exponga docs del candidato de OTROS jobs/clients. Solo se incluyen
+    // docs que (a) están sueltos (no asociados a ningún job/clientJob)
+    // O (b) pertenecen al MISMO job que la submission (vía jobId) O al
+    // ClientJob accesible. Sin este filtro, un candidato con docs en
+    // múltiples engagements leaking cross-job al portal. Audit 2026-06-23.
     const documents = submissionDocs.length > 0
       ? submissionDocs.map((s: { document: any }) => s.document)
       : await prisma.document.findMany({
-          where: { candidateId: submission.candidate.id },
+          where: {
+            candidateId: submission.candidate.id,
+            OR: [
+              { jobId: null, clientJobId: null, clientId: null },
+              { jobId: submission.job.id },
+            ],
+          },
           select: {
             id: true,
             name: true,

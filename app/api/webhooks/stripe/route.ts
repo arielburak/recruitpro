@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
-import { syncSubFromStripe, mapStripeStatus, recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { syncSubFromStripe, mapStripeStatus } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
 
 // Resolver el subscription id desde un Invoice. Stripe API 2025-09+
@@ -205,25 +205,44 @@ export async function POST(request: Request) {
           },
         });
 
-        // QA HIGH #3: reconciliar seats con active users count actual.
-        // Antes el handler escribía seats = Stripe quantity, lo cual
-        // podía ser stale si invite/deactivate ocurrieron entre
-        // checkout-create y checkout-complete. recalculateAndSyncSeats
-        // cuenta active users reales, actualiza DB y push a Stripe
-        // via subscriptions.update si hace falta. Ahora hay
-        // stripeSubscriptionId (recién seteado arriba), así que
-        // syncStripeSeats interno no más no-opea con
-        // "no_stripe_subscription_yet".
-        // await en lugar de void: Stripe webhook tiene 30s budget,
-        // recalculateAndSyncSeats son 2 DB queries + 1 Stripe call
-        // (~500ms). Sin await + serverless, el container podía morir
-        // mid-flight si la respuesta 200 se enviaba primero.
-        await recalculateAndSyncSeats(orgId);
+        // Aplicar la intención que el admin eligió en el dialog de
+        // Subscribe. Recién ahora — Stripe confirmó el pago.
+        //
+        // Antes acá corría recalculateAndSyncSeats, que forzaba
+        // seats = count(active users). Eso rompía el modelo Purchased:
+        // el admin que compraba 6 seats con 4 asignados veía su pool
+        // colapsar a 4 y Stripe re-facturado a 4. Launch audit
+        // 2026-06-26.
+        const pendingSeats = Number(session.metadata?.pendingSeats);
+        const pendingDeactivate = (session.metadata?.pendingDeactivate || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (pendingDeactivate.length > 0) {
+          // Scoping por organizationId: la metadata viene de nuestra
+          // propia session, pero nunca desactivamos fuera del org.
+          await prisma.user.updateMany({
+            where: { id: { in: pendingDeactivate }, organizationId: orgId },
+            data: { isActive: false },
+          });
+        }
+        if (Number.isFinite(pendingSeats) && pendingSeats >= 1) {
+          await prisma.subscription.update({
+            where: { organizationId: orgId },
+            data: { seats: pendingSeats },
+          });
+        }
       }
       break;
     }
 
-    case "invoice.paid": {
+    case "invoice.paid":
+    case "invoice.payment_succeeded": {
+      // invoice.paid y invoice.payment_succeeded son siblings que Stripe
+      // dispara en paralelo. Operators que configuren el endpoint via
+      // Dashboard suelen subscribir uno u otro. Manejamos ambos →
+      // robust ante config inconsistente. Audit 2026-06-23.
       const invoice = event.data.object as any;
       const subId = getInvoiceSubscriptionId(invoice);
       if (subId) {
@@ -240,6 +259,54 @@ export async function POST(request: Request) {
           await syncSubFromStripe(sub.organizationId);
         }
       }
+      break;
+    }
+
+    case "customer.subscription.created": {
+      // Subs creadas out-of-band (Dashboard manual, migración, etc.) NO
+      // pasan por checkout.session.completed. Sin este handler, la sub
+      // queda orphan: stripeSubscriptionId nunca se attacha a la DB row
+      // y syncSubFromStripe falla con "no_stripe_subscription_yet"
+      // forever. Lookup por stripeCustomerId, attach subId y pull
+      // estado completo. Audit 2026-06-23.
+      const subscription = event.data.object as any;
+      const customerId =
+        typeof subscription.customer === "string"
+          ? subscription.customer
+          : subscription.customer?.id;
+      if (customerId) {
+        const dbSub = await prisma.subscription.findFirst({
+          where: { stripeCustomerId: customerId },
+          select: { id: true, organizationId: true, stripeSubscriptionId: true },
+        });
+        if (dbSub && !dbSub.stripeSubscriptionId) {
+          await prisma.subscription.update({
+            where: { id: dbSub.id },
+            data: { stripeSubscriptionId: subscription.id },
+          });
+          // Ahora que está attacheado, pull full state.
+          await syncSubFromStripe(dbSub.organizationId);
+        }
+      }
+      break;
+    }
+
+    case "customer.deleted": {
+      // Stripe customer borrado desde Dashboard (raro pero pasa: el
+      // operador "limpia" un cliente sin entender que es la única
+      // ancla a nuestra org). Sin este handler, la org queda con un
+      // stripeCustomerId que apunta a vacío → cualquier portal /
+      // checkout fallaba con 404 sin mensaje claro. Marcamos sub como
+      // CANCELED y limpiamos los ids. Audit 2026-06-23.
+      const customer = event.data.object as any;
+      await prisma.subscription.updateMany({
+        where: { stripeCustomerId: customer.id },
+        data: {
+          status: "CANCELED",
+          stripeSubscriptionId: null,
+          cancelAtPeriodEnd: false,
+        },
+      });
       break;
     }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendClientPortalWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // Marks a ClientUser as verified when the token from the verification
 // email is presented. Mirror of /api/auth/verify-email on the agency
@@ -12,6 +13,14 @@ import { safeErrorMessage } from "@/lib/safe-error";
 // "superseded by resend".
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit("auth:verify-email", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a minute." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const body = await request.json();
     const token = typeof body.token === "string" ? body.token : "";
 

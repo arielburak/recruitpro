@@ -3,7 +3,12 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { checkSeatAvailability } from "@/lib/seat-availability";
+// Modelo LinkedIn / Microsoft (Batch H5 2026-06-24): Stripe cobra
+// Subscription.seats (= "Purchased"), NO count(active users). Asignar
+// o quitar un seat a un user NO cambia el cobro — el admin compra/
+// reduce el pool explícitamente desde Manage seats. checkSeatAvailability
+// sigue siendo el gate para que el admin no pueda Assigned > Purchased.
 
 export async function GET() {
   try {
@@ -44,6 +49,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email already in use" }, { status: 400 });
     }
 
+    // Pool seat check antes del create — si la org está ACTIVE y no
+    // hay seats disponibles, bloquear. TRIAL/COMP pasan libre.
+    const seatCheck = await checkSeatAvailability(ctx.organizationId);
+    if (!seatCheck.ok) {
+      return NextResponse.json(
+        {
+          error: seatCheck.message,
+          code: "seat_pool_full",
+          current: seatCheck.current,
+          pool: seatCheck.pool,
+        },
+        { status: 402 },
+      );
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
       data: {
@@ -54,11 +74,6 @@ export async function POST(request: Request) {
         organizationId: ctx.organizationId,
       },
     });
-
-    // Recalcula seats desde scratch (active users) + sync con Stripe.
-    // Fire-and-forget: si Stripe falla, el create del user se devuelve
-    // OK igual. Sync se intenta de nuevo en el próximo cambio.
-    void recalculateAndSyncSeats(ctx.organizationId);
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
@@ -108,6 +123,23 @@ export async function PATCH(request: Request) {
 
     const normalizedRole = role === "ADMIN" ? "ADMIN" : role === "USER" ? "USER" : undefined;
 
+    // Reactivate: chequear pool. Si está siendo reactivado y no hay
+    // seat libre, bloquear. Deactivate y role change pasan libre.
+    if (isActive === true && user.isActive === false) {
+      const seatCheck = await checkSeatAvailability(ctx.organizationId);
+      if (!seatCheck.ok) {
+        return NextResponse.json(
+          {
+            error: seatCheck.message,
+            code: "seat_pool_full",
+            current: seatCheck.current,
+            pool: seatCheck.pool,
+          },
+          { status: 402 },
+        );
+      }
+    }
+
     const updateData: any = {};
     if (typeof isActive === "boolean") updateData.isActive = isActive;
     if (normalizedRole) updateData.role = normalizedRole;
@@ -118,12 +150,8 @@ export async function PATCH(request: Request) {
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
-    // Si el cambio fue isActive (deactivar o reactivar), recalcular
-    // seats para que el billing matchee la cantidad de active users.
-    // Sin esto: deactivar a alguien NO bajaba el cobro de Stripe.
-    if (typeof isActive === "boolean") {
-      void recalculateAndSyncSeats(ctx.organizationId);
-    }
+    // Modelo Purchased: asignar/quitar seat NO toca Stripe. El cobro
+    // sigue siendo Subscription.seats (lo que el admin compró).
 
     return NextResponse.json(updated);
   } catch (error: any) {
@@ -131,50 +159,21 @@ export async function PATCH(request: Request) {
   }
 }
 
-// DELETE - remove a user from the organization
-export async function DELETE(request: Request) {
-  try {
-    const ctx = await getOrgContext();
-    if (ctx.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin only" }, { status: 403 });
-    }
-
-    const { userId } = await request.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
-    }
-
-    // Prevent self-deletion
-    if (userId === ctx.userId) {
-      return NextResponse.json({ error: "You cannot remove yourself" }, { status: 400 });
-    }
-
-    // Verify user belongs to same org
-    const user = await prisma.user.findFirst({
-      where: { id: userId, organizationId: ctx.organizationId },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Don't allow removing the last admin
-    if (user.role === "ADMIN") {
-      const adminCount = await prisma.user.count({
-        where: { organizationId: ctx.organizationId, role: "ADMIN", isActive: true },
-      });
-      if (adminCount <= 1) {
-        return NextResponse.json({ error: "Cannot remove the last admin" }, { status: 400 });
-      }
-    }
-
-    await prisma.user.delete({ where: { id: userId } });
-
-    // Recalcula seats + sync con Stripe (fire-and-forget).
-    void recalculateAndSyncSeats(ctx.organizationId);
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
-  }
-}
+// DELETE — eliminado a propósito (audit 2026-06-23).
+//
+// El schema NO tiene cascade desde User a JobAssignment, Comment,
+// CandidateRating, InterviewAssignment, etc. Un hard-delete de un User
+// con cualquier work asociado revienta con FK errors (500) o, peor, deja
+// las rows pendientes con un userId que ya no resuelve (silent orphan
+// attribution: comments aparecen como "?" en UI, performance metrics
+// crashean).
+//
+// Para sacar a alguien usar PATCH /api/admin/users con { isActive: false }
+// — soft-delete vía DeactivateUserDialog que ya pide qué hacer con las
+// interviews futuras + libera el seat al pool. La distancia entre
+// "Deactivate" y "Remove permanently" era invisible en el menú viejo
+// y el undocumented hard-delete se llevaba el trabajo de meses.
+//
+// Si en algún momento necesitamos hard-delete real (GDPR right-to-be-
+// forgotten), va con flow específico + cascade migration + doble
+// confirmación. Mientras tanto, mejor que no exista.

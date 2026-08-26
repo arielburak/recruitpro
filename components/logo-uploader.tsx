@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Image as ImageIcon, Upload, Trash2, Lock } from "lucide-react";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
 type Props = {
   endpoint: string; // e.g. "/api/organization/logo" or "/api/client-portal/logo"
@@ -26,6 +27,9 @@ export function LogoUploader({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Confirm dialog for logo removal — antes era browser-native
+  // window.confirm. Audit 2026-06-23.
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   const accent =
     accentColor === "emerald"
@@ -68,7 +72,6 @@ export function LogoUploader({
   }
 
   async function handleRemove() {
-    if (!confirm("Remove the company logo?")) return;
     setUploading(true);
     setError(null);
     try {
@@ -134,7 +137,7 @@ export function LogoUploader({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleRemove}
+                  onClick={() => setShowRemoveConfirm(true)}
                   disabled={uploading}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
@@ -179,6 +182,18 @@ export function LogoUploader({
           <p className="text-xs text-gray-400 mt-2 text-center">Uploading...</p>
         )}
       </CardContent>
+
+      <DeleteConfirmDialog
+        open={showRemoveConfirm}
+        onOpenChange={setShowRemoveConfirm}
+        itemLabel={label}
+        title="Remove company logo?"
+        description="The logo disappears from the sidebar and any client-facing pages immediately. You can upload a new one anytime."
+        confirmLabel="Yes, remove"
+        onConfirm={async () => {
+          await handleRemove();
+        }}
+      />
     </Card>
   );
 }

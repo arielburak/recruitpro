@@ -48,7 +48,14 @@ export async function GET(
           },
         },
         stages: { orderBy: { order: "asc" } },
-        assignments: { include: { user: { select: { id: true, name: true } } } },
+        // Solo assignees activos. Antes el listing incluía users
+        // deactivated que ya no podían loguearse pero seguían
+        // figurando como "Assigned to" en el header del job. Audit
+        // 2026-06-23.
+        assignments: {
+          where: { user: { isActive: true } },
+          include: { user: { select: { id: true, name: true } } },
+        },
         // ClientJob mirror (creado cuando la agencia comparte el job
         // con el cliente). Lo incluimos solo para listar los client
         // users con acceso desde la vista de agencia. Si la JO tiene
@@ -185,11 +192,34 @@ export async function GET(
     let mentioned = false;
     let engaged = false;
     if (!isAdminBypass && !isAssigned) {
+      // Mention fallback hardened: el author del comment tiene que ser
+      // ADMIN o estar asignado al job. Sin este check, un USER sin
+      // acceso podía postear un comment con self-mention y auto-
+      // gatillar el fallback de "fui mencionado → abro el job".
+      // Audit 2026-06-23 + el comments POST ya gatea canAccessJob.
+      const assigneeIds = new Set<string>(job.assignments.map((a: any) => a.user.id));
+      const orgAdmins = await prisma.user.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          role: "ADMIN",
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      for (const a of orgAdmins) assigneeIds.add(a.id);
+      const validAuthors = Array.from(assigneeIds);
+
       const [m, e] = await Promise.all([
-        prisma.comment.findFirst({
-          where: { jobId: id, mentions: { has: ctx.userId } },
-          select: { id: true },
-        }),
+        validAuthors.length > 0
+          ? prisma.comment.findFirst({
+              where: {
+                jobId: id,
+                mentions: { has: ctx.userId },
+                userId: { in: validAuthors },
+              },
+              select: { id: true },
+            })
+          : Promise.resolve(null),
         prisma.firmEngagement.findFirst({
           where: { jobId: id, invitedUserId: ctx.userId, status: "ACCEPTED" },
           select: { id: true },
@@ -278,9 +308,44 @@ export async function DELETE(
     const allowed = await canAccessJob(id, ctx.organizationId, ctx.userId, ctx.role);
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    await prisma.job.deleteMany({
-      where: { id, organizationId: ctx.organizationId },
+    // Audit 2026-06-23: el deleteMany simple tiraba FK 500 cuando el job
+    // tenía submissions / placements / comments / firm engagements,
+    // porque esos modelos no cascadean desde Job. Fan-out manual en tx
+    // borra primero las dependencias no-cascade, después la Job.
+    //
+    // Cascades existentes (no hace falta tocarlas): JobAssignment,
+    // PipelineStage, Document, Interview, CalendarEvent SetNull.
+    // FirmEngagement.jobId es nullable y NO cascadea: lo seteamos a
+    // null para preservar el historial del engagement (legal trail
+    // del invite firm↔client).
+    const submissions = await prisma.candidateSubmission.findMany({
+      where: { jobId: id },
+      select: { id: true },
     });
+    const submissionIds = submissions.map((s) => s.id);
+
+    const txOps: any[] = [];
+    if (submissionIds.length > 0) {
+      txOps.push(
+        prisma.comment.deleteMany({
+          where: { submissionId: { in: submissionIds } },
+        }),
+      );
+    }
+    txOps.push(
+      prisma.comment.deleteMany({ where: { jobId: id } }),
+      prisma.placement.deleteMany({ where: { jobId: id } }),
+      prisma.firmEngagement.updateMany({
+        where: { jobId: id },
+        data: { jobId: null },
+      }),
+      prisma.candidateSubmission.deleteMany({ where: { jobId: id } }),
+      prisma.job.deleteMany({
+        where: { id, organizationId: ctx.organizationId },
+      }),
+    );
+
+    await prisma.$transaction(txOps);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     const subErr = subscriptionErrorResponse(error);

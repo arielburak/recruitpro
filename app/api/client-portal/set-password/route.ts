@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { sendClientPortalWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
 
 // GET — used by the set-password page to know whether to show the
 // "complete your company info" fields. When the underlying Client was
@@ -59,6 +60,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit("auth:reset-password", getClientIp(request));
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a minute." },
+        { status: 429, headers: rateLimitHeaders(rl) },
+      );
+    }
+
     const {
       token,
       email: rawEmail,

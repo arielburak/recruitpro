@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { checkSeatAvailability } from "@/lib/seat-availability";
+import { findStaffingUserByEmail } from "@/lib/email-canonical";
+// Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
+// resta seats automático. El admin compra seats explícitamente desde
+// /settings/billing → Manage seats. Al accept del invite re-corremos
+// checkSeatAvailability porque el admin podría haber reducido el pool
+// entre crear y aceptar (bypass de 7 días). Audit 2026-06-23.
 
 // GET - validate invite and return info
 export async function GET(
@@ -97,16 +103,25 @@ export async function POST(
       );
     }
 
-    // Check if user already exists with this email
-    const existing = await prisma.user.findUnique({
-      where: { email: invite.email },
-    });
+    // Modelo Purchased (Batch H5 2026-06-24): el invitee SIEMPRE entra
+    // al workspace cuando acepta — incluso si no hay seat disponible.
+    // Si hay Available > 0, el user entra ACTIVO (con seat asignado);
+    // si no, entra inactivo y ve "Ask your admin to assign you a seat"
+    // hasta que el admin lo active manualmente. Esto cierra el flow de
+    // LinkedIn / Microsoft 365: invitar y asignar son acciones
+    // separadas.
+    const seatCheck = await checkSeatAvailability(invite.organizationId);
+    const hasAvailableSeat = seatCheck.ok;
+
+    // Check if user already exists with this email. Tolerante a Gmail
+    // aliases. Si existe pero NO en la org del invite, devolvemos el
+    // mismo error genérico (no leak de tenant ajeno). NO marcamos el
+    // invite como usado en collision: antes burnábamos el token, eso
+    // permitía enumeration y dejaba al invitee legítimo sin poder
+    // reintentar tras corregir el conflicto. Audit 2026-06-23.
+    const lookupEmail = invite.email.trim().toLowerCase();
+    const existing = await findStaffingUserByEmail(lookupEmail);
     if (existing) {
-      // Mark invite as used
-      await prisma.userInvite.update({
-        where: { id: invite.id },
-        data: { usedAt: new Date() },
-      });
       return NextResponse.json(
         {
           error:
@@ -119,21 +134,28 @@ export async function POST(
     // Create user and mark invite as used in a transaction
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // Normalizamos el email a lowercase al persistir el User. Antes
+    // se guardaba con el casing exacto del invite — si el admin lo
+    // creó con mayúsculas, futuras búsquedas case-sensitive (login,
+    // forgot-password) podían perderse el row. Audit 2026-06-23.
+    const normalizedEmail = invite.email.trim().toLowerCase();
+
     const [user] = await prisma.$transaction([
       prisma.user.create({
         data: {
-          email: invite.email,
+          email: normalizedEmail,
           name,
           title: title || null,
           passwordHash,
           role: invite.role === "ADMIN" ? "ADMIN" : "USER",
           organizationId: invite.organizationId,
+          // isActive = has seat assigned. Si el admin tiene seats
+          // libres en el pool, le asignamos uno al toque (UX más
+          // natural). Si no hay Available, el user entra inactivo
+          // y el admin tiene que asignarle un seat desde Manage seats.
+          isActive: hasAvailableSeat,
           // Accepting the invite from the inbox already proves the
-          // address. Mirrors the client-portal /set-password flow
-          // which also marks emailVerifiedAt on completion. Without
-          // this, invited members landed on /login and bounced off
-          // the EMAIL_NOT_VERIFIED hard-block (now a soft-block,
-          // but the in-app banner is still noise they don't need).
+          // address. Mirrors the client-portal /set-password flow.
           emailVerifiedAt: new Date(),
         },
       }),
@@ -143,10 +165,10 @@ export async function POST(
       }),
     ]);
 
-    // Recalcular seats + sync con Stripe. Sin esto, Stripe seguía
-    // cobrando el quantity original del checkout aunque el equipo
-    // creciera con invites aceptados.
-    void recalculateAndSyncSeats(invite.organizationId);
+    // Modelo Purchased: el accept NO toca Stripe.quantity. Si el
+    // admin tenía Available > 0 esto consumió 1 seat del pool (sigue
+    // pagando lo mismo). Si pool full, el user entró sin seat y el
+    // admin tiene que liberarle uno o comprar más desde Manage seats.
 
     // Memoria total (2026-06-17): si el mismo email tambien recibio un
     // PendingFirmInvite (un cliente lo invito a una busqueda especifica

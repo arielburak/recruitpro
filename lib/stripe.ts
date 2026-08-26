@@ -16,7 +16,42 @@ export function getStripeClient() {
 }
 
 export async function createStripeCustomer(email: string, name: string) {
-  return getStripeClient().customers.create({ email, name });
+  const stripe = getStripeClient();
+
+  // En non-production atachamos un Test Clock al customer. Eso nos
+  // deja "viajar en el tiempo" desde el Stripe Dashboard:
+  //   Stripe Dashboard → Test data → Test clocks → Advance →
+  //   eligen +8 días → Stripe dispara TODOS los webhooks que
+  //   hubieran sucedido naturalmente (trial → ACTIVE, invoice.paid,
+  //   etc.). Es el patrón que usan Slack/Linear/Notion para QA
+  //   billing sin esperar fechas reales.
+  // En production: no test clock (el customer corre en tiempo real).
+  const isProduction = process.env.VERCEL_ENV === "production";
+  let testClockId: string | undefined;
+  if (!isProduction) {
+    try {
+      const clock = await stripe.testHelpers.testClocks.create({
+        frozen_time: Math.floor(Date.now() / 1000),
+        name: `test-clock-${email}`,
+      });
+      testClockId = clock.id;
+      console.log(
+        `[stripe] created test clock ${testClockId} for customer ${email} (non-production)`,
+      );
+    } catch (e) {
+      // Si test_clocks falla (e.g. live mode por error, o feature
+      // deshabilitada), seguimos con customer normal — no rompemos
+      // el signup. El user simplemente no va a tener time-travel
+      // disponible para esta cuenta.
+      console.warn("[stripe] test clock creation failed (continuing):", e);
+    }
+  }
+
+  return stripe.customers.create({
+    email,
+    name,
+    ...(testClockId && { test_clock: testClockId }),
+  });
 }
 
 export async function createCheckoutSession(
@@ -32,14 +67,27 @@ export async function createCheckoutSession(
   // ofrecido. Pasar null/undefined = comportamiento default (cobro
   // inmediato, no trial).
   trialEnd?: Date | null,
+  // Intención que el webhook aplica DESPUÉS de que Stripe confirme el
+  // pago (seats finales + userIds a desactivar). Viaja en metadata
+  // para que abandonar el checkout no mute nada.
+  pendingIntent?: Record<string, string>,
 ) {
-  // Stripe acepta trial_end como Unix timestamp en segundos. Solo lo
-  // incluimos si está en el futuro — si es pasado/null, Stripe falla
-  // o lo ignora, mejor no pasarlo.
-  const trialEndTs =
-    trialEnd && trialEnd.getTime() > Date.now()
-      ? Math.floor(trialEnd.getTime() / 1000)
-      : null;
+  // Stripe acepta trial_end como Unix timestamp en segundos.
+  //
+  // Audit 2026-06-24 HIGH: antes el guard `trialEnd > Date.now()` se
+  // saltaba SILENCIOSO cuando trialEnd era past, y Stripe cobraba al
+  // toque — pero el caller le había prometido al user "won't be charged
+  // today". Ahora throw para que el route lo capture y devuelva 409
+  // "trial expired, refresh and retry" en vez de cobrar a destiempo.
+  let trialEndTs: number | null = null;
+  if (trialEnd) {
+    if (trialEnd.getTime() <= Date.now()) {
+      const err: any = new Error("Trial has already expired — refresh and retry");
+      err.code = "trial_already_expired";
+      throw err;
+    }
+    trialEndTs = Math.floor(trialEnd.getTime() / 1000);
+  }
 
   return getStripeClient().checkout.sessions.create({
     customer: customerId,
@@ -53,7 +101,7 @@ export async function createCheckoutSession(
     // los banners correspondientes.
     success_url: `${process.env.NEXTAUTH_URL}/settings/billing?success=true`,
     cancel_url: `${process.env.NEXTAUTH_URL}/settings/billing?canceled=true`,
-    metadata: { organizationId: orgId },
+    metadata: { organizationId: orgId, ...(pendingIntent || {}) },
     // Forzar UI en inglés. Sin esto Stripe autodetecta del browser
     // del user y puede aparecer en castellano cuando el ATS está en
     // inglés — inconsistente con el resto del flow.

@@ -53,8 +53,17 @@ export function mapStripeStatus(
     return "CANCELED";
   if (stripeStatus === "unpaid") return "UNPAID";
   if (stripeStatus === "trialing") return "TRIALING";
+  // 'paused' = collection paused desde Dashboard. Stripe deja de cobrar
+  // pero la sub no está cancelada. Mapeamos a PAST_DUE para que el
+  // guard bloquee el acceso al ATS — sin esto, una sub pausada
+  // quedaba con DB.status ACTIVE y el user seguía usando todo
+  // mientras no se le cobraba. Audit 2026-06-23.
+  if (stripeStatus === "paused") return "PAST_DUE";
   // 'incomplete' y cualquier otro estado desconocido → undefined.
   // El caller debe usar spread condicional: `...(mapped && { status: mapped })`.
+  // 'incomplete' es intencional: solo fires durante el primer charge
+  // post-checkout (3DS pending, declined). La sub queda en el estado
+  // previo (TRIALING) hasta que invoice.paid resuelva.
   return undefined;
 }
 
@@ -113,6 +122,7 @@ export async function syncSubFromStripe(
         seats: true,
         cancelAtPeriodEnd: true,
         status: true,
+        trialEndsAt: true,
       },
     });
 
@@ -138,6 +148,18 @@ export async function syncSubFromStripe(
     const quantity = firstItem?.quantity || 1;
     const willCancel = isStripeSubScheduledToCancel(stripeSub);
     const mappedStatus = mapStripeStatus(stripeSub.status as string | undefined);
+    // trial_end de Stripe → DB. Si Stripe-side extiende/cambia el trial
+    // (Customer Portal trial extension, Dashboard edit, Stripe Smart
+    // Retries), antes la DB se quedaba con el valor original y el
+    // SubscriptionGate lockeaba al user antes de tiempo. Audit
+    // 2026-06-24. Solo overrideamos cuando Stripe efectivamente
+    // reporta trial_end (durante trialing) — sino dejamos lo que hay
+    // en DB para no perder el valor en transiciones a active.
+    const stripeTrialEnd =
+      stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000) : null;
+    const sameTrialEnd =
+      !stripeTrialEnd ||
+      (subscription.trialEndsAt?.getTime() ?? null) === stripeTrialEnd.getTime();
 
     // Detectar si hace falta actualizar. Si todo coincide, skip el
     // write (idempotente, evita updatedAt churn).
@@ -148,7 +170,12 @@ export async function syncSubFromStripe(
       (subscription.currentPeriodEnd?.getTime() ?? null) ===
       (periodEnd?.getTime() ?? null);
 
-    if (sameStatus && sameSeats && sameCancel && samePeriodEnd) {
+    if (sameStatus && sameSeats && sameCancel && samePeriodEnd && sameTrialEnd) {
+      // Modelo Purchased (Batch H5 2026-06-24): el invariant es
+      // Stripe.quantity === Subscription.seats (lo que el admin compró).
+      // Si están alineados, OK — no chequeamos active users (= Assigned)
+      // porque puede ser < Purchased y eso es válido (seats Available
+      // en el pool).
       return { synced: false, reason: "already_in_sync" };
     }
 
@@ -159,6 +186,7 @@ export async function syncSubFromStripe(
         cancelAtPeriodEnd: willCancel,
         ...(periodEnd && { currentPeriodEnd: periodEnd }),
         ...(mappedStatus && { status: mappedStatus }),
+        ...(stripeTrialEnd && { trialEndsAt: stripeTrialEnd }),
       },
     });
 
