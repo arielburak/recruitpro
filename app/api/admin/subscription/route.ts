@@ -46,6 +46,13 @@ export async function GET() {
           trialEndsAt: subscription?.trialEndsAt ?? null,
           isComp: subscription?.isComp ?? false,
           userCreatedAt: user?.createdAt ?? null,
+          // Booleano, no el id: el USER no necesita saber CUÁL es la
+          // sub (eso es dato de billing), pero sí si el workspace ya
+          // subscribió. Sin esto el TrialCountdown nunca hacía el
+          // early-return de "ya pagaron" para role USER y le mostraba
+          // el modal de trial aunque el admin ya hubiera puesto la
+          // tarjeta. Audit 2026-06-26.
+          hasStripeSubscription: !!subscription?.stripeSubscriptionId,
         },
         {
           headers: {
