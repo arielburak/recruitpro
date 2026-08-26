@@ -481,8 +481,15 @@ function BillingContent() {
   // Dev-only widget — variables que NO son hooks (el useState ya se
   // declaró arriba junto con los demás hooks, antes de los early returns,
   // para respetar Rules of Hooks).
+  // Fail-CLOSED: allowlist explícita en vez de `!== "production"`.
+  // Antes cualquier valor inesperado (o la var sin setear, que era el
+  // caso real: NEXT_PUBLIC_VERCEL_ENV no existía hasta que la mapeamos
+  // en next.config) caía del lado "mostrar widgets dev". Ahora solo
+  // los dos entornos donde realmente los queremos. Launch audit
+  // 2026-06-26.
+  const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV;
   const isDevEnv =
-    process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
+    (vercelEnv === "development" || vercelEnv === "preview") &&
     typeof window !== "undefined";
   async function endTrialNow() {
     if (!confirm("This will backdate your trial end + cancel any active Stripe sub. Continue?")) return;
