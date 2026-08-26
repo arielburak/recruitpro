@@ -23,6 +23,7 @@ import {
   monthlyTotalCents,
   perSeatCents,
   SOLO_PRICE_PER_SEAT_CENTS,
+  TEAM_MAX_SEATS,
 } from "@/lib/constants";
 
 // Pool seat model 2026-06-22: el admin compra explícitamente N seats
@@ -39,7 +40,10 @@ import {
 //     - TRIAL: "No charge until your trial ends — at that point you'll pay for X seats."
 
 const PRICE_PER_SEAT_DOLLARS = SOLO_PRICE_PER_SEAT_CENTS / 100;
-const SEAT_HARD_CAP = 100;
+// Cap alineado con el backend (TEAM_MAX_SEATS). Antes era 100 acá
+// y 10 en el server: el admin armaba la selección con 15 seats y
+// recién al confirmar comía un 400. Launch audit 2026-06-26.
+const SEAT_HARD_CAP = TEAM_MAX_SEATS;
 
 const fmt = (cents: number) =>
   (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });

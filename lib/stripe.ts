@@ -67,6 +67,10 @@ export async function createCheckoutSession(
   // ofrecido. Pasar null/undefined = comportamiento default (cobro
   // inmediato, no trial).
   trialEnd?: Date | null,
+  // Intención que el webhook aplica DESPUÉS de que Stripe confirme el
+  // pago (seats finales + userIds a desactivar). Viaja en metadata
+  // para que abandonar el checkout no mute nada.
+  pendingIntent?: Record<string, string>,
 ) {
   // Stripe acepta trial_end como Unix timestamp en segundos.
   //
@@ -97,7 +101,7 @@ export async function createCheckoutSession(
     // los banners correspondientes.
     success_url: `${process.env.NEXTAUTH_URL}/settings/billing?success=true`,
     cancel_url: `${process.env.NEXTAUTH_URL}/settings/billing?canceled=true`,
-    metadata: { organizationId: orgId },
+    metadata: { organizationId: orgId, ...(pendingIntent || {}) },
     // Forzar UI en inglés. Sin esto Stripe autodetecta del browser
     // del user y puede aparecer en castellano cuando el ATS está en
     // inglés — inconsistente con el resto del flow.

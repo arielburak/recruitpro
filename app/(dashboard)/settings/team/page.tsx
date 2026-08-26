@@ -169,7 +169,12 @@ export default function AdminUsersPage() {
         setShowInvite(false);
         setPendingInvite(null);
       } else {
-        setError(body.error || "Failed to send invite");
+        // body.message primero: los guards que devuelven sentinels
+        // (ej. requireVerifiedEmail → error:"EMAIL_NOT_VERIFIED" +
+        // message:"Verify your email…") mandan el texto legible en
+        // message. Sin esto el admin veía el toast crudo con el
+        // sentinel en mayúsculas. Launch audit 2026-06-26.
+        setError(body.message || body.error || "Failed to send invite");
       }
       setInviteLoading(false);
       return;

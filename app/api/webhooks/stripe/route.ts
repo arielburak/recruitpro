@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { getStripeClient } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { sendSubscriptionEndedEmail } from "@/lib/email";
-import { syncSubFromStripe, mapStripeStatus, recalculateAndSyncSeats } from "@/lib/sync-stripe-seats";
+import { syncSubFromStripe, mapStripeStatus } from "@/lib/sync-stripe-seats";
 import Stripe from "stripe";
 
 // Resolver el subscription id desde un Invoice. Stripe API 2025-09+
@@ -205,20 +205,34 @@ export async function POST(request: Request) {
           },
         });
 
-        // QA HIGH #3: reconciliar seats con active users count actual.
-        // Antes el handler escribía seats = Stripe quantity, lo cual
-        // podía ser stale si invite/deactivate ocurrieron entre
-        // checkout-create y checkout-complete. recalculateAndSyncSeats
-        // cuenta active users reales, actualiza DB y push a Stripe
-        // via subscriptions.update si hace falta. Ahora hay
-        // stripeSubscriptionId (recién seteado arriba), así que
-        // syncStripeSeats interno no más no-opea con
-        // "no_stripe_subscription_yet".
-        // await en lugar de void: Stripe webhook tiene 30s budget,
-        // recalculateAndSyncSeats son 2 DB queries + 1 Stripe call
-        // (~500ms). Sin await + serverless, el container podía morir
-        // mid-flight si la respuesta 200 se enviaba primero.
-        await recalculateAndSyncSeats(orgId);
+        // Aplicar la intención que el admin eligió en el dialog de
+        // Subscribe. Recién ahora — Stripe confirmó el pago.
+        //
+        // Antes acá corría recalculateAndSyncSeats, que forzaba
+        // seats = count(active users). Eso rompía el modelo Purchased:
+        // el admin que compraba 6 seats con 4 asignados veía su pool
+        // colapsar a 4 y Stripe re-facturado a 4. Launch audit
+        // 2026-06-26.
+        const pendingSeats = Number(session.metadata?.pendingSeats);
+        const pendingDeactivate = (session.metadata?.pendingDeactivate || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (pendingDeactivate.length > 0) {
+          // Scoping por organizationId: la metadata viene de nuestra
+          // propia session, pero nunca desactivamos fuera del org.
+          await prisma.user.updateMany({
+            where: { id: { in: pendingDeactivate }, organizationId: orgId },
+            data: { isActive: false },
+          });
+        }
+        if (Number.isFinite(pendingSeats) && pendingSeats >= 1) {
+          await prisma.subscription.update({
+            where: { organizationId: orgId },
+            data: { seats: pendingSeats },
+          });
+        }
       }
       break;
     }

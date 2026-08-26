@@ -315,11 +315,14 @@ export async function sendTeamInviteEmail({
   organizationName: string;
   recipientName?: string;
 }) {
+  // escapeHtml en TODO lo user-controlled: un self-signup con orgName
+  // malicioso podía inyectar HTML en mails salientes hacia terceros
+  // (vector de phishing desde noreply@). Launch audit 2026-06-26.
   const html = wrapTemplate(
-    `You've been invited to join ${organizationName}`,
+    `You've been invited to join ${escapeHtml(organizationName)}`,
     `${greeting(recipientName)}
-     <p><strong>${inviterName}</strong> invited you to collaborate on ${appName}.</p>
-     <p>${appName} is where ${organizationName} runs their searches — accept to join the team there.</p>
+     <p><strong>${escapeHtml(inviterName)}</strong> invited you to collaborate on ${appName}.</p>
+     <p>${appName} is where ${escapeHtml(organizationName)} runs their searches — accept to join the team there.</p>
      <p>This link expires in 7 days.</p>`,
     inviteUrl,
     "Accept Invitation"
@@ -350,16 +353,16 @@ export async function sendClientPortalShareEmail({
   candidateCount?: number;
 }) {
   const jobLine = jobTitle
-    ? `<p style="font-size: 16px; font-weight: 600; color: #111827; margin: 16px 0 4px 0;">${jobTitle}</p>`
+    ? `<p style="font-size: 16px; font-weight: 600; color: #111827; margin: 16px 0 4px 0;">${escapeHtml(jobTitle)}</p>`
     : "";
   const candidateLine = candidateCount
     ? `<p style="color: #6b7280;">${candidateCount} candidate${candidateCount !== 1 ? "s" : ""} have been shared for your review.</p>`
     : `<p style="color: #6b7280;">Candidates have been shared for your review.</p>`;
 
   const html = wrapTemplate(
-    `${firmName} shared candidates with you`,
+    `${escapeHtml(firmName)} shared candidates with you`,
     `${greeting(clientName)}
-     <p><strong>${recruiterName}</strong> from <strong>${firmName}</strong> has shared a candidate shortlist with you on ${appName}.</p>
+     <p><strong>${escapeHtml(recruiterName)}</strong> from <strong>${escapeHtml(firmName)}</strong> has shared a candidate shortlist with you on ${appName}.</p>
      ${jobLine}
      ${candidateLine}
      <p>Sign in to your client portal to review profiles, rate candidates, and leave feedback.</p>`,
@@ -526,11 +529,11 @@ export async function sendClientTeamInviteEmail({
   memberName: string;
   title?: string;
 }) {
-  const titleLine = title ? `<p style="color: #6b7280;">Role: <strong>${title}</strong></p>` : "";
+  const titleLine = title ? `<p style="color: #6b7280;">Role: <strong>${escapeHtml(title)}</strong></p>` : "";
   const html = wrapTemplate(
-    `You've been added to ${companyName}'s hiring team`,
+    `You've been added to ${escapeHtml(companyName)}'s hiring team`,
     `${greeting(memberName)}
-     <p><strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong>'s hiring team on ${appName}.</p>
+     <p><strong>${escapeHtml(inviterName)}</strong> has invited you to join <strong>${escapeHtml(companyName)}</strong>'s hiring team on ${appName}.</p>
      ${titleLine}
      <p>With your account, you can:</p>
      <ul style="color: #4b5563; padding-left: 20px;">
@@ -568,9 +571,9 @@ export async function sendEngagementAcceptedEmail({
   jobUrl: string;
 }) {
   const html = wrapTemplate(
-    `${firmName} accepted ${jobTitle}`,
+    `${escapeHtml(firmName)} accepted ${escapeHtml(jobTitle)}`,
     `${greeting(inviterName)}
-     <p><strong>${firmName}</strong> just accepted your invitation to work on <strong>${jobTitle}</strong>. They can now start sharing candidates and chatting with your team.</p>`,
+     <p><strong>${escapeHtml(firmName)}</strong> just accepted your invitation to work on <strong>${escapeHtml(jobTitle)}</strong>. They can now start sharing candidates and chatting with your team.</p>`,
     jobUrl,
     "Open Search"
   );
@@ -766,7 +769,7 @@ export async function sendInviteAcceptedEmail({
   const html = wrapTemplate(
     `🎉 ${newMemberName} accepted your invite`,
     `${greeting(inviterName)}
-     <p><strong>${newMemberName}</strong> (${newMemberEmail}) just joined <strong>${organizationName}</strong> on ${appName}.</p>
+     <p><strong>${escapeHtml(newMemberName)}</strong> (${escapeHtml(newMemberEmail)}) just joined <strong>${escapeHtml(organizationName)}</strong> on ${appName}.</p>
      <p>They can now see the searches they're assigned to and collaborate with you on candidates and clients.</p>
      <p>Want to keep growing the team? Send another invite from <a href="${teamUrl}">My Team</a>.</p>`,
     teamUrl,
@@ -796,9 +799,9 @@ export async function sendStaffingMemberWelcomeEmail({
   // doubt.
   const subject = `Your ${appName} account is ready — ${organizationName}`;
   const html = wrapTemplate(
-    `Welcome to ${organizationName} on ${appName}`,
+    `Welcome to ${escapeHtml(organizationName)} on ${appName}`,
     `${greeting(recipientName)}
-     <p>Your ${appName} account at <strong>${organizationName}</strong> is now active and your email has been confirmed. You can sign in any time at the link below.</p>
+     <p>Your ${appName} account at <strong>${escapeHtml(organizationName)}</strong> is now active and your email has been confirmed. You can sign in any time at the link below.</p>
      <p>From the dashboard you'll see the searches you're assigned to, candidates in flight, and your team's recent activity.</p>`,
     appUrl,
     "Open Dashboard",
@@ -850,7 +853,7 @@ export async function sendClientSetPasswordEmail({
   clientName: string;
   firmName?: string;
 }) {
-  const sharer = firmName ? `<strong>${firmName}</strong>` : "A recruiting firm";
+  const sharer = firmName ? `<strong>${escapeHtml(firmName)}</strong>` : "A recruiting firm";
   const html = wrapTemplate(
     "Set up your client portal account",
     `${greeting(clientName)}
@@ -986,7 +989,7 @@ export async function sendWelcomeEmail({
 
   const html = wrapTemplate(
     `You're in, ${first}`,
-    `<p><strong>${organizationName}</strong> is live on ${appName}. Take a look around — we'll send you a short getting-started note in a bit.</p>
+    `<p><strong>${escapeHtml(organizationName)}</strong> is live on ${appName}. Take a look around — we'll send you a short getting-started note in a bit.</p>
      ${trialLine}
      <p>Reply to this email if anything's confusing or missing — we read every message.</p>`,
     dashboardUrl,
@@ -1026,7 +1029,7 @@ export async function sendGettingStartedEmail({
 
   const html = wrapTemplate(
     `${first}, here's the fastest path to your first placement`,
-    `<p>Now that you've had a chance to look around <strong>${organizationName}</strong>, three things worth doing this week:</p>
+    `<p>Now that you've had a chance to look around <strong>${escapeHtml(organizationName)}</strong>, three things worth doing this week:</p>
      <ol style="color: #4b5563; padding-left: 20px; line-height: 1.9;">
        <li><a href="${addClientUrl}" style="color: #4f46e5; font-weight: 600;">Add your first client</a> — set fee structure + payment terms once, reuse for every search.</li>
        <li><a href="${addJobUrl}" style="color: #4f46e5; font-weight: 600;">Post your first job</a> — upload the JD and the parser fills the form for you.</li>
@@ -1073,7 +1076,7 @@ export async function sendSubscriptionActivatedEmail({
 
   const html = wrapTemplate(
     `${first}, you're all set`,
-    `<p>Your subscription to <strong>${appName}</strong> is now active. Thanks for trusting us with <strong>${organizationName}</strong>'s recruiting workflow.</p>
+    `<p>Your subscription to <strong>${appName}</strong> is now active. Thanks for trusting us with <strong>${escapeHtml(organizationName)}</strong>'s recruiting workflow.</p>
      <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
        <tr>
          <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Plan</td>
@@ -1124,7 +1127,7 @@ export async function sendSubscriptionCanceledEmail({
 
   const html = wrapTemplate(
     `${first}, we got your cancellation`,
-    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is scheduled to cancel.</p>
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${escapeHtml(organizationName)}</strong> is scheduled to cancel.</p>
      <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 18px 0; border-collapse: collapse;">
        <tr>
          <td style="padding: 6px 12px 6px 0; color: #6b7280; font-size: 13px;">Access until</td>
@@ -1165,7 +1168,7 @@ export async function sendSubscriptionEndedEmail({
 
   const html = wrapTemplate(
     `${first}, your subscription has ended`,
-    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> ended today.</p>
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${escapeHtml(organizationName)}</strong> ended today.</p>
      <p>Your data is safe — we keep it in our DB so you can pick up where you left off. To regain access:</p>
      <ul style="color: #4b5563; padding-left: 20px; line-height: 1.8;">
        <li><a href="${resubscribeUrl}" style="color: #4f46e5; font-weight: 600;">Resubscribe</a> — same price, your candidates and pipeline come back instantly.</li>
@@ -1209,7 +1212,7 @@ export async function sendSubscriptionReactivatedEmail({
 
   const html = wrapTemplate(
     `${first}, glad to have you back`,
-    `<p>Your <strong>${appName}</strong> subscription for <strong>${organizationName}</strong> is back on track. No cancellation pending.</p>
+    `<p>Your <strong>${appName}</strong> subscription for <strong>${escapeHtml(organizationName)}</strong> is back on track. No cancellation pending.</p>
      ${dateStr ? `<p>Next billing date: <strong>${dateStr}</strong>. Same plan, same seats — billing continues uninterrupted.</p>` : ""}
      <p>If you reactivated by accident, you can cancel again from <a href="${dashboardUrl}" style="color: #4f46e5; font-weight: 600;">Settings → Billing</a>.</p>`,
     dashboardUrl,
@@ -1241,7 +1244,7 @@ export async function sendPaymentFailedEmail({
 
   const html = wrapTemplate(
     `${first}, your payment didn't go through`,
-    `<p>We tried to charge your card for <strong>${appName}</strong> — <strong>${organizationName}</strong> — and the bank declined it.</p>
+    `<p>We tried to charge your card for <strong>${appName}</strong> — <strong>${escapeHtml(organizationName)}</strong> — and the bank declined it.</p>
      <p>To avoid losing access, update your payment method:</p>`,
     manageBillingUrl,
     "Update payment method",

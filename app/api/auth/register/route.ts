@@ -6,6 +6,7 @@ import { registerSchema } from "@/lib/validations/auth";
 import { slugify } from "@/lib/utils";
 import { TRIAL_DAYS } from "@/lib/constants";
 import { processPendingInvites } from "@/lib/process-pending-invites";
+import { findStaffingUserByEmail } from "@/lib/email-canonical";
 import { sendWelcomeEmail, sendGettingStartedEmail, sendEmailVerificationEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkRateLimit, getClientIp, rateLimitHeaders } from "@/lib/rate-limit";
@@ -25,10 +26,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = registerSchema.parse(body);
 
-    // Check if email exists
-    const existing = await prisma.user.findUnique({
-      where: { email: data.email },
-    });
+    // Dup-check tolerante a Gmail aliases (dots / +tags), igual que
+    // invites, forgot-password y resend-verification. Sin esto quien
+    // entró por Google como "nicocuello@gmail.com" podía registrarse
+    // de nuevo como "nico.cuello@gmail.com" y quedar con DOS orgs y
+    // dos trials: después Google login caía en una y password login
+    // en la otra, cada una con data distinta. Launch audit 2026-06-26.
+    const existing = await findStaffingUserByEmail(data.email);
     if (existing) {
       return NextResponse.json(
         { error: "Email already registered" },

@@ -145,6 +145,16 @@ function BillingContent() {
     // checkout sessions en Stripe.
     if (autoSubscribeFiredRef.current) return;
     autoSubscribeFiredRef.current = true;
+    // Sacar ?subscribe=1 de la URL apenas disparamos. Sin esto, si el
+    // user vuelve del Stripe Checkout con el botón Back del browser y
+    // la página recarga (sin bfcache), el ref se resetea, el param
+    // sigue ahí y lo re-redirige a un checkout nuevo → loop del que
+    // solo salía editando la URL. Launch audit 2026-06-26.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("subscribe");
+      window.history.replaceState({}, "", url.toString());
+    }
     const subStatus = subscription?.status;
     const subTrialEnd = subscription?.trialEndsAt
       ? new Date(subscription.trialEndsAt)

@@ -4,7 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { createCheckoutSession, createStripeCustomer, getStripeClient } from "@/lib/stripe";
 import { stripePriceIdForSeats, TEAM_MAX_SEATS } from "@/lib/constants";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { recalculateAndSyncSeats, mapStripeStatus } from "@/lib/sync-stripe-seats";
+import { mapStripeStatus } from "@/lib/sync-stripe-seats";
 
 export async function POST(request: Request) {
   try {
@@ -41,11 +41,13 @@ export async function POST(request: Request) {
       ? body.keepUserIds.filter((x: unknown): x is string => typeof x === "string")
       : [];
 
-    // QA HIGH #2: recalcular seats antes del checkout para reflejar
-    // active users actuales. Si el admin pasó `seats` en el body
-    // (pivote 2026-06-22: elige cuánto comprar), va a override más
-    // abajo. Si no pasó, este recalc deja seats = active users count.
-    await recalculateAndSyncSeats(ctx.organizationId);
+    // NO mutamos NADA antes del guard 409 ni antes de que Stripe
+    // confirme el pago. El recalculateAndSyncSeats que vivía acá
+    // tenía 2 problemas: (a) escribía DB + Stripe antes del guard de
+    // "sub ya activa", así que un doble-click colapsaba el pool aunque
+    // el request terminara en 409; (b) forzaba seats = active users,
+    // contradiciendo el modelo Purchased (comprás 6, asignás 4, te
+    // quedan 2 Available). Launch audit 2026-06-26.
 
     // ── Pre-validación: calcular toDeactivate ANTES de tocar nada ──
     //
@@ -214,10 +216,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // El target final es lo que el admin eligió (finalSeats) si pasó,
-    // o el actual de la sub (que recalculateAndSyncSeats ya alineó
-    // con active users count) si no.
-    const seatsForCheckout = finalSeats ?? subscription.seats;
+    // El target final es lo que el admin eligió (finalSeats) si pasó
+    // por el dialog. Si no pasó (ej. trial vencido → checkout directo
+    // sin dialog), el default tiene que cubrir al equipo actual:
+    // subscription.seats puede estar en 1 desde el signup mientras el
+    // org ya tiene 3 activos. Lectura pura, sin mutar (antes esto lo
+    // resolvía el recalculateAndSyncSeats que sacamos).
+    const activeUsersForDefault =
+      finalSeats !== null
+        ? 0
+        : await prisma.user.count({
+            where: { organizationId: ctx.organizationId, isActive: true },
+          });
+    const seatsForCheckout =
+      finalSeats ?? Math.max(subscription.seats, activeUsersForDefault, 1);
 
     if (seatsForCheckout > TEAM_MAX_SEATS) {
       return NextResponse.json(
@@ -407,6 +419,15 @@ export async function POST(request: Request) {
         seatsForCheckout,
         ctx.organizationId,
         trialEnd,
+        // Intención pendiente — la aplica el webhook post-pago.
+        // Stripe limita cada metadata value a 500 chars; con
+        // TEAM_MAX_SEATS=10 la lista de cuids entra holgada. Si algún
+        // día no entrara, el webhook cae al fallback (no desactiva a
+        // nadie) en vez de romper.
+        {
+          pendingSeats: String(seatsForCheckout),
+          pendingDeactivate: toDeactivate.join(","),
+        },
       );
     } catch (err: any) {
       // Trial expiró entre la decisión del cliente y el procesamiento.
@@ -431,26 +452,12 @@ export async function POST(request: Request) {
     // creado pero no se deactivó a nadie ni se cambió DB.seats — el
     // admin va a ver mismatch en /settings/team y va a tener que
     // re-correr. Mejor que team-gutted-sin-pago. Audit 2026-06-23.
-    if (toDeactivate.length > 0 || finalSeats !== null) {
-      await prisma.$transaction([
-        ...(toDeactivate.length > 0
-          ? [
-              prisma.user.updateMany({
-                where: { id: { in: toDeactivate } },
-                data: { isActive: false },
-              }),
-            ]
-          : []),
-        ...(finalSeats !== null
-          ? [
-              prisma.subscription.update({
-                where: { organizationId: ctx.organizationId },
-                data: { seats: finalSeats },
-              }),
-            ]
-          : []),
-      ]);
-    }
+    // NO aplicamos nada acá: el admin todavía no pagó. Si abandona el
+    // Stripe Checkout (Back / cierra la tab), sus teammates habrían
+    // quedado desactivados sin que nadie cobre nada. La intención
+    // (seats finales + quiénes mantienen acceso) viaja en la metadata
+    // de la session y el webhook checkout.session.completed la aplica
+    // recién cuando Stripe confirma. Launch audit 2026-06-26.
 
     return NextResponse.json({ url: session.url });
   } catch (error: any) {
