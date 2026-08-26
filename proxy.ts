@@ -14,7 +14,15 @@ export async function proxy(request: NextRequest) {
   }
 
   // Public routes (landing page, auth, marketing)
-  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/client-portal/register"];
+  // "/api/cron": Vercel Cron autentica con un header Bearer, no con
+  // cookie de sesión. Sin esto el proxy corría getToken() primero, no
+  // encontraba sesión y 307eaba a /login: los 3 crons (expire-trials,
+  // cleanup-webhook-events, reconcile-seats) nunca ejecutaban — el
+  // route handler ni se invocaba. Verificado en prod: devolvían 307.
+  // El gate real de esos endpoints es su propio check de CRON_SECRET,
+  // que es fail-closed (sin la env var responden 401).
+  // Audit 2026-06-26.
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/debug", "/api/invite", "/api/cron", "/api/client-portal/register"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
   const isLandingPage = pathname === "/";
 
