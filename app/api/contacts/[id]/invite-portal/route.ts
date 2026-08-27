@@ -119,12 +119,25 @@ export async function POST(
       });
       clientUser = created;
     } else {
-      // Existing pending row — invalidate its older tokens so a re-
-      // invite always issues a fresh, unambiguous link.
-      await prisma.clientPortalToken.updateMany({
-        where: { clientId: clientUser.clientId, isActive: true },
-        data: { isActive: false },
-      });
+      // NO invalidamos los tokens previos del cliente.
+      //
+      // La intención original era "matar los tokens viejos de ESTE
+      // invitado", pero ClientPortalToken solo guarda clientId (la
+      // identidad sale del email que la persona tipea en el form de
+      // set-password), así que el where alcanzaba a TODA la empresa:
+      // re-invitar a una persona dejaba muertos, en silencio, los
+      // links de set-password que sus compañeros todavía no habían
+      // usado. Ellos clickeaban y veían "Invalid or expired link" sin
+      // entender por qué.
+      //
+      // Trade-off elegido: los tokens viejos siguen vivos hasta su
+      // expiry de 7 días. Un token igual no sirve solo — hay que
+      // conocer además el email de un ClientUser activo de ese
+      // cliente. Preferimos eso a romperle el acceso a terceros.
+      //
+      // Fix de fondo (post-launch, necesita migración): agregar
+      // clientUserId a ClientPortalToken y scopear la invalidación
+      // por persona.
       mode = "resent";
     }
 
