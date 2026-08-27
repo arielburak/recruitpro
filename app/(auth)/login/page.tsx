@@ -38,13 +38,34 @@ function LoginContent() {
   // El layout del agency portal redirige aca cuando descubre que la
   // session pertenece a un user con isActive=false. Mostramos un
   // banner amigable en lugar del 401 silencioso que veian antes.
-  const deactivatedError = searchParams.get("error") === "deactivated";
+  const errorParam = searchParams.get("error");
+  const deactivatedError = errorParam === "deactivated";
+  // Cualquier otra falla del flow OAuth. NextAuth manda al signIn page
+  // con ?error=<codigo> (OAuthCallback, OAuthAccountNotLinked,
+  // AccessDenied, Callback, el id del provider, etc.). Antes solo
+  // mirabamos "deactivated", asi que el user que cancelaba en Google o
+  // pegaba cualquier error aterrizaba en un login pelado, sin una sola
+  // palabra de explicacion: parecia que la app estaba rota.
+  // Audit 2026-06-26.
+  const oauthErrorMessage = (() => {
+    if (!errorParam || errorParam === "deactivated") return null;
+    switch (errorParam) {
+      case "OAuthAccountNotLinked":
+        return "That email is already registered with a password. Sign in with your email and password below.";
+      case "AccessDenied":
+        return "Sign-in was cancelled. Try again, or use your email and password below.";
+      case "Configuration":
+        return "Sign-in is temporarily unavailable. Please use your email and password, or try again in a few minutes.";
+      default:
+        return "We couldn't complete sign-in with Google. Try again, or use your email and password below.";
+    }
+  })();
   // Sesión cerrada por inactividad — InactivityLogout redirige acá con
   // ?reason=inactivity para mostrar un mensaje claro en lugar de un
   // login en blanco como si el user nunca hubiera iniciado sesión.
   const inactivityReason = searchParams.get("reason") === "inactivity";
   const [step, setStep] = useState<"select" | "agency">(
-    portalParam === "agency" || registered || fromInviteUsed || deactivatedError || inactivityReason ? "agency" : "select"
+    portalParam === "agency" || registered || fromInviteUsed || deactivatedError || inactivityReason || oauthErrorMessage ? "agency" : "select"
   );
 
   // If a staffing user is already signed in, go to dashboard
@@ -286,6 +307,11 @@ function LoginContent() {
             {inactivityReason && (
               <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded-lg border border-blue-200">
                 You were signed out after 30 minutes of inactivity. Sign in to continue where you left off.
+              </div>
+            )}
+            {oauthErrorMessage && (
+              <div className="bg-amber-50 text-amber-800 text-sm p-3 rounded-lg border border-amber-200">
+                {oauthErrorMessage}
               </div>
             )}
             {error && (
