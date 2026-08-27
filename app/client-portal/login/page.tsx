@@ -120,6 +120,12 @@ function ClientPortalLoginInner() {
       return "We couldn't find an invite for that Google account. The client portal is invite-only — ask your recruiting partner to add you.";
     if (e === "use-client-portal")
       return "We detected your email is registered as a client portal user. Please sign in here (not from the staffing portal) to access your account.";
+    // Fallback para cualquier otro codigo de NextAuth (OAuthCallback,
+    // AccessDenied, el id del provider, etc.). Sin esto el user que
+    // cancelaba en Google aterrizaba en un login sin una palabra de
+    // explicacion. Audit 2026-06-26.
+    if (e)
+      return "We couldn't complete sign-in with Google. Try again, or use your email and password below.";
     return "";
   });
   const [success, setSuccess] = useState("");
