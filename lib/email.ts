@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const fromAddress = process.env.EMAIL_FROM || "noreply@recruitingats.com";
@@ -8,8 +9,7 @@ const fromAddress = process.env.EMAIL_FROM || "noreply@recruitingats.com";
 // chat con el sender, mention) ese gana — esto solo aplica cuando no
 // se pasa replyTo en sendEmail.
 // Decisión 2026-06-19 con Nicolás: todo lo del ATS responde a contact@.
-const supportEmail =
-  process.env.SUPPORT_EMAIL || "contact@alphabridgepartners.com";
+const supportEmail = SUPPORT_EMAIL;
 const appName = "Recruiting ATS";
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;

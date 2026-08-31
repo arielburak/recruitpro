@@ -22,6 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { getStripeClient, createBillingPortalSession } from "@/lib/stripe";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import * as Sentry from "@sentry/nextjs";
 
 const SEAT_HARD_CAP = 100;
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     if (requestedSeats > SEAT_HARD_CAP) {
       return NextResponse.json(
         {
-          error: `Seats above ${SEAT_HARD_CAP} require manual setup. Reach out to contact@alphabridgepartners.com.`,
+          error: `Seats above ${SEAT_HARD_CAP} require manual setup. Reach out to ${SUPPORT_EMAIL}.`,
         },
         { status: 400 },
       );

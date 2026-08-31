@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
     // El fallback "development" solo aplica a `next dev` local, donde
     // VERCEL_ENV no existe. Launch audit 2026-06-26.
     NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "development",
+
+    // Mismo problema que arriba: SUPPORT_EMAIL es server-only, pero las
+    // páginas de forgot/reset password son client components y también
+    // necesitan mostrarla. Sin este mapeo leerían undefined y caerían
+    // al fallback, ignorando la env var sin avisar. Ver SUPPORT_EMAIL
+    // en lib/constants.ts.
+    NEXT_PUBLIC_SUPPORT_EMAIL:
+      process.env.SUPPORT_EMAIL || "contact@alphabridgepartners.com",
   },
 };
 

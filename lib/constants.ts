@@ -183,3 +183,29 @@ export const COMPANY_SIZE_OPTIONS: string[] = [
   "50–200",
   "200+",
 ];
+
+// Dirección de soporte única del producto.
+//
+// Antes había TRES dando vueltas: support@recruitingats.com en las
+// páginas de forgot/reset password, contact@alphabridgepartners.com en
+// la landing + reply-to de los mails + hardcodeada adentro de un error
+// de la API de seats, y nicolas@alphabridgepartners.com en privacy y
+// terms. Un usuario veía una distinta según dónde estuviera parado.
+//
+// Peor: recruitingats.com NO tiene registros MX, así que
+// support@recruitingats.com no recibe nada. Le estábamos diciendo a
+// gente bloqueada afuera de su cuenta que escriba a un buzón que no
+// existe. Por eso el default es la de alphabridgepartners.com, que sí
+// tiene Google Workspace atrás y recibe hoy.
+//
+// PENDIENTE: cuando recruitingats.com tenga MX, mover el buzón a
+// support@recruitingats.com y setear la env var SUPPORT_EMAIL. Es un
+// cambio de una línea y no hay que tocar código — mandar mails desde
+// noreply@recruitingats.com y pedir que respondan a otro dominio
+// parece phishing.
+//
+// El mapeo a NEXT_PUBLIC_* vive en next.config.ts: sin eso, las páginas
+// que son client component leerían undefined y caerían al fallback,
+// ignorando la env var en silencio.
+export const SUPPORT_EMAIL =
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "contact@alphabridgepartners.com";
