@@ -23,11 +23,25 @@ const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const STRIPE_ID_RE = /\b(cus|sub|pi|in|si|seti|ch|src|tok|prod|price)_[A-Za-z0-9]{6,}\b/g;
 const SENSITIVE_PARAM_RE = /([?&](?:token|key|password|secret|api_key|auth)=)[^&\s]+/gi;
 
+// Tokens que viajan en el PATH, no en la query string. SENSITIVE_PARAM_RE
+// no los agarra porque busca "?token=" o "&token=".
+//
+// Tres rutas los usan asi: /invite/<token>, /api/invite/<token> y
+// /client-portal/<token>. Un error en cualquiera de esas paginas mandaba
+// la URL completa a Sentry con el token adentro — y un invite token
+// alcanza para crear una cuenta dentro del workspace.
+//
+// El {20,} sin guiones evita pisar segmentos legitimos: los tokens son
+// hex de 64 chars o cuid alfanumerico, mientras que la ruta mas larga
+// del portal ("complete-profile") tiene guion y no matchea.
+const PATH_TOKEN_RE = /\/(invite|client-portal)\/[A-Za-z0-9]{20,}/g;
+
 function scrubString(value: string): string {
   return value
     .replace(EMAIL_RE, "[email]")
     .replace(STRIPE_ID_RE, "[stripe-id]")
-    .replace(SENSITIVE_PARAM_RE, "$1[redacted]");
+    .replace(SENSITIVE_PARAM_RE, "$1[redacted]")
+    .replace(PATH_TOKEN_RE, "/$1/[redacted]");
 }
 
 function scrubDeep(obj: any, depth = 0): any {
