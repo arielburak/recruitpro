@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import {
   ArrowRight,
   Check,
@@ -911,11 +912,11 @@ function Footer() {
         <div className="text-center mb-10">
           <p className="text-base font-semibold text-gray-900">Have a specific question? Get in touch.</p>
           <a
-            href="mailto:contact@alphabridgepartners.com"
+            href={`mailto:${SUPPORT_EMAIL}`}
             className="inline-flex items-center gap-2 mt-2 text-indigo-600 font-medium hover:text-indigo-700 transition-colors"
           >
             <Mail className="w-4 h-4" />
-            contact@alphabridgepartners.com
+            {SUPPORT_EMAIL}
           </a>
         </div>
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-t border-gray-200 pt-8">

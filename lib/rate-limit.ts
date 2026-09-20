@@ -23,6 +23,7 @@
 //     verificaciones de otros emails desde una misma IP
 //   · combinación IP:email — más granular, para signup
 
+import * as Sentry from "@sentry/nextjs";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
@@ -38,9 +39,19 @@ function getRedis(): Redis | null {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {
     if (process.env.NODE_ENV === "production") {
-      console.warn(
-        "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — rate limiting disabled. Auth endpoints are UNPROTECTED against brute force.",
-      );
+      const msg =
+        "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — rate limiting is DISABLED. Login, forgot-password, register and verify-email are unprotected against brute force and mail flooding.";
+      console.warn(msg);
+      // Un console.warn en los logs de Vercel no lo ve nadie: verificado
+      // 2026-08-31 que en produccion el limiter estaba apagado hacia
+      // rato y la 4ta llamada seguida a /api/auth/forgot-password seguia
+      // devolviendo 200 en vez de 429. Lo mandamos a Sentry para que
+      // aparezca donde sí miramos. Corre una vez por instancia
+      // (redisInitTried), no por request.
+      Sentry.captureMessage(msg, {
+        level: "error",
+        tags: { area: "rate-limit", reason: "not-configured" },
+      });
     }
     return null;
   }

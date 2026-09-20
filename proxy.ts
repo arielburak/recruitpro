@@ -22,7 +22,15 @@ export async function proxy(request: NextRequest) {
   // El gate real de esos endpoints es su propio check de CRON_SECRET,
   // que es fail-closed (sin la env var responden 401).
   // Audit 2026-06-26.
-  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/api/auth", "/api/webhooks", "/api/health", "/api/invite", "/api/cron", "/api/client-portal/register"];
+  // "/opengraph-image": la imagen de link preview que genera
+  // app/opengraph-image.tsx. No termina en extensión, así que no la
+  // agarra el early return de assets de arriba, y sin estar acá el
+  // proxy la 307eaba a /login: los scrapers de Slack / LinkedIn /
+  // WhatsApp seguían el redirect y nunca bajaban la imagen. Tiene que
+  // ser pública por definición — es lo que ve alguien que todavía no
+  // tiene cuenta. Mismo caso que /api/cron. Si algún día agregamos
+  // twitter-image.tsx u otra ruta de metadata sin extensión, va acá.
+  const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/invite", "/privacy", "/terms", "/opengraph-image", "/api/auth", "/api/webhooks", "/api/health", "/api/invite", "/api/cron", "/api/client-portal/register"];
   const isPublicPath = publicPaths.some((p) => pathname.startsWith(p));
   const isLandingPage = pathname === "/";
 

@@ -12,6 +12,57 @@ const nextConfig: NextConfig = {
     // El fallback "development" solo aplica a `next dev` local, donde
     // VERCEL_ENV no existe. Launch audit 2026-06-26.
     NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "development",
+
+    // Mismo problema que arriba: SUPPORT_EMAIL es server-only, pero las
+    // páginas de forgot/reset password son client components y también
+    // necesitan mostrarla. Sin este mapeo leerían undefined y caerían
+    // al fallback, ignorando la env var sin avisar. Ver SUPPORT_EMAIL
+    // en lib/constants.ts.
+    NEXT_PUBLIC_SUPPORT_EMAIL:
+      process.env.SUPPORT_EMAIL || "contact@alphabridgepartners.com",
+  },
+
+  // Security headers. Verificado 2026-08-31 que produccion solo mandaba
+  // Strict-Transport-Security (lo agrega Vercel solo) — el resto no
+  // estaba. Next no los pone por defecto.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // El mas importante para este producto: la app pone tokens en
+          // la query string (/reset-password?token=...,
+          // /client-portal/set-password?token=...&email=...). Sin
+          // Referrer-Policy, el click a cualquier link externo desde esa
+          // pagina manda la URL COMPLETA — token incluido — en el header
+          // Referer del destino. Con strict-origin-when-cross-origin
+          // solo viaja el origin.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+
+          // Clickjacking: sin esto, un atacante puede meter /login en un
+          // iframe invisible sobre su propia pagina y capturar clicks.
+          // Nada en el ATS necesita ser embebido (verificado: no hay un
+          // solo <iframe> en el repo), asi que va DENY.
+          { key: "X-Frame-Options", value: "DENY" },
+          // frame-ancestors es el equivalente moderno y gana sobre
+          // X-Frame-Options donde los dos aplican. Mandamos solo esta
+          // directiva de CSP: una politica completa (script-src y
+          // compania) necesita nonces para los inline de Next y se
+          // rompe facil. Esto es el subconjunto seguro.
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+
+          // Evita que el browser adivine el content-type e interprete
+          // como script algo que servimos como otra cosa.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+
+          // Nada de la app usa camara, microfono ni ubicacion.
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+          },
+        ],
+      },
+    ];
   },
 };
 

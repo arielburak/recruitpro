@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import { Briefcase } from "lucide-react";
 
 export const metadata = {
@@ -108,8 +109,8 @@ export default function TermsPage() {
         <h2 className="text-xl font-semibold text-gray-900 mt-10 mb-3">13. Contact</h2>
         <p className="text-gray-700 leading-relaxed">
           Questions about these Terms?{" "}
-          <a href="mailto:nicolas@alphabridgepartners.com" className="text-indigo-600 hover:underline">
-            nicolas@alphabridgepartners.com
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-indigo-600 hover:underline">
+            {SUPPORT_EMAIL}
           </a>
         </p>
         <p className="text-gray-700 leading-relaxed mt-3">

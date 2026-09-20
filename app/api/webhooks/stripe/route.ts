@@ -389,7 +389,32 @@ export async function POST(request: Request) {
     }
 
     case "customer.subscription.updated": {
-      const subscription = event.data.object as any;
+      const eventSub = event.data.object as any;
+
+      // Releemos el estado actual de Stripe en vez de confiar en el
+      // payload del evento.
+      //
+      // Stripe entrega at-least-once y SIN orden garantizado — la
+      // sticky CANCELED protection de abajo ya lo contemplaba, pero
+      // solo protegía `status`. El resto de los campos se escribían
+      // directo desde el evento, y el payload es una foto del momento
+      // en que se generó: si llega tarde, `seats`, `current_period_end`
+      // y `cancel_at` vienen viejos.
+      //
+      // Con `seats` eso no queda en un desfasaje cosmético. El cron
+      // reconcile-seats toma Subscription.seats como autoritativo y lo
+      // empuja DE VUELTA a Stripe, así que un evento atrasado no solo
+      // desactualiza la DB: termina cambiando lo que le facturamos al
+      // cliente. Un admin que compró 6 seats podía quedar cobrado por 4
+      // y con dos personas del equipo afuera.
+      //
+      // Si la lectura falla tiramos a propósito: el catch de afuera
+      // devuelve 500, borra el row de idempotency y Stripe reintenta.
+      // Reintentar es mejor que escribir data vieja.
+      const subscription = (await getStripeClient().subscriptions.retrieve(
+        eventSub.id,
+      )) as any;
+
       const firstItem = subscription.items?.data?.[0];
       const quantity = firstItem?.quantity || 1;
       // API 2025-09+ movió current_period_end al item. Buscar ahí

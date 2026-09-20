@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,7 +80,7 @@ export default function ForgotPasswordPage() {
         <div className="border-t border-white/20 pt-8">
           <p className="text-indigo-200 text-sm">
             Need help? Contact us at{" "}
-            <span className="text-white font-medium">support@recruitingats.com</span>
+            <span className="text-white font-medium">{SUPPORT_EMAIL}</span>
           </p>
         </div>
       </div>

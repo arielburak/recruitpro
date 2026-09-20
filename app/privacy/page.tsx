@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import { Briefcase } from "lucide-react";
 
 export const metadata = {
@@ -120,8 +121,8 @@ export default function PrivacyPage() {
         <h2 className="text-xl font-semibold text-gray-900 mt-10 mb-3">10. Contact us</h2>
         <p className="text-gray-700 leading-relaxed">
           For any questions about this policy or to exercise your privacy rights, contact us at{" "}
-          <a href="mailto:nicolas@alphabridgepartners.com" className="text-indigo-600 hover:underline">
-            nicolas@alphabridgepartners.com
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-indigo-600 hover:underline">
+            {SUPPORT_EMAIL}
           </a>
           .
         </p>
