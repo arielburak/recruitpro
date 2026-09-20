@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSafeExternalUrl } from "@/lib/safe-url";
 
 // The legacy "main contact" inline fields on Client
 // (contactName/contactEmail/contactPhone) are no longer written by any
@@ -9,7 +10,14 @@ import { z } from "zod";
 export const clientSchema = z.object({
   name: z.string().min(1, "Company name is required"),
   industry: z.string().optional(),
-  website: z.string().url("Invalid URL").optional().or(z.literal("")),
+  // Ver el comentario en lib/validations/candidate.ts: `.url()` de zod 4
+  // acepta `javascript:` y compania.
+  website: z
+    .string()
+    .url("Invalid URL")
+    .refine(isSafeExternalUrl, "URL must start with http:// or https://")
+    .optional()
+    .or(z.literal("")),
   notes: z.string().optional(),
   engagementType: z.enum(["RECRUITING", "STAFF_AUG"]).optional(),
   // All three default-fee fields nullable so switching a client from

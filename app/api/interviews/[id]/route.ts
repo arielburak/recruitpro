@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { requireAdminResponse } from "@/lib/permissions";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { canAccessJob } from "@/lib/job-access";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 export async function GET(
   _request: Request,
@@ -100,7 +101,7 @@ export async function PUT(
         ...(type !== undefined && { type }),
         ...(status !== undefined && { status }),
         ...(notes !== undefined && { notes }),
-        ...(meetingLink !== undefined && { meetingLink }),
+        ...(meetingLink !== undefined && { meetingLink: safeExternalUrl(meetingLink) ?? null }),
         ...(location !== undefined && { location }),
         ...(timezone !== undefined && { timezone }),
       },

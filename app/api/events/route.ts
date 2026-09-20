@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 // Generic personal calendar events that live alongside Interviews on
 // the /calendar grid. Outlook-style: follow-ups, reminders, internal
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
         endTime: new Date(endTime),
         allDay: Boolean(allDay),
         location: location || null,
-        meetingLink: meetingLink || null,
+        meetingLink: safeExternalUrl(meetingLink) ?? null,
         timezone: timezone || "America/Argentina/Buenos_Aires",
         kind: ALLOWED_KINDS.has(kind) ? kind : "EVENT",
         recurrence:

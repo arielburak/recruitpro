@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { checkSeatAvailability } from "@/lib/seat-availability";
 // Modelo LinkedIn / Microsoft (Batch H5 2026-06-24): Stripe cobra
@@ -35,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
@@ -77,6 +78,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
+    // 402 cuando el trial vencio o la sub no esta activa; si no, 500.
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }
@@ -84,7 +88,7 @@ export async function POST(request: Request) {
 // PATCH - toggle user active status or update role
 export async function PATCH(request: Request) {
   try {
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     if (ctx.role !== "ADMIN") {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
@@ -155,6 +159,9 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated);
   } catch (error: any) {
+    // 402 cuando el trial vencio o la sub no esta activa; si no, 500.
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }
 }

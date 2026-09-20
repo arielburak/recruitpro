@@ -110,17 +110,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "This link has expired. Please ask your recruiter to resend." }, { status: 400 });
     }
 
-    // Find the client user
+    // Find the client user.
+    //
+    // `passwordHash: null` no es opcional: es lo que impide una toma de
+    // cuenta. El token solo guarda `clientId` (la empresa, no la
+    // persona — ver T1 en docs/PROMPT-ARI.md), asi que sin este filtro
+    // CUALQUIER token vivo de la empresa servia para pisarle la
+    // password a CUALQUIER miembro activo, incluidos los ADMIN. Y el
+    // token no es secreto para los companeros: POST /team devuelve el
+    // inviteLink en la respuesta a cualquier miembro, incluso rol USER.
+    // Limitandolo a cuentas que todavia no tienen password, el link
+    // solo puede completar el alta para la que se emitio.
+    //
+    // Queda un residuo conocido: si hay dos invitaciones pendientes en
+    // la misma empresa, una puede reclamar la otra. Cerrarlo del todo
+    // pide `clientUserId` en ClientPortalToken (T1), que es migracion.
     const clientUser = await prisma.clientUser.findFirst({
       where: {
         email: { equals: email, mode: "insensitive" },
         clientId: tokenRecord.clientId,
         isActive: true,
+        passwordHash: null,
       },
     });
 
     if (!clientUser) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+      // Mismo mensaje para "no existe" y "ya tiene password", para no
+      // convertir el endpoint en un oraculo de que cuentas existen.
+      return NextResponse.json(
+        {
+          error:
+            "This invitation is no longer valid. If you already have an account, use 'Forgot password' to sign in.",
+        },
+        { status: 404 }
+      );
     }
 
     // Stub enrichment: when the Client was created via quick-invite, the

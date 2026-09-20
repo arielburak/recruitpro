@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 export async function PUT(
   request: Request,
@@ -33,7 +34,7 @@ export async function PUT(
     if (body.endTime !== undefined) data.endTime = new Date(body.endTime);
     if (body.type !== undefined) data.type = body.type;
     if (body.status !== undefined) data.status = body.status;
-    if (body.meetingLink !== undefined) data.meetingLink = body.meetingLink || null;
+    if (body.meetingLink !== undefined) data.meetingLink = safeExternalUrl(body.meetingLink) ?? null;
     if (body.location !== undefined) data.location = body.location || null;
     if (body.timezone !== undefined) data.timezone = body.timezone;
     if (body.notes !== undefined) data.notes = body.notes || null;

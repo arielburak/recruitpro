@@ -38,7 +38,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Cost 12, igual que /api/auth/register. Estaba en 10: cualquiera
+    // que reseteara su password terminaba, en silencio, con un hash
+    // mas debil que el que le dio el alta.
+    const passwordHash = await bcrypt.hash(password, 12);
 
     await prisma.$transaction([
       prisma.user.update({

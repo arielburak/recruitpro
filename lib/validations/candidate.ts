@@ -1,11 +1,20 @@
 import { z } from "zod";
+import { isSafeExternalUrl } from "@/lib/safe-url";
 
 export const candidateSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
-  linkedIn: z.string().url("Invalid URL").optional().or(z.literal("")),
+  // `.url()` solo no alcanza: en zod 4 valida con el constructor URL,
+  // que acepta cualquier esquema — incluido `javascript:`, que despues
+  // termina en un href. Ver lib/safe-url.ts.
+  linkedIn: z
+    .string()
+    .url("Invalid URL")
+    .refine(isSafeExternalUrl, "URL must start with http:// or https://")
+    .optional()
+    .or(z.literal("")),
   location: z.string().optional(),
   currentTitle: z.string().optional(),
   currentCompany: z.string().optional(),

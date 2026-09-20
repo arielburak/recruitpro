@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 // Single calendar event CRUD. Same per-user scope as the list endpoint:
 // only the creator can read / edit / delete their own events. No admin
@@ -55,7 +56,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.endTime) data.endTime = new Date(body.endTime);
     if ("allDay" in body) data.allDay = Boolean(body.allDay);
     if ("location" in body) data.location = body.location || null;
-    if ("meetingLink" in body) data.meetingLink = body.meetingLink || null;
+    if ("meetingLink" in body) data.meetingLink = safeExternalUrl(body.meetingLink) ?? null;
     if (typeof body.timezone === "string") data.timezone = body.timezone;
     if (typeof body.kind === "string" && ALLOWED_KINDS.has(body.kind)) data.kind = body.kind;
     if ("recurrence" in body) {

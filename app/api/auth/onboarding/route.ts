@@ -27,6 +27,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Este endpoint reescribe name/slug/industry/companySize de la
+    // organizacion entera. Sin este gate cualquier miembro con rol
+    // USER podia renombrar la empresa — y como el slug se recalcula en
+    // cada llamada, tambien romper cualquier link que lo use.
+    if (user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Only admins can change organization settings" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const data = onboardingSchema.parse(body);
 

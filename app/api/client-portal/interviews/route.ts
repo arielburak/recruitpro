@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientContext } from "@/lib/tenant";
 import { accessibleAgencyJobIds } from "@/lib/client-job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 export async function GET(request: NextRequest) {
   try {
@@ -141,12 +142,17 @@ export async function POST(request: Request) {
         endTime: new Date(endTime),
         type: type || "VIDEO",
         notes: notes || null,
-        meetingLink: meetingLink || null,
+        meetingLink: safeExternalUrl(meetingLink) ?? null,
         location: location || null,
         timezone: timezone || "America/Argentina/Buenos_Aires",
         submissionId,
         jobId: submission.job.id,
-        candidateId,
+        // El candidateId sale de la submission, NO del body. Antes se
+        // escribia el que mandara el cliente sin compararlo: con el id
+        // de un candidato de otro tenant, el GET de entrevistas del
+        // portal devolvia su nombre completo — un oraculo para
+        // resolver ids ajenos a nombres reales.
+        candidateId: submission.candidateId,
         organizationId: submission.job.organizationId,
         createdBy: orgUser.id,
       },

@@ -4,7 +4,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { candidateSchema } from "@/lib/validations/candidate";
 import { logActivity } from "@/lib/activity";
-import { safeErrorMessage } from "@/lib/safe-error";
+import { safeErrorMessage, zodErrorMessage } from "@/lib/safe-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -194,7 +194,7 @@ export async function POST(request: Request) {
     if (subErr) return subErr;
     if (error.name === "ZodError") {
       return NextResponse.json(
-        { error: error.errors[0].message },
+        { error: zodErrorMessage(error) },
         { status: 400 }
       );
     }

@@ -55,7 +55,27 @@ export async function PATCH(
     }
 
     const updateData: any = {};
-    if (body.stageId) updateData.stageId = body.stageId;
+    if (body.stageId) {
+      // El stage tiene que pertenecer al job DE ESTA submission. Sin
+      // este chequeo se aceptaba cualquier stageId, incluso de un job
+      // de otra organizacion: la tarjeta desaparecia del kanban (no
+      // matchea ninguna columna), el Activity quedaba escrito con el
+      // nombre del stage ajeno, y el tile "Placements" del dashboard
+      // —que cuenta por NOMBRE de stage— se inflaba de forma
+      // permanente, porque las filas de Activity no se pueden borrar
+      // desde el producto.
+      const stage = await prisma.pipelineStage.findFirst({
+        where: { id: String(body.stageId), jobId: submission.job.id },
+        select: { id: true },
+      });
+      if (!stage) {
+        return NextResponse.json(
+          { error: "That stage does not belong to this job." },
+          { status: 400 }
+        );
+      }
+      updateData.stageId = stage.id;
+    }
     if (body.notes !== undefined) updateData.notes = body.notes;
 
     // If the recruiter is moving the submission OUT of "Placed", the
