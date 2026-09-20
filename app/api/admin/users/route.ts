@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { checkSeatAvailability } from "@/lib/seat-availability";
+import { checkSeatAvailability, reserveSeat } from "@/lib/seat-availability";
 // Modelo LinkedIn / Microsoft (Batch H5 2026-06-24): Stripe cobra
 // Subscription.seats (= "Purchased"), NO count(active users). Asignar
 // o quitar un seat a un user NO cambia el cobro — el admin compra/
@@ -52,29 +52,34 @@ export async function POST(request: Request) {
 
     // Pool seat check antes del create — si la org está ACTIVE y no
     // hay seats disponibles, bloquear. TRIAL/COMP pasan libre.
-    const seatCheck = await checkSeatAvailability(ctx.organizationId);
-    if (!seatCheck.ok) {
+    // El hash va ANTES de entrar a la transaccion: bcrypt cost 12
+    // tarda ~250ms y no hay razon para tener el lock tomado mientras.
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // Chequeo + create atomicos. Ver reserveSeat en lib/seat-availability.
+    const seat = await reserveSeat(ctx.organizationId, (tx) =>
+      tx.user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          role: role === "ADMIN" ? "ADMIN" : "USER",
+          organizationId: ctx.organizationId,
+        },
+      }),
+    );
+    if (!seat.ok) {
       return NextResponse.json(
         {
-          error: seatCheck.message,
+          error: seat.message,
           code: "seat_pool_full",
-          current: seatCheck.current,
-          pool: seatCheck.pool,
+          current: seat.current,
+          pool: seat.pool,
         },
         { status: 402 },
       );
     }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: {
-        email,
-        name,
-        passwordHash,
-        role: role === "ADMIN" ? "ADMIN" : "USER",
-        organizationId: ctx.organizationId,
-      },
-    });
+    const user = seat.result;
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });
   } catch (error: any) {
@@ -129,30 +134,43 @@ export async function PATCH(request: Request) {
 
     // Reactivate: chequear pool. Si está siendo reactivado y no hay
     // seat libre, bloquear. Deactivate y role change pasan libre.
-    if (isActive === true && user.isActive === false) {
-      const seatCheck = await checkSeatAvailability(ctx.organizationId);
-      if (!seatCheck.ok) {
-        return NextResponse.json(
-          {
-            error: seatCheck.message,
-            code: "seat_pool_full",
-            current: seatCheck.current,
-            pool: seatCheck.pool,
-          },
-          { status: 402 },
-        );
-      }
-    }
-
     const updateData: any = {};
     if (typeof isActive === "boolean") updateData.isActive = isActive;
     if (normalizedRole) updateData.role = normalizedRole;
 
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: { id: true, email: true, name: true, role: true, isActive: true },
-    });
+    const isReactivation = isActive === true && user.isActive === false;
+
+    // La reactivacion consume un seat, asi que va con el mismo lock que
+    // el alta: sin esto, N PATCH en paralelo pasaban todos el chequeo.
+    // Desactivar y cambiar de rol no consumen seat y pasan libres.
+    let updated;
+    if (isReactivation) {
+      const seat = await reserveSeat(ctx.organizationId, (tx) =>
+        tx.user.update({
+          where: { id: userId },
+          data: updateData,
+          select: { id: true, email: true, name: true, role: true, isActive: true },
+        }),
+      );
+      if (!seat.ok) {
+        return NextResponse.json(
+          {
+            error: seat.message,
+            code: "seat_pool_full",
+            current: seat.current,
+            pool: seat.pool,
+          },
+          { status: 402 },
+        );
+      }
+      updated = seat.result;
+    } else {
+      updated = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+        select: { id: true, email: true, name: true, role: true, isActive: true },
+      });
+    }
 
     // Modelo Purchased: asignar/quitar seat NO toca Stripe. El cobro
     // sigue siendo Subscription.seats (lo que el admin compró).

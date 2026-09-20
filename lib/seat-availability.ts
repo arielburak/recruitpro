@@ -29,13 +29,21 @@ export type SeatAvailability =
       message: string;
     };
 
+// El mismo cliente de Prisma o el de una transaccion. Necesario para
+// que el chequeo de seats corra DENTRO del lock de `reserveSeat`.
+type DbClient = Omit<
+  typeof prisma,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
+>;
+
 export async function checkSeatAvailability(
   organizationId: string,
   options: { additionalSeats?: number } = {},
+  db: DbClient = prisma,
 ): Promise<SeatAvailability> {
   const additionalSeats = options.additionalSeats ?? 1;
 
-  const subscription = await prisma.subscription.findUnique({
+  const subscription = await db.subscription.findUnique({
     where: { organizationId },
     select: { seats: true, status: true, isComp: true, trialEndsAt: true },
   });
@@ -91,7 +99,7 @@ export async function checkSeatAvailability(
   }
 
   // ACTIVE / PAST_DUE / UNPAID: chequear pool.
-  const currentActiveUsers = await prisma.user.count({
+  const currentActiveUsers = await db.user.count({
     where: { organizationId, isActive: true },
   });
 
@@ -113,4 +121,43 @@ export async function checkSeatAvailability(
     pool: subscription.seats,
     available: subscription.seats - currentActiveUsers,
   };
+}
+
+/**
+ * Reserva un seat y hace la escritura que lo consume, de forma atomica.
+ *
+ * `checkSeatAvailability` sola NO alcanza: entre su `count()` y el
+ * `create()` del caller hay una ventana, y todo lo que entre ahi pasa
+ * el mismo chequeo. Medido en QA: 8 invitaciones aceptadas en paralelo
+ * dejaron 9 usuarios activos sobre un pool de 2 (el `bcrypt.hash` del
+ * alta, ~250ms, mantiene a todos dentro de la ventana). Y no hacia
+ * falta mala fe: un equipo que abre sus invitaciones la misma mañana
+ * lo reproduce.
+ *
+ * Lo grave era que nadie lo corregia despues: `reconcileSeats` compara
+ * `Stripe.quantity` contra `Subscription.seats`, nunca contra la
+ * cantidad de usuarios activos. Los dos numeros coincidian y los
+ * usuarios de mas quedaban invisibles para siempre, facturando de
+ * menos.
+ *
+ * El `FOR UPDATE` sobre la fila de Subscription serializa a los que
+ * compiten por el mismo pool: el segundo espera al primero y recuenta
+ * ya con el usuario nuevo adentro.
+ */
+export async function reserveSeat<T>(
+  organizationId: string,
+  write: (tx: DbClient) => Promise<T>,
+  options: { additionalSeats?: number } = {},
+): Promise<{ ok: true; result: T } | Extract<SeatAvailability, { ok: false }>> {
+  return prisma.$transaction(async (tx) => {
+    // Lock de fila. Si la org no tiene Subscription no bloquea nada y
+    // el chequeo de abajo devuelve "no_subscription_row".
+    await tx.$queryRaw`SELECT id FROM "Subscription" WHERE "organizationId" = ${organizationId} FOR UPDATE`;
+
+    const availability = await checkSeatAvailability(organizationId, options, tx as DbClient);
+    if (!availability.ok) return availability;
+
+    const result = await write(tx as DbClient);
+    return { ok: true as const, result };
+  });
 }

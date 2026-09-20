@@ -12,6 +12,15 @@
 //   · Cualquier GET (lectura siempre disponible, queremos que el user
 //     vea su data aunque haya vencido el trial — y el banner "subscribe
 //     to continue" funciona contra la data visible).
+//   · TODO /api/client-portal/*. DECISIÓN EXPLÍCITA (Ari, 2026-09-20):
+//     el portal del lado empresa/cliente es GRATIS a propósito. El que
+//     paga es la agencia; el portal es justamente lo que la agencia le
+//     ofrece a su cliente, así que cobrarlo o cortarlo iría en contra
+//     del producto. Una auditoría marcó que esas ~35 rutas corren sin
+//     paywall: es intencional, no un olvido. No le agregues el guard.
+//     (Sí lleva guard `/api/client-portal/tokens`, porque ese lo
+//     dispara la AGENCIA para invitar contactos: entregar producto
+//     nuevo sí requiere suscripción activa.)
 //   · /api/admin/billing/* — son los endpoints que el user usa
 //     justamente para reactivar.
 //   · /api/auth/* — login, signup, password reset, verify email.

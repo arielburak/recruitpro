@@ -168,8 +168,42 @@ export function reconcileSeats(): Promise<JobResult> {
     const errors: Array<{ organizationId: string; reason: string }> = [];
     const stripe = getStripeClient();
 
+    let overAssigned = 0;
+
     for (const sub of subs) {
       checked++;
+
+      // Usuarios activos vs seats comprados.
+      //
+      // Este chequeo NO estaba: el cron solo comparaba Stripe.quantity
+      // contra Subscription.seats. Cuando la race de seats desbordaba
+      // el pool, esos dos numeros seguian coincidiendo entre si y los
+      // usuarios de mas quedaban invisibles para siempre, facturando de
+      // menos. El lock de reserveSeat cierra la puerta de ahora en
+      // adelante; esto encuentra las orgs que ya driftearon.
+      //
+      // Es deliberado que NO desactive usuarios solo: sacarle el acceso
+      // a alguien sin aviso es peor que la fuga. Se reporta para que un
+      // humano decida entre cobrar los seats de mas o liberarlos.
+      if (sub.status === "ACTIVE" || sub.status === "PAST_DUE") {
+        const activeUsers = await prisma.user.count({
+          where: { organizationId: sub.organizationId, isActive: true },
+        });
+        if (activeUsers > sub.seats) {
+          overAssigned++;
+          Sentry.captureMessage("seat pool over-assigned", {
+            level: "warning",
+            tags: { area: "cron", job: "reconcile-seats" },
+            extra: {
+              organizationId: sub.organizationId,
+              activeUsers,
+              purchasedSeats: sub.seats,
+              unbilledSeats: activeUsers - sub.seats,
+              status: sub.status,
+            },
+          });
+        }
+      }
 
       let stripeQuantity: number | null = null;
       try {
@@ -217,6 +251,6 @@ export function reconcileSeats(): Promise<JobResult> {
       }
     }
 
-    return { checked, drifted, fixed, errors };
+    return { checked, drifted, fixed, overAssigned, errors };
   });
 }

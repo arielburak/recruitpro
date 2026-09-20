@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { sendInviteAcceptedEmail, sendStaffingMemberWelcomeEmail } from "@/lib/email";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { checkSeatAvailability } from "@/lib/seat-availability";
+import { checkSeatAvailability, reserveSeat } from "@/lib/seat-availability";
 import { findStaffingUserByEmail } from "@/lib/email-canonical";
 // Pool seat model (2026-06-22): invitar/aceptar/deactivar ya NO suma/
 // resta seats automático. El admin compra seats explícitamente desde
@@ -110,9 +110,6 @@ export async function POST(
     // hasta que el admin lo active manualmente. Esto cierra el flow de
     // LinkedIn / Microsoft 365: invitar y asignar son acciones
     // separadas.
-    const seatCheck = await checkSeatAvailability(invite.organizationId);
-    const hasAvailableSeat = seatCheck.ok;
-
     // Check if user already exists with this email. Tolerante a Gmail
     // aliases. Si existe pero NO en la org del invite, devolvemos el
     // mismo error genérico (no leak de tenant ajeno). NO marcamos el
@@ -140,30 +137,49 @@ export async function POST(
     // forgot-password) podían perderse el row. Audit 2026-06-23.
     const normalizedEmail = invite.email.trim().toLowerCase();
 
-    const [user] = await prisma.$transaction([
-      prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          name,
-          title: title || null,
-          passwordHash,
-          role: invite.role === "ADMIN" ? "ADMIN" : "USER",
-          organizationId: invite.organizationId,
-          // isActive = has seat assigned. Si el admin tiene seats
-          // libres en el pool, le asignamos uno al toque (UX más
-          // natural). Si no hay Available, el user entra inactivo
-          // y el admin tiene que asignarle un seat desde Manage seats.
-          isActive: hasAvailableSeat,
-          // Accepting the invite from the inbox already proves the
-          // address. Mirrors the client-portal /set-password flow.
-          emailVerifiedAt: new Date(),
-        },
-      }),
-      prisma.userInvite.update({
+    const userData = {
+      email: normalizedEmail,
+      name,
+      title: title || null,
+      passwordHash,
+      role: invite.role === "ADMIN" ? ("ADMIN" as const) : ("USER" as const),
+      organizationId: invite.organizationId,
+      // Accepting the invite from the inbox already proves the
+      // address. Mirrors the client-portal /set-password flow.
+      emailVerifiedAt: new Date(),
+    };
+
+    // isActive = tiene seat asignado. Si hay seats libres en el pool le
+    // asignamos uno al toque (UX mas natural); si no, entra inactivo y
+    // el admin se lo asigna desde Manage seats.
+    //
+    // El chequeo y el create van en la MISMA transaccion con lock: este
+    // era el peor caso de la race. En QA, 8 accepts en paralelo dejaban
+    // 9 usuarios activos sobre un pool de 2, porque el bcrypt de ~250ms
+    // mantenia a todos dentro de la ventana entre el count y el create.
+    const seat = await reserveSeat(invite.organizationId, async (tx) => {
+      const created = await tx.user.create({ data: { ...userData, isActive: true } });
+      await tx.userInvite.update({
         where: { id: invite.id },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+      return created;
+    });
+
+    const hasAvailableSeat = seat.ok;
+    let user;
+    if (seat.ok) {
+      user = seat.result;
+    } else {
+      const [created] = await prisma.$transaction([
+        prisma.user.create({ data: { ...userData, isActive: false } }),
+        prisma.userInvite.update({
+          where: { id: invite.id },
+          data: { usedAt: new Date() },
+        }),
+      ]);
+      user = created;
+    }
 
     // Modelo Purchased: el accept NO toca Stripe.quantity. Si el
     // admin tenía Available > 0 esto consumió 1 seat del pool (sigue
