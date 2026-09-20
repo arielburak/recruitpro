@@ -27,6 +27,7 @@ import { BackButton } from "@/components/ui/back-button";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CurrencyPicker } from "@/components/ui/currency-picker";
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from "@/lib/constants";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { showToast } from "@/components/ui/toast";
 
@@ -339,9 +340,9 @@ export default function ClientDetailPage() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Website</p>
-                    {client.website ? (
-                      <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">{client.website}</a>
-                    ) : <p className="text-sm text-gray-900">—</p>}
+                    {safeExternalUrl(client.website) ? (
+                      <a href={safeExternalUrl(client.website)} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">{client.website}</a>
+                    ) : <p className="text-sm text-gray-900">{client.website || "—"}</p>}
                   </div>
                 </div>
                 {client.engagementType !== "STAFF_AUG" && (client.defaultFeeAmount || client.defaultCurrency || client.defaultPaymentTerms != null || client.defaultGuaranteePeriod != null) && (

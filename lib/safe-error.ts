@@ -20,6 +20,15 @@ export function safeErrorMessage(error: unknown): string {
     // Prisma error — mensaje técnico, devolvemos genérico
     return "Something went wrong. Please try again.";
   }
+  // El check de `.code` de arriba NO cubre PrismaClientValidationError
+  // ni PrismaClientInitializationError: esos no traen `.code`, asi que
+  // caian al `return error.message` del final y devolvian la
+  // invocacion entera serializada al cliente — incluido el
+  // `organizationId` del caller y la forma del schema. Basta con
+  // mandar un `?limit=abc` o un `stageId` numerico para dispararlo.
+  if (error.name.startsWith("PrismaClient")) {
+    return "Something went wrong. Please try again.";
+  }
   // QA HIGH #4: Stripe errors filtraban customer IDs ("No such customer:
   // cus_xxx", "No such price: price_xxx", etc.) al frontend porque el
   // Prisma check no los detectaba (Stripe codes son strings tipo
@@ -39,4 +48,34 @@ export function safeErrorMessage(error: unknown): string {
     return "Billing is temporarily unavailable. Please try again or contact support.";
   }
   return error.message || "Something went wrong. Please try again.";
+}
+
+// Mensaje de usuario para un ZodError.
+//
+// En zod 4 la propiedad es `.issues`; en zod 3 era `.errors`. El repo
+// esta en zod 4.3.6, y varios handlers seguian leyendo `.errors[0]`:
+// como `.errors` es `undefined`, el acceso `[0]` tiraba un TypeError
+// DENTRO del catch, el 400 se perdia y el usuario recibia un 500 con
+// body vacio. Pasaba en las cuatro acciones mas usadas del producto
+// (crear/editar candidato, crear busqueda, crear cliente).
+//
+// Centralizado aca para que no haya que acordarse del nombre de la
+// propiedad en cada handler.
+export function zodErrorMessage(
+  error: unknown,
+  fallback = "Invalid input. Please check the form and try again."
+): string {
+  const issues = (error as { issues?: unknown; errors?: unknown })?.issues
+    ?? (error as { errors?: unknown })?.errors;
+  if (Array.isArray(issues) && issues.length > 0) {
+    const first = issues[0] as { message?: unknown; path?: unknown };
+    if (typeof first?.message === "string" && first.message) {
+      // Para campos ausentes zod no usa el mensaje custom del schema
+      // ("expected string, received undefined"), asi que anteponemos
+      // el campo para que el usuario sepa cual corregir.
+      const path = Array.isArray(first.path) ? first.path.join(".") : "";
+      return path ? `${path}: ${first.message}` : first.message;
+    }
+  }
+  return fallback;
 }

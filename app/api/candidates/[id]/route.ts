@@ -7,7 +7,7 @@ import { logActivity } from "@/lib/activity";
 import { sendInterviewInviteEmail } from "@/lib/email";
 import { addAttendeeToGoogleEvent, getValidAccessToken } from "@/lib/google-calendar";
 import { requireAdminResponse } from "@/lib/permissions";
-import { safeErrorMessage } from "@/lib/safe-error";
+import { safeErrorMessage, zodErrorMessage } from "@/lib/safe-error";
 
 export async function GET(
   _request: Request,
@@ -338,7 +338,7 @@ export async function PUT(
   } catch (error: any) {
     if (error.name === "ZodError") {
       return NextResponse.json(
-        { error: error.errors[0].message },
+        { error: zodErrorMessage(error) },
         { status: 400 }
       );
     }

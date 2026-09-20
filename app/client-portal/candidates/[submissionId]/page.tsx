@@ -20,6 +20,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { CandidateChat } from "@/components/client-portal/candidate-chat";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 type CandidateDetail = {
   submissionId: string;
@@ -204,9 +205,9 @@ export default function CandidateDetailPage({
                   <Phone className="h-3 w-3" /> {detail.candidate.phone}
                 </span>
               )}
-              {detail.candidate.linkedIn && (
+              {safeExternalUrl(detail.candidate.linkedIn) && (
                 <a
-                  href={detail.candidate.linkedIn}
+                  href={safeExternalUrl(detail.candidate.linkedIn)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 hover:text-emerald-600"

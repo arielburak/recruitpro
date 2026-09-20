@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { BackButton } from "@/components/ui/back-button";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { AssignToJobsDialog } from "@/components/assign-jobs-dialog";
 import { ShareCandidateDialog } from "@/components/pipeline/share-candidate-dialog";
 import { PlacementDialog } from "@/components/placements/placement-dialog";
@@ -555,11 +556,11 @@ export default function CandidateDetailPage() {
                     {candidate.location}
                   </div>
                 )}
-                {candidate.linkedIn && (
+                {safeExternalUrl(candidate.linkedIn) && (
                   <div className="flex items-center gap-2 text-sm">
                     <ExternalLink className="h-4 w-4 text-gray-400" />
                     <a
-                      href={candidate.linkedIn}
+                      href={safeExternalUrl(candidate.linkedIn)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-600 hover:underline"

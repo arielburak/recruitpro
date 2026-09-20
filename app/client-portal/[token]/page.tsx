@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -650,9 +651,9 @@ export default function ClientPortalPage() {
                           {c.phone}
                         </a>
                       )}
-                      {c.linkedIn && (
+                      {safeExternalUrl(c.linkedIn) && (
                         <a
-                          href={c.linkedIn.startsWith("http") ? c.linkedIn : `https://${c.linkedIn}`}
+                          href={safeExternalUrl(c.linkedIn)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg font-medium transition-colors"
