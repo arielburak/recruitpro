@@ -10,7 +10,7 @@
 // el user hizo Sign in with Google y le pidió company name.
 
 import { prisma } from "@/lib/prisma";
-import { checkSeatAvailability } from "@/lib/seat-availability";
+import { checkSeatAvailability, reserveSeat } from "@/lib/seat-availability";
 
 // Mismo patrón canonical de canonicalizeGmail / findStaffingUserByOAuthEmail
 // en auth-options.ts. Duplicado a propósito para que el módulo sea
@@ -103,27 +103,40 @@ export async function acceptStaffingInviteOnOAuth(
   // auto-asignado). Si no, isActive=false (entró sin seat; el admin
   // le asigna después desde Manage seats). Mismo flow que el accept
   // manual.
-  const seatCheck = await checkSeatAvailability(invite.organizationId);
-  const hasAvailableSeat = seatCheck.ok;
+  const userData = {
+    // Guardamos el mail que Google nos dio (canonicalizado) para
+    // que el lookup posterior con findStaffingUserByOAuthEmail
+    // matchee directo, sin pasar por la rama canonical.
+    email: googleProfile.email.toLowerCase(),
+    name,
+    passwordHash: "",
+    role: invite.role === "ADMIN" ? ("ADMIN" as const) : ("USER" as const),
+    organizationId: invite.organizationId,
+    emailVerifiedAt: new Date(),
+  };
+
+  // Mismo lock que el accept manual: este archivo es una copia de ese
+  // flujo, asi que arreglar uno solo no cerraba nada.
+  const seat = await reserveSeat(invite.organizationId, async (tx) => {
+    const created = await tx.user.create({
+      data: { ...userData, isActive: true },
+      select: { id: true },
+    });
+    await tx.userInvite.update({
+      where: { id: invite.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return created;
+  });
+  const hasAvailableSeat = seat.ok;
 
   let createdUserId: string | null = null;
   try {
-    const [user] = await prisma.$transaction([
+    const [user] = seat.ok
+      ? [seat.result]
+      : await prisma.$transaction([
       prisma.user.create({
-        data: {
-          // Guardamos el mail que Google nos dio (canonicalizado) para
-          // que el lookup posterior con findStaffingUserByOAuthEmail
-          // matchee directo, sin pasar por la rama canonical.
-          email: googleProfile.email.toLowerCase(),
-          name,
-          passwordHash: "",
-          role: invite.role === "ADMIN" ? "ADMIN" : "USER",
-          organizationId: invite.organizationId,
-          // Mismo seat-assignment behavior que el manual accept:
-          // si hay Available > 0 entra con seat, sino entra inactivo.
-          isActive: hasAvailableSeat,
-          emailVerifiedAt: new Date(),
-        },
+        data: { ...userData, isActive: false },
         select: { id: true },
       }),
       prisma.userInvite.update({

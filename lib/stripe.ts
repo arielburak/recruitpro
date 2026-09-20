@@ -3,7 +3,16 @@ import Stripe from "stripe";
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
-    throw new Error("STRIPE_SECRET_KEY is not set. Add it to .env to enable billing.");
+    // El `name` es lo que mira safeErrorMessage para NO mandarle este
+    // texto al usuario. El mensaje sigue siendo explicito para el log
+    // y para Sentry, que es donde sirve: antes viajaba tal cual al
+    // cliente y la pagina de billing lo pintaba literal en el banner
+    // rojo, asi que el que queria pagar leia el nombre de una variable
+    // de entorno. Cualquier misconfig en prod (key rotada, secret
+    // vencido) se veia igual.
+    const err = new Error("STRIPE_SECRET_KEY is not set. Add it to .env to enable billing.");
+    err.name = "BillingConfigError";
+    throw err;
   }
   return new Stripe(key, { apiVersion: "2026-03-25.dahlia" });
 }

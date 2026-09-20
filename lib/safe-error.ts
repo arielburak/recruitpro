@@ -29,6 +29,11 @@ export function safeErrorMessage(error: unknown): string {
   if (error.name.startsWith("PrismaClient")) {
     return "Something went wrong. Please try again.";
   }
+  // Errores de configuracion de billing: el detalle va al log y a
+  // Sentry, nunca al comprador. Ver lib/stripe.ts.
+  if (error.name === "BillingConfigError") {
+    return "Billing is temporarily unavailable. Please try again shortly or contact support.";
+  }
   // QA HIGH #4: Stripe errors filtraban customer IDs ("No such customer:
   // cus_xxx", "No such price: price_xxx", etc.) al frontend porque el
   // Prisma check no los detectaba (Stripe codes son strings tipo

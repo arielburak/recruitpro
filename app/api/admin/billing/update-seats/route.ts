@@ -22,10 +22,15 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { getStripeClient, createBillingPortalSession } from "@/lib/stripe";
 import { safeErrorMessage } from "@/lib/safe-error";
-import { SUPPORT_EMAIL } from "@/lib/constants";
+import { SUPPORT_EMAIL, TEAM_MAX_SEATS } from "@/lib/constants";
 import * as Sentry from "@sentry/nextjs";
 
-const SEAT_HARD_CAP = 100;
+// Mismo tope que /api/admin/billing/checkout. Estaban desalineados
+// (100 aca, 10 alla): si el admin se ponia 11+ seats desde Manage
+// seats, el boton Subscribe quedaba en 400 permanente —
+// "Self-serve plans top out at 10 seats"— y el error no decia como
+// salir. Autoinfligido, pero irrecuperable sin soporte.
+const SEAT_HARD_CAP = TEAM_MAX_SEATS;
 
 export async function POST(request: Request) {
   try {
