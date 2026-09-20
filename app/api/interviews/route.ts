@@ -12,6 +12,7 @@ import {
   createMicrosoftCalendarEvent,
 } from "@/lib/microsoft-calendar";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 export async function GET(request: NextRequest) {
   try {
@@ -113,6 +114,53 @@ export async function POST(request: Request) {
       );
     }
 
+    // Fechas validas. Sin esto, `new Date("cualquier cosa")` produce
+    // Invalid Date, viaja hasta Prisma y vuelve como un 500 sin pista.
+    const startsAt = new Date(startTime);
+    const endsAt = new Date(endTime);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      return NextResponse.json({ error: "Invalid interview date" }, { status: 400 });
+    }
+    if (endsAt <= startsAt) {
+      return NextResponse.json(
+        { error: "The end time must be after the start time" },
+        { status: 400 }
+      );
+    }
+
+    // Los attendees tienen que ser de ESTA organizacion.
+    //
+    // clientContactIds no se validaba, y esos contactos reciben el mail
+    // de "Interview Scheduled" con nombre del candidato, puesto,
+    // cliente y las notas de la entrevista. Con un contactId de otra
+    // agencia, esa informacion confidencial salia por mail a alguien de
+    // afuera. interviewerIds tenia el mismo agujero y ademas termina en
+    // los attendees del evento de Google/Microsoft.
+    if (Array.isArray(interviewerIds) && interviewerIds.length) {
+      const valid = await prisma.user.findMany({
+        where: { id: { in: interviewerIds }, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (valid.length !== interviewerIds.length) {
+        return NextResponse.json(
+          { error: "One or more interviewers are not part of your workspace" },
+          { status: 400 }
+        );
+      }
+    }
+    if (Array.isArray(clientContactIds) && clientContactIds.length) {
+      const valid = await prisma.contact.findMany({
+        where: { id: { in: clientContactIds }, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (valid.length !== clientContactIds.length) {
+        return NextResponse.json(
+          { error: "One or more client contacts are not part of your workspace" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Verify submission belongs to org
     const submission = await prisma.candidateSubmission.findFirst({
       where: {
@@ -137,7 +185,10 @@ export async function POST(request: Request) {
 
     // Auto-generate meeting link based on selected platform. Falls back to
     // the manual link (or no link) if the user hasn't connected the provider.
-    let meetingLink = manualMeetingLink || "";
+    // Saneado: este valor termina en un href del calendario y de la
+    // lista de entrevistas. Los links que genera Google/MS mas abajo son
+    // de confianza; este lo tipea un humano.
+    let meetingLink = safeExternalUrl(manualMeetingLink) ?? "";
     let googleEventId: string | null = null;
     let googleCalendarOwnerId: string | null = null;
     let microsoftEventId: string | null = null;

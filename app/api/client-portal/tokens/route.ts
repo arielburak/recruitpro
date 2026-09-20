@@ -6,13 +6,14 @@ import { DEFAULT_STAGES } from "@/lib/constants";
 import crypto from "crypto";
 import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { getOrgContextWithActiveSub, subscriptionErrorResponse } from "@/lib/require-active-sub";
 
 export async function POST(request: Request) {
   try {
     const guard = await requireVerifiedEmail();
     if (guard) return guard;
 
-    const ctx = await getOrgContext();
+    const ctx = await getOrgContextWithActiveSub();
     const body = await request.json();
     const { clientId, jobId, inviteEmail: rawInviteEmail, inviteName } = body;
 
@@ -406,6 +407,8 @@ export async function POST(request: Request) {
       emailsSent: 1,
     }, { status: 201 });
   } catch (error: any) {
+    const subErr = subscriptionErrorResponse(error);
+    if (subErr) return subErr;
     console.error("[invite] Error:", error);
     return NextResponse.json({ error: safeErrorMessage(error) }, { status: 500 });
   }

@@ -37,7 +37,7 @@ export async function checkSeatAvailability(
 
   const subscription = await prisma.subscription.findUnique({
     where: { organizationId },
-    select: { seats: true, status: true, isComp: true },
+    select: { seats: true, status: true, isComp: true, trialEndsAt: true },
   });
 
   if (!subscription) {
@@ -60,7 +60,25 @@ export async function checkSeatAvailability(
     // cuántos seats comprar — puede ser ≤ active users. Si elige
     // menos, los extra quedan deactivated. Decisión 2026-06-22 con
     // Nicolás (pivote final).
-    return { ok: true, current: 0, pool: 9999, available: 9999 };
+    //
+    // Pero SOLO mientras el trial siga vivo. Antes no se miraba
+    // `trialEndsAt`, y el status queda en TRIALING hasta que corre el
+    // cron diario: en esa ventana un invite emitido antes del
+    // vencimiento se aceptaba con seat asignado, aunque el resto del
+    // producto ya devolvia 402. Era la puerta abierta tanto en
+    // /api/invite/[token] como en su gemelo de OAuth.
+    const trialAlive =
+      !subscription.trialEndsAt || subscription.trialEndsAt.getTime() > Date.now();
+    if (trialAlive) {
+      return { ok: true, current: 0, pool: 9999, available: 9999 };
+    }
+    return {
+      ok: false,
+      reason: "no_active_sub",
+      current: 0,
+      pool: 0,
+      message: "Your free trial has ended. Subscribe to invite teammates.",
+    };
   }
   if (subscription.status === "CANCELED") {
     return {

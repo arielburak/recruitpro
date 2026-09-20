@@ -11,6 +11,7 @@ import {
   CalendarDays,
   ExternalLink,
 } from "lucide-react";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 // Shared list rendering for the Interviews tab on both the candidate
 // and job pages. The two surfaces differ only in what the secondary
@@ -182,7 +183,7 @@ export function InterviewsList({ interviews, attendeeKind, onRowClick }: Props) 
                       <p className="text-xs text-gray-400 mt-1 truncate">
                         {iv.meetingLink ? (
                           <a
-                            href={iv.meetingLink}
+                            href={safeExternalUrl(iv.meetingLink)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}

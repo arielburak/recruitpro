@@ -51,6 +51,7 @@ import {
   PLATFORM_OPTIONS,
   TIMEZONE_OPTIONS,
 } from "@/lib/calendar-options";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 // ─── Constants ───
 
@@ -1258,7 +1259,7 @@ export default function CalendarPage() {
 
                     {selectedEvent.meetingLink && (
                       <a
-                        href={selectedEvent.meetingLink}
+                        href={safeExternalUrl(selectedEvent.meetingLink)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md"
@@ -1372,7 +1373,7 @@ export default function CalendarPage() {
 
                   {selectedInterview.meetingLink && (
                     <div className="space-y-1.5">
-                      <a href={selectedInterview.meetingLink} target="_blank" rel="noopener noreferrer"
+                      <a href={safeExternalUrl(selectedInterview.meetingLink)} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline bg-indigo-50 px-2.5 py-1.5 rounded-md">
                         <Video className="h-3.5 w-3.5" /> Join Meeting
                         <ExternalLink className="h-3 w-3" />
