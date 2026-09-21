@@ -11,7 +11,17 @@ const nextConfig: NextConfig = {
     // botones "DEV: backdate trial end" en su página de billing).
     // El fallback "development" solo aplica a `next dev` local, donde
     // VERCEL_ENV no existe. Launch audit 2026-06-26.
-    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "development",
+    // Falla CERRADO: si no sabemos en que entorno estamos, asumimos
+    // produccion y escondemos las herramientas de dev. El fallback
+    // anterior era "development", asi que CUALQUIER build sin
+    // VERCEL_ENV (self-host, Docker, CI propio, `next start` en un
+    // VPS) le mostraba al cliente el recuadro naranja "DEV: backdate
+    // trial end" con un boton que le mata el trial. En Vercel la
+    // variable existe, asi que alla estaba tapado — pero el default no
+    // puede depender de eso.
+    NEXT_PUBLIC_VERCEL_ENV:
+      process.env.VERCEL_ENV ||
+      (process.env.NODE_ENV === "production" ? "production" : "development"),
 
     // Mismo problema que arriba: SUPPORT_EMAIL es server-only, pero las
     // páginas de forgot/reset password son client components y también

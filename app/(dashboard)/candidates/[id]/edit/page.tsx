@@ -178,11 +178,17 @@ export default function EditCandidatePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Current Salary ({getCurrency(salaryCurrency).symbol})</Label>
-                <Input name="currentSalary" type="number" defaultValue={candidate.currentSalary || ""} />
+                {/* step="any": sin esto el navegador usa el defaultValue
+                    como step base, asi que un candidato con sueldo 4.5
+                    solo aceptaba valores terminados en .5 — el Save no
+                    hacia nada y no decia por que. Combinado con el bug
+                    de separadores de miles del MoneyInput, quedabas sin
+                    forma de corregir el sueldo. */}
+                <Input name="currentSalary" type="number" step="any" defaultValue={candidate.currentSalary || ""} />
               </div>
               <div className="space-y-2">
                 <Label>Desired Salary ({getCurrency(salaryCurrency).symbol})</Label>
-                <Input name="desiredSalary" type="number" defaultValue={candidate.desiredSalary || ""} />
+                <Input name="desiredSalary" type="number" step="any" defaultValue={candidate.desiredSalary || ""} />
               </div>
             </div>
             <div className="space-y-2">

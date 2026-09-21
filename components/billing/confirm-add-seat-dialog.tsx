@@ -123,10 +123,20 @@ export function ConfirmAddSeatDialog({
       // Seat comprado. Ahora disparamos el invite normal — el caller
       // hace el POST a /api/admin/invites. El gate ya pasa porque
       // ahora hay 1 seat disponible.
-      onConfirm();
+      //
+      // El await + el finally NO son decorativos: antes esto era un
+      // `onConfirm()` suelto y el estado de loading no se reseteaba
+      // nunca. Si el invite fallaba (email sin verificar, duplicado,
+      // 500), el seat YA estaba comprado y facturado, el dialogo
+      // quedaba clavado en "Buying seat…" para siempre y el error del
+      // caller se renderizaba detras de este modal. El admin terminaba
+      // pagando $20/mes mas por un teammate que nunca fue invitado, sin
+      // enterarse de nada.
+      await onConfirm();
       // No cerramos manual — el caller cierra cuando termine.
     } catch (e: any) {
       setBuyError(e?.message || "Couldn't buy seat. Try again.");
+    } finally {
       setBuyAndInviteLoading(false);
     }
   }

@@ -47,6 +47,9 @@ function BillingContent() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
+  // ?portal=1 — lo manda el paywall de PAST_DUE: ese usuario ya tiene
+  // suscripcion, lo que necesita es cambiar la tarjeta.
+  const autoOpenPortal = searchParams.get("portal") === "1";
   const fromPortal = searchParams.get("from") === "portal";
   // ?subscribe=1 → auto-abrir el SubscribeOptionsDialog al cargar.
   // Llega de los overlays "Trial ended" / "Subscription ended" para
@@ -156,12 +159,41 @@ function BillingContent() {
       url.searchParams.delete("subscribe");
       window.history.replaceState({}, "", url.toString());
     }
+    // Si ya hay suscripcion en Stripe (tipicamente PAST_DUE: el cobro
+    // rebotó pero la suscripcion existe), abrir el checkout es un
+    // callejon: el dialogo dice "No card on file" y "as soon as your
+    // trial ends" —las dos cosas falsas— y el POST termina en 409
+    // "You already have an active subscription". Lo que ese usuario
+    // necesita es actualizar la tarjeta, no suscribirse de nuevo.
+    if (subscription?.stripeSubscriptionId) {
+      setSubscribeOptionsOpen(false);
+      void handleManageBilling();
+      return;
+    }
     // Mismo criterio que el botón Subscribe: el dialog siempre, así el
     // admin elige seats y asignación con el cap aplicado, en vez de un
     // checkout ciego que puede pedir más seats de los permitidos.
     setSubscribeOptionsOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSubscribe, loading, subscription]);
+
+  // ?portal=1 — del paywall de PAST_DUE. Ese usuario ya tiene
+  // suscripcion: lo mandamos directo al Customer Portal de Stripe a
+  // cambiar la tarjeta, en vez de a un checkout nuevo que el backend
+  // rechaza con 409.
+  const autoPortalFiredRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenPortal || loading || !subscription) return;
+    if (autoPortalFiredRef.current) return;
+    autoPortalFiredRef.current = true;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("portal");
+      window.history.replaceState({}, "", url.toString());
+    }
+    void handleManageBilling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenPortal, loading, subscription]);
 
   // Restore-from-redirect: si el admin venía mid-flow de "Change
   // payment method" → Stripe portal → back/Return, el dialog persistió
