@@ -296,8 +296,17 @@ export default function PlacementsPage() {
   const earliestYear = placementYearValues.length > 0
     ? Math.min(...placementYearValues, currentYear)
     : currentYear;
+  // El rango tambien va hacia ADELANTE. Antes solo retrocedia desde el
+  // año actual, asi que un placement con fecha de inicio futura no
+  // aparecia en ningun periodo seleccionable: contaba en el header
+  // "N placements" y en el dashboard, pero no se podia ver, editar ni
+  // borrar desde esta pantalla. Y un candidato que firma en septiembre
+  // para arrancar en febrero es de lo mas normal en el negocio.
+  const latestYear = placementYearValues.length > 0
+    ? Math.max(...placementYearValues, currentYear)
+    : currentYear;
   const yearOptions: number[] = [];
-  for (let y = currentYear; y >= earliestYear; y--) yearOptions.push(y);
+  for (let y = latestYear; y >= earliestYear; y--) yearOptions.push(y);
 
   if (loading) {
     return (

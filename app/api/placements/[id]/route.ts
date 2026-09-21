@@ -300,6 +300,35 @@ export async function DELETE(
 
     await prisma.placement.delete({ where: { id } });
 
+    // Reabrir la busqueda si dejo de estar cubierta.
+    //
+    // Al crear un placement, /api/placements marca el Job como FILLED
+    // cuando los placements alcanzan las openings. El DELETE revertia
+    // el stage de la submission pero NUNCA tocaba Job.status, asi que
+    // una busqueda de 1 vacante quedaba "Filled" para siempre con cero
+    // personas colocadas: desaparecia de "Active Searches", dejaba de
+    // contar en el KPI del dashboard, y desde la pagina del job no
+    // habia forma de reabrirla (el badge de estado no es clickeable).
+    // Justo cuando se le cae un cierre es cuando el reclutador menos se
+    // va a acordar de ir a /jobs a cambiarlo a mano.
+    if (placement.jobId) {
+      const job = await prisma.job.findUnique({
+        where: { id: placement.jobId },
+        select: { id: true, status: true, openings: true },
+      });
+      if (job?.status === "FILLED") {
+        const remaining = await prisma.placement.count({
+          where: { jobId: job.id },
+        });
+        if (remaining < (job.openings || 1)) {
+          await prisma.job.update({
+            where: { id: job.id },
+            data: { status: "OPEN" },
+          });
+        }
+      }
+    }
+
     const candidateName = placement.submission?.candidate
       ? `${placement.submission.candidate.firstName} ${placement.submission.candidate.lastName}`.trim()
       : "";

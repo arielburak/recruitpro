@@ -597,13 +597,28 @@ export default function JobDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stageId }),
       });
-      if (!res.ok) throw new Error("Move failed");
+      if (!res.ok) {
+        // Mostrar POR QUE fallo. Antes esto era `throw new Error("Move
+        // failed")` + `catch { setJob(previous) }`: la tarjeta volvia
+        // sola a su columna sin un solo mensaje. El usuario no tenia
+        // forma de saber si el producto estaba roto, si no tenia
+        // permiso, o si habia hecho algo mal.
+        const data = await res.json().catch(() => ({}));
+        setJob(previous);
+        showToast(
+          data?.message ||
+            data?.error ||
+            "Couldn't move the candidate. Please try again.",
+        );
+        return;
+      }
       // Re-fetch to pick up server-side side effects (activity log,
       // clientStageId on first share, sharedAt, etc.). The card already
       // looks right, so this refresh is invisible to the user.
       fetchJob();
     } catch {
       setJob(previous);
+      showToast("Couldn't move the candidate. Please check your connection.");
     }
   }
 

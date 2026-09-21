@@ -812,6 +812,18 @@ export function PlacementDialog(props: Props) {
 
     if (props.mode === "congrats") {
       payload.submissionId = props.submissionId;
+      // La fecha de inicio que el reclutador acaba de tipear. Sin esta
+      // linea el payload no la incluia, la API caia a
+      // `explicitStartDate ?? estimatedValue` y guardaba HOY — aunque
+      // el dialogo ya hubiera recalculado el "Payment due" con la fecha
+      // correcta delante de los ojos del usuario.
+      //
+      // No era cosmetico: la garantia arrancaba desde el dia
+      // equivocado (en QA vencia ~2 meses antes de lo pactado, que es
+      // plata de la agencia), el payment due quedaba incoherente con el
+      // start date, y el calendario avisaba "FIRST DAY" otro dia. El
+      // modo `edit` si la mandaba: creabas mal y editabas bien.
+      payload.startDate = startDate || null;
       await postPlacement(payload);
       return;
     }

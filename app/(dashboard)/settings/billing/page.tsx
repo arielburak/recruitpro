@@ -43,9 +43,13 @@ const dateStr = (d: Date | string) =>
 
 function BillingContent() {
   const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
+  // ?portal=1 — lo manda el paywall de PAST_DUE: ese usuario ya tiene
+  // suscripcion, lo que necesita es cambiar la tarjeta.
+  const autoOpenPortal = searchParams.get("portal") === "1";
   const fromPortal = searchParams.get("from") === "portal";
   // ?subscribe=1 → auto-abrir el SubscribeOptionsDialog al cargar.
   // Llega de los overlays "Trial ended" / "Subscription ended" para
@@ -155,12 +159,41 @@ function BillingContent() {
       url.searchParams.delete("subscribe");
       window.history.replaceState({}, "", url.toString());
     }
+    // Si ya hay suscripcion en Stripe (tipicamente PAST_DUE: el cobro
+    // rebotó pero la suscripcion existe), abrir el checkout es un
+    // callejon: el dialogo dice "No card on file" y "as soon as your
+    // trial ends" —las dos cosas falsas— y el POST termina en 409
+    // "You already have an active subscription". Lo que ese usuario
+    // necesita es actualizar la tarjeta, no suscribirse de nuevo.
+    if (subscription?.stripeSubscriptionId) {
+      setSubscribeOptionsOpen(false);
+      void handleManageBilling();
+      return;
+    }
     // Mismo criterio que el botón Subscribe: el dialog siempre, así el
     // admin elige seats y asignación con el cap aplicado, en vez de un
     // checkout ciego que puede pedir más seats de los permitidos.
     setSubscribeOptionsOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSubscribe, loading, subscription]);
+
+  // ?portal=1 — del paywall de PAST_DUE. Ese usuario ya tiene
+  // suscripcion: lo mandamos directo al Customer Portal de Stripe a
+  // cambiar la tarjeta, en vez de a un checkout nuevo que el backend
+  // rechaza con 409.
+  const autoPortalFiredRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenPortal || loading || !subscription) return;
+    if (autoPortalFiredRef.current) return;
+    autoPortalFiredRef.current = true;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("portal");
+      window.history.replaceState({}, "", url.toString());
+    }
+    void handleManageBilling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenPortal, loading, subscription]);
 
   // Restore-from-redirect: si el admin venía mid-flow de "Change
   // payment method" → Stripe portal → back/Return, el dialog persistió
@@ -290,6 +323,25 @@ function BillingContent() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  // Gate de admin, igual que /settings/organization.
+  //
+  // El tab de Billing se escondia del menu para rol USER, pero la
+  // PAGINA no validaba nada — y /settings/team le mostraba a cualquiera
+  // un link "Manage seats →" que apunta justo aca. El USER entraba,
+  // veia el panel entero, abria el dialogo de seats y al confirmar
+  // recibia un 403 mudo (las APIs si gatean; el agujero era de UI).
+  // Ademas los numeros que veia eran distintos de los del admin,
+  // porque /api/admin/subscription le devuelve 403 y la pagina caia a
+  // defaults: mostraba "$20/month · 1 seat" en una org de 2.
+  if (!isAdmin) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-500">
+        Billing is only visible to admins. Ask an admin of your workspace to
+        manage the subscription.
+      </div>
+    );
   }
 
   if (loading) {

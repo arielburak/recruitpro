@@ -141,6 +141,25 @@ async function bucketMetrics(
       where: {
         organizationId,
         updatedAt: { gte: from, lte: to },
+        // Filtrar por los recruiters pedidos, igual que las otras tres
+        // queries de arriba. Esta era la unica que no lo hacia, asi que
+        // el tile PLACEMENTS mostraba el total de la organizacion sin
+        // importar el filtro: con "None" seleccionado, o con un
+        // recruiter que no coloco a nadie, la tabla decia "No activity
+        // in this period" y arriba seguia figurando el numero entero.
+        // Un manager revisando a alguien de su equipo veia placements
+        // de otro.
+        //
+        // recruiterId es el override explicito; cuando es null la
+        // atribucion cae al dueño del candidato, que es el mismo
+        // criterio que usa totalsFromMaps mas abajo.
+        OR: [
+          { recruiterId: { in: userIds } },
+          {
+            recruiterId: null,
+            submission: { candidate: { ownerId: { in: userIds } } },
+          },
+        ],
       },
       select: {
         recruiterId: true,

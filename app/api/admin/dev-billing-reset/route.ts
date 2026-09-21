@@ -26,7 +26,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
-  if (process.env.VERCEL_ENV === "production") {
+  // Falla CERRADO. Antes bloqueaba solo si VERCEL_ENV === "production",
+  // asi que fuera de Vercel (self-host, Docker, `next start` en un VPS)
+  // la variable no existe y este endpoint quedaba VIVO: cualquier admin
+  // logueado podia borrar candidatos, busquedas, clientes y entrevistas
+  // de su workspace entero, sin confirmacion ni rate limit. Ahora hay
+  // que estar explicitamente en un entorno no productivo.
+  const isNonProduction =
+    process.env.VERCEL_ENV === "development" ||
+    process.env.VERCEL_ENV === "preview" ||
+    (!process.env.VERCEL_ENV && process.env.NODE_ENV !== "production");
+  if (!isNonProduction) {
     return NextResponse.json(
       { error: "This endpoint is disabled in production." },
       { status: 403 },

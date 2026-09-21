@@ -76,12 +76,47 @@ export function autoDetectMapping(
 ): Record<string, string | null> {
   const result: Record<string, string | null> = {};
   const normalizedHeaders = headers.map((h) => ({ raw: h, norm: normalizeHeader(h) }));
-  for (const field of IMPORT_FIELDS[type]) {
-    const hit = normalizedHeaders.find((nh) =>
-      field.aliases.some((a) => nh.norm === a || nh.norm.includes(a) || a.includes(nh.norm))
+  for (const field of IMPORT_FIELDS[type]) result[field.key] = null;
+
+  // Una columna no puede alimentar dos campos. Sin esto, dos campos se
+  // peleaban el mismo header y ganaba el que apareciera primero en
+  // IMPORT_FIELDS.
+  const claimed = new Set<string>();
+  const take = (
+    field: (typeof IMPORT_FIELDS)[ImportType][number],
+    matches: (norm: string, alias: string) => boolean,
+  ) => {
+    if (result[field.key]) return;
+    const hit = normalizedHeaders.find(
+      (nh) => !claimed.has(nh.raw) && field.aliases.some((a) => matches(nh.norm, a)),
     );
-    result[field.key] = hit?.raw || null;
+    if (hit) {
+      result[field.key] = hit.raw;
+      claimed.add(hit.raw);
+    }
+  };
+
+  // Pasada 1: match exacto. Siempre gana sobre cualquier parcial.
+  for (const field of IMPORT_FIELDS[type]) {
+    take(field, (norm, alias) => norm === alias);
   }
+
+  // Pasada 2: el HEADER contiene al alias (ej. "candidate_source" →
+  // "source"). Se pide alias de 4+ caracteres para que "id" no se
+  // quede con cualquier columna que lo contenga.
+  //
+  // Se elimino a proposito la direccion inversa `alias.includes(norm)`,
+  // que era la que rompia todo: el header "source" matcheaba el alias
+  // "sourceid" de External ID, asi que la columna de origen terminaba
+  // en externalId. Como Candidate tiene @@unique([organizationId,
+  // externalId]), en cuanto dos filas compartian origen —o sea casi
+  // siempre— el import moria con un unique constraint. Incluso el
+  // template "Candidates CSV" que ofrece la propia app fallaba, porque
+  // repite source=LinkedIn.
+  for (const field of IMPORT_FIELDS[type]) {
+    take(field, (norm, alias) => alias.length >= 4 && norm.includes(alias));
+  }
+
   return result;
 }
 

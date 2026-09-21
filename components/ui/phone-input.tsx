@@ -291,6 +291,24 @@ export function PhoneInput({
   }
 
   function handleNumberChange(val: string) {
+    // Si el valor trae su propio codigo de pais (el caso tipico: pegar
+    // "+54 9 11 4567-8901" desde WhatsApp, una firma de mail o
+    // LinkedIn), respetarlo y mover el selector — en vez de borrarlo.
+    //
+    // formatPhoneNumber arranca con value.replace(/\D/g,""), asi que se
+    // llevaba puesto el "+54" y reprefijaba con el pais del selector:
+    // "+54 9 11 4567-8901" terminaba guardado como
+    // "+1 (549) 114-5678901". Numero destruido, sin aviso.
+    if (val.trim().startsWith("+")) {
+      const parsed = parsePhone(val);
+      if (parsed.prefix && parsed.number) {
+        const formatted = formatPhoneNumber(parsed.number, parsed.prefix);
+        setPrefix(parsed.prefix);
+        setNumber(formatted);
+        if (onChange) onChange(formatted ? `${parsed.prefix} ${formatted}` : "");
+        return;
+      }
+    }
     const formatted = formatPhoneNumber(val, prefix);
     setNumber(formatted);
     if (onChange) {

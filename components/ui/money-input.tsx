@@ -67,6 +67,16 @@ export function MoneyInput({
     // except a single decimal point (or none, depending on prop).
     const stripped = input.replace(/[^\d.]/g, "");
     if (!allowDecimal) return stripped.replace(/\./g, "");
+    // Dos o mas puntos = separadores de miles, no decimales. Es el
+    // formato que usa medio mundo (y el que la propia ficha MUESTRA
+    // cuando la moneda es ARS). Antes se conservaba el primer punto y
+    // se borraban los demas: "4.500.000" quedaba en "4.500000" y se
+    // guardaba como 4.5. El sueldo se dividia por un millon en
+    // silencio, y despues el form de edicion tampoco dejaba
+    // corregirlo. Con un solo punto no adivinamos: "1.500" es
+    // ambiguo, asi que sigue siendo decimal.
+    const dots = (stripped.match(/\./g) || []).length;
+    if (dots >= 2) return stripped.replace(/\./g, "");
     // Collapse multiple dots to just the first.
     const firstDot = stripped.indexOf(".");
     if (firstDot < 0) return stripped;

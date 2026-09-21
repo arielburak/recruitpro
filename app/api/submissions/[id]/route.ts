@@ -9,23 +9,45 @@ import { requireVerifiedEmail } from "@/lib/require-verified-email";
 import { requireAdminResponse } from "@/lib/permissions";
 import { canAccessJob } from "@/lib/job-access";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { ensureClientJobVisibility, type ClientJobVisibilityResult } from "@/lib/ensure-client-job-visibility";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireVerifiedEmail();
-    if (guard) return guard;
-
     const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
 
+    // El guard de email verificado es para acciones que salen hacia
+    // afuera — lo dice su propio docstring en
+    // lib/require-verified-email.ts. En este PATCH la unica que sale es
+    // compartir con el cliente, que dispara sendCandidateSharedEmail.
+    // Mover una tarjeta de Sourced a Internal Review, o editar una
+    // nota, no le llega a nadie.
+    //
+    // Estaba aplicado a TODO el handler, asi que un usuario recien
+    // registrado (o sea: todos, el primer dia) no podia mover una sola
+    // tarjeta del kanban. Y como el front revierte el movimiento en
+    // silencio, no veia ningun error: la tarjeta volvia sola a su
+    // columna y parecia que el producto estaba roto. Es literalmente el
+    // gesto central del ATS.
+    if (body.isSharedWithClient === true) {
+      const guard = await requireVerifiedEmail();
+      if (guard) return guard;
+    }
+
     const submission = await prisma.candidateSubmission.findFirst({
       where: { id },
       include: {
-        job: { select: { id: true, organizationId: true, title: true, clientId: true } },
+        job: {
+          select: {
+            id: true, organizationId: true, title: true, clientId: true,
+            description: true, location: true, salary: true, currency: true,
+            status: true, workMode: true,
+          },
+        },
         candidate: { select: { firstName: true, lastName: true, ownerId: true } },
         stage: { select: { name: true, order: true } },
       },
@@ -100,6 +122,10 @@ export async function PATCH(
       }
     }
 
+    // Resultado de habilitar la visibilidad del cliente al compartir.
+    // Se devuelve al front para poder avisar cuando el cliente todavia
+    // no tiene a nadie en el portal.
+    let clientVisibility: ClientJobVisibilityResult | null = null;
     const isTogglingShare = body.isSharedWithClient !== undefined;
     const wasShared = submission.isSharedWithClient;
     const willBeShared = isTogglingShare ? !!body.isSharedWithClient : wasShared;
@@ -110,6 +136,16 @@ export async function PATCH(
       if (willBeShared && !wasShared) {
         // Sharing for the first time (or re-sharing after unshare)
         updateData.sharedAt = new Date();
+
+        // Que compartir signifique que el cliente PUEDA VERLO.
+        //
+        // La cadena ClientJobMember → ClientJob → FirmEngagement →
+        // Job solo la armaba "Invite Client" desde la busqueda. Si la
+        // agencia creaba la busqueda por su cuenta, compartir dejaba
+        // al candidato invisible: el cliente recibia la notificacion,
+        // hacia click y leia "Candidate not found or not shared with
+        // you". Ver lib/ensure-client-job-visibility.ts.
+        clientVisibility = await ensureClientJobVisibility(submission.job);
 
         // Auto-advance to "Submitted" if the candidate is still in an
         // earlier stage (Sourced / Internal Review). Sharing IS the act of
@@ -421,6 +457,18 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       isSharedWithClient: willBeShared,
+      // Avisar cuando se compartio pero el cliente todavia NO puede
+      // verlo. Antes esto no se reportaba de ninguna forma: el
+      // reclutador veia "Shared" y daba por hecho que el cliente lo
+      // estaba mirando, cuando en realidad le aparecia "Candidate not
+      // found or not shared with you".
+      clientCanSee: clientVisibility ? clientVisibility.ok : undefined,
+      warning:
+        clientVisibility && !clientVisibility.ok
+          ? clientVisibility.reason === "no_portal_users"
+            ? "Shared. Heads up: nobody from this client has portal access yet, so they can't see it. Invite a contact from the client's page."
+            : "Shared. Heads up: this job isn't linked to a client, so nobody can see it in the portal."
+          : undefined,
     });
   } catch (error: any) {
     console.error("[submissions PATCH]", error);

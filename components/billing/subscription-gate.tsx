@@ -108,16 +108,44 @@ export function SubscriptionGate({
                   Subscribe con el seat picker. Sino el admin clickeaba
                   Subscribe acá + Subscribe otra vez adentro = 2 clicks
                   para lo mismo. Fix Nicolás 2026-06-25. */}
-              <Link
-                href="/settings/billing?subscribe=1"
-                className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors text-base"
-              >
-                Subscribe now
-                <ArrowRight className="h-5 w-5" />
-              </Link>
-              <p className="text-xs text-center text-gray-500">
-                $20/seat per month · Cancel anytime
-              </p>
+              {/* PAST_DUE ya TIENE suscripcion: lo que fallo fue el
+                  cobro, no la suscripcion. Mandarlo a ?subscribe=1 lo
+                  llevaba a un checkout nuevo que ademas le mentia
+                  ("No card on file", "as soon as your trial ends") y
+                  que el backend rechaza con 409 "You already have an
+                  active subscription. Use Manage billing to make
+                  changes." — o sea, el unico boton del paywall
+                  terminaba en un error garantizado, justo para el
+                  usuario que quiere pagar. Para ese caso lo mandamos
+                  al portal de Stripe, que es donde se actualiza la
+                  tarjeta. */}
+              {status.reason === "past_due" ? (
+                <>
+                  <Link
+                    href="/settings/billing?portal=1"
+                    className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors text-base"
+                  >
+                    Update payment method
+                    <ArrowRight className="h-5 w-5" />
+                  </Link>
+                  <p className="text-xs text-center text-gray-500">
+                    Your subscription is still active · we&apos;ll retry the charge
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/settings/billing?subscribe=1"
+                    className="flex items-center justify-center gap-2 w-full px-5 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors text-base"
+                  >
+                    Subscribe now
+                    <ArrowRight className="h-5 w-5" />
+                  </Link>
+                  <p className="text-xs text-center text-gray-500">
+                    $20/seat per month · Cancel anytime
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>
