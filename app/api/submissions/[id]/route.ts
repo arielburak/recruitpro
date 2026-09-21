@@ -16,12 +16,27 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const guard = await requireVerifiedEmail();
-    if (guard) return guard;
-
     const ctx = await getOrgContextWithActiveSub();
     const { id } = await params;
     const body = await request.json();
+
+    // El guard de email verificado es para acciones que salen hacia
+    // afuera — lo dice su propio docstring en
+    // lib/require-verified-email.ts. En este PATCH la unica que sale es
+    // compartir con el cliente, que dispara sendCandidateSharedEmail.
+    // Mover una tarjeta de Sourced a Internal Review, o editar una
+    // nota, no le llega a nadie.
+    //
+    // Estaba aplicado a TODO el handler, asi que un usuario recien
+    // registrado (o sea: todos, el primer dia) no podia mover una sola
+    // tarjeta del kanban. Y como el front revierte el movimiento en
+    // silencio, no veia ningun error: la tarjeta volvia sola a su
+    // columna y parecia que el producto estaba roto. Es literalmente el
+    // gesto central del ATS.
+    if (body.isSharedWithClient === true) {
+      const guard = await requireVerifiedEmail();
+      if (guard) return guard;
+    }
 
     const submission = await prisma.candidateSubmission.findFirst({
       where: { id },
