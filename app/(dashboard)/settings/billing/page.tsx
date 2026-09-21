@@ -43,6 +43,7 @@ const dateStr = (d: Date | string) =>
 
 function BillingContent() {
   const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
@@ -290,6 +291,25 @@ function BillingContent() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  // Gate de admin, igual que /settings/organization.
+  //
+  // El tab de Billing se escondia del menu para rol USER, pero la
+  // PAGINA no validaba nada — y /settings/team le mostraba a cualquiera
+  // un link "Manage seats →" que apunta justo aca. El USER entraba,
+  // veia el panel entero, abria el dialogo de seats y al confirmar
+  // recibia un 403 mudo (las APIs si gatean; el agujero era de UI).
+  // Ademas los numeros que veia eran distintos de los del admin,
+  // porque /api/admin/subscription le devuelve 403 y la pagina caia a
+  // defaults: mostraba "$20/month · 1 seat" en una org de 2.
+  if (!isAdmin) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-500">
+        Billing is only visible to admins. Ask an admin of your workspace to
+        manage the subscription.
+      </div>
+    );
   }
 
   if (loading) {

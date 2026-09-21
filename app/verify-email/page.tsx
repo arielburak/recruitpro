@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -17,6 +17,14 @@ function VerifyEmailContent() {
   const [resendEmail, setResendEmail] = useState("");
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendError, setResendError] = useState("");
+  // El efecto de abajo depende de `updateSession`, que NO es
+  // referencialmente estable — y el propio efecto la llama, asi que se
+  // re-ejecutaba y mandaba el POST dos veces. El primero devolvia
+  // {success:true} y el segundo {alreadyVerified:true}, que ganaba:
+  // quien recien verificaba leia "Already verified", como si alguien
+  // le hubiera usado el link antes. Este ref lo ancla a un disparo por
+  // token.
+  const firedForToken = useRef<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -24,6 +32,8 @@ function VerifyEmailContent() {
       setErrorMessage("Missing verification token.");
       return;
     }
+    if (firedForToken.current === token) return;
+    firedForToken.current = token;
     (async () => {
       try {
         const res = await fetch("/api/auth/verify-email", {

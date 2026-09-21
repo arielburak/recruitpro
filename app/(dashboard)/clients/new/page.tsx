@@ -384,9 +384,20 @@ function NewClientContent() {
                 contacts there and mark one as Primary. Keeps the create
                 form focused on company-level info. */}
 
-            {checkingDuplicate && (
-              <p className="text-xs text-gray-400">Checking for duplicates…</p>
-            )}
+            {/* Altura reservada SIEMPRE (`h-4` + `invisible`), no montaje
+                condicional. El onBlur del nombre dispara el chequeo de
+                duplicados, y este parrafo aparecia entre el mousedown y
+                el mouseup del boton "Create Client": el boton se corria
+                hacia abajo y el click no llegaba nunca. Sin error, sin
+                feedback — habia que clickear dos veces. Y es el STEP 1
+                del onboarding, o sea el primer gesto productivo de un
+                cliente nuevo. */}
+            <p
+              className={`text-xs text-gray-400 h-4 ${checkingDuplicate ? "" : "invisible"}`}
+              aria-hidden={!checkingDuplicate}
+            >
+              Checking for duplicates…
+            </p>
             {duplicateMatches.length > 0 && (
               <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-1">
                 <div className="flex items-center gap-1.5 px-1.5 pt-0.5">

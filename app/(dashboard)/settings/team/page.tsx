@@ -175,6 +175,14 @@ export default function AdminUsersPage() {
         // message. Sin esto el admin veía el toast crudo con el
         // sentinel en mayúsculas. Launch audit 2026-06-26.
         setError(body.message || body.error || "Failed to send invite");
+        // Cerrar los dos modales, igual que hace la rama de
+        // seat_pool_full. El banner de error vive a nivel pagina: si
+        // los dialogos quedan abiertos, el mensaje queda atras del
+        // overlay y el usuario no se entera de por que fallo. Pasaba
+        // con EMAIL_NOT_VERIFIED —que trae una explicacion perfecta de
+        // como destrabarse— y con el invite duplicado.
+        setShowInvite(false);
+        setPendingInvite(null);
       }
       setInviteLoading(false);
       return;
@@ -373,12 +381,17 @@ export default function AdminUsersPage() {
                 </>
               )}
             </div>
-            <a
-              href="/settings/billing"
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
-            >
-              Manage seats →
-            </a>
+            {/* Solo admins: /settings/billing es admin-only, y este link
+                mandaba al USER a una pantalla donde todo lo que tocaba
+                devolvia 403 sin decir nada. */}
+            {isAdmin && (
+              <a
+                href="/settings/billing"
+                className="text-sm font-medium text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
+              >
+                Manage seats →
+              </a>
+            )}
           </div>
         </div>
       )}
